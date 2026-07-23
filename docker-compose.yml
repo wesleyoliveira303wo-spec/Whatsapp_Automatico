@@ -1,0 +1,101 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-whatsapp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: whatsapp-automatico-api:latest
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
+      REDIS_URL: "redis://redis:6379"
+
+  # Worker de IA (Milestone 3, Bloco 4, ADR #54/decisão D1) — processo
+  # separado do `api`, mas MESMA imagem já construída (`build:` idêntico +
+  # mesmo `image:` de `api`, acima: o Compose builda uma única vez e os dois
+  # serviços reaproveitam a mesma imagem, só trocando o `command:`) — exatamente
+  # o padrão descrito em MILESTONE_003_AI_AUTORESPONDER.md §3-Bloco4 ("mesmo
+  # Dockerfile/imagem, CMD diferente").
+  #
+  # `depends_on` só `postgres`/`redis`, DELIBERADAMENTE sem `api`: pela ADR
+  # #54, o worker nunca fala HTTP com o processo `api` — toda comunicação
+  # entre os dois passa pelas filas BullMQ (`ai-reply`/`whatsapp-outbound`),
+  # cujo único pré-requisito de infraestrutura é o Redis estar de pé. Fazer
+  # o worker esperar o `api` subir criaria uma dependência de startup que não
+  # reflete nenhuma dependência real de runtime.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: whatsapp-automatico-api:latest
+    command: ["node", "apps/api/dist/worker.js"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
+      REDIS_URL: "redis://redis:6379"
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    environment:
+      # M2, Fase 3 — hostname do serviço `api` na rede interna do compose
+      # (não "localhost": o container do dashboard e o da api são processos
+      # de rede distintos). Substitui NEXT_PUBLIC_API_URL (removida): o
+      # browser não fala mais direto com a API desde a introdução do
+      # Dashboard como BFF — só o servidor Next.js (rotas pages/api/*) sabe
+      # onde a API vive agora.
+      API_BASE_URL: "http://api:4000"
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

@@ -1,0 +1,112 @@
+import { NextFunction, Request, RequestHandler, Response } from 'express';
+import { Logger } from '../domain/Logger';
+import { ApiKeyHasher } from '../security/domain/ApiKeyHasher';
+import { TenantRepository } from '../tenant/domain/TenantRepository';
+import { Tenant } from '../tenant/domain/Tenant';
+import { resolveTenantFromApiKey } from '../tenant/application/resolveTenantFromApiKey';
+import { sanitizeHeaders } from '../infrastructure/logging/sanitizeHeaders';
+import { AccessTokenService } from '../../services/auth/domain/AccessTokenService';
+import { UserRole } from '../../services/auth/domain/entities/User';
+import { RequestWithAuthUser } from './requireUser';
+import { RequestWithTenant } from './requireApiKey';
+
+const AUTHORIZATION_HEADER = 'authorization';
+const API_KEY_HEADER = 'x-api-key';
+const BEARER_PREFIX = 'Bearer ';
+
+/**
+ * Ator autenticado — Milestone 5, Bloco M5D. Dois "planos":
+ * - `user`: uma PESSOA (crachá/access token), com `role` para o RBAC.
+ * - `machine`: o lado MÁQUINA (chave da empresa / API key), confiável — tem
+ *   acesso total (o worker/integracoes usam este plano; ADR #45/#54).
+ */
+export type Principal =
+  | { kind: 'user'; userId: string; tenantId: string; role: UserRole }
+  | { kind: 'machine'; tenantId: string };
+
+/** `Request` enriquecida com o ator resolvido — lido por `requirePermission` e pelas rotas. */
+export interface RequestWithPrincipal extends Request {
+  principal?: Principal;
+}
+
+/**
+ * Middleware de autenticacao DE DOIS PLANOS (o "porteiro dois-em-um") —
+ * Milestone 5, Bloco M5D. Aceita a requisicao se vier COM crachá de pessoa
+ * (`Authorization: Bearer`) OU com a chave da empresa (`X-API-Key`), e resolve
+ * o `req.principal` de acordo.
+ *
+ * Existe para permitir que as salas ja existentes (conversas, sessoes)
+ * continuem aceitando a chave da empresa (o Dashboard usa isso HOJE) e passem
+ * a aceitar tambem o crachá de pessoa (o Dashboard vai usar a partir do M5F) —
+ * sem quebrar nada. A chave da empresa continua sendo o plano MAQUINA
+ * (confiavel), exatamente como antes (ADR #45/#54 preservadas).
+ *
+ * Reaproveita `resolveTenantFromApiKey` (mesma logica do `requireApiKey`) e o
+ * `AccessTokenService.verify` (mesma do `requireUser`) — nao reimplementa
+ * verificacao. Faz a mesma checagem de IDOR (tenant do ator == `:tenantId` da
+ * URL) que os dois ja fazem.
+ */
+export function createAuthenticate(
+  accessTokenService: AccessTokenService | null,
+  apiKeyHasher: ApiKeyHasher,
+  tenantRepository: TenantRepository,
+  logger: Logger,
+): RequestHandler {
+  return function authenticate(req: Request, res: Response, next: NextFunction): void {
+    const authHeader = req.headers[AUTHORIZATION_HEADER];
+
+    // --- Plano PESSOA (crachá) ---
+    if (typeof authHeader === 'string' && authHeader.startsWith(BEARER_PREFIX)) {
+      // `accessTokenService` nulo = auth de usuario nao configurada
+      // (sem ACCESS_TOKEN_SECRET): nenhum crachá pode ser verificado -> 401.
+      const claims = accessTokenService
+        ? accessTokenService.verify(authHeader.slice(BEARER_PREFIX.length).trim())
+        : null;
+      if (!claims) {
+        res.status(401).json({ error: 'invalid_access_token', message: 'Crachá de acesso invalido ou expirado.' });
+        return;
+      }
+      if (!tenantMatches(req, claims.tenantId)) {
+        res.status(403).json({ error: 'tenant_mismatch', message: 'O crachá nao autoriza acesso a este tenant.' });
+        return;
+      }
+      const principal: Principal = { kind: 'user', userId: claims.userId, tenantId: claims.tenantId, role: claims.role };
+      (req as RequestWithPrincipal).principal = principal;
+      (req as RequestWithAuthUser).authUser = claims;
+      next();
+      return;
+    }
+
+    // --- Plano MAQUINA (chave da empresa) ---
+    const apiKey = req.header(API_KEY_HEADER);
+    if (apiKey) {
+      void (async () => {
+        try {
+          const tenant: Tenant | null = await resolveTenantFromApiKey(apiKeyHasher, tenantRepository, apiKey);
+          if (!tenant) {
+            logger.warn('Requisicao recusada: API key invalida', { headers: sanitizeHeaders(req.headers as Record<string, unknown>) });
+            res.status(401).json({ error: 'invalid_api_key', message: 'API key invalida.' });
+            return;
+          }
+          if (!tenantMatches(req, tenant.id)) {
+            res.status(403).json({ error: 'tenant_mismatch', message: 'A API key nao autoriza acesso a este tenant.' });
+            return;
+          }
+          (req as RequestWithPrincipal).principal = { kind: 'machine', tenantId: tenant.id };
+          (req as RequestWithTenant).tenant = tenant;
+          next();
+        } catch (error) {
+          next(error);
+        }
+      })();
+      return;
+    }
+
+    res.status(401).json({ error: 'missing_credentials', message: 'Informe um crachá (Authorization: Bearer) ou a API key (X-API-Key).' });
+  };
+}
+
+function tenantMatches(req: Request, principalTenantId: string): boolean {
+  const tenantIdFromPath = req.params.tenantId;
+  return tenantIdFromPath === undefined || tenantIdFromPath === principalTenantId;
+}

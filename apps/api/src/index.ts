@@ -1,0 +1,361 @@
+import path from 'path';
+import express, { Request, Response } from 'express';
+import dotenv from 'dotenv';
+import type Redis from 'ioredis';
+import type { Worker } from 'bullmq';
+
+// Caminho absoluto para o `.env` da RAIZ do monorepo, calculado a partir
+// de `__dirname` (não de `process.cwd()`): `npm run dev -w apps/api` executa
+// este arquivo com cwd = `apps/api/`, não a raiz — `dotenv.config()` sem
+// `path` procuraria (e não acharia) um `.env` dentro de `apps/api/`. Mesma
+// profundidade relativa tanto em dev (`tsx`, __dirname = apps/api/src)
+// quanto compilado (`dist/index.js`, __dirname = apps/api/dist).
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+export const app = express();
+app.use(express.json());
+
+// Simple health check
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'OK' });
+});
+
+/**
+ * Recursos que precisam de encerramento gracioso (Milestone 3, Bloco 5 — D7
+ * do levantamento arquitetural: até este bloco, `index.ts` não tinha NENHUM
+ * handler de `SIGTERM`/`SIGINT`, lacuna que passou a importar de verdade a
+ * partir do momento em que este processo passa a manter um `bullmq.Worker`
+ * consumindo `whatsapp-outbound` e conexões `ioredis` abertas). Populado
+ * por `mountWhatsAppSessionsRoutes()`; consumido só pelo handler de sinal
+ * registrado mais abaixo (nunca antes de `require.main === module`).
+ * `outboundWorker`/`aiReplyProducerConnection` ficam ausentes no modo
+ * degradado (D8: sem `REDIS_URL`), quando só `prisma` precisa ser fechado.
+ */
+interface ShutdownHandles {
+  prisma: { $disconnect: () => Promise<void> };
+  outboundWorker?: Worker;
+  aiReplyProducerConnection?: Redis;
+}
+
+let shutdownHandles: ShutdownHandles | undefined;
+
+/**
+ * Monta as rotas do módulo WhatsApp (Item 5, Bloco 8) e, a partir da
+ * Milestone 3 Bloco 5, também o pipeline de conversas/IA — SOMENTE se as
+ * variáveis de ambiente necessárias estiverem presentes.
+ *
+ * IMPORTANTE (regressão corrigida durante o Bloco 8): os módulos importados
+ * abaixo (`compositionRoot` -> `BaileysProviderFactory` -> `BaileysProvider`)
+ * carregam o pacote real `@whiskeysockets/baileys`, publicado em ESM puro.
+ * Um `import` ESTÁTICO no topo deste arquivo carregaria/faria parse desse
+ * pacote SEMPRE que `index.ts` fosse importado — inclusive por
+ * `health.test.ts`, que não configura essas variáveis — e o Jest (CommonJS)
+ * não consegue fazer parse de ESM de `node_modules`, quebrando a suíte
+ * inteira. Por isso o `import()` aqui é DINÂMICO e só acontece DEPOIS do
+ * guard de env vars abaixo: quando as variáveis estão ausentes, a função
+ * retorna antes de qualquer `import()`, e o pacote Baileys nunca é sequer
+ * carregado. `/health` funciona sempre, independente de configuração. Os
+ * módulos novos do Bloco 5 (`ai`/`conversations`, que não tocam Baileys)
+ * seguem o MESMO padrão de import dinâmico, por consistência — não porque
+ * precisem, mas para manter um único estilo de carregamento neste arquivo.
+ *
+ * D8 (levantamento arquitetural do Bloco 5) — `REDIS_URL` ausente NÃO
+ * derruba o processo (mesmo padrão de degradação graciosa já usado para as
+ * outras 3 variáveis): as rotas de sessão do WhatsApp continuam ativas, mas
+ * `MessageIngestionService`/`conversationsRouter`/`aiInteractionsRouter`/o
+ * consumidor outbound não são montados — mensagens recebidas via WhatsApp
+ * são apenas ignoradas (ver docstring de `MessageReceivedHandler`), nunca
+ * perdidas de um jeito que quebre algo.
+ */
+async function mountWhatsAppSessionsRoutes(): Promise<void> {
+  const { DATABASE_URL, WHATSAPP_CREDENTIALS_MASTER_KEY, API_KEY_PEPPER, REDIS_URL } = process.env;
+  if (!DATABASE_URL || !WHATSAPP_CREDENTIALS_MASTER_KEY || !API_KEY_PEPPER) {
+    console.warn(
+      'Rotas de sessão do WhatsApp não montadas: defina DATABASE_URL, WHATSAPP_CREDENTIALS_MASTER_KEY e ' +
+        'API_KEY_PEPPER (ver .env.example).',
+    );
+    return;
+  }
+
+  try {
+    const [
+      { PrismaClient },
+      whatsappCompositionModule,
+      { createWhatsAppSessionsRouter },
+      { createWhatsAppErrorHandler },
+      { ConsoleLogger },
+      { createAnalyticsComposition },
+      { createAuthComposition },
+      { createAuthenticate },
+      { requirePermission },
+      { HmacSha256ApiKeyHasher },
+      { PrismaTenantRepository },
+    ] = await Promise.all([
+      import('@prisma/client'),
+      import('./services/whatsapp/compositionRoot'),
+      import('./services/whatsapp/presentation/whatsAppSessionsRouter'),
+      import('./services/whatsapp/presentation/whatsAppErrorHandler'),
+      import('./shared/infrastructure/logging/ConsoleLogger'),
+      import('./services/analytics/compositionRoot'),
+      import('./services/auth/compositionRoot'),
+      import('./shared/presentation/authenticate'),
+      import('./shared/presentation/requirePermission'),
+      import('./shared/security/infrastructure/HmacSha256ApiKeyHasher'),
+      import('./shared/tenant/infrastructure/PrismaTenantRepository'),
+    ]);
+    const { createWhatsAppSessionsComposition, createOutboundCommandConsumerWorker } = whatsappCompositionModule;
+
+    const logger = new ConsoleLogger({ module: 'api' });
+    const prisma = new PrismaClient();
+
+    // Milestone 5, Bloco M5C — rotas de autenticacao (login/refresh/logout/me).
+    // Montadas ANTES da ramificacao do Redis porque auth NAO depende de Redis
+    // (so HTTP + Postgres) — disponivel tanto no modo degradado quanto no
+    // completo. NAO fica atras de `requireApiKey`: login/refresh sao
+    // pre-autenticacao (o plano humano substitui a API key para chamadas de
+    // pessoa; a API key continua so no plano maquina — ADR #45/#54 intactas).
+    // Degrada como o resto: sem ACCESS_TOKEN_SECRET, so avisa e nao monta.
+    const { ACCESS_TOKEN_SECRET } = process.env;
+    let accessTokenService: import('./services/auth/domain/AccessTokenService').AccessTokenService | null = null;
+    // Guardada fora do `if` porque as rotas de USUARIOS (M5E) sao montadas mais
+    // abaixo, DEPOIS de o `authenticate` existir (elas exigem cracha de pessoa).
+    let authComposition: import('./services/auth/compositionRoot').AuthComposition | null = null;
+    if (ACCESS_TOKEN_SECRET) {
+      authComposition = createAuthComposition(
+        prisma,
+        {
+          accessTokenSecret: ACCESS_TOKEN_SECRET,
+          accessTokenTtlSeconds: Number(process.env.ACCESS_TOKEN_TTL_SECONDS ?? 900),
+          refreshTokenTtlMs: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7) * 24 * 60 * 60 * 1000,
+        },
+        logger,
+      );
+      accessTokenService = authComposition.accessTokenService;
+      app.use('/api/tenants/:tenantId/auth', authComposition.authRouter);
+      app.use('/api/tenants/:tenantId/auth', authComposition.authErrorHandler);
+    } else {
+      console.warn('ACCESS_TOKEN_SECRET ausente: rotas de auth (login/refresh/logout/me) nao montadas (ver .env.example).');
+    }
+
+    // Milestone 5, Bloco M5D — `authenticate` (porteiro dois-planos): aceita
+    // crachá de pessoa (access token) OU chave da empresa (API key). Usado
+    // pelas rotas que ganham RBAC (conversas neste bloco; sessoes no M5D-3).
+    // `accessTokenService` pode ser nulo (sem ACCESS_TOKEN_SECRET) — nesse
+    // caso so o plano maquina (chave) funciona, preservando o comportamento
+    // atual do Dashboard/testes. `API_KEY_PEPPER` ja e garantido pelo guard
+    // no topo desta funcao.
+    const authenticate = createAuthenticate(
+      accessTokenService,
+      new HmacSha256ApiKeyHasher(API_KEY_PEPPER),
+      new PrismaTenantRepository(prisma),
+      logger,
+    );
+
+    // Milestone 5, Bloco M5E — rotas de GESTAO DE USUARIOS (o "RH"). Atras do
+    // `authenticate`, mas o proprio router rejeita o plano maquina
+    // (`human_required`): gestao de gente exige um ator identificavel. Error
+    // handler path-scoped (D17). So existe se auth esta configurada (o RH nao
+    // faz sentido sem login de pessoa).
+    if (authComposition) {
+      app.use('/api/tenants/:tenantId/users', authenticate, authComposition.usersRouter);
+      app.use('/api/tenants/:tenantId/users', authComposition.usersErrorHandler);
+    }
+
+    // D17 (levantamento arquitetural do Bloco 5) — cada error handler é
+    // montado ESCOPADO ao path do próprio router (`app.use(path, handler)`),
+    // nunca globalmente sem path (como era até o Bloco 4). Um error handler
+    // Express montado sem path participa da cadeia de QUALQUER rota da
+    // aplicação, na ordem de montagem — e `whatsAppErrorHandler` nunca
+    // chamou `next(error)` para um erro desconhecido (só no caso
+    // `headersSent`), então, montado globalmente, ele engoliria erros de
+    // `conversations`/`ai-interactions` antes de alcançar o handler correto
+    // de cada um. Path-scoping resolve isso por construção: o Express só
+    // invoca um error handler escopado por path para erros ocorridos DENTRO
+    // daquele path.
+
+    if (!REDIS_URL) {
+      console.warn(
+        'REDIS_URL ausente: pipeline de IA/conversas desabilitado (rotas de whatsapp-sessions continuam ativas, ' +
+          'mas sem MessageIngestionService wired — mensagens recebidas serão ignoradas). Ver .env.example.',
+      );
+
+      const { sessionService } = createWhatsAppSessionsComposition(
+        prisma,
+        WHATSAPP_CREDENTIALS_MASTER_KEY,
+        API_KEY_PEPPER,
+        logger,
+      );
+
+      app.use('/api/tenants/:tenantId/whatsapp-sessions', authenticate, createWhatsAppSessionsRouter(sessionService));
+      app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
+
+      // Milestone 4, Bloco M4C — Analytics e read-only sobre Postgres (D51),
+      // nao depende de Redis, entao e montado tambem no modo degradado (sem
+      // REDIS_URL). Reutiliza o `requireApiKey` ja construido acima; error
+      // handler escopado ao path (D17).
+      const degradedAnalytics = createAnalyticsComposition(prisma, logger);
+      // M5 (achado do teste ponta a ponta): `authenticate` no lugar de
+      // `requireApiKey` — o crachá de pessoa também precisa ler analytics
+      // (todo cargo tem `analytics:read`). API key continua aceita (plano
+      // máquina do authenticate).
+      app.use('/api/tenants/:tenantId/analytics', authenticate, requirePermission('analytics:read'), degradedAnalytics.analyticsRouter);
+      app.use('/api/tenants/:tenantId/analytics', degradedAnalytics.analyticsErrorHandler);
+
+      shutdownHandles = { prisma };
+      return;
+    }
+
+    // --- Pipeline completo (D15: ordem de composição) ---
+    // `ai` -> `conversations` (consome a conexão Redis produtora de
+    // `ai-reply`) -> `whatsapp` (consome o `messageIngestionService` de
+    // `conversations`, D5) -> consumidor outbound (consome o `registry` de
+    // `whatsapp`, D7) -> montagem dos três routers.
+    const [
+      { default: IORedis },
+      { createAiComposition },
+      { createConversationsComposition },
+      { createConversationsRouter },
+      { createConversationsErrorHandler },
+      { createAiInteractionsRouter },
+      { createAiInteractionsErrorHandler },
+      { createAiProfileRouter },
+      { createAiProfileErrorHandler },
+    ] = await Promise.all([
+      import('ioredis'),
+      import('./services/ai/compositionRoot'),
+      import('./services/conversations/compositionRoot'),
+      import('./services/conversations/presentation/conversationsRouter'),
+      import('./services/conversations/presentation/conversationsErrorHandler'),
+      import('./services/ai/presentation/aiInteractionsRouter'),
+      import('./services/ai/presentation/aiInteractionsErrorHandler'),
+      import('./services/ai/presentation/aiProfileRouter'),
+      import('./services/ai/presentation/aiProfileErrorHandler'),
+    ]);
+
+    // D19 (levantamento arquitetural do Bloco 5) — duas conexões `ioredis`
+    // DISTINTAS dentro deste processo: uma para a `Queue` produtora de
+    // `ai-reply` (usada dentro de `createConversationsComposition`), outra
+    // para o `Worker` consumidor de `whatsapp-outbound`. Nunca uma única
+    // conexão compartilhada entre os dois papéis — risco real já registrado
+    // em ADR #56 (Bloco 4): o `Worker` exige `maxRetriesPerRequest: null`,
+    // e uma conexão reaproveitada para os dois fins pode aplicar essa opção
+    // ao papel errado. Mesmo padrão exato de `worker.ts`.
+    const aiReplyProducerConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+    const outboundConsumerConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+
+    const { aiInteractionRepository, aiInteractionsService, aiBusinessProfileService } = createAiComposition(prisma, logger);
+    const { conversationRepository, messageRepository, messageIngestionService, conversationsService } =
+      createConversationsComposition(prisma, aiReplyProducerConnection, logger);
+
+    const { sessionService, registry } = createWhatsAppSessionsComposition(
+      prisma,
+      WHATSAPP_CREDENTIALS_MASTER_KEY,
+      API_KEY_PEPPER,
+      logger,
+      messageIngestionService,
+    );
+
+    const outboundWorker = createOutboundCommandConsumerWorker(
+      registry,
+      conversationRepository,
+      messageRepository,
+      aiInteractionRepository,
+      logger,
+      outboundConsumerConnection,
+    );
+
+    // Milestone 5, Bloco M5D-3 — sessoes usam o porteiro dois-planos
+    // (`authenticate`): cracha de pessoa (RBAC no router) OU chave da empresa
+    // (plano maquina = acesso total). Dashboard atual (chave) segue igual.
+    app.use('/api/tenants/:tenantId/whatsapp-sessions', authenticate, createWhatsAppSessionsRouter(sessionService));
+    app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
+
+    // Milestone 5, Bloco M5D — conversas passam a usar o porteiro dois-planos
+    // (`authenticate`) em vez de so `requireApiKey`: crachá de pessoa (com
+    // RBAC no router) OU chave da empresa (plano maquina = acesso total). O
+    // Dashboard atual, que usa a chave, continua funcionando igual.
+    app.use('/api/tenants/:tenantId/conversations', authenticate, createConversationsRouter(conversationsService));
+    app.use('/api/tenants/:tenantId/conversations', createConversationsErrorHandler(logger));
+
+    // M5 (achado do teste ponta a ponta): crachá de pessoa também lê IA
+    // (`ai_interaction:read` existe em todos os cargos); API key preservada.
+    app.use('/api/tenants/:tenantId/ai-interactions', authenticate, requirePermission('ai_interaction:read'), createAiInteractionsRouter(aiInteractionsService));
+    app.use('/api/tenants/:tenantId/ai-interactions', createAiInteractionsErrorHandler(logger));
+
+    // Base de Conhecimento (Nível 1) — o "Cérebro da IA". Só `authenticate` no
+    // mount; o RBAC é POR ROTA dentro do router (GET->ai_profile:read,
+    // PUT->ai_profile:update), mesmo padrão de conversas. Error handler
+    // escopado ao path (D17).
+    app.use('/api/tenants/:tenantId/ai-profile', authenticate, createAiProfileRouter(aiBusinessProfileService));
+    app.use('/api/tenants/:tenantId/ai-profile', createAiProfileErrorHandler(logger));
+
+    // Milestone 4, Bloco M4C — Analytics (read-only, D51). Mesmo `requireApiKey`
+    // do pipeline completo; error handler escopado ao path (D17).
+    const analytics = createAnalyticsComposition(prisma, logger);
+    app.use('/api/tenants/:tenantId/analytics', authenticate, requirePermission('analytics:read'), analytics.analyticsRouter);
+    app.use('/api/tenants/:tenantId/analytics', analytics.analyticsErrorHandler);
+
+    shutdownHandles = { prisma, outboundWorker, aiReplyProducerConnection };
+  } catch (error) {
+    console.error('Falha ao montar rotas de sessão do WhatsApp:', error);
+  }
+}
+
+/**
+ * Encerramento gracioso (Milestone 3, Bloco 5 — D7): fecha, nesta ordem, o
+ * `Worker` outbound (espera o job em andamento terminar — mesma garantia
+ * nativa do BullMQ já usada em `worker.ts`), depois a conexão Redis
+ * produtora de `ai-reply`, depois o Prisma. No modo degradado (sem
+ * `REDIS_URL`), `outboundWorker`/`aiReplyProducerConnection` estão ausentes
+ * e só `prisma.$disconnect()` roda.
+ */
+async function shutdown(): Promise<void> {
+  if (!shutdownHandles) {
+    return;
+  }
+  const { prisma, outboundWorker, aiReplyProducerConnection } = shutdownHandles;
+
+  if (outboundWorker) {
+    await outboundWorker.close();
+  }
+  if (aiReplyProducerConnection) {
+    await aiReplyProducerConnection.quit();
+  }
+  await prisma.$disconnect();
+}
+
+const whatsAppRoutesReady = mountWhatsAppSessionsRoutes();
+
+// Só sobe o servidor quando este arquivo é executado diretamente (node/tsx),
+// não quando é importado (ex.: pelos testes, que só precisam do `app`).
+// Aguarda `whatsAppRoutesReady` antes de aceitar conexões, para que nenhuma
+// requisição chegue antes das rotas estarem montadas (evita 404 espúrio
+// numa janela de corrida entre `listen()` e o mount assíncrono acima).
+if (require.main === module) {
+  whatsAppRoutesReady.finally(() => {
+    const port = process.env.PORT || 4000;
+    const server = app.listen(port, () => {
+      console.log(`API listening on http://localhost:${port}`);
+    });
+
+    // Milestone 3, Bloco 5 (D7) — primeiro handler de `SIGTERM`/`SIGINT`
+    // deste processo. Para de aceitar novas conexões HTTP (`server.close`),
+    // então libera os recursos de fila/banco (`shutdown()`), só então
+    // encerra o processo — evita interromper um job outbound no meio (entre
+    // `sendMessage()` e `linkMessage()`, ver `OutboundCommandConsumer`) por
+    // causa de um redeploy/`docker stop`.
+    const gracefulShutdown = (): void => {
+      console.log('apps/api encerrando graciosamente...');
+      server.close(() => {
+        shutdown()
+          .then(() => process.exit(0))
+          .catch((error) => {
+            console.error('Falha ao encerrar apps/api graciosamente:', error);
+            process.exit(1);
+          });
+      });
+    };
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
+  });
+}

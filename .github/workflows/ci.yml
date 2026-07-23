@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ dev, main ]
+  pull_request:
+    branches: [ dev, main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: whatsapp
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U user -d whatsapp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Run tests
+        env:
+          DATABASE_URL: postgres://user:password@localhost:5432/whatsapp
+          REDIS_URL: redis://localhost:6379
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+        run: npm test -- --coverage
+      - name: Build Docker images
+        run: |
+          docker build -f apps/api/Dockerfile -t myorg/whatsapp-api .
+          docker build -f apps/dashboard/Dockerfile -t myorg/whatsapp-dashboard .
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/

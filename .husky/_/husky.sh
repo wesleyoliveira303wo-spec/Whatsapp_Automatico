@@ -1,0 +1,1 @@
+# placeholder for husky runtime – not needed in scaffold

@@ -1,0 +1,250 @@
+import path from 'path';
+import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
+import { Queue, Worker } from 'bullmq';
+import IORedis from 'ioredis';
+
+import { PrismaConversationRepository } from './services/conversations/infrastructure/repositories/PrismaConversationRepository';
+import { PrismaMessageRepository } from './services/conversations/infrastructure/repositories/PrismaMessageRepository';
+import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './services/conversations/infrastructure/queues/AiReplyQueue';
+import { PrismaAiInteractionRepository } from './services/ai/infrastructure/repositories/PrismaAiInteractionRepository';
+import { PrismaAiBusinessProfileRepository } from './services/ai/infrastructure/repositories/PrismaAiBusinessProfileRepository';
+import { AiProviderFactoryImpl } from './services/ai/infrastructure/AiProviderFactoryImpl';
+import { AiProviderName } from './services/ai/domain/providers/AiProviderName';
+import { PromptBuilder } from './services/ai/application/PromptBuilder';
+import { ConversationAiService } from './services/ai/application/ConversationAiService';
+import { AiReplyJobProcessor } from './services/ai/application/AiReplyJobProcessor';
+import { getPromptVersion } from './services/ai/domain/PromptVersion';
+import {
+  WHATSAPP_OUTBOUND_QUEUE_NAME,
+  WhatsAppOutboundJobData,
+} from './services/whatsapp/infrastructure/queues/WhatsAppOutboundQueue';
+import { BullMqOutboundMessageDispatcher } from './services/whatsapp/infrastructure/dispatchers/BullMqOutboundMessageDispatcher';
+import { ConsoleLogger } from './shared/infrastructure/logging/ConsoleLogger';
+
+// Mesmo racional de `index.ts`: caminho absoluto calculado a partir de
+// `__dirname`, não de `process.cwd()` — necessário porque `npm run dev:worker
+// -w apps/api` roda este arquivo com cwd = `apps/api/`, não a raiz do
+// monorepo.
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+/**
+ * Entrypoint do worker de IA — Milestone 3, Bloco 4 (decisão D1 do
+ * levantamento arquitetural pré-Bloco 4, confirmada pelo usuário): vive em
+ * `apps/api/src/worker.ts`, MESMO pacote/workspace de `apps/api` (não um
+ * workspace npm `apps/worker` separado, como um esboço anterior do
+ * `MILESTONE_003_AI_AUTORESPONDER.md` §2.5-B sugeria) — reaproveita
+ * diretamente todo o código de `services/ai/`/`services/conversations/` já
+ * existente, sem precisar extrair um novo workspace `packages/` compartilhado
+ * só para isso. Sobe como um PROCESSO Node separado do `index.ts` (dois
+ * `CMD`/entrypoints distintos sobre a MESMA imagem Docker — Bloco 4e), não um
+ * segundo papel dentro do processo HTTP.
+ *
+ * DIFERENÇA DELIBERADA frente a `mountWhatsAppSessionsRoutes()`
+ * (`index.ts`): lá, os imports de módulos que tocam Baileys (ESM puro) são
+ * DINÂMICOS, porque `index.ts` é importado por `health.test.ts` mesmo quando
+ * as variáveis de ambiente de WhatsApp não estão configuradas — um import
+ * estático quebraria a suíte inteira. Este arquivo (`worker.ts`) não é
+ * importado por NENHUM teste (não exporta nada útil para testar; toda a
+ * lógica de orquestração testável já foi extraída para
+ * `AiReplyJobProcessor`, testado isoladamente com Fakes) — por isso os
+ * imports acima são ESTÁTICOS, mais simples de ler. Isso também é uma
+ * garantia adicional da fronteira da ADR #54: nenhum destes imports toca
+ * `WhatsAppConnectionRegistry`/`WhatsAppProvider`/Baileys — só Prisma,
+ * BullMQ, ioredis e os components de `services/ai`/`services/conversations`
+ * já existentes, mais o PRODUTOR (não o consumidor) da fila
+ * `whatsapp-outbound`.
+ *
+ * `main()` falha rápido (`process.exit(1)`) se alguma variável de ambiente
+ * obrigatória estiver ausente — diferente do padrão "degrada
+ * silenciosamente" de `mountWhatsAppSessionsRoutes()` em `index.ts` (que
+ * loga um aviso e segue sem montar as rotas, porque `/health` ainda precisa
+ * funcionar). Aqui não existe um "modo degradado" sensato: a ÚNICA razão de
+ * existir deste processo é rodar o pipeline de IA — sem `CLAUDE_API_KEY`,
+ * por exemplo, não há nada de útil para este processo fazer além de existir
+ * ocioso, o que só mascararia um erro de configuração de deploy.
+ */
+/**
+ * Providers de IA com implementação real HOJE (ver `AiProviderName.ts`). O
+ * `AI_PROVIDER` da env é validado contra esta lista — `'openai'` existe no TIPO
+ * mas ainda não tem adapter, então não é selecionável em runtime.
+ */
+const SUPPORTED_PROVIDERS: AiProviderName[] = ['claude', 'gemini'];
+
+async function main(): Promise<void> {
+  const {
+    DATABASE_URL,
+    REDIS_URL,
+    AI_PROVIDER,
+    CLAUDE_API_KEY,
+    AI_CLAUDE_MODEL,
+    AI_CLAUDE_MAX_TOKENS,
+    GEMINI_API_KEY,
+    AI_GEMINI_MODEL,
+    AI_GEMINI_MAX_TOKENS,
+    AI_PROMPT_VERSION,
+    AI_HISTORY_LIMIT,
+  } = process.env;
+
+  // `AI_PROVIDER` default 'claude' — compatibilidade total com deploys
+  // anteriores à M6, que não conheciam esta variável.
+  const selectedProvider = (AI_PROVIDER ?? 'claude') as AiProviderName;
+  if (!SUPPORTED_PROVIDERS.includes(selectedProvider)) {
+    console.error(
+      `worker: AI_PROVIDER="${AI_PROVIDER}" inválido. Valores suportados: ${SUPPORTED_PROVIDERS.join(', ')} (ver .env.example).`,
+    );
+    process.exit(1);
+  }
+
+  // Variáveis base sempre obrigatórias + as credenciais do provider ESCOLHIDO.
+  // Não exigimos as credenciais do provider não usado: rodar só com Gemini (free
+  // tier em dev) não deve exigir uma chave da Anthropic, e vice-versa.
+  const baseRequired: Array<[string, string | undefined]> = [
+    ['DATABASE_URL', DATABASE_URL],
+    ['REDIS_URL', REDIS_URL],
+  ];
+  const providerRequired: Array<[string, string | undefined]> =
+    selectedProvider === 'gemini'
+      ? [
+          ['GEMINI_API_KEY', GEMINI_API_KEY],
+          ['AI_GEMINI_MODEL', AI_GEMINI_MODEL],
+        ]
+      : [
+          ['CLAUDE_API_KEY', CLAUDE_API_KEY],
+          ['AI_CLAUDE_MODEL', AI_CLAUDE_MODEL],
+        ];
+
+  const missing = [...baseRequired, ...providerRequired]
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+
+  if (missing.length > 0) {
+    console.error(`worker: variáveis de ambiente obrigatórias ausentes: ${missing.join(', ')} (ver .env.example).`);
+    process.exit(1);
+  }
+
+  const logger = new ConsoleLogger({ module: 'ai-worker' });
+
+  const prisma = new PrismaClient();
+  const conversationRepository = new PrismaConversationRepository(prisma);
+  const messageRepository = new PrismaMessageRepository(prisma);
+  const aiInteractionRepository = new PrismaAiInteractionRepository(prisma);
+  const aiBusinessProfileRepository = new PrismaAiBusinessProfileRepository(prisma);
+
+  // Só o provider escolhido é configurado na factory — os demais nem entram no
+  // mapa (pedir um provider não configurado lança AiProviderNotSupportedError).
+  const aiProviderFactory = new AiProviderFactoryImpl({
+    claude:
+      selectedProvider === 'claude'
+        ? {
+            apiKey: CLAUDE_API_KEY as string,
+            model: AI_CLAUDE_MODEL as string,
+            maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
+          }
+        : undefined,
+    gemini:
+      selectedProvider === 'gemini'
+        ? {
+            apiKey: GEMINI_API_KEY as string,
+            model: AI_GEMINI_MODEL as string,
+            maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
+          }
+        : undefined,
+  });
+  const conversationAiService = new ConversationAiService(
+    aiProviderFactory,
+    selectedProvider,
+    new PromptBuilder(),
+    aiInteractionRepository,
+    undefined,
+    // Base de Conhecimento (Nível 1): injeta o perfil de negócio do tenant no
+    // prompt. `undefined` acima mantém o `maxReplyLength` no default.
+    aiBusinessProfileRepository,
+  );
+  const promptVersion = getPromptVersion(AI_PROMPT_VERSION ?? 'v1');
+
+  // `maxRetriesPerRequest: null` é exigido pelo próprio BullMQ para
+  // conexões usadas por um `Worker` (comandos bloqueantes de polling da
+  // fila) — sem isso, o `ioredis` aplicaria seu próprio limite de retry e
+  // o `Worker` derrubaria a conexão silenciosamente em cenários de Redis
+  // lento/instável. Aplicado também à conexão do `Queue` produtor
+  // (`whatsapp-outbound`) por consistência, mesmo não sendo estritamente
+  // obrigatório para produtores — evita duas convenções diferentes de
+  // conexão dentro do mesmo processo.
+  const workerConnection = new IORedis(REDIS_URL as string, { maxRetriesPerRequest: null });
+  const outboundConnection = new IORedis(REDIS_URL as string, { maxRetriesPerRequest: null });
+
+  const outboundQueue = new Queue<WhatsAppOutboundJobData>(WHATSAPP_OUTBOUND_QUEUE_NAME, {
+    connection: outboundConnection,
+  });
+  const outboundMessageDispatcher = new BullMqOutboundMessageDispatcher(outboundQueue);
+
+  const processor = new AiReplyJobProcessor(
+    conversationRepository,
+    messageRepository,
+    conversationAiService,
+    outboundMessageDispatcher,
+    promptVersion,
+    logger,
+    AI_HISTORY_LIMIT ? Number(AI_HISTORY_LIMIT) : undefined,
+  );
+
+  const worker = new Worker<AiReplyJobData>(
+    AI_REPLY_QUEUE_NAME,
+    async (job) => {
+      await processor.process(job.data);
+    },
+    { connection: workerConnection },
+  );
+
+  worker.on('completed', (job) => {
+    logger.info('Job ai-reply concluído', { jobId: job.id, ...job.data });
+  });
+
+  // Critério de aceite explícito do `MILESTONE_003_AI_AUTORESPONDER.md` §5
+  // ("Fila sem observabilidade vira uma caixa-preta"): toda falha TERMINAL
+  // de um job (depois de esgotar os retries do BullMQ) é logada via o
+  // `Logger` port — nunca silenciosa. `job` pode ser `undefined` em alguns
+  // cenários de erro do próprio BullMQ (ex.: falha ao buscar o job) —
+  // guardado explicitamente, mesmo padrão defensivo já usado em
+  // `BaileysProvider` para eventos que podem chegar sem payload completo.
+  worker.on('failed', (job, error) => {
+    logger.error('Job ai-reply falhou', { jobId: job?.id, ...job?.data, error });
+  });
+
+  logger.info('Worker de IA iniciado', { queue: AI_REPLY_QUEUE_NAME, promptVersion: promptVersion.id });
+
+  /**
+   * Encerramento gracioso: aguarda o job em andamento (se houver) terminar
+   * antes de fechar as conexões — `Worker.close()` do BullMQ já implementa
+   * essa espera nativamente. Sem isto, um `docker stop`/`SIGTERM` do
+   * orquestrador (Kubernetes, docker-compose) poderia interromper um job
+   * de IA no meio (ex.: entre gerar a resposta e despachar o comando
+   * outbound), perdendo trabalho já pago (tokens da Anthropic já
+   * consumidos) sem nunca enviar a mensagem correspondente.
+   */
+  const shutdown = async (): Promise<void> => {
+    logger.info('Worker de IA encerrando...');
+    await worker.close();
+    await outboundQueue.close();
+    await prisma.$disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => {
+    shutdown().catch((error) => {
+      console.error('Falha ao encerrar o worker de IA graciosamente:', error);
+      process.exit(1);
+    });
+  });
+  process.on('SIGINT', () => {
+    shutdown().catch((error) => {
+      console.error('Falha ao encerrar o worker de IA graciosamente:', error);
+      process.exit(1);
+    });
+  });
+}
+
+main().catch((error) => {
+  console.error('Falha fatal ao iniciar o worker de IA:', error);
+  process.exit(1);
+});

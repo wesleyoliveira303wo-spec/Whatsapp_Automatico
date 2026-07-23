@@ -1,0 +1,734 @@
+// Prisma schema generated for Milestone 003 – Conversations
+// This schema mirrors the domain model defined in specs/M003-Conversations.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum ConversationStatus {
+  NEW
+  ACTIVE
+  WAITING_CUSTOMER
+  WAITING_AGENT
+  RESOLVED
+  ARCHIVED
+  SPAM
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  STICKER
+  SYSTEM
+  LOCATION
+  CONTACT
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum ConversationEventType {
+  CONVERSATION_CREATED
+  MESSAGE_ADDED
+  MESSAGE_STATUS_UPDATED
+  CONVERSATION_STATUS_CHANGED
+  CONVERSATION_CLOSED
+  TAG_ADDED
+  TAG_REMOVED
+  INTERNAL_NOTE_ADDED
+  ASSIGNMENT_CHANGED
+  ATTACHMENT_ADDED
+}
+
+// ---------- Models ----------
+model Contact {
+  id          String   @id @default(uuid())
+  tenantId    String
+  phoneNumber String
+  name        String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  conversations Conversation[]
+
+  @@unique([tenantId, phoneNumber])
+}
+
+model Conversation {
+  id           String   @id @default(uuid())
+  tenantId     String
+  contactId    String
+  status       ConversationStatus @default(NEW)
+  assignedTo   String?
+  leadId       String?
+  openedAt     DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  contact      Contact @relation(fields: [contactId], references: [id])
+  messages     Message[]
+  tags         ConversationTag[]
+  events       ConversationEvent[]
+  internalNotes InternalNote[]
+}
+
+model Message {
+  id                 String   @id @default(uuid())
+  conversationId     String
+  direction          MessageDirection
+  type               MessageType
+  content            String
+  providerMessageId String?
+  sentAt             DateTime?
+  receivedAt         DateTime @default(now())
+  status             MessageStatus @default(SENT)
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  // Relations
+  conversation       Conversation @relation(fields: [conversationId], references: [id])
+  attachments        Attachment[]
+}
+
+model Attachment {
+  id        String   @id @default(uuid())
+  messageId String
+  type      MessageType
+  url       String
+  mimeType  String
+  sizeBytes Int
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  // Relations
+  message   Message @relation(fields: [messageId], references: [id])
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  conversationTags ConversationTag[]
+
+  @@unique([tenantId, name])
+}
+
+model ConversationTag {
+  id             String   @id @default(uuid())
+  conversationId String
+  tagId          String
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  tag           Tag          @relation(fields: [tagId], references: [id])
+}
+
+model InternalNote {
+  id             String   @id @default(uuid())
+  conversationId String
+  authorId       String
+  content        String
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model ConversationEvent {
+  id             String   @id @default(uuid())
+  conversationId String
+  type           ConversationEventType
+  payload        Json
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+}
+
+// ============================================================
+// Milestone 1 – WhatsApp Connectivity
+// Adicionado em 2026-07-06. Não altera, não depende e não
+// referencia nenhum model/enum acima (domínio legado
+// "Conversations", Milestone 003 — migração adiada, ver
+// DECISIONS.md ADR #11 e PROJECT_STATUS.md §2.1).
+// ============================================================
+
+// ---------- Enums (WhatsApp Connectivity) ----------
+
+/// Espelha exatamente os 3 estados usados hoje em
+/// apps/api/src/services/whatsapp/domain/entities/WhatsAppSession.ts
+/// (`status: 'connected' | 'disconnected' | 'connecting'`).
+/// Propositalmente NÃO foram adicionados estados extras (ex.: "QR_PENDING",
+/// "ERROR") que ainda não existem na entidade de Domain — evita repetir o
+/// defeito já encontrado no schema legado (`ConversationStatus.CLOSED`
+/// referenciado em código/testes mas inexistente no enum real).
+enum WhatsAppSessionStatus {
+  CONNECTING
+  CONNECTED
+  DISCONNECTED
+
+  @@map("whatsapp_session_status")
+}
+
+/// Espelha `WhatsAppDisconnectReason`
+/// (apps/api/src/services/whatsapp/domain/entities/WhatsAppDisconnectReason.ts),
+/// Production Hardening Bloco 8a — motivo da ÚLTIMA desconexão, campo
+/// SEPARADO de `WhatsAppSessionStatus` (ver docstring do tipo de Domain para
+/// a justificativa de não misturar estado com motivo). `NULL` enquanto nunca
+/// houve queda, ou depois que a sessão volta a se conectar (limpo pela
+/// Application/Infrastructure, não pelo banco).
+enum WhatsAppDisconnectReason {
+  LOGGED_OUT
+  RESTART_REQUIRED
+  CONNECTION_LOST
+  TIMED_OUT
+  UNKNOWN
+
+  @@map("whatsapp_disconnect_reason")
+}
+
+/// Corrige o achado F6 do Architecture Gate Review (2026-07-06): `provider`
+/// era `String` livre, permitindo divergências como `'Baileys'` vs
+/// `'baileys'` — a mesma classe de bug já encontrada no schema legado
+/// (`ConversationStatus.CLOSED` inexistente, mas referenciado em código).
+/// Hoje só existe `BAILEYS`, o único provider decidido (ver DECISIONS.md,
+/// item 10). Novos valores são adicionados apenas quando uma segunda
+/// implementação real de `WhatsAppProvider` existir — não antecipamos
+/// `EVOLUTION_API`/`CLOUD_API`/etc. especulativamente (YAGNI; ver também a
+/// decisão registrada para o achado F9, que evita generalizar o port antes
+/// de uma segunda necessidade real).
+enum WhatsAppProviderType {
+  BAILEYS
+
+  @@map("whatsapp_provider_type")
+}
+
+// ---------- Enums (Conversas — Milestone 3, Bloco 2) ----------
+
+/// Controla se a IA responde automaticamente a novas mensagens de uma
+/// `WhatsAppConversation` (`BOT`) ou se um humano assumiu o atendimento
+/// (`HUMAN`) — ver `shouldAutoRespond()` (Domain, `services/conversations`).
+/// Enum, não `Boolean`: mesmo racional do achado F6/ADR #15 (já aplicado a
+/// `WhatsAppSessionStatus`/`WhatsAppProviderType`) — um valor auto-explicativo
+/// no banco em vez de um `assignedToHuman: true` que exige ler código para
+/// entender o sentido.
+enum WhatsAppConversationStatus {
+  BOT
+  HUMAN
+
+  @@map("whatsapp_conversation_status")
+}
+
+/// Sentido de uma `WhatsAppMessage` dentro de uma conversa. Nome
+/// deliberadamente prefixado `WhatsAppMessage`, não `MessageDirection`: o
+/// schema já tem um enum `MessageDirection` no domínio legado "Milestone
+/// 003" (congelado, ADR #11) — ver nota de colisão de nomenclatura no model
+/// `WhatsAppMessage` abaixo.
+enum WhatsAppMessageDirection {
+  INBOUND
+  OUTBOUND
+
+  @@map("whatsapp_message_direction")
+}
+
+// ---------- Models (WhatsApp Connectivity) ----------
+
+/// Preparação multi-tenant (CLAUDE.md, regra permanente 6: "pensar no
+/// crescimento: design para multi-tenant desde o início"). Este model existe
+/// para que a FK de WhatsAppSession tenha integridade referencial real, em
+/// vez de um tenantId solto sem @relation (o mesmo defeito encontrado no
+/// schema legado, onde tenantId é String sem FK em 3 tabelas). A entidade de
+/// Domain WhatsAppSession (TS) também já expõe `tenantId` (adicionado na
+/// revisão arquitetural pós-Item 2 — ver PROJECT_STATUS.md).
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// Hash da API key emitida para este tenant (Production Hardening, Bloco
+  /// 1) — nunca a chave em texto plano. `null` até uma chave ser emitida
+  /// (provisionamento continua manual nesta milestone; ver
+  /// TenantRepository.ts). `@unique` permite localizar o tenant pelo hash em
+  /// O(1) e garante que duas chaves nunca colidam no mesmo hash.
+  apiKeyHash String? @unique @map("api_key_hash")
+
+  whatsAppSessions      WhatsAppSession[]
+  tenantCredentials     TenantCredential[]
+  whatsAppSessionEvents WhatsAppSessionEvent[]
+  whatsAppConversations WhatsAppConversation[]
+  aiInteractions        AiInteraction[]
+  // Milestone 5, Bloco M5A — usuarios e trilha de auditoria do tenant.
+  users                 User[]
+  auditLogs             AuditLog[]
+  // Base de Conhecimento (Nivel 1) — perfil de negocio unico por tenant.
+  aiBusinessProfile     AiBusinessProfile?
+
+  @@map("tenants")
+}
+
+/// Espelha apps/api/src/services/whatsapp/domain/entities/WhatsAppSession.ts
+/// (incluindo `tenantId`, adicionado na revisão arquitetural pós-Item 2, e
+/// `provider` tipado como enum desde o achado F6 do Architecture Gate
+/// Review). Credenciais Baileys/authState não fazem parte deste model — não
+/// por estarem indefinidas (essa lacuna foi resolvida, ver `TenantCredential`
+/// abaixo e ADR #21), mas por decisão arquitetural deliberada: o ciclo de
+/// vida de um segredo é desacoplado do registro operacional de sessão, então
+/// vivem em tabelas diferentes.
+model WhatsAppSession {
+  id          String                @id @default(uuid())
+  tenantId    String                @map("tenant_id")
+  sessionName String                @map("session_name")
+  provider    WhatsAppProviderType  @default(BAILEYS)
+  status      WhatsAppSessionStatus @default(DISCONNECTED)
+  /// Motivo da última desconexão (Production Hardening, Bloco 8a) — ver
+  /// enum `WhatsAppDisconnectReason` acima. Nullable: `NULL` até a primeira
+  /// queda, ou depois de reconectar.
+  disconnectReason WhatsAppDisconnectReason? @map("disconnect_reason")
+  phoneNumber String?               @map("phone_number")
+  connectedAt DateTime?             @map("connected_at")
+  lastSeen    DateTime?             @map("last_seen")
+  /// Milestone 5, Bloco M5A (D57) — ownership: qual usuario criou esta sessao.
+  /// Coluna aditiva/nullable, SEM FK (referencia por id, decoupled — mesmo
+  /// principio de `AiInteraction.conversationId`; o contexto de WhatsApp nao
+  /// conhece a entidade `User`). Preenchimento e comportamento ficam no M5D;
+  /// aqui so existe a coluna (mesma disciplina dos indices "prontos, YAGNI").
+  createdByUserId String?           @map("created_by_user_id")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Uma sessão lógica (sessionName) é única por tenant. Isto formaliza,
+  /// no nível de banco, a decisão arquitetural já aprovada: reconexão deve
+  /// reaproveitar/atualizar o registro existente, nunca criar duplicata.
+  /// `SessionManager.init(tenantId, sessionName)` já implementa esse reuso
+  /// via `WhatsAppSessionRepository.findByTenantAndSessionName` (revisão
+  /// arquitetural pós-Item 2 — ver PROJECT_STATUS.md).
+  @@unique([tenantId, sessionName])
+  @@index([tenantId])
+  @@index([status])
+  @@map("whatsapp_sessions")
+}
+
+/// Histórico append-only de transições de status de uma sessão do WhatsApp
+/// (M2, Fase 2 — espelha `WhatsAppSessionEvent.ts`, Domain). Reaproveita o
+/// mesmo padrão já usado no domínio legado entre `Conversation`/
+/// `ConversationEvent`: `WhatsAppSession` é o estado ATUAL (sobrescrito a
+/// cada transição); esta tabela é o LOG (uma linha por transição, nunca
+/// sobrescrita/apagada).
+///
+/// Sem FK para WhatsAppSession (só para Tenant) — mesmo racional já usado
+/// para `TenantCredential` acima: o histórico deve sobreviver à remoção da
+/// sessão (`WhatsAppSessionService.removeSession()`, M2 Fase 1), então uma
+/// FK para `WhatsAppSession.id` (com `onDelete: Cascade` ou `SetNull`)
+/// serviria mal um log de auditoria — ou apagaria o histórico junto, ou
+/// quebraria a rastreabilidade de qual sessão gerou cada evento.
+model WhatsAppSessionEvent {
+  id               String                     @id @default(uuid())
+  tenantId         String                     @map("tenant_id")
+  sessionName      String                     @map("session_name")
+  status           WhatsAppSessionStatus
+  disconnectReason WhatsAppDisconnectReason?  @map("disconnect_reason")
+  occurredAt       DateTime                   @map("occurred_at")
+  createdAt        DateTime                   @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Suporta diretamente `listRecentByTenantAndSessionName()` (filtro por
+  /// tenant+sessão, ordenado por `occurredAt` desc, com `limit`).
+  @@index([tenantId, sessionName, occurredAt])
+  @@map("whatsapp_session_events")
+}
+
+/// Persistência genérica de segredos por tenant (port `CredentialsStore` em
+/// `apps/api/src/shared/security/domain/CredentialsStore.ts`). Adicionado
+/// para resolver a lacuna de persistência de credenciais/authState do
+/// Baileys (antigo P2 do Architecture Review / M1A.6), mas deliberadamente
+/// NÃO chamado `WhatsAppCredential`: o formato é chave-valor namespaced,
+/// sem nenhum conceito de WhatsApp — reutilizável por qualquer futuro
+/// consumidor que precise guardar segredos por tenant (outro provider de
+/// WhatsApp, integrações de IA, OAuth de CRM), sem exigir uma tabela nova a
+/// cada novo tipo de segredo.
+///
+/// Sem FK para WhatsAppSession (só para Tenant): o ciclo de vida de um
+/// segredo é deliberadamente desacoplado do registro operacional de sessão
+/// — se o registro de WhatsAppSession precisar ser recriado por qualquer
+/// motivo, um `onDelete: Cascade` até ele não deve apagar credenciais (o
+/// artefato mais caro de recriar: perdê-lo força o usuário a escanear QR
+/// Code novamente). Reforça o racional já registrado no achado F5 (adiado)
+/// sobre separar identidade de canal (durável) de sessão de conexão
+/// (efêmera).
+///
+/// `value` já chega criptografado (AES-256-GCM, chave derivada por tenant —
+/// ver `AesGcmCipher`) — este model nunca guarda texto plano.
+model TenantCredential {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  namespace String
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, namespace, key])
+  @@index([tenantId, namespace])
+  @@map("tenant_credentials")
+}
+
+/// Conversa lógica entre um contato do WhatsApp e um tenant — Milestone 3,
+/// Bloco 2 (espelha `services/conversations/domain/entities/Conversation.ts`).
+///
+/// Nome deliberadamente `WhatsAppConversation`, não `Conversation`: o schema
+/// já tem um model `Conversation` no domínio legado "Milestone 003"
+/// (congelado, ADR #11, ver seção de Enums/Models no topo deste arquivo) — o
+/// Prisma Client gera um namespace ÚNICO por schema, e dois models com o
+/// mesmo nome não compilam. Mesmo prefixo `WhatsApp` já usado por
+/// `WhatsAppSession`/`WhatsAppSessionEvent` para toda a seção "WhatsApp
+/// Connectivity". Risco já previsto e mitigado exatamente assim em
+/// `MILESTONE_003_AI_AUTORESPONDER.md` §5 ("Colisão de nomenclatura com o
+/// domínio legado: mapear com `@@map` explícito no Bloco 2").
+model WhatsAppConversation {
+  id          String                     @id @default(uuid())
+  tenantId    String                     @map("tenant_id")
+  sessionName String                     @map("session_name")
+  /// JID do contato no WhatsApp (`InboundWhatsAppMessage.from`, Bloco 1).
+  contactJid String                      @map("contact_jid")
+  status      WhatsAppConversationStatus @default(BOT)
+  /// Milestone 5, Bloco M5A (D57) — ownership: qual usuario assumiu esta
+  /// conversa (o "dono atual" do atendimento). Coluna aditiva/nullable, SEM
+  /// FK (referencia por id, decoupled — o contexto de conversas nao conhece
+  /// a entidade `User`). Preenchimento no M5D (escalate/resume/reassign);
+  /// o historico atribuido vive no `AuditLog`.
+  assignedToUserId String?             @map("assigned_to_user_id")
+  createdAt   DateTime                   @default(now()) @map("created_at")
+  updatedAt   DateTime                   @updatedAt @map("updated_at")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages WhatsAppMessage[]
+
+  /// Chave lógica única de uma conversa: um contato só tem UMA conversa por
+  /// sessão de um tenant. Formaliza no banco a mesma garantia que
+  /// `PrismaConversationRepository.upsertByTenantSessionAndContact()`
+  /// depende para ser atômico (mesmo racional de
+  /// `WhatsAppSession.@@unique([tenantId, sessionName])`, ADR #25/P6).
+  @@unique([tenantId, sessionName, contactJid])
+  @@index([tenantId])
+  @@map("whatsapp_conversations")
+}
+
+/// Uma mensagem (inbound ou outbound) de uma `WhatsAppConversation` —
+/// Milestone 3, Bloco 2 (espelha
+/// `services/conversations/domain/entities/Message.ts`). Append-only: nunca
+/// atualizada após criada (sem `updatedAt`, mesmo padrão de
+/// `WhatsAppSessionEvent`).
+///
+/// Nome deliberadamente `WhatsAppMessage`, não `Message` — mesmo racional de
+/// colisão com o domínio legado já documentado em `WhatsAppConversation`
+/// acima.
+///
+/// COM FK para `WhatsAppConversation` (`onDelete: Cascade`), diferente do
+/// padrão "sem FK" usado por `WhatsAppSessionEvent`/`TenantCredential`: essas
+/// duas são logs de AUDITORIA que devem sobreviver à entidade que
+/// referenciam; `WhatsAppMessage` não é um log de auditoria independente —
+/// é conteúdo que pertence genuinamente à conversa (mesmo racional do model
+/// legado `Message.conversation @relation(...)`, sem cascade explícito lá,
+/// mas com o mesmo sentido de posse).
+model WhatsAppMessage {
+  id             String                   @id @default(uuid())
+  tenantId       String                   @map("tenant_id")
+  conversationId String                   @map("conversation_id")
+  direction      WhatsAppMessageDirection
+  content        String
+  /// Instante de negócio (recebida/enviada) — distinto de `createdAt`
+  /// (quando a linha foi persistida). Mesmo padrão de
+  /// `WhatsAppSessionEvent.occurredAt`.
+  occurredAt DateTime                     @map("occurred_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// Suporta uma futura listagem cronológica de mensagens de uma conversa
+  /// (`PromptBuilder`, Bloco 3a — não implementada ainda, YAGNI, mas o índice
+  /// já é a decisão de schema correta desde já).
+  @@index([conversationId, occurredAt])
+  @@index([tenantId])
+  /// Milestone 4 (Analytics), Bloco M4A — D43/ADR #59. Série temporal
+  /// tenant-wide (fluxo inbound/outbound por dia): as consultas de analytics
+  /// filtram por `tenantId` + range de `occurredAt`, sem `conversationId`. O
+  /// índice `[conversationId, occurredAt]` acima não serve esse padrão
+  /// (prefixo errado); `[tenantId]` sozinho não cobre o range temporal.
+  /// Índice estritamente aditivo — nenhuma coluna/constraint/contrato
+  /// alterado. Analytics é read-only (D51): este índice só acelera leitura.
+  @@index([tenantId, occurredAt])
+  @@map("whatsapp_messages")
+}
+
+// ---------- Enums (IA — Milestone 3, Bloco 3b) ----------
+
+/// Provider de IA que gerou uma `AiInteraction`. Enum, não `string` livre —
+/// mesmo racional do achado F6/ADR #15. Nome deliberadamente `AiProviderType`,
+/// não `AiProvider` (colidiria com o nome do port de Domain
+/// `services/ai/domain/providers/AiProvider.ts`) nem `WhatsAppProviderType`
+/// (que já existe e significa outra coisa — provider de CONEXÃO, `BAILEYS`;
+/// este enum é o provider de GERAÇÃO DE TEXTO). Valores espelham
+/// `AiProviderName` (Domain, `services/ai/domain/providers/AiProviderName.ts`);
+/// mapeamento `'claude'` ↔ `CLAUDE` via `Record`, mesmo padrão de
+/// `DIRECTION_TO_PRISMA` em `PrismaMessageRepository.ts`.
+enum AiProviderType {
+  CLAUDE
+  OPENAI
+  GEMINI
+
+  @@map("ai_provider_type")
+}
+
+/// Resultado de uma tentativa de geração de resposta de IA — espelha
+/// `ConversationAiResult['status']` (Application,
+/// `services/ai/application/ConversationAiService.ts`). Sem `TIMEOUT`: mesmo
+/// racional já documentado em `ConversationAiResult` (Bloco 3a) — nenhum
+/// código deste projeto ainda distingue timeout de outros erros de provider.
+enum AiInteractionStatus {
+  SUCCESS
+  VALIDATION_REJECTED
+  PROVIDER_ERROR
+
+  @@map("ai_interaction_status")
+}
+
+// ---------- Models (IA — Milestone 3, Bloco 3b) ----------
+
+/// Registro de auditoria/billing de UMA tentativa de geração de resposta de
+/// IA — Milestone 3, Bloco 3b (espelha
+/// `services/ai/domain/entities/AiInteraction.ts`). Append-only, gravado em
+/// TODA tentativa (sucesso, validação rejeitada, erro do provider) — nunca
+/// só nos sucessos (critério de aceite,
+/// `MILESTONE_003_AI_AUTORESPONDER.md` §6).
+///
+/// SEM FK para `WhatsAppConversation`/`WhatsAppMessage` (só para `Tenant`) —
+/// mesmo racional já usado 2x neste projeto para logs de auditoria:
+/// `TenantCredential` sem FK para `WhatsAppSession` (ADR #21);
+/// `WhatsAppSessionEvent` chaveado por `tenantId`+`sessionName`, não
+/// `sessionId` (ADR #49). Um registro de billing deve sobreviver à exclusão
+/// da conversa que audita (ex.: retenção de dados/LGPD) — se
+/// `WhatsAppConversation`/`WhatsAppMessage` forem um dia apagadas, o custo já
+/// registrado não deveria desaparecer junto.
+///
+/// `model`/`messageId` são nullable — `model` porque, no caminho
+/// `PROVIDER_ERROR`, a chamada ao provider falhou antes de qualquer resposta
+/// chegar (o `model` real só é conhecido pela resposta da API); `messageId`
+/// porque o Bloco 3b não cria a `Message` outbound com a resposta da IA
+/// (isso só acontece quando o envio de fato ocorre, Bloco 4).
+///
+/// `costUsd` é `Decimal`, nunca `Float` — arredondamento de ponto flutuante
+/// não é aceitável para dinheiro (`MILESTONE_003_AI_AUTORESPONDER.md` §2.7,
+/// Decisão A). `Decimal(12, 8)`: 8 casas decimais — custo por token costuma
+/// ser frações de centavo.
+model AiInteraction {
+  id             String               @id @default(uuid())
+  tenantId       String               @map("tenant_id")
+  conversationId String               @map("conversation_id")
+  messageId      String?              @map("message_id")
+  provider       AiProviderType
+  model          String?
+  promptVersion  String               @map("prompt_version")
+  tokensInput    Int                  @map("tokens_input")
+  tokensOutput   Int                  @map("tokens_output")
+  costUsd        Decimal              @map("cost_usd") @db.Decimal(12, 8)
+  latencyMs      Int                  @map("latency_ms")
+  status         AiInteractionStatus
+  errorMessage   String?              @map("error_message") @db.Text
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Suporta consultas futuras de billing/auditoria por tenant+conversa,
+  /// ordenadas por data (Bloco 5, `listByTenant()`/`sumCostByTenant()` —
+  /// não implementadas ainda, YAGNI, mas o índice já é a decisão de schema
+  /// correta desde já, mesmo padrão de `WhatsAppMessage.conversationId`).
+  @@index([tenantId, conversationId, createdAt])
+  /// Milestone 4 (Analytics), Bloco M4A — D43/ADR #59. Série temporal
+  /// tenant-wide de uso de IA (custo/tokens/latência/status por dia): as
+  /// consultas de analytics filtram por `tenantId` + range de `createdAt`,
+  /// SEM `conversationId`. O índice `[tenantId, conversationId, createdAt]`
+  /// acima tem `conversationId` no meio, então não serve uma agregação por
+  /// tenant que ignora a conversa (o range de `createdAt` não é usável sem
+  /// fixar `conversationId`). Índice estritamente aditivo — nenhuma
+  /// coluna/constraint/contrato alterado. Analytics é read-only (D51): este
+  /// índice só acelera leitura.
+  @@index([tenantId, createdAt])
+  @@map("ai_interactions")
+}
+
+/// Base de Conhecimento (Nivel 1) — "Cerebro da IA" por empresa. UM texto
+/// livre por tenant onde o dono do negocio descreve quem e a empresa, o que
+/// vende, precos, horarios e regras de atendimento. Esse texto e ANEXADO ao
+/// prompt de sistema base (nao o substitui — as regras de seguranca anti-
+/// alucinacao/escalonamento continuam sempre ativas; ver PromptBuilder).
+///
+/// `tenantId @unique`: relacao 1:1 com Tenant — ha no maximo um perfil por
+/// empresa. Deliberadamente uma tabela DEDICADA (nao uma coluna em Tenant):
+/// o bounded context `ai` e dono desta config, mantendo `Tenant` enxuto e a
+/// fronteira limpa (mesmo espirito de `AiInteraction`). NAO reusa o nome
+/// "KnowledgeBase" da §10 do CLAUDE.md — aquele fica reservado para o Nivel 2
+/// (RAG com embeddings, multiplas entradas); este e o blob unico do Nivel 1.
+///
+/// `content` @db.Text: sem limite pratico de tamanho (catalogos podem ser
+/// longos). Aditiva e isolada: nenhuma tabela existente e alterada.
+model AiBusinessProfile {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique @map("tenant_id")
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ai_business_profiles")
+}
+
+// ---------- Enums (Auth / Multiusuario — Milestone 5, Bloco M5A) ----------
+
+/// Papel (cargo) de um usuario dentro de um tenant. RBAC FIXO em codigo
+/// (D55): os papeis sao um conjunto fechado, versionado junto com o codigo,
+/// nao linhas editaveis. Papel UNICO por usuario (D56). Mapeado para as
+/// unioes literais do Domain via Record (mesmo padrao de
+/// `DIRECTION_TO_PRISMA`/`PROVIDER_TO_PRISMA`).
+enum UserRole {
+  OWNER
+  ADMINISTRATOR
+  MANAGER
+  OPERATOR
+  READ_ONLY
+
+  @@map("user_role")
+}
+
+/// Estado de uma conta de usuario. `SUSPENDED` bloqueia login sem apagar a
+/// ficha (preserva historico/auditoria) — mesmo espirito de soft-delete.
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@map("user_status")
+}
+
+// ---------- Models (Auth / Multiusuario — Milestone 5, Bloco M5A) ----------
+
+/// Usuario (pessoa) que acessa o Dashboard, dentro de um tenant — Milestone
+/// 5, Bloco M5A (espelha `services/auth/domain/entities/User.ts`).
+///
+/// `email` unico POR TENANT (nao global): a mesma pessoa poderia, no futuro,
+/// existir em duas empresas distintas (D64 mantem 1 tenant por usuario no
+/// MVP, mas a unicidade composta ja deixa a porta certa). `passwordHash`
+/// nunca a senha em texto plano (mesmo principio de `Tenant.apiKeyHash`) —
+/// o algoritmo de hash de senha (Argon2/bcrypt) e escopo do M5B.
+model User {
+  id           String     @id @default(uuid())
+  tenantId     String     @map("tenant_id")
+  email        String
+  passwordHash String     @map("password_hash")
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?  @map("last_login_at")
+
+  /// Marca uma senha PROVISORIA (definida por um admin no convite/reset).
+  /// Enquanto `true`, o usuario e obrigado a trocar a senha antes de usar o
+  /// sistema — Milestone 5, Bloco M5E (D64). Default `false` para nao afetar
+  /// nenhuma conta ja existente (o OWNER criado via script, por exemplo).
+  mustChangePassword Boolean @default(false) @map("must_change_password")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+/// Token de renovacao de sessao (o "cartao de ponto" de longa duracao) —
+/// Milestone 5, Bloco M5A. Guardamos so o HASH do token, nunca o valor cru
+/// (mesmo principio de `apiKeyHash`/`passwordHash`): quem vaza o banco nao
+/// consegue reusar os tokens. `revokedAt` permite REVOGAR (logout, troca de
+/// senha, deteccao de roubo) sem apagar a linha — a rotacao e a deteccao de
+/// reuso sao escopo do M5B. COM FK para `User` (Cascade): o token nao e um
+/// log de auditoria independente, pertence ao usuario e some com ele.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  userAgent String?   @map("user_agent")
+  ip        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Trilha de auditoria append-only (o "livro da portaria") — Milestone 5,
+/// Bloco M5A. Uma linha por evento relevante (login, mudanca de permissao,
+/// acao critica), atribuida a um ator. Nunca atualizada/apagada (mesmo
+/// padrao imutavel de `AiInteraction`/`WhatsAppSessionEvent`).
+///
+/// `actorUserId` e uma String nullable SEM FK (nao um relation Prisma) — de
+/// proposito, exatamente como `AiInteraction` faz com `conversationId`: um
+/// registro de auditoria deve SOBREVIVER a exclusao do usuario que agiu, E
+/// preservar o id de quem foi (uma FK `SetNull` apagaria o autor; sem FK, o
+/// id fica gravado para sempre). `metadata` (Json) guarda detalhes livres do
+/// evento sem exigir uma coluna por tipo.
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  metadata    Json?
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, actorUserId, occurredAt])
+  @@index([tenantId, action, occurredAt])
+  @@map("audit_logs")
+}

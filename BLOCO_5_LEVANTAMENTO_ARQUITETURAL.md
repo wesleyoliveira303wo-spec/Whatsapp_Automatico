@@ -1,0 +1,262 @@
+# Levantamento Arquitetural — Milestone 3, Bloco 5
+
+> Documento de planejamento. Nenhum código foi implementado a partir daqui — mesmo processo já usado nos Blocos 3A, 3B e 4 (ver `DECISIONS.md` ADRs #52–#56). Escopo desta rodada: **somente pesquisa e identificação de decisões pendentes**, sem qualquer alteração de arquivo de código. Todas as afirmações abaixo foram verificadas por leitura direta de código/documentação nesta sessão (`Read`/`Grep`), não por suposição.
+
+---
+
+## 1. Resumo Executivo
+
+O Bloco 5, conforme descrito em `MILESTONE_003_AI_AUTORESPONDER.md` §3, parecia — pela redação do documento — um bloco relativamente mecânico: "expor 5 rotas REST + montar dois composition roots novos". A leitura direta do código mostrou que **não é**. Três achados mudam a natureza do bloco:
+
+1. **O pipeline inbound nunca foi ligado em produção.** `MessageIngestionService` (Bloco 2) está implementado, testado e correto — mas a própria classe já diz, na sua docstring, que "ainda não wired em nenhum composition root real; isso é Bloco 5". `WhatsAppConnectionRegistry.getOrCreate()` hoje constrói todo `SessionManager` com o 6º parâmetro (`messageReceivedHandler`) implicitamente `undefined`. **Isso significa que, no estado atual do projeto, nenhuma mensagem recebida por WhatsApp jamais chega a `services/conversations`, `services/ai`, ou a qualquer fila BullMQ** — o autoresponder inteiro (Blocos 1–4) está construído, testado unitariamente, mas nunca foi de fato acionado por um evento real. Ligar isso é, na prática, o coração do Bloco 5, não uma rota REST.
+2. **`apps/api` (processo HTTP) nunca tocou BullMQ/Redis.** `index.ts`, até hoje, só conhece Express + Prisma + o módulo `whatsapp`. O Bloco 5 é o primeiro ponto em que o processo HTTP precisa (a) publicar jobs na fila `ai-reply` (produtor real de `AiReplyScheduler`, hoje só usado por `worker.ts`, um processo diferente) e (b) **consumir** a fila `whatsapp-outbound` de verdade (`OutboundCommandConsumer` já existe e já está testado, mas nunca foi envolvido por um `bullmq.Worker` real — isso também é, textualmente, "escopo do Bloco 5", segundo a própria docstring do arquivo). Isso introduz gerenciamento de conexão Redis, graceful shutdown e um novo `bullmq.Worker` rodando dentro do mesmo processo Node que serve HTTP — algo que `index.ts` nunca fez.
+3. **Três dos cinco endpoints REST exigem métodos de repositório que não existem.** `ConversationRepository` não tem como listar conversas nem mudar `status` (a própria docstring do método `upsertByTenantSessionAndContact` diz: "mudar `status` é uma operação distinta, própria do Bloco 5"). `AiInteractionRepository` só tem `record()`/`linkMessage()` — nenhum método de leitura existe (a docstring do port diz textualmente que isso é adiado "até o Bloco 5"). Isso não é wiring, é uma extensão real dos ports de Domain — a mesma disciplina de decisão que já aplicamos aos gaps aditivos do Bloco 4 (`findById`, `listRecentByConversation`) se aplica aqui, num volume maior.
+
+Nenhum destes três pontos bloqueia o Bloco 5 — mas todos exigem uma decisão explícita ANTES de qualquer código, exatamente pelo motivo que motivou este levantamento: são mudanças estruturais (assinatura de construtor já protegida por ADR, sequenciamento de composition root, contratos de port novos) que, se decididas no meio da implementação, tendem a gerar retrabalho.
+
+Identifiquei **11 decisões pendentes (D5–D15)**, organizadas em três grupos: **wiring do pipeline inbound** (D5), **infraestrutura de fila dentro de `apps/api`** (D6–D9), e **contratos de Presentation/Domain para os 5 endpoints REST** (D10–D15).
+
+---
+
+## 2. Decisões Arquiteturais Pendentes
+
+### D5 — Como `MessageIngestionService` é injetado em `SessionManager`, dado que o pipeline inbound nunca foi ligado
+
+**Descrição técnica**: `SessionManager` já aceita `MessageReceivedHandler` como 6º parâmetro opcional do construtor (Bloco 1) e já repassa eventos `message_received` para ele (com try/catch, log em falha). O problema é inteiramente de **composição**: `WhatsAppConnectionRegistry.getOrCreate()` constrói `new SessionManager(provider, sessionKey, this.repo, this.logger, this.eventRepository)` — só 5 argumentos, `messageReceivedHandler` sempre `undefined`. Para que uma mensagem chegue a `MessageIngestionService`, o `Registry` precisa aprender a passar o handler adiante. Mas `WhatsAppConnectionRegistry` é construído por `createWhatsAppSessionsRegistry()` (`services/whatsapp/compositionRoot.ts`), cuja assinatura está **explicitamente protegida** por decisão anterior: a ADR #45 diz "a assinatura desta função (parâmetros/retorno) continua INALTERADA (ADR #45 preservada)" — reafirmada de novo na Fase 2 da Milestone 2. Mudar essa assinatura agora contraria uma decisão já registrada duas vezes.
+
+**Impacto arquitetural**: este é o único ponto de todo o Bloco 5 que toca um contrato **já protegido por ADR**. Qualquer opção escolhida precisa reconhecer explicitamente que está revisando (não violando por descuido) a ADR #45.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Novo parâmetro opcional em `WhatsAppConnectionRegistry`/`createWhatsAppSessionsRegistry`** (RECOMENDADA) | `WhatsAppConnectionRegistry` ganha um 5º parâmetro de construtor, `messageReceivedHandler?: MessageReceivedHandler` (opcional — mesmo padrão já usado por `SessionManager`), repassado a cada `SessionManager` criado por `getOrCreate()`. `createWhatsAppSessionsRegistry()` ganha o mesmo parâmetro opcional no final da lista. | Mudança **aditiva** (parâmetro opcional, no final) — todo código existente que já chama essas duas funções/construtores (testes, `compositionRoot.test.ts`, `WhatsAppSessionService.test.ts`, `whatsAppSessionsIntegration.test.ts`) continua compilando sem alteração. Revisa a ADR #45 de forma mínima e documentável (uma linha nova, não uma reescrita). Mantém `Registry` como pool puro — só passa o handler adiante, nunca decide nada sobre ele. | Ainda assim é uma mudança na assinatura de uma função que duas ADRs disseram que ficaria estável — precisa de uma nova entrada em `DECISIONS.md` explicando por que a estabilidade prometida não se aplica a uma extensão aditiva. |
+| **B — `getOrCreate()` recebe o handler como parâmetro de chamada, não do construtor** | `getOrCreate(tenantId, sessionName, handler?)` — quem chama (`WhatsAppSessionService`? `index.ts`?) passa o handler a cada chamada. | Evita tocar o construtor do `Registry`. | Quebra a garantia de "mesma instância para a mesma chave" de forma sutil: se a primeira chamada não passar handler e uma chamada posterior passar, o `SessionManager` já criado (sem handler) nunca ganha o handler depois — inconsistência silenciosa. Espalha a decisão de "qual handler usar" para todo lugar que chama `getOrCreate()` (hoje: `WhatsAppSessionService`, `OutboundCommandConsumer` — nenhum dos dois deveria saber de `MessageIngestionService`). Pior encapsulamento que a Opção A. |
+| **C — `SessionManager` resolve o handler via um Service Locator/registro global** | Um singleton/registro estático fornece o handler atual. | Nenhuma mudança de assinatura em lugar nenhum. | Contraria diretamente o estilo de Injeção de Dependência explícita usado em 100% do projeto até aqui (nenhuma classe deste código busca dependência por um registro global) — introduziria a primeira exceção a um padrão consistente, sem necessidade real. Rejeitada. |
+
+**Recomendação**: **A**. É a única opção que preserva "mesma instância por chave" sem espalhar a decisão de wiring para fora do composition root, e o custo de revisar a ADR #45 é pequeno porque a mudança é estritamente aditiva (parâmetro opcional no fim da lista) — o mesmo padrão que o próprio `SessionManager` já usou quando ganhou `messageReceivedHandler` no Bloco 1.
+
+**Justificativa baseada na arquitetura existente**: o projeto já tem um precedente idêntico — quando `WhatsAppSessionEventRepository` foi adicionado ao `Registry` (M2, Fase 2), a ADR correspondente documentou exatamente esse tipo de mudança ("o corpo ganhou uma linha a mais... mudança estruturalmente inevitável") sem reescrever a função. D5-A segue o mesmo molde.
+
+**Onde o wiring de fato acontece**: como `MessageReceivedHandler`/`AiReplyScheduler` são ports de Domain (o primeiro em `services/whatsapp/domain`, o segundo em `services/conversations/domain`), a implementação concreta de `MessageIngestionService` só pode ser CONSTRUÍDA em um composition root que conheça `services/conversations` — nunca dentro de `services/whatsapp/compositionRoot.ts` (que não deveria importar nada de `conversations`, mantendo a direção de dependência correta). Isso implica que o composition root de mais alto nível (`index.ts`, ou uma nova função que ele chama) precisa: (1) montar `createConversationsComposition()` (D15) PRIMEIRO — que por sua vez precisa do produtor real de `AiReplyScheduler` (D6) — e SÓ DEPOIS (2) chamar `createWhatsAppSessionsRegistry(..., messageIngestionService)`. Isso é uma mudança de ORDEM de composição, não só de assinatura — hoje `mountWhatsAppSessionsRoutes()` não tem noção de sequenciamento porque só monta uma cadeia.
+
+---
+
+### D6 — Onde e como o produtor real de `ai-reply` (`BullMqAiReplyScheduler`) é construído dentro de `apps/api`
+
+**Descrição técnica**: `MessageIngestionService` precisa de uma implementação REAL de `AiReplyScheduler` (hoje só `BullMqAiReplyScheduler`, Infrastructure de `services/conversations`). Isso exige uma `Queue<AiReplyJobData>` do BullMQ e uma conexão `ioredis` — nenhuma das duas existe hoje dentro do processo `apps/api`; `worker.ts` (processo separado) é o único lugar do projeto que hoje constrói conexões Redis.
+
+**Impacto arquitetural**: primeira vez que `index.ts`/`apps/api` depende de Redis para uma funcionalidade central (não apenas opcional). Introduz gerenciamento de conexão (criação, erro de conexão, fechamento gracioso) num processo que até agora só geria HTTP + Postgres.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Nova função `createConversationsComposition(prisma, redisConnection)` em `services/conversations/compositionRoot.ts`, que constrói a `Queue` internamente** (RECOMENDADA) | Espelha exatamente `createWhatsAppSessionsComposition` — a função recebe as peças transversais já prontas (Prisma, conexão Redis) e monta toda a cadeia (`ConversationRepository`, `MessageRepository`, `BullMqAiReplyScheduler`, `MessageIngestionService`) internamente. `index.ts` constrói a conexão Redis UMA vez e a repassa. | Consistente com o padrão já estabelecido (`createWhatsAppSessionsComposition`). Um único ponto de conhecimento da cadeia completa de `conversations`, testável isoladamente (mesmo padrão de `compositionRoot.test.ts`). | Nenhuma real — é a extensão natural do padrão já usado 2x no projeto. |
+| **B — `index.ts` constrói a `Queue`/`BullMqAiReplyScheduler` diretamente, sem composition root dedicado** | Tudo inline em `index.ts`. | Menos um arquivo. | `index.ts` já está crescendo (rotas WhatsApp, agora conversas, agora IA) — colocar a construção de uma cadeia inteira inline contraria diretamente o padrão de composition root já estabelecido nas últimas 3 milestones, e tornaria `index.ts` o único lugar do projeto que mistura orquestração de composição com bootstrap de processo. Rejeitada. |
+
+**Recomendação**: **A**.
+
+**Justificativa**: é literalmente o que `MILESTONE_003_AI_AUTORESPONDER.md` §3-Bloco5 já pede ("Composition root novo: `createConversationsComposition`") — a única parte nova é a decisão de que essa função recebe a conexão Redis já pronta (não a constrói ela mesma), para permitir reaproveitar a MESMA conexão entre o produtor `ai-reply` (D6) e o consumidor `whatsapp-outbound` (D7) — ver D9 sobre o trade-off de conexão única vs. múltipla.
+
+---
+
+### D7 — Onde e como o consumidor real de `whatsapp-outbound` (`bullmq.Worker` envolvendo `OutboundCommandConsumer`) é construído e iniciado dentro de `apps/api`
+
+**Descrição técnica**: `OutboundCommandConsumer.consume()` já existe, já é testado com Fakes — mas NINGUÉM hoje o invoca a partir de um job real. Alguém precisa criar `new Worker(WHATSAPP_OUTBOUND_QUEUE_NAME, job => consumer.consume(job.data), { connection })` dentro do processo `apps/api`, e mantê-lo vivo pelo tempo de vida do processo HTTP. A própria docstring de `OutboundCommandConsumer` já afirma: "o wiring real deste componente no processo HTTP de `apps/api` (composition root, consumo de fato da fila) é escopo do Bloco 5".
+
+**Impacto arquitetural**: `apps/api` passa a rodar DOIS loops de I/O assíncrono no mesmo processo Node — o servidor Express e um `bullmq.Worker` — pela primeira vez. Não há risco de bloqueio do event loop (BullMQ usa comandos Redis não bloqueantes do ponto de vista do Node, mesmo padrão já validado em `worker.ts`), mas há uma decisão real de onde esse `Worker` é criado/iniciado e como ele se encerra.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — `services/whatsapp/compositionRoot.ts` ganha uma nova função `createOutboundCommandConsumerWorker(registry, conversationRepository, messageRepository, aiInteractionRepository, logger, redisConnection)`** (RECOMENDADA) | Mesma disciplina de `createWhatsAppSessionsRegistry`: uma função de composição dedicada, que `index.ts` chama e cujo retorno (`bullmq.Worker`) ele guarda para poder fechar no shutdown. | Mantém `services/whatsapp/compositionRoot.ts` como o único lugar que conhece a cadeia completa de Infrastructure de `whatsapp` — inclusive a parte "consumidora de fila", que semanticamente pertence a este módulo (é o módulo que sabe ENVIAR mensagens), não a `conversations`/`ai`. | `services/whatsapp/compositionRoot.ts` passa a importar `ConversationRepository`/`MessageRepository`/`AiInteractionRepository` (tipos de OUTROS bounded contexts) — mesma direção que `OutboundCommandConsumer` já usa (ele já importa esses 3 ports), então não é uma violação nova de Clean Architecture, só uma extensão do que já existe. |
+| **B — Construído solto dentro de `index.ts`, sem função de composição dedicada** | Menos indireção. | — | Mesmo problema da opção B de D6 — foge do padrão já estabelecido. Rejeitada. |
+
+**Recomendação**: **A**.
+
+**Riscos específicos a esta decisão**:
+- **Graceful shutdown ausente em `index.ts` hoje.** `worker.ts` já implementa `SIGTERM`/`SIGINT` → `worker.close()` → `queue.close()` → `prisma.$disconnect()`. `index.ts` **não tem nenhum handler de sinal** — hoje, um `docker stop`/redeploy do serviço `api` mata o processo sem esperar requisições HTTP em andamento nem, a partir do Bloco 5, jobs `whatsapp-outbound` em processamento. Isso NÃO é uma regressão introduzida pelo Bloco 5 (o problema já existe para HTTP hoje), mas o Bloco 5 é o primeiro momento em que ignorá-lo tem um custo concreto e novo: um job outbound interrompido no meio pode ter enviado a mensagem mas não ter chamado `linkMessage()` ainda (risco já documentado no Bloco 4/ADR #55, mas um `SIGTERM` sem graceful shutdown aumenta a JANELA em que isso pode acontecer). Recomendo que o Bloco 5 inclua graceful shutdown em `index.ts` (fechar `Worker`, servidor HTTP, `Queue`, Prisma) — não é uma feature nova, é fechar uma lacuna que o próprio bloco expõe.
+
+---
+
+### D8 — Guard de variáveis de ambiente em `index.ts`: `REDIS_URL` passa a ser obrigatório para montar as rotas de WhatsApp/Conversas?
+
+**Descrição técnica**: `mountWhatsAppSessionsRoutes()` hoje só exige `DATABASE_URL`/`WHATSAPP_CREDENTIALS_MASTER_KEY`/`API_KEY_PEPPER`; se ausentes, loga um aviso e segue sem montar nada (mas `/health` continua respondendo). A partir do Bloco 5, essa mesma função (ou uma nova, paralela) também precisa de `REDIS_URL` (para o produtor `ai-reply` e o consumidor `whatsapp-outbound`) e, se o pipeline inbound for ligado (D5), possivelmente das mesmas variáveis de IA que `worker.ts` já exige (`CLAUDE_API_KEY`, `AI_CLAUDE_MODEL` não são usadas diretamente aqui, mas `AI_PROMPT_VERSION` pode ser relevante se algum endpoint precisar resolver `PromptVersion` — ver D13).
+
+**Impacto arquitetural**: decide se uma configuração incompleta derruba SÓ a funcionalidade dependente (padrão atual, "degrada graciosamente") ou se vira um requisito rígido de todo o processo `apps/api`.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Mesmo padrão já usado: guard por env var, degrada silenciosamente com log de aviso** (RECOMENDADA) | Se `REDIS_URL` ausente, as rotas de sessão WhatsApp continuam subindo (funcionalidade de conexão/QR não depende de Redis), mas o pipeline de IA (produtor `ai-reply`, consumidor `whatsapp-outbound`, rotas de conversas/IA) não é montado — log de aviso claro, `/health` sempre funciona. | Consistente com o padrão já estabelecido; permite rodar a API em ambientes de desenvolvimento sem Redis configurado, sem quebrar tudo. | Um operador pode não perceber que o autoresponder está desligado até revisar logs — mesmo risco que já existe hoje para a ausência de `WHATSAPP_CREDENTIALS_MASTER_KEY`, não é um risco novo. |
+| **B — `REDIS_URL` ausente derruba o processo inteiro (`process.exit(1)`)** | Mesmo padrão adotado em `worker.ts` (falha rápido). | Configuração incorreta fica óbvia imediatamente, não silenciosa. | Inconsistente com o padrão de `index.ts` (que sempre degradou por feature, nunca derrubou o processo inteiro) — mudaria o comportamento de deploy de forma mais rígida do que o resto do arquivo, para uma dependência que não é estritamente necessária para `/health`/sessões WhatsApp funcionarem. |
+
+**Recomendação**: **A** — pelo motivo já registrado na própria docstring de `mountWhatsAppSessionsRoutes()`: `/health` (e, por extensão, a funcionalidade que não depende de Redis) deve continuar funcionando "independente de configuração". `worker.ts` pode se dar ao luxo de falhar rápido porque sua ÚNICA razão de existir é o pipeline de IA; `index.ts` serve múltiplas funcionalidades com dependências parcialmente independentes.
+
+**Achado relacionado**: isso implica que as nomenclaturas de composição precisam refletir independência — `createConversationsComposition`/o wiring de `whatsapp-outbound` (D7) devem poder falhar/não montar SEM impedir `createWhatsAppSessionsComposition` (sessões) de montar. É uma restrição a ter em mente ao desenhar D6/D7, não uma decisão nova em si.
+
+---
+
+### D9 — `requireApiKey` deve mover de `services/whatsapp/presentation/` para `shared/`?
+
+**Descrição técnica**: a própria docstring de `requireApiKey.ts` já antecipa esta pergunta: "Fica em `services/whatsapp/presentation` — não em `shared/` — porque hoje o único consumidor real é o router de sessões do WhatsApp; extrair para um local compartilhado antes de existir um segundo consumidor repetiria o erro de abstração prematura já corrigido nesta milestone". O Bloco 5 introduz exatamente esse segundo consumidor: um novo router de conversas (`GET/POST .../conversations/...`) montado sob o mesmo padrão `/api/tenants/:tenantId/...`, que precisa da MESMA autenticação/autorização por tenant.
+
+**Impacto arquitetural**: `requireApiKey`/`RequestWithTenant` são hoje acoplados (por localização de arquivo, não por lógica — o código em si já é genérico) ao módulo `whatsapp`. Um segundo router importando de dentro de `services/whatsapp/presentation/` cruza a fronteira de bounded context (Presentation de `conversations`/`ai` dependendo de Presentation de `whatsapp`) — não é uma violação de Clean Architecture no sentido de camadas, mas é um acoplamento lateral entre bounded contexts que o projeto tem evitado (ex.: `MessageReceivedHandler` como port em vez de import direto).
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Mover `requireApiKey.ts`/`RequestWithTenant`/`sanitizeHeaders`-consumers para `shared/presentation/` (novo diretório)** (RECOMENDADA) | Mesmo racional que já levou `Logger`, `Cipher`, `CredentialsStore`, `TenantRepository` para `shared/` — autenticação por API key não é uma preocupação de "sessões WhatsApp", é transversal a qualquer rota autenticada por tenant do projeto. | Resolve a duplicação lateral ANTES dela acontecer (em vez de depois, quando já haveria 2 cópias divergentes). Segue exatamente o critério que o próprio código já documentou como o gatilho certo para mover ("antes de existir um segundo consumidor" → agora existe). | Toca um arquivo estável e testado (`requireApiKey.ts`, `requireApiKey.test.ts`, `whatsAppSessionsIntegration.test.ts`) só por causa de localização — puramente mecânico (mover arquivo, atualizar imports), mas precisa ser feito com cuidado para não quebrar nenhum teste existente. |
+| **B — Deixar em `services/whatsapp/presentation/` e importar de lá no novo router de conversas** | Zero mudança em arquivo existente. | Mais rápido agora. | Fixa um acoplamento lateral que o próprio código já sinalizou como incorreto assim que um segundo consumidor aparecesse. Sabendo disso, adiar a correção só adia o custo (e, se um TERCEIRO consumidor aparecer depois — ex.: rotas de billing — o custo de mover cresce). |
+| **C — Duplicar o middleware para `conversations`** | Uma cópia própria por bounded context. | Zero acoplamento lateral. | Viola diretamente a Regra Permanente #2 do `CLAUDE.md` ("Código duplicado é proibição — refatorar imediatamente") e o próprio DRY. Rejeitada. |
+
+**Recomendação**: **A**.
+
+**Justificativa baseada na arquitetura existente**: o projeto já tem um histórico de "promover" algo de local específico para `shared/` assim que um segundo consumidor aparece de verdade (a criação de `shared/tenant/`, `shared/security/` seguiu exatamente esse padrão) — nunca o contrário (nunca antecipou abstração antes de haver 2 consumidores reais, mesma disciplina de YAGNI aplicada, por exemplo, à rejeição da categoria `core/` para `Tenant`). D9-A é a aplicação mecânica dessa mesma regra, não uma decisão nova de estilo.
+
+---
+
+### D10 — Contrato de mudança de status da `Conversation` (`escalate`/`resume`)
+
+**Descrição técnica**: `ConversationRepository` não tem NENHUM método de escrita além de `upsertByTenantSessionAndContact` (que nunca muda `status` de uma conversa já existente, por design). É preciso um método novo para `POST .../conversations/:id/escalate` (→ `status: 'human'`) e `POST .../conversations/:id/resume` (→ `status: 'bot'`).
+
+**Impacto arquitetural**: novo método no port `ConversationRepository` — mesma categoria de mudança (extensão aditiva de port) já feita no Bloco 4 (`findById`), mas aqui é uma ESCRITA, não uma leitura, então as perguntas de idempotência/concorrência importam mais.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Um único método genérico `updateStatus(tenantId, conversationId, status): Promise<Conversation \| undefined>`** (RECOMENDADA) | Escalonar e retomar são o MESMO tipo de operação (mudar `status`), só com valores diferentes — `escalate()`/`resume()` no Application Service (a construir) chamam este único método do Repository com `'human'`/`'bot'`, respectivamente. Devolve `undefined` se a conversa não existir (mesmo padrão de `findById`) — quem chama decide se isso é 404 (Presentation). `tenantId` explícito por defesa em profundidade (mesmo racional de `listRecentByConversation`). | Um método no port cobre os dois endpoints REST — sem duplicar a forma de "achar + atualizar status" duas vezes. Idempotente por construção (`escalate()` numa conversa já `'human'` não é um erro, só reafirma o estado). | Nenhuma real — é a forma mais direta de expressar a operação. |
+| **B — Dois métodos, `escalateConversation()`/`resumeConversation()`, cada um no port** | Nomes mais expressivos por si sós. | Talvez mais legível no port. | Duplica a mesma lógica de "achar por id + tenantId, atualizar status, devolver" duas vezes na implementação Prisma, por uma diferença de UM valor de enum — viola DRY sem necessidade real. Rejeitada. |
+| **C — `Conversation` vira uma classe rica com método `escalate()`/`resume()` que muda o próprio estado, persistida via `save()`** | Modelo de domínio mais expressivo (Rich Domain Model, DDD "de verdade"). | Mais alinhado a DDD tático puro. | O projeto já decidiu explicitamente, por 2x (`WhatsAppSession`, achado F3/ADR #17, "Deferred"; e a própria `Conversation`, que é hoje uma interface de dados, mesmo estilo), que entidades permanecem anêmicas até haver uma razão concreta de negócio para mudar isso — introduzir essa mudança agora, só para `Conversation`, quebraria a consistência de estilo do projeto sem que nenhuma regra de negócio nova o exija (a transição `bot ↔ human` é um `enum` de 2 valores, não uma máquina de estados complexa). Rejeitada por YAGNI, mesmo racional do achado F3. |
+
+**Recomendação**: **A**.
+
+**Risco a registrar (não resolvido, aceito como MVP)**: nenhuma auditoria de QUEM escalonou/retomou (não há conceito de usuário/operador autenticado além do tenant como um todo — a API key autentica o TENANT, não uma pessoa). Se isso importar no futuro (ex.: "operador João assumiu esta conversa"), exigirá um conceito de usuário/agente que não existe hoje em lugar nenhum do projeto — fora de escopo do Bloco 5, registrar como risco/backlog.
+
+---
+
+### D11 — Contrato de listagem de conversas (`GET .../conversations`)
+
+**Descrição técnica**: nenhum método existe hoje para listar `Conversation`s de um tenant (paralelo a `WhatsAppSessionRepository.findAllByTenant`, já existente para sessões).
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — `findAllByTenant(tenantId, options?: { status?, limit?, cursor? })`** (RECOMENDADA) | Espelha `findAllByTenant` já existente em `WhatsAppSessionRepository` (sem paginação — lista de sessões por tenant tende a ser pequena, dezenas no máximo) — mas para `Conversation`, o volume por tenant pode crescer sem limite (uma conversa por contato, ao longo de anos). Por isso, diferente do precedente de sessões, incluir paginação/filtro por `status` (`?status=human` para a tela de "conversas assumidas por humano") desde já. | Evita o mesmo problema que `getSessionHistory()` já preveniu explicitamente com `MAX_HISTORY_LIMIT` (CLAUDE.md §15, "segurança primeiro" — nunca uma listagem sem teto). | Nenhuma prevista — é estritamente necessário dado o volume potencial. |
+| **B — Sem paginação, devolve tudo (`findAllByTenant(tenantId)`)** | Mais simples, espelha `WhatsAppSessionRepository` literalmente. | Simplicidade. | Sessões WhatsApp são limitadas (poucas por tenant); conversas não têm esse teto natural — copiar o padrão de sessões aqui seria aplicar uma decisão fora do contexto que a originou. Risco real de uma consulta sem limite crescer sem controle. Rejeitada. |
+
+**Recomendação**: **A** — com um `DEFAULT_LIMIT`/`MAX_LIMIT` no Application Service (a construir), mesmo padrão exato já usado em `WhatsAppSessionService.getSessionHistory()` (`DEFAULT_HISTORY_LIMIT`/`MAX_HISTORY_LIMIT`).
+
+**Decisão de paginação em aberto dentro de A**: offset (`?page=`) vs. cursor (`?cursor=`) — o projeto não tem nenhum precedente de paginação real ainda (`getSessionHistory` usa só `limit`, sem offset/cursor, porque histórico de eventos não precisa "avançar página", só "os N mais recentes"). Recomendo `limit` + `cursor` (baseado em `createdAt`/`id`) em vez de offset — offset degrada em performance/consistência com volume crescente (problema clássico de "deslocamento" quando novas linhas são inseridas entre páginas), mas reconheço que isso é uma escolha nova para o projeto, sem precedente direto — vale confirmação explícita.
+
+---
+
+### D12 — Contrato de leitura de mensagens de uma conversa (`GET .../conversations/:id/messages`)
+
+**Descrição técnica**: `MessageRepository.listRecentByConversation(tenantId, conversationId, limit)` já existe — mas foi desenhado para UM consumidor específico (o worker de IA, que quer "as N mais recentes, ordem DESC, para inverter depois"). Um endpoint REST de "ver histórico de uma conversa" tem uma necessidade de UX diferente: provavelmente ordem cronológica ASC (mais natural para exibir um chat) e paginação (uma conversa pode ter milhares de mensagens ao longo do tempo).
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Reaproveitar `listRecentByConversation()` tal como está; o Application Service (ou a própria rota) inverte a ordem antes de devolver ao cliente HTTP** (RECOMENDADA para o MVP deste bloco) | Zero mudança de port — mesmo método já testado do Bloco 4. A inversão de ordem é uma transformação trivial (`.reverse()`), já precedente em `AiReplyJobProcessor`. | Menor escopo de mudança possível; entrega o endpoint sem abrir uma nova superfície de port. | Sem paginação de verdade (só "as N mais recentes") — para uma conversa muito longa, não há como o cliente "ver mais para trás" além do `limit`. Aceitável para MVP (mesmo espírito do restante do Bloco 5: entregar o necessário, não antecipar), mas é uma limitação real a documentar explicitamente na resposta da rota (não fingir que é paginação completa). |
+| **B — Novo método `listByConversationPaginated(tenantId, conversationId, cursor?, limit?)`, cronológico ASC nativo** | Resolve paginação de verdade desde já. | Mais completo. | Adiciona um SEGUNDO método de leitura ao port só para um consumidor (a rota REST) que ainda não existe — o mesmo tipo de antecipação que o projeto tem evitado (YAGNI) a menos que haja uma necessidade concreta e imediata. Sem um requisito de produto que exija "rolar para trás numa conversa de milhares de mensagens" HOJE, é abstração especulativa. |
+
+**Recomendação**: **A** para este bloco, com a limitação documentada explicitamente (tanto em código quanto na resposta da API, ex.: um campo `truncated: boolean` ou a ausência deliberada de paginação registrada na doc da rota) — revisitar com um método dedicado (Opção B) se/quando um caso de uso real de "histórico completo paginado" aparecer (mesmo racional de D11 vs. o precedente de sessões: aqui a decisão consciente é NÃO seguir o padrão mais robusto ainda, por falta de necessidade comprovada, mas ao contrário de D11 — que já tem uma razão concreta e imediata para paginação por causa do endpoint de LISTAGEM ser usado por uma tela de inbox — aqui o consumo é "abrir uma conversa específica", onde um `limit` alto (ex.: as últimas 200 mensagens) resolve o caso de uso comum sem paginação completa).
+
+---
+
+### D13 — Contrato de leitura de `AiInteraction` (`GET .../ai-interactions?conversationId=`)
+
+**Descrição técnica**: `AiInteractionRepository` só tem `record()`/`linkMessage()`. A própria docstring do port já lista `listByTenant()`/`sumCostByTenant()` como extensões futuras adiadas "até o Bloco 5" — mas nunca especificou a assinatura exata. O schema Prisma já tem `@@index([tenantId, conversationId, createdAt])` em `AiInteraction` — o índice já foi desenhado para este consumo, mesmo sem o método existir ainda.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — `listByConversation(tenantId, conversationId, limit?): Promise<AiInteraction[]>`** (RECOMENDADA para o escopo exato pedido) | Cobre exatamente o endpoint listado no milestone doc (`?conversationId=`) — não implementa `listByTenant()`/`sumCostByTenant()` (billing agregado) ainda, porque nenhum critério de aceite do Bloco 5 pede uma tela de billing agregado, só auditoria por conversa. `tenantId` explícito (defesa em profundidade, mesmo padrão de todo o resto do projeto). | Escopo mínimo necessário — não antecipa `sumCostByTenant()` sem um consumidor real (YAGNI, mesma disciplina já usada para não implementar isso no Bloco 3b). | O parâmetro de query `?conversationId=` da milestone é OPCIONAL na descrição original ("`GET .../ai-interactions?conversationId=`") — o "?" sugere que pode não ser passado, o que exigiria também um `listByTenant()`. Preciso de confirmação: o endpoint aceita SÓ filtro por conversa, ou também uma listagem geral por tenant sem filtro? |
+| **B — Implementar `listByTenant()` E `listByConversation()` juntos, já que ambos estão documentados como "extensão futura" no mesmo lugar** | Resolve a ambiguidade acima de uma vez. | Cobre os dois casos de uso possíveis do mesmo endpoint (`?conversationId=` presente ou ausente). | Mais superfície de port do que o estritamente necessário se `conversationId` for sempre obrigatório na prática — mas o custo de adicionar os dois é pequeno (mesmo padrão de implementação, só o filtro muda), e evita uma segunda rodada de decisão se a ambiguidade acima for resolvida a favor de "conversationId é opcional". |
+
+**Recomendação**: **B**, condicionada a uma confirmação explícita (ver "Pré-requisitos", seção 4) sobre se `conversationId` é obrigatório ou opcional nesse endpoint — a milestone doc não deixa isso claro e não encontrei nenhum outro lugar do projeto que resolva a ambiguidade.
+
+**Decisão de serialização**: `costUsd` continua `string` (já é `string` na entidade de Domain, nunca `Prisma.Decimal`/`number`) — o JSON de resposta deve manter como string, nunca converter para `number` (perderia precisão decimal, o motivo original de `costUsd` nunca ser `Float`). Não é uma decisão em aberto, é uma restrição herdada do Bloco 3b/ADR correspondente — registrada aqui só para não ser esquecida na implementação.
+
+---
+
+### D14 — Erros de Domain + estratégia de error handler para `conversations`/`ai`, e o achado de `TenantNotFoundError` nunca mapeado
+
+**Descrição técnica**: hoje não existe nenhum erro de Domain para "conversa não encontrada" nem para violações de negócio dessas novas rotas — só `TenantNotFoundError` (compartilhado) e os erros de `whatsapp` (que não fazem sentido para estas rotas). Além disso, uma auditoria direta de `whatsAppErrorHandler.ts` (grep, não suposição) mostrou que ele mapeia SÓ `WhatsAppSessionNotFoundError`/`WhatsAppQRCodeNotAvailableError` por `instanceof` — **`TenantNotFoundError`, embora já lançado por `WhatsAppSessionService.assertTenantExists()` desde a Production Hardening, NUNCA é capturado por nome; cai no branch genérico e vira HTTP 500, não um 404/403 semântico.** Isso é um bug pré-existente (não introduzido por este levantamento), mas relevante para o Bloco 5 porque o novo Application Service de conversas terá exatamente a mesma dependência de `assertTenantExists()`.
+
+**Impacto arquitetural**: decide se o Bloco 5 corrige esse bug de tabela (baixo risco, pequeno) e como estrutura o mapeamento de erro para o novo bounded context.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Novo `ConversationNotFoundError` (Domain, `services/conversations/domain/errors/`) + novo middleware `conversationsErrorHandler.ts` (Presentation de `conversations`), que TAMBÉM mapeia `TenantNotFoundError` (corrigindo o gap encontrado)** (RECOMENDADA) | Mesmo padrão exato de `whatsAppErrorHandler.ts` — nada novo estruturalmente, só mais um arquivo do mesmo tipo. Corrige, de passagem, um bug real e documentado nesta rodada. `TenantNotFoundError` mapeado tanto aqui quanto (retroativamente, mudança pequena) em `whatsAppErrorHandler.ts` — os dois error handlers passam a tratar esse erro compartilhado do mesmo jeito. | Consistência entre os dois módulos; corrige um defeito real sem exigir uma rodada de trabalho dedicada só para isso. | Nenhuma real. |
+| **B — Um único error handler genérico e compartilhado (`shared/presentation/errorHandler.ts`) que mapeia TODOS os erros de domínio do projeto (whatsapp + conversations + ai) por uma tabela central** | Um só lugar para toda a API. | Elimina duplicação de "if headersSent... res.status(500)..." entre os handlers. | Centralizar o MAPEAMENTO por `instanceof` exigiria que este arquivo compartilhado importasse erros de TODOS os bounded contexts (`WhatsAppSessionNotFoundError`, `ConversationNotFoundError`, futuros erros de `ai`...) — inverte a direção de dependência que o projeto tem mantido (Presentation de um módulo não deveria precisar saber dos erros de Domain de outro só para montar uma tabela de status HTTP). Rejeitada por esse motivo, mesmo sendo tecnicamente mais "DRY" na superfície — DRY não deveria comprar acoplamento indevido entre bounded contexts. |
+
+**Recomendação**: **A**.
+
+**Justificativa**: mantém a mesma fronteira que o projeto já respeita em todo outro lugar — cada bounded context conhece só os próprios erros (mais o compartilhado `TenantNotFoundError`, que já é de `shared/`, então é aceitável que MÚLTIPLOS error handlers o conheçam, cada um mapeando para o mesmo par status/código).
+
+---
+
+### D15 — Estrutura e sequenciamento dos dois novos composition roots (`createConversationsComposition`, `createAiComposition`)
+
+**Descrição técnica**: a milestone doc pede as duas funções por nome, mas não especifica o que cada uma monta exatamente nem a ordem de chamada em `index.ts`. Com base em D5–D7, a ordem de construção importa: `createConversationsComposition()` precisa do produtor `ai-reply` (D6) já pronto (para montar `MessageIngestionService`); `createWhatsAppSessionsRegistry()` precisa do `MessageIngestionService` já pronto (D5); o consumidor `whatsapp-outbound` (D7) precisa do `Registry` já pronto.
+
+**Opções possíveis**:
+
+| Opção | Descrição | Vantagens | Desvantagens |
+|---|---|---|---|
+| **A — Duas funções por bounded context, com uma ORDEM DE CHAMADA explícita e documentada em `index.ts`** (RECOMENDADA): `createAiComposition(prisma)` → devolve `{ aiInteractionRepository }` (só o necessário para o endpoint de leitura — `ConversationAiService`/`AiProviderFactory` continuam vivendo só dentro de `worker.ts`, este composition root NÃO duplica a orquestração de geração, só expõe leitura). `createConversationsComposition(prisma, redisConnection)` → devolve `{ conversationRepository, messageRepository, messageIngestionService, aiReplyScheduler }`. `index.ts` chama `createAiComposition` → `createConversationsComposition` → `createWhatsAppSessionsRegistry(..., messageIngestionService)` → monta o consumidor outbound (D7) → monta os 3 routers (sessions, conversations, ai-interactions). | Ordem linear, sem dependência circular; cada função devolve só o que os consumidores seguintes precisam (Interface Segregation aplicada à composição, não só aos ports). | Exige disciplina para manter a ordem certa — um erro de ordem (ex.: chamar `createWhatsAppSessionsRegistry` antes de ter o `messageIngestionService`) quebra silenciosamente (o Registry simplesmente não teria handler, voltando ao estado atual sem erro nenhum) — recomendo um teste de integração dedicado que prove que uma mensagem inbound de fato chega a `MessageIngestionService` através da cadeia real montada por `index.ts` (mesmo padrão de `whatsAppSessionsIntegration.test.ts`), não só testes unitários de cada composition root isolado. |
+| **B — Uma única função monolítica `createFullComposition()` que monta tudo (whatsapp + conversations + ai) de uma vez** | Ordem garantida por construção (um único fluxo sequencial, impossível errar a ordem). | Um monólito de composição contraria a modularidade que os composition roots por bounded context já estabeleceram (`services/whatsapp/compositionRoot.ts` existe precisamente para não ser isso) — dificulta testar cada composição isoladamente. Rejeitada. |
+
+**Recomendação**: **A**, com o risco de ordem explicitamente mitigado por um teste de integração de ponta a ponta (ver seção 3, riscos).
+
+---
+
+## 3. Riscos Encontrados
+
+| Risco | Categoria | Descrição | Mitigação recomendada |
+|---|---|---|---|
+| **Contrato já protegido por ADR precisa ser revisado (D5)** | Contrato público | `createWhatsAppSessionsRegistry()`/`WhatsAppConnectionRegistry` — assinatura "congelada" por ADR #45 (2x reafirmada) precisa ganhar um parâmetro. | Mudança aditiva (opcional, no final) + nova entrada em `DECISIONS.md` explicando explicitamente por que a proteção da ADR #45 não se aplica a uma extensão aditiva (não uma reescrita). |
+| **Erro de sequenciamento no composition root falha silenciosamente** | Composition Root | Se `index.ts` chamar `createWhatsAppSessionsRegistry()` antes de ter `messageIngestionService` pronto, ou esquecer de passá-lo, o Registry simplesmente cria `SessionManager`s sem handler — EXATAMENTE o estado atual (nenhum erro, nenhum log distinto). Fácil de "implementar o Bloco 5 e achar que funcionou" sem o pipeline inbound de fato estar ligado. | Teste de integração dedicado (mesmo padrão de `whatsAppSessionsIntegration.test.ts`) que prove, com Fakes, que um evento `message_received` simulado chega a um `MessageIngestionService` Fake através da cadeia REAL montada pelo composition root — não só testes unitários de cada peça isolada. |
+| **Duplicação de conexão Redis (mesma classe de bug já corrigida no Bloco 4/ADR #56)** | Dependências/infra | `index.ts` vai construir SUA PRÓPRIA(S) conexão(ões) `ioredis`/`Queue`/`Worker`, separada(s) das de `worker.ts` — mesmo padrão já validado, mas repetir a construção manualmente é uma nova superfície onde o mesmo tipo de erro (versão divergente, conexão duplicada sem necessidade) pode reaparecer se não seguir o padrão já estabelecido. | Reaproveitar EXATAMENTE o padrão de `worker.ts` (mesma versão de `ioredis`, `maxRetriesPerRequest: null`, uma conexão por `Queue`/`Worker` ou justificar explicitamente compartilhamento) — não reinventar. |
+| **Graceful shutdown ausente em `index.ts`** | Infra/confiabilidade | Hoje `index.ts` não trata `SIGTERM`/`SIGINT` de forma alguma — um redeploy pode interromper requisições HTTP e, a partir do Bloco 5, jobs `whatsapp-outbound` em processamento, ampliando a janela do risco já aceito no Bloco 4 (envio duplicado se `linkMessage()` não completar). | Incluir `SIGTERM`/`SIGINT` → fechar `Worker` outbound → fechar `Queue` ai-reply → fechar servidor HTTP → `prisma.$disconnect()`, mesmo padrão de `worker.ts`, como parte do escopo do Bloco 5 (não uma feature extra — é fechar uma lacuna que o próprio bloco expõe). |
+| **`TenantNotFoundError` nunca mapeado em `whatsAppErrorHandler.ts` (bug pré-existente, achado nesta auditoria)** | Bug pré-existente | Toda chamada a `assertTenantExists()` que falhe hoje devolve HTTP 500 em vez de um código semântico — não é um risco NOVO do Bloco 5, mas o padrão vai se repetir no novo `conversationsErrorHandler.ts` se não for corrigido conscientemente (D14). | Corrigir nos dois error handlers (existente + novo) como parte do Bloco 5, já que o novo Application Service de conversas herda a mesma dependência de `assertTenantExists()`. |
+| **Acoplamento lateral entre bounded contexts de Presentation (`requireApiKey`)** | Acoplamento/DDD | Sem D9, o router de conversas importaria de dentro de `services/whatsapp/presentation/` — cruzamento lateral entre bounded contexts que o projeto tem evitado. | D9-A (mover para `shared/presentation/`) antes de escrever o segundo router. |
+| **Paginação sem precedente real no projeto (D11/D12)** | Risco de design, não de código | Nenhuma rota REST existente pagina de verdade (só `limit`, sem cursor/offset) — a primeira decisão de paginação de verdade do projeto acontece aqui, sem um padrão anterior para seguir. | Confirmação explícita do usuário sobre a convenção (cursor vs. offset) antes de implementar, para não estabelecer um padrão que precise ser revisto na primeira tela real que o consumir (Dashboard). |
+| **Ambiguidade de contrato: `?conversationId=` obrigatório ou opcional em `GET .../ai-interactions`** | Contrato de API | A redação da milestone doc não resolve isso; encontrar 2 comportamentos possíveis (D13) sem uma fonte de verdade. | Confirmação explícita antes da implementação (ver Pré-requisitos). |
+| **Multiplicação de responsabilidades dentro do processo `apps/api`** | Risco arquitetural de médio prazo, não bloqueante | Depois do Bloco 5, `apps/api` roda: servidor HTTP, pool de sockets Baileys, produtor BullMQ (`ai-reply`), consumidor BullMQ (`whatsapp-outbound`) — quatro responsabilidades de runtime no mesmo processo. Já era o desenho aceito pela ADR #54 (o consumidor outbound TEM que morar aqui, por posse de socket), mas vale registrar que este é o ponto em que essa acumulação fica visível/operacional, não só teórica. | Nenhuma ação necessária agora (decisão já tomada e justificada na ADR #54) — só registrar como algo a observar se o volume de tráfego HTTP e de mensagens crescer desproporcionalmente um em relação ao outro (nesse caso, a única saída seria a coordenação distribuída da ADR #16, ainda Deferred). |
+
+**Nenhuma violação de Clean Architecture foi encontrada** nas peças já existentes — a direção de dependência (`Presentation → Application → Domain ← Infrastructure`) se mantém consistente em tudo que foi lido. O único ponto que EXIGE atenção para não introduzir uma violação nova é D7/D15: `services/whatsapp/compositionRoot.ts` passará a importar tipos de `conversations`/`ai` (`ConversationRepository`, `MessageRepository`, `AiInteractionRepository`) para montar o consumidor outbound — isso é uma EXTENSÃO do que `OutboundCommandConsumer.ts` já faz (ele já importa esses 3 ports desde o Bloco 4c), não uma violação nova, mas deve ficar restrito ao composition root (nunca a `WhatsAppConnectionRegistry`/`SessionManager`/`BaileysProvider`, que devem continuar sem nenhum conhecimento de `conversations`/`ai`).
+
+**Nenhuma violação de DDD foi encontrada.** Os bounded contexts (`whatsapp`, `conversations`, `ai`) continuam com fronteiras claras; o único acoplamento lateral real (D9, `requireApiKey`) já tem uma decisão recomendada que o resolve promovendo para `shared/`, consistente com o resto do projeto.
+
+---
+
+## 4. Pré-requisitos para Iniciar o Bloco 5
+
+Antes de qualquer código, preciso de confirmação explícita nos seguintes pontos (mesmo processo dos Blocos 3A/3B/4 — pergunta de múltipla escolha por decisão):
+
+1. **D5** — confirmar Opção A (parâmetro opcional em `WhatsAppConnectionRegistry`/`createWhatsAppSessionsRegistry`, revisando a ADR #45 de forma aditiva).
+2. **D6** — confirmar Opção A (`createConversationsComposition` recebe conexão Redis já pronta).
+3. **D7** — confirmar Opção A (`createOutboundCommandConsumerWorker` dentro de `services/whatsapp/compositionRoot.ts`) + confirmar que graceful shutdown de `index.ts` entra no escopo deste bloco.
+4. **D8** — confirmar Opção A (degradação graciosa por env var ausente, mesmo padrão atual).
+5. **D9** — confirmar Opção A (mover `requireApiKey`/`RequestWithTenant` para `shared/presentation/`).
+6. **D10** — confirmar Opção A (`updateStatus()` único no port, `escalate`/`resume` no Application Service).
+7. **D11** — confirmar Opção A (`findAllByTenant` com paginação) **e** decidir cursor vs. offset.
+8. **D12** — confirmar Opção A para este bloco (reaproveitar `listRecentByConversation` + inversão de ordem, sem paginação completa ainda) — ou solicitar Opção B se houver um requisito de produto que eu não tenha visibilidade.
+9. **D13** — **resolver a ambiguidade**: `conversationId` é sempre obrigatório em `GET .../ai-interactions`, ou o endpoint também deve suportar listagem geral por tenant sem esse filtro (Opção B, `listByTenant` + `listByConversation`)?
+10. **D14** — confirmar Opção A (`conversationsErrorHandler.ts` próprio + correção do gap de `TenantNotFoundError` nos dois error handlers).
+11. **D15** — confirmar Opção A (duas funções de composição, ordem explícita) + concordância de que um teste de integração de ponta a ponta (mensagem inbound → `MessageIngestionService`) é critério de aceite obrigatório do bloco, não opcional.
+
+Depois dessas confirmações, a mesma disciplina de sub-blocos incrementais usada no Bloco 4 (4a–4f) se aplica aqui — a expectativa é dividir o Bloco 5 em algo como: 5a (D5, wiring do inbound + teste de integração), 5b (D6/D7/D8, infraestrutura de fila em `apps/api`), 5c (D9, mover `requireApiKey`), 5d (D10/D11, port + rotas de conversas), 5e (D12, rota de mensagens), 5f (D13, port + rota de ai-interactions), 5g (D14, error handling), 5h (validação final + documentação) — mas essa divisão em si só deve ser proposta formalmente depois que as decisões acima estiverem aprovadas, não antes.
