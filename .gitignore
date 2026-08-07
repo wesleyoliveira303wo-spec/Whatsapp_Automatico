@@ -21,3 +21,16 @@ docker-compose.override.yml
 
 # Prisma
 prisma/**/*.db
+
+# Ferramenta de design (Claude Design) — os mockups aprovados (`design/*.dc.html`,
+# fonte única de verdade do Design System, ver CLAUDE.md) SÃO versionados;
+# só o que é geração/scaffolding/upload da própria ferramenta fica de fora:
+# `uploads/` (cópia do código-fonte enviada para contexto — duplicaria a
+# árvore inteira dentro dela mesma), `support.js` (runtime GERADO, "do not
+# edit" no próprio cabeçalho) e a miniatura automática.
+design/uploads/
+design/support.js
+design/.thumbnail
+
+# Artefatos de editor (ex.: lock file do Nautilus/GNOME em ambientes Linux).
+.fuse_hidden*
