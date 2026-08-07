@@ -4,7 +4,11 @@ import { TenantNotFoundError } from '../../../src/shared/tenant/domain/errors/Te
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeWhatsAppProviderFactory } from './infrastructure/FakeWhatsAppProviderFactory';
-import { FakeWhatsAppSessionRepository, FakeCredentialsStore, FakeWhatsAppSessionEventRepository } from './testDoubles';
+import {
+  FakeWhatsAppSessionRepository,
+  FakeCredentialsStore,
+  FakeWhatsAppSessionEventRepository,
+} from './testDoubles';
 import { FakeAuditLogRepository } from '../auth/testDoubles';
 
 function buildSut(): {
@@ -33,8 +37,24 @@ function buildSut(): {
   // ao Registry/SessionManager e ao Service, para `getSessionHistory()`
   // enxergar os eventos que `SessionManager.subscribeToProviderEvents` já
   // gravou.
-  const service = new WhatsAppSessionService(registry, tenantRepository, logger, sessionRepo, credentialsStore, eventRepo, auditLogRepository);
-  return { service, tenantRepository, providerFactory, sessionRepo, credentialsStore, eventRepo, auditLogRepository };
+  const service = new WhatsAppSessionService(
+    registry,
+    tenantRepository,
+    logger,
+    sessionRepo,
+    credentialsStore,
+    eventRepo,
+    auditLogRepository,
+  );
+  return {
+    service,
+    tenantRepository,
+    providerFactory,
+    sessionRepo,
+    credentialsStore,
+    eventRepo,
+    auditLogRepository,
+  };
 }
 
 describe('WhatsAppSessionService', () => {
@@ -42,7 +62,9 @@ describe('WhatsAppSessionService', () => {
     it('initSession lança TenantNotFoundError e NUNCA toca o Registry quando o tenant não existe', async () => {
       const { service, providerFactory } = buildSut();
 
-      await expect(service.initSession('tenant-inexistente', 'vendas')).rejects.toThrow(TenantNotFoundError);
+      await expect(service.initSession('tenant-inexistente', 'vendas')).rejects.toThrow(
+        TenantNotFoundError,
+      );
       // Prova a ordem: a validação acontece ANTES de qualquer chamada ao
       // Registry -- providerFactory.create() nunca deveria ter sido chamado.
       expect(providerFactory.createCalls).toHaveLength(0);
@@ -51,21 +73,36 @@ describe('WhatsAppSessionService', () => {
     it('getSessionStatus lança TenantNotFoundError e nunca toca o Registry', async () => {
       const { service, providerFactory } = buildSut();
 
-      await expect(service.getSessionStatus('tenant-inexistente', 'vendas')).rejects.toThrow(TenantNotFoundError);
+      await expect(service.getSessionStatus('tenant-inexistente', 'vendas')).rejects.toThrow(
+        TenantNotFoundError,
+      );
       expect(providerFactory.createCalls).toHaveLength(0);
     });
 
     it('getSessionQRCode lança TenantNotFoundError e nunca toca o Registry', async () => {
       const { service, providerFactory } = buildSut();
 
-      await expect(service.getSessionQRCode('tenant-inexistente', 'vendas')).rejects.toThrow(TenantNotFoundError);
+      await expect(service.getSessionQRCode('tenant-inexistente', 'vendas')).rejects.toThrow(
+        TenantNotFoundError,
+      );
       expect(providerFactory.createCalls).toHaveLength(0);
     });
 
     it('disconnectSession lança TenantNotFoundError e nunca toca o Registry', async () => {
       const { service, providerFactory } = buildSut();
 
-      await expect(service.disconnectSession('tenant-inexistente', 'vendas')).rejects.toThrow(TenantNotFoundError);
+      await expect(service.disconnectSession('tenant-inexistente', 'vendas')).rejects.toThrow(
+        TenantNotFoundError,
+      );
+      expect(providerFactory.createCalls).toHaveLength(0);
+    });
+
+    it('getContactAvatarUrl lança TenantNotFoundError e nunca toca o Registry (Milestone 6, Bloco M6H-2b)', async () => {
+      const { service, providerFactory } = buildSut();
+
+      await expect(
+        service.getContactAvatarUrl('tenant-inexistente', 'vendas', '5511888888888@s.whatsapp.net'),
+      ).rejects.toThrow(TenantNotFoundError);
       expect(providerFactory.createCalls).toHaveLength(0);
     });
   });
@@ -104,7 +141,21 @@ describe('WhatsAppSessionService', () => {
       tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
       await service.initSession('tenant-1', 'vendas');
 
-      await expect(service.getSessionQRCode('tenant-1', 'vendas')).resolves.toEqual(expect.any(String));
+      await expect(service.getSessionQRCode('tenant-1', 'vendas')).resolves.toEqual(
+        expect.any(String),
+      );
+    });
+
+    it('getContactAvatarUrl delega ao SessionManager correto (Milestone 6, Bloco M6H-2b)', async () => {
+      const { service, tenantRepository, providerFactory } = buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
+      await service.initSession('tenant-1', 'vendas');
+      providerFactory.getCreatedProviders()[0].nextProfilePictureUrl =
+        'https://pps.whatsapp.net/fake-avatar.jpg';
+
+      await expect(
+        service.getContactAvatarUrl('tenant-1', 'vendas', '5511888888888@s.whatsapp.net'),
+      ).resolves.toBe('https://pps.whatsapp.net/fake-avatar.jpg');
     });
   });
 
@@ -214,6 +265,53 @@ describe('WhatsAppSessionService', () => {
       expect(sessions).toHaveLength(1);
       expect(sessions[0].tenantId).toBe('tenant-1');
     });
+
+    it('sobrepõe o status do banco com o status AO VIVO quando existe uma instância viva no Registry (correção de bug real, 2026-07-25)', async () => {
+      const { service, tenantRepository, providerFactory } = buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
+      await service.initSession('tenant-1', 'vendas');
+      // Simula o cenário do bug real: o banco ficou com "connecting"/"connected"
+      // (o que `initSession` grava), mas o socket real já caiu — só o provider
+      // (fonte ao vivo) sabe disso; o `NullWhatsAppProvider.getStatus()` default
+      // já devolve 'disconnected', reproduzindo exatamente essa divergência.
+      const [provider] = providerFactory.getCreatedProviders();
+      expect(await provider.getStatus()).toBe('disconnected');
+
+      const sessions = await service.listSessions('tenant-1');
+
+      expect(sessions[0].status).toBe('disconnected');
+    });
+
+    it('mantém o status do banco (fallback) quando NÃO existe instância viva no Registry — nunca instancia uma nova só para listar', async () => {
+      const { service, tenantRepository, sessionRepo, providerFactory } = buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
+      // Popula o repositório diretamente (sem initSession) — simula uma
+      // sessão conhecida do banco mas nunca tocada pelo Registry nesta
+      // execução do processo (ex.: logo após um restart da API).
+      await sessionRepo.upsertByTenantAndSessionName(
+        'tenant-1',
+        'suporte',
+        {
+          id: 'sessao-1',
+          tenantId: 'tenant-1',
+          sessionName: 'suporte',
+          provider: 'baileys',
+          status: 'connected',
+          phoneNumber: '5511999999999',
+          connectedAt: new Date(),
+          lastSeen: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        { status: 'connected', lastSeen: new Date() },
+      );
+
+      const sessions = await service.listSessions('tenant-1');
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].status).toBe('connected'); // valor do banco, preservado
+      expect(providerFactory.createCalls).toHaveLength(0); // nenhuma instância nova criada
+    });
   });
 
   describe('removeSession (M2, Fase 1)', () => {
@@ -247,7 +345,9 @@ describe('WhatsAppSessionService', () => {
       const { service, credentialsStore, sessionRepo } = buildSut();
       const deleteSpy = jest.spyOn(sessionRepo, 'deleteByTenantAndSessionName');
 
-      await expect(service.removeSession('tenant-inexistente', 'vendas')).rejects.toThrow(TenantNotFoundError);
+      await expect(service.removeSession('tenant-inexistente', 'vendas')).rejects.toThrow(
+        TenantNotFoundError,
+      );
       expect(credentialsStore.clearCalls).toHaveLength(0);
       expect(deleteSpy).not.toHaveBeenCalled();
     });
@@ -268,7 +368,9 @@ describe('WhatsAppSessionService', () => {
       const { service, eventRepo } = buildSut();
       const spy = jest.spyOn(eventRepo, 'listRecentByTenantAndSessionName');
 
-      await expect(service.getSessionHistory('tenant-inexistente', 'vendas')).rejects.toThrow(TenantNotFoundError);
+      await expect(service.getSessionHistory('tenant-inexistente', 'vendas')).rejects.toThrow(
+        TenantNotFoundError,
+      );
       expect(spy).not.toHaveBeenCalled();
     });
 
@@ -278,7 +380,11 @@ describe('WhatsAppSessionService', () => {
       await service.initSession('tenant-1', 'vendas');
       const [createdProvider] = providerFactory.getCreatedProviders();
 
-      createdProvider.emitEvent({ type: 'status_changed', status: 'disconnected', disconnectReason: 'timed_out' });
+      createdProvider.emitEvent({
+        type: 'status_changed',
+        status: 'disconnected',
+        disconnectReason: 'timed_out',
+      });
       await Promise.resolve();
       await Promise.resolve();
       // Espera real (não só microtasks) entre os dois eventos: garante
@@ -304,7 +410,11 @@ describe('WhatsAppSessionService', () => {
       tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
       await service.initSession('tenant-1', 'vendas');
       const [createdProvider] = providerFactory.getCreatedProviders();
-      createdProvider.emitEvent({ type: 'status_changed', status: 'disconnected', disconnectReason: 'logged_out' });
+      createdProvider.emitEvent({
+        type: 'status_changed',
+        status: 'disconnected',
+        disconnectReason: 'logged_out',
+      });
       await Promise.resolve();
       await Promise.resolve();
 
@@ -336,7 +446,12 @@ describe('WhatsAppSessionService — auditoria + ator (Milestone 5, Bloco M5D-3)
     await service.initSession('tenant-1', 'vendas', { userId: 'user-1' }, { ip: '1.2.3.4' });
 
     const entries = auditLogRepository.all();
-    expect(entries.some((e) => e.action === 'session.created' && e.actorUserId === 'user-1' && e.targetId === 'vendas')).toBe(true);
+    expect(
+      entries.some(
+        (e) =>
+          e.action === 'session.created' && e.actorUserId === 'user-1' && e.targetId === 'vendas',
+      ),
+    ).toBe(true);
   });
 
   it('disconnectSession audita session.disconnected_by_user (uma vez)', async () => {
@@ -345,7 +460,9 @@ describe('WhatsAppSessionService — auditoria + ator (Milestone 5, Bloco M5D-3)
 
     await service.disconnectSession('tenant-1', 'vendas', { userId: 'user-1' });
 
-    const disconnected = auditLogRepository.all().filter((e) => e.action === 'session.disconnected_by_user');
+    const disconnected = auditLogRepository
+      .all()
+      .filter((e) => e.action === 'session.disconnected_by_user');
     expect(disconnected).toHaveLength(1);
   });
 
@@ -366,6 +483,10 @@ describe('WhatsAppSessionService — auditoria + ator (Milestone 5, Bloco M5D-3)
 
     await service.initSession('tenant-1', 'vendas');
 
-    expect(auditLogRepository.all().some((e) => e.action === 'session.created' && e.actorUserId === undefined)).toBe(true);
+    expect(
+      auditLogRepository
+        .all()
+        .some((e) => e.action === 'session.created' && e.actorUserId === undefined),
+    ).toBe(true);
   });
 });

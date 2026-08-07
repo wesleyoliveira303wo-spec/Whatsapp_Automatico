@@ -1,27 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireSession } from '../../../lib/dashboardSession';
-import { callAnalyticsApi } from '../../../lib/apiClient';
 
 /**
- * Proxy (Milestone 4, Bloco M4D) para `GET .../analytics/ai-usage` (M4C).
- * Encaminha `from`/`to`/`granularity` tal como recebidos — validacao
- * (Zod/teto de janela) vive no backend, nunca duplicada aqui (mesmo padrao
- * proxy-fino de todas as rotas BFF desde a M2).
+ * ROTA DESATIVADA — Analytics migrou de rota flat por tenant para ANINHADA
+ * por sessão (Milestone 6, Bloco M6H-4, 2026-07-26). Ver
+ * `pages/api/sessions/[sessionName]/analytics/ai-usage.ts`. Arquivo mantido
+ * (não pode ser apagado neste ambiente) só como aviso claro em vez de um 404
+ * silencioso — mesmo padrão já usado para `pages/api/ai-profile/index.ts`
+ * (M6H-3).
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
-  const session = await requireSession(req, res);
-  if (!session) return;
-
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    res.status(405).json({ error: 'method_not_allowed' });
-    return;
-  }
-
-  const from = typeof req.query.from === 'string' ? req.query.from : undefined;
-  const to = typeof req.query.to === 'string' ? req.query.to : undefined;
-  const granularity = typeof req.query.granularity === 'string' ? req.query.granularity : undefined;
-
-  const { status, body } = await callAnalyticsApi(session, '/ai-usage', { query: { from, to, granularity } });
-  res.status(status).json(body);
+export default function handler(_req: NextApiRequest, res: NextApiResponse): void {
+  res.status(410).json({
+    error: 'route_moved',
+    message:
+      'Esta rota foi substituída por /api/sessions/:sessionName/analytics/ai-usage (Analytics por sessão).',
+  });
 }

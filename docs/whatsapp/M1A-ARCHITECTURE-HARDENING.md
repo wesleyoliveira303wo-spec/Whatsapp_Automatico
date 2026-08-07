@@ -8,15 +8,15 @@
 
 ## 1. Ordem exata de implementação
 
-| Ordem | Item | Problema original | Depende de |
-|---|---|---|---|
-| 1 | **M1A.1** — Logger port (Domain) | P7 | Nenhum |
-| 2 | **M1A.2** — Remover `'baileys'` hardcoded | P5 | Nenhum |
-| 3 | **M1A.3** — Enriquecer `WhatsAppSessionStatus` | P4 | Nenhum (mas deve vir antes de M1A.4) |
-| 4 | **M1A.4** — `WhatsAppProviderFactory` + `WhatsAppConnectionRegistry` | P1 | M1A.3 |
-| 5 | **M1A.5** — Concorrência via promise-memoization no Registry | P6 | M1A.4 |
-| 6 | **M1A.6** — `WhatsAppCredentialsStore` (persistência + criptografia) | P2 | M1A.4 |
-| 7 | **M1A.7** — `WhatsAppSessionRecoveryService` (bootstrap) | P3 | M1A.4, M1A.6 |
+| Ordem | Item                                                                 | Problema original | Depende de                           |
+| ----- | -------------------------------------------------------------------- | ----------------- | ------------------------------------ |
+| 1     | **M1A.1** — Logger port (Domain)                                     | P7                | Nenhum                               |
+| 2     | **M1A.2** — Remover `'baileys'` hardcoded                            | P5                | Nenhum                               |
+| 3     | **M1A.3** — Enriquecer `WhatsAppSessionStatus`                       | P4                | Nenhum (mas deve vir antes de M1A.4) |
+| 4     | **M1A.4** — `WhatsAppProviderFactory` + `WhatsAppConnectionRegistry` | P1                | M1A.3                                |
+| 5     | **M1A.5** — Concorrência via promise-memoization no Registry         | P6                | M1A.4                                |
+| 6     | **M1A.6** — `WhatsAppCredentialsStore` (persistência + criptografia) | P2                | M1A.4                                |
+| 7     | **M1A.7** — `WhatsAppSessionRecoveryService` (bootstrap)             | P3                | M1A.4, M1A.6                         |
 
 **Racional da ordem**: M1A.1 e M1A.2 são independentes e baratos — entram primeiro para não precisar retrabalhar itens maiores depois. M1A.3 precisa vir antes de M1A.4 porque o redesenho do `SessionManager` deve nascer já usando o vocabulário de status completo (evita reabrir o mesmo arquivo duas vezes). M1A.4 é o item estrutural do qual M1A.5, M1A.6 e M1A.7 dependem — todos usam o `WhatsAppConnectionRegistry`/`WhatsAppProviderFactory` que ele introduz. M1A.7 fecha por último porque precisa tanto do Registry (M1A.4) quanto das credenciais persistidas (M1A.6) para restaurar sessões de verdade.
 
@@ -46,13 +46,13 @@ graph TD
 
 Nenhuma ADR será escrita agora — cada uma é redigida em `DECISIONS.md` **no momento em que o item correspondente for implementado e aprovado**, conforme o fluxo item-a-item pedido. Lista do que será necessário:
 
-| ADR (a criar) | Item | Decisão a registrar |
-|---|---|---|
-| Logger port e convenção `apps/api/src/shared/` | M1A.1 | Introduz uma pasta `shared/` dentro de `apps/api` para ports/utilitários cross-service (Logger é o primeiro inquilino) — convenção nova, ainda não existente no projeto. |
-| Modelagem de `WhatsAppSessionStatus` enriquecida | M1A.3 | Por que `LOGGED_OUT` é um estado distinto de `DISCONNECTED`, e a semântica de cada um (auto-reconectável vs. exige novo QR). |
-| Padrão Registry + Factory para múltiplas sessões | M1A.4 | Por que `SessionManager` passa a ser vinculado a 1 sessão; por que a concorrência é resolvida via memoização de Promise em vez de um mutex externo (Redis, etc.) — e quando essa decisão precisará ser revisitada (múltiplas réplicas, ver P9). |
-| Estratégia de criptografia de credenciais Baileys | M1A.6 | AES-256-GCM em nível de aplicação (Node `crypto`) em vez de `pgcrypto` (ADR #6) — motivo: portabilidade e testabilidade sem SQL bruto; nota de que isto é uma variação pontual da ADR #6, não uma revogação. |
-| Estratégia de recuperação pós-restart | M1A.7 | Quais estados são "resumíveis" no boot (`CONNECTED`, `CONNECTING`) e quais não (`LOGGED_OUT`); política de falha isolada por sessão. |
+| ADR (a criar)                                     | Item  | Decisão a registrar                                                                                                                                                                                                                             |
+| ------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logger port e convenção `apps/api/src/shared/`    | M1A.1 | Introduz uma pasta `shared/` dentro de `apps/api` para ports/utilitários cross-service (Logger é o primeiro inquilino) — convenção nova, ainda não existente no projeto.                                                                        |
+| Modelagem de `WhatsAppSessionStatus` enriquecida  | M1A.3 | Por que `LOGGED_OUT` é um estado distinto de `DISCONNECTED`, e a semântica de cada um (auto-reconectável vs. exige novo QR).                                                                                                                    |
+| Padrão Registry + Factory para múltiplas sessões  | M1A.4 | Por que `SessionManager` passa a ser vinculado a 1 sessão; por que a concorrência é resolvida via memoização de Promise em vez de um mutex externo (Redis, etc.) — e quando essa decisão precisará ser revisitada (múltiplas réplicas, ver P9). |
+| Estratégia de criptografia de credenciais Baileys | M1A.6 | AES-256-GCM em nível de aplicação (Node `crypto`) em vez de `pgcrypto` (ADR #6) — motivo: portabilidade e testabilidade sem SQL bruto; nota de que isto é uma variação pontual da ADR #6, não uma revogação.                                    |
+| Estratégia de recuperação pós-restart             | M1A.7 | Quais estados são "resumíveis" no boot (`CONNECTED`, `CONNECTING`) e quais não (`LOGGED_OUT`); política de falha isolada por sessão.                                                                                                            |
 
 M1A.2 não gera ADR própria — é um ajuste pontual, registrado apenas como nota em `PROJECT_STATUS.md`.
 
@@ -134,15 +134,15 @@ sequenceDiagram
 
 ## 5. Impacto em Domain, Application, Infrastructure e Presentation
 
-| Item | Domain | Application | Infrastructure | Presentation |
-|---|---|---|---|---|
-| M1A.1 | + port `Logger` | `SessionManager` passa a receber `Logger` | + `ConsoleLogger` | — |
-| M1A.2 | port `WhatsAppProvider` ganha `name` | `SessionManager` usa `this.provider.name` | fakes de teste ganham `name` | — |
-| M1A.3 | entidade + enum de status crescem | `SessionManager` persiste o novo campo (mesmo padrão anti-clobber já usado) | schema Prisma | — |
-| M1A.4 | + port `WhatsAppProviderFactory` | `SessionManager` refeito (1 sessão por instância); + `WhatsAppConnectionRegistry` | nenhuma nova (futuro `BaileysProviderFactory` só no Item 3) | — |
-| M1A.5 | nenhum | lógica dentro do próprio Registry (M1A.4) | — | — |
-| M1A.6 | + ports `WhatsAppCredentialsStore`, `CredentialsCipher` | nenhum novo componente (consumido futuramente pelo Item 3) | + `PrismaWhatsAppCredentialsStore`, `AesGcmCredentialsCipher` | — |
-| M1A.7 | nenhum | + `WhatsAppSessionRecoveryService` | wiring inerte em `index.ts` (sem efeito até Itens 3/4 existirem) | — |
+| Item  | Domain                                                  | Application                                                                       | Infrastructure                                                   | Presentation |
+| ----- | ------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------ |
+| M1A.1 | + port `Logger`                                         | `SessionManager` passa a receber `Logger`                                         | + `ConsoleLogger`                                                | —            |
+| M1A.2 | port `WhatsAppProvider` ganha `name`                    | `SessionManager` usa `this.provider.name`                                         | fakes de teste ganham `name`                                     | —            |
+| M1A.3 | entidade + enum de status crescem                       | `SessionManager` persiste o novo campo (mesmo padrão anti-clobber já usado)       | schema Prisma                                                    | —            |
+| M1A.4 | + port `WhatsAppProviderFactory`                        | `SessionManager` refeito (1 sessão por instância); + `WhatsAppConnectionRegistry` | nenhuma nova (futuro `BaileysProviderFactory` só no Item 3)      | —            |
+| M1A.5 | nenhum                                                  | lógica dentro do próprio Registry (M1A.4)                                         | —                                                                | —            |
+| M1A.6 | + ports `WhatsAppCredentialsStore`, `CredentialsCipher` | nenhum novo componente (consumido futuramente pelo Item 3)                        | + `PrismaWhatsAppCredentialsStore`, `AesGcmCredentialsCipher`    | —            |
+| M1A.7 | nenhum                                                  | + `WhatsAppSessionRecoveryService`                                                | wiring inerte em `index.ts` (sem efeito até Itens 3/4 existirem) | —            |
 
 Nenhum item da M1A toca Presentation — ela só passa a existir no Item 5 (endpoints REST), fora do escopo desta sub-milestone.
 
@@ -187,15 +187,15 @@ DECISIONS.md                                                                 (no
 
 ## 8. Estratégia de testes por item
 
-| Item | O que testar | Como |
-|---|---|---|
-| M1A.1 | `SessionManager` chama `logger.info/error` nos pontos-chave (init, disconnect, erro) | Fake `Logger` (spy) injetado nos testes existentes |
-| M1A.2 | Nenhuma string `'baileys'` sobrevive na Application; `session.provider` reflete `provider.name` do fake | Ajuste do fake (`name = 'fake-provider'`) + assert |
-| M1A.3 | `lastDisconnectReason`/`LOGGED_OUT` persistem sem apagar dados existentes (mesmo padrão anti-clobber de `connectedAt`/`phoneNumber`) | Extensão do fake de provider para emitir `disconnectReason`; teste de persistência |
-| M1A.4 | Duas chaves (tenantId+sessionName) diferentes geram instâncias independentes; `SessionManager` sem estado cruzado entre sessões | Novo teste dedicado ao Registry; testes existentes do `SessionManager` adaptados para o novo construtor |
-| M1A.5 | Chamadas concorrentes de `getOrCreate` para a mesma chave resultam em **uma única** chamada a `WhatsAppProviderFactory.create` e **um único** registro no repositório | `Promise.all([registry.getOrCreate(...), registry.getOrCreate(...)])` + assert de contagem de chamadas no fake factory |
-| M1A.6 | Round-trip encrypt/decrypt do `AesGcmCredentialsCipher`; dado em repouso nunca é o texto plano; `load` de chave inexistente retorna `null` | Testes unitários puros de criptografia (sem Prisma real) + teste do `PrismaWhatsAppCredentialsStore` com um Prisma Client fake/dublê |
-| M1A.7 | Sessões `CONNECTED`/`CONNECTING` são resumidas; `LOGGED_OUT` não é; falha em uma sessão não interrompe as demais | Fakes de repositório/registry; um cenário força exceção numa sessão específica e verifica isolamento |
+| Item  | O que testar                                                                                                                                                          | Como                                                                                                                                 |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| M1A.1 | `SessionManager` chama `logger.info/error` nos pontos-chave (init, disconnect, erro)                                                                                  | Fake `Logger` (spy) injetado nos testes existentes                                                                                   |
+| M1A.2 | Nenhuma string `'baileys'` sobrevive na Application; `session.provider` reflete `provider.name` do fake                                                               | Ajuste do fake (`name = 'fake-provider'`) + assert                                                                                   |
+| M1A.3 | `lastDisconnectReason`/`LOGGED_OUT` persistem sem apagar dados existentes (mesmo padrão anti-clobber de `connectedAt`/`phoneNumber`)                                  | Extensão do fake de provider para emitir `disconnectReason`; teste de persistência                                                   |
+| M1A.4 | Duas chaves (tenantId+sessionName) diferentes geram instâncias independentes; `SessionManager` sem estado cruzado entre sessões                                       | Novo teste dedicado ao Registry; testes existentes do `SessionManager` adaptados para o novo construtor                              |
+| M1A.5 | Chamadas concorrentes de `getOrCreate` para a mesma chave resultam em **uma única** chamada a `WhatsAppProviderFactory.create` e **um único** registro no repositório | `Promise.all([registry.getOrCreate(...), registry.getOrCreate(...)])` + assert de contagem de chamadas no fake factory               |
+| M1A.6 | Round-trip encrypt/decrypt do `AesGcmCredentialsCipher`; dado em repouso nunca é o texto plano; `load` de chave inexistente retorna `null`                            | Testes unitários puros de criptografia (sem Prisma real) + teste do `PrismaWhatsAppCredentialsStore` com um Prisma Client fake/dublê |
+| M1A.7 | Sessões `CONNECTED`/`CONNECTING` são resumidas; `LOGGED_OUT` não é; falha em uma sessão não interrompe as demais                                                      | Fakes de repositório/registry; um cenário força exceção numa sessão específica e verifica isolamento                                 |
 
 Todos os testes continuam usando fakes — nenhum teste desta milestone depende de Baileys ou Postgres reais, mantendo a filosofia já estabelecida (`SessionManager.test.ts` atual).
 

@@ -28,7 +28,9 @@ describe('proxies /api/users/* (Milestone 5, Bloco M5F-3)', () => {
 
   function freshAccessToken(): string {
     const header = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 900 })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 900 }),
+    ).toString('base64url');
     return `${header}.${payload}.sig`;
   }
 
@@ -38,9 +40,16 @@ describe('proxies /api/users/* (Milestone 5, Bloco M5F-3)', () => {
       tenantId: 'tenant-1',
       accessToken: freshAccessToken(),
       refreshToken: 'ref-1',
-      user: { id: 'admin-1', email: 'chefe@empresa.com', role: 'administrator', mustChangePassword: false },
+      user: {
+        id: 'admin-1',
+        email: 'chefe@empresa.com',
+        role: 'administrator',
+        mustChangePassword: false,
+      },
     });
-    const match = (res._headers['Set-Cookie'] as string).match(new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`));
+    const match = (res._headers['Set-Cookie'] as string).match(
+      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
+    );
     return match![1];
   }
 
@@ -70,7 +79,9 @@ describe('proxies /api/users/* (Milestone 5, Bloco M5F-3)', () => {
     await handler(req, res);
 
     const [url, init] = (fetch as jest.Mock).mock.calls[0];
-    expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/users?limit=10&status=active');
+    expect(String(url)).toBe(
+      'http://api-de-teste:4000/api/tenants/tenant-1/users?limit=10&status=active',
+    );
     expect((init.headers as Record<string, string>).Authorization).toMatch(/^Bearer /);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ users: [{ id: 'u1' }], nextCursor: 'u1' });
@@ -138,13 +149,18 @@ describe('proxies /api/users/* (Milestone 5, Bloco M5F-3)', () => {
     await resetHandler(req, res);
 
     const [url, init] = (fetch as jest.Mock).mock.calls[0];
-    expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/users/u3/reset-password');
+    expect(String(url)).toBe(
+      'http://api-de-teste:4000/api/tenants/tenant-1/users/u3/reset-password',
+    );
     expect(init.body).toBe(JSON.stringify({ temporaryPassword: 'outra-senha-prov' }));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('metodo errado: 405', async () => {
-    const req = createFakeReq({ method: 'DELETE', cookies: { [SESSION_COOKIE_NAME]: userCookie() } });
+    const req = createFakeReq({
+      method: 'DELETE',
+      cookies: { [SESSION_COOKIE_NAME]: userCookie() },
+    });
     const res = createFakeRes();
 
     await handler(req, res);

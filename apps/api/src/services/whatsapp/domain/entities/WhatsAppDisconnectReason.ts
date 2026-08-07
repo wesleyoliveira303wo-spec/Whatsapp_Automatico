@@ -40,4 +40,5 @@
  *   cada código que o Baileys já define hoje, sem um consumidor real que
  *   precise distingui-los (mesmo racional do achado F6 para `provider`).
  */
-export type WhatsAppDisconnectReason = 'logged_out' | 'restart_required' | 'connection_lost' | 'timed_out' | 'unknown';
+export type WhatsAppDisconnectReason =
+  'logged_out' | 'restart_required' | 'connection_lost' | 'timed_out' | 'unknown';

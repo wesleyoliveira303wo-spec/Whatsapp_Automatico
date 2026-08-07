@@ -57,9 +57,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   let verifyResponse: Response;
   try {
-    verifyResponse = await fetch(new URL(`/api/tenants/${encodeURIComponent(tenantId)}/whatsapp-sessions`, apiBaseUrl), {
-      headers: { 'X-API-Key': apiKey },
-    });
+    verifyResponse = await fetch(
+      new URL(`/api/tenants/${encodeURIComponent(tenantId)}/whatsapp-sessions`, apiBaseUrl),
+      {
+        headers: { 'X-API-Key': apiKey },
+      },
+    );
   } catch (error) {
     res.status(502).json({ error: 'api_unreachable', message: (error as Error).message });
     return;
@@ -85,7 +88,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
  * `{ tenantId, user }` (o `user` inclui `mustChangePassword` para a tela de
  * login redirecionar para a troca obrigatória — M5F-2).
  */
-async function loginAsUser(res: NextApiResponse, tenantId: string, email: string, password: string): Promise<void> {
+async function loginAsUser(
+  res: NextApiResponse,
+  tenantId: string,
+  email: string,
+  password: string,
+): Promise<void> {
   if (password === '') {
     res.status(400).json({ error: 'invalid_params', message: 'password é obrigatório' });
     return;
@@ -101,11 +109,14 @@ async function loginAsUser(res: NextApiResponse, tenantId: string, email: string
 
   let loginResponse: Response;
   try {
-    loginResponse = await fetch(new URL(`/api/tenants/${encodeURIComponent(tenantId)}/auth/login`, apiBaseUrl), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    loginResponse = await fetch(
+      new URL(`/api/tenants/${encodeURIComponent(tenantId)}/auth/login`, apiBaseUrl),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      },
+    );
   } catch (error) {
     res.status(502).json({ error: 'api_unreachable', message: (error as Error).message });
     return;

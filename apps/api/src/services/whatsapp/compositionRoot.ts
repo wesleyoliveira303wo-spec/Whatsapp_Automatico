@@ -16,10 +16,15 @@ import { WhatsAppSessionService } from './application/WhatsAppSessionService';
 import { MessageReceivedHandler } from './domain/handlers/MessageReceivedHandler';
 import { createRequireApiKey } from '../../shared/presentation/requireApiKey';
 import { OutboundCommandConsumer } from './infrastructure/OutboundCommandConsumer';
-import { WHATSAPP_OUTBOUND_QUEUE_NAME, WhatsAppOutboundJobData } from './infrastructure/queues/WhatsAppOutboundQueue';
+import {
+  WHATSAPP_OUTBOUND_QUEUE_NAME,
+  WhatsAppOutboundJobData,
+} from './infrastructure/queues/WhatsAppOutboundQueue';
 import { ConversationRepository } from '../conversations/domain/repositories/ConversationRepository';
 import { MessageRepository } from '../conversations/domain/repositories/MessageRepository';
 import { AiInteractionRepository } from '../ai/domain/repositories/AiInteractionRepository';
+import { WhatsAppMediaDownloader } from './infrastructure/WhatsAppMediaDownloader';
+import { WhatsAppMediaSender } from './infrastructure/WhatsAppMediaSender';
 
 /**
  * Composition root do módulo WhatsApp (Item 5, Bloco 8): monta a cadeia real
@@ -68,10 +73,19 @@ export function createWhatsAppSessionsRegistry(
 ): WhatsAppConnectionRegistry {
   const cipher = new AesGcmCipher(credentialsMasterKey);
   const credentialsStore = new PrismaCredentialsStore(prisma, cipher);
-  const providerFactory = new BaileysProviderFactory(credentialsStore, logger);
+  // Fase 1, Bloco F1.1 (ADR #90): mesma instância de `cipher` já usada para
+  // `TenantCredential` é reaproveitada para cifrar `mediaKey` — um único
+  // segredo derivado por tenant, não dois mecanismos de cifragem paralelos.
+  const providerFactory = new BaileysProviderFactory(credentialsStore, logger, undefined, cipher);
   const repository = new PrismaWhatsAppSessionRepository(prisma);
   const eventRepository = new PrismaWhatsAppSessionEventRepository(prisma);
-  return new WhatsAppConnectionRegistry(providerFactory, repository, logger, eventRepository, messageReceivedHandler);
+  return new WhatsAppConnectionRegistry(
+    providerFactory,
+    repository,
+    logger,
+    eventRepository,
+    messageReceivedHandler,
+  );
 }
 
 /**
@@ -100,6 +114,23 @@ export interface WhatsAppSessionsComposition {
   sessionService: WhatsAppSessionService;
   requireApiKey: RequestHandler;
   registry: WhatsAppConnectionRegistry;
+  /**
+   * Fase 1, Bloco F1.1 (ADR #90) — implementação real do port
+   * `MediaDownloader` (`services/whatsapp/domain`), pronta para
+   * `index.ts` injetar em `ConversationsService.setMediaDownloader()`. Só
+   * pode ser construída aqui (depende de `registry`, que não existe antes
+   * deste composition root rodar) — ver comentário do parâmetro
+   * `mediaDownloader` em `ConversationsService` para o porquê completo da
+   * injeção tardia.
+   */
+  mediaDownloader: WhatsAppMediaDownloader;
+  /**
+   * Fase 1, Bloco F1.3 — implementação real do port `MediaSender`
+   * (`services/whatsapp/domain`), pronta para `index.ts` injetar em
+   * `ConversationsService.setMediaSender()`. Mesmo motivo de
+   * `mediaDownloader` (depende de `registry`, injeção tardia).
+   */
+  mediaSender: WhatsAppMediaSender;
 }
 
 /**
@@ -152,7 +183,12 @@ export function createWhatsAppSessionsComposition(
   logger: Logger,
   messageReceivedHandler?: MessageReceivedHandler,
 ): WhatsAppSessionsComposition {
-  const registry = createWhatsAppSessionsRegistry(prisma, credentialsMasterKey, logger, messageReceivedHandler);
+  const registry = createWhatsAppSessionsRegistry(
+    prisma,
+    credentialsMasterKey,
+    logger,
+    messageReceivedHandler,
+  );
 
   const tenantRepository = new PrismaTenantRepository(prisma);
   const apiKeyHasher = new HmacSha256ApiKeyHasher(apiKeyPepper);
@@ -172,8 +208,10 @@ export function createWhatsAppSessionsComposition(
     auditLogRepository,
   );
   const requireApiKey = createRequireApiKey(apiKeyHasher, tenantRepository, logger);
+  const mediaDownloader = new WhatsAppMediaDownloader(registry);
+  const mediaSender = new WhatsAppMediaSender(registry);
 
-  return { sessionService, requireApiKey, registry };
+  return { sessionService, requireApiKey, registry, mediaDownloader, mediaSender };
 }
 
 /**
@@ -203,7 +241,13 @@ export function createOutboundCommandConsumerWorker(
   logger: Logger,
   redisConnection: IORedis,
 ): Worker<WhatsAppOutboundJobData> {
-  const consumer = new OutboundCommandConsumer(registry, conversationRepository, messageRepository, aiInteractionRepository, logger);
+  const consumer = new OutboundCommandConsumer(
+    registry,
+    conversationRepository,
+    messageRepository,
+    aiInteractionRepository,
+    logger,
+  );
 
   const worker = new Worker<WhatsAppOutboundJobData>(
     WHATSAPP_OUTBOUND_QUEUE_NAME,

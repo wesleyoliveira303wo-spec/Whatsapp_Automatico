@@ -1,5 +1,6 @@
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { toAiUsageChartPoints } from '@/lib/analyticsView';
+import { CHART_COLORS } from '@/lib/chartTheme';
 import type { AiUsagePoint } from '@/lib/clientApi';
 
 interface AiUsageChartProps {
@@ -8,44 +9,46 @@ interface AiUsageChartProps {
 }
 
 /**
- * Grafico de uso/custo de IA por dia (Milestone 4, Bloco M4E — D49/recharts).
- * A conversao costUsd string->number acontece em `toAiUsageChartPoints`
- * (fronteira de renderizacao, D46) — o tooltip exibe a STRING exata.
- * Estados loading/erro/vazio seguem o padrao textual do projeto.
+ * Gráfico de uso/custo de IA por dia (Milestone 4, Bloco M4E — D49/recharts).
+ * A conversão costUsd string->number acontece em `toAiUsageChartPoints`
+ * (fronteira de renderização, D46).
+ *
+ * Reskin 2026-08-07 (Design System, tela Analytics: `lineChart()`) — o
+ * mockup usa um traço minimalista (linha 2px + área preenchida a 8% +
+ * pontos, SEM eixo/grade/legenda/tooltip): trocado de `LineChart`+eixos para
+ * `AreaChart` sem `XAxis`/`YAxis`/`CartesianGrid`/`Tooltip`, replicando essa
+ * estética "sparkline" pixel a pixel em vez de reinterpretar como um
+ * gráfico cheio.
  */
 export default function AiUsageChart({ points, errorMessage }: AiUsageChartProps): JSX.Element {
   if (errorMessage) {
-    return <p className="text-sm text-red-600">{errorMessage}</p>;
+    return <p className="text-sm text-destructive">{errorMessage}</p>;
   }
   if (points === null) {
-    return <p className="text-sm text-gray-500">Carregando uso de IA…</p>;
+    return <p className="text-sm text-muted-foreground">Carregando uso de IA…</p>;
   }
   if (points.length === 0) {
-    return <p className="text-sm text-gray-500">Nenhuma interacao de IA no periodo.</p>;
+    return <p className="text-sm text-muted-foreground">Nenhuma interação de IA no período.</p>;
   }
 
   const data = toAiUsageChartPoints(points);
 
   return (
-    <div className="h-64 w-full" data-testid="ai-usage-chart">
+    <div className="h-[120px] w-full" data-testid="ai-usage-chart">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-          <YAxis yAxisId="left" tick={{ fontSize: 12 }} allowDecimals={false} />
-          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-          <Tooltip
-            formatter={(value: unknown, name: string, entry: { payload?: { costUsd?: string } }) => {
-              if (name === 'Custo (US$)') {
-                // Exibe a string decimal EXATA no tooltip, nunca o number do eixo.
-                return entry.payload?.costUsd ?? String(value);
-              }
-              return String(value);
-            }}
+        <AreaChart data={data} margin={{ top: 3, right: 3, bottom: 3, left: 3 }}>
+          <Area
+            type="monotone"
+            dataKey="costUsdNumber"
+            stroke={CHART_COLORS.primary}
+            strokeWidth={2}
+            fill={CHART_COLORS.primary}
+            fillOpacity={0.08}
+            dot={{ r: 2.5, stroke: 'none', fill: CHART_COLORS.primary }}
+            activeDot={false}
+            isAnimationActive={false}
           />
-          <Line yAxisId="left" type="monotone" dataKey="interactions" name="Interacoes" stroke="#0A74DA" dot={false} />
-          <Line yAxisId="right" type="monotone" dataKey="costUsdNumber" name="Custo (US$)" stroke="#16a34a" dot={false} />
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

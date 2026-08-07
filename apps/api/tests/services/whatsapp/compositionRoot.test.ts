@@ -65,7 +65,9 @@ describe('createWhatsAppSessionsRegistry (composition root)', () => {
   it('propaga o erro de AesGcmCipher se a chave mestra for invalida (tamanho errado)', () => {
     const fakePrisma = {} as unknown as PrismaClient;
 
-    expect(() => createWhatsAppSessionsRegistry(fakePrisma, 'chave-invalida', new NoopLogger())).toThrow();
+    expect(() =>
+      createWhatsAppSessionsRegistry(fakePrisma, 'chave-invalida', new NoopLogger()),
+    ).toThrow();
   });
 });
 
@@ -73,7 +75,12 @@ describe('createWhatsAppSessionsComposition (Production Hardening, Bloco 7)', ()
   it('monta o sessionService e o middleware requireApiKey sem lancar, dados PrismaClient/chave/pepper validos', () => {
     const fakePrisma = {} as unknown as PrismaClient;
 
-    const composition = createWhatsAppSessionsComposition(fakePrisma, VALID_BASE64_KEY, VALID_API_KEY_PEPPER, new NoopLogger());
+    const composition = createWhatsAppSessionsComposition(
+      fakePrisma,
+      VALID_BASE64_KEY,
+      VALID_API_KEY_PEPPER,
+      new NoopLogger(),
+    );
 
     expect(composition.sessionService).toBeInstanceOf(WhatsAppSessionService);
     expect(typeof composition.requireApiKey).toBe('function');
@@ -81,6 +88,11 @@ describe('createWhatsAppSessionsComposition (Production Hardening, Bloco 7)', ()
     // reaproveitado por `createOutboundCommandConsumerWorker`, mesma
     // instancia, nao um segundo pool).
     expect(composition.registry).toBeInstanceOf(WhatsAppConnectionRegistry);
+    // Fase 1, Bloco F1.1 (ADR #90) / Bloco F1.3 — `mediaDownloader`/
+    // `mediaSender` sempre expostos, prontos para injeção tardia em
+    // `ConversationsService.setMediaDownloader()`/`setMediaSender()`.
+    expect(composition.mediaDownloader).toBeDefined();
+    expect(composition.mediaSender).toBeDefined();
   });
 
   it('Milestone 3, Bloco 5 (D5) - aceita um messageReceivedHandler opcional, sem quebrar quando omitido', () => {
@@ -88,20 +100,35 @@ describe('createWhatsAppSessionsComposition (Production Hardening, Bloco 7)', ()
     const handler = { handle: jest.fn() };
 
     expect(() =>
-      createWhatsAppSessionsComposition(fakePrisma, VALID_BASE64_KEY, VALID_API_KEY_PEPPER, new NoopLogger(), handler),
+      createWhatsAppSessionsComposition(
+        fakePrisma,
+        VALID_BASE64_KEY,
+        VALID_API_KEY_PEPPER,
+        new NoopLogger(),
+        handler,
+      ),
     ).not.toThrow();
   });
 
   it('propaga o erro de HmacSha256ApiKeyHasher se o pepper for vazio', () => {
     const fakePrisma = {} as unknown as PrismaClient;
 
-    expect(() => createWhatsAppSessionsComposition(fakePrisma, VALID_BASE64_KEY, '', new NoopLogger())).toThrow();
+    expect(() =>
+      createWhatsAppSessionsComposition(fakePrisma, VALID_BASE64_KEY, '', new NoopLogger()),
+    ).toThrow();
   });
 
   it('propaga o erro de AesGcmCipher se a chave mestra for invalida, mesmo com pepper valido', () => {
     const fakePrisma = {} as unknown as PrismaClient;
 
-    expect(() => createWhatsAppSessionsComposition(fakePrisma, 'chave-invalida', VALID_API_KEY_PEPPER, new NoopLogger())).toThrow();
+    expect(() =>
+      createWhatsAppSessionsComposition(
+        fakePrisma,
+        'chave-invalida',
+        VALID_API_KEY_PEPPER,
+        new NoopLogger(),
+      ),
+    ).toThrow();
   });
 });
 

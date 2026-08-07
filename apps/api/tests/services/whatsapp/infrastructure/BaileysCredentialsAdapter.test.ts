@@ -30,7 +30,8 @@ function createFakeCredentialsStore(): CredentialsStore {
     `${tenantId}::${namespace}::${key}`;
 
   return {
-    get: async (tenantId, namespace, key) => data.get(compositeKey(tenantId, namespace, key)) ?? null,
+    get: async (tenantId, namespace, key) =>
+      data.get(compositeKey(tenantId, namespace, key)) ?? null,
     getAll: async (tenantId, namespace) => {
       const prefix = `${tenantId}::${namespace}::`;
       const result: Record<string, string> = {};
@@ -72,7 +73,12 @@ describe('useCredentialsStoreAuthState', () => {
 
   it('deve carregar creds previamente salvas em vez de gerar novas', async () => {
     const store = createFakeCredentialsStore();
-    await store.set(TENANT_ID, NAMESPACE, 'creds', JSON.stringify({ noiseKey: 'creds-existentes' }));
+    await store.set(
+      TENANT_ID,
+      NAMESPACE,
+      'creds',
+      JSON.stringify({ noiseKey: 'creds-existentes' }),
+    );
 
     const { state } = await useCredentialsStoreAuthState(store, TENANT_ID, NAMESPACE);
 

@@ -1,7 +1,10 @@
 import { PrismaRefreshTokenRepository } from '../../../../src/services/auth/infrastructure/repositories/PrismaRefreshTokenRepository';
 import type { PrismaClient } from '@prisma/client';
 
-function buildRepo(): { repo: PrismaRefreshTokenRepository; refreshToken: Record<string, jest.Mock> } {
+function buildRepo(): {
+  repo: PrismaRefreshTokenRepository;
+  refreshToken: Record<string, jest.Mock>;
+} {
   const refreshToken = {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -27,7 +30,11 @@ describe('PrismaRefreshTokenRepository (Milestone 5, Bloco M5A)', () => {
     const { repo, refreshToken } = buildRepo();
     refreshToken.create.mockResolvedValue(ROW);
 
-    const result = await repo.create({ userId: 'user-1', tokenHash: 'hash-abc', expiresAt: ROW.expiresAt });
+    const result = await repo.create({
+      userId: 'user-1',
+      tokenHash: 'hash-abc',
+      expiresAt: ROW.expiresAt,
+    });
 
     expect(refreshToken.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ tokenHash: 'hash-abc' }) }),
@@ -53,7 +60,10 @@ describe('PrismaRefreshTokenRepository (Milestone 5, Bloco M5A)', () => {
     await repo.revokeById('rt-1');
 
     expect(refreshToken.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'rt-1', revokedAt: null }, data: expect.objectContaining({ revokedAt: expect.any(Date) }) }),
+      expect.objectContaining({
+        where: { id: 'rt-1', revokedAt: null },
+        data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+      }),
     );
   });
 

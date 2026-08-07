@@ -1,6 +1,9 @@
 import express, { Express, NextFunction, Request, Response } from 'express';
 import request from 'supertest';
-import { createRequireApiKey, RequestWithTenant } from '../../../src/shared/presentation/requireApiKey';
+import {
+  createRequireApiKey,
+  RequestWithTenant,
+} from '../../../src/shared/presentation/requireApiKey';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { Logger } from '../../../src/shared/domain/Logger';
 import { ApiKeyHasher } from '../../../src/shared/security/domain/ApiKeyHasher';
@@ -32,7 +35,11 @@ function probeHandler(req: Request, res: Response): void {
  * elimina esse problema por construção: ele só resolve depois que o Express
  * de fato despachou uma resposta.
  */
-function buildApp(apiKeyHasher: ApiKeyHasher, tenantRepository: TenantRepository, logger: Logger): Express {
+function buildApp(
+  apiKeyHasher: ApiKeyHasher,
+  tenantRepository: TenantRepository,
+  logger: Logger,
+): Express {
   const app = express();
   const middleware = createRequireApiKey(apiKeyHasher, tenantRepository, logger);
 
@@ -81,7 +88,11 @@ describe('requireApiKey', () => {
   it('com API key válida e :tenantId na rota IGUAL ao tenant autenticado, segue para o handler', async () => {
     const hasher = new FakeApiKeyHasher();
     const tenantRepository = new FakeTenantRepository();
-    tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: hasher.hash('chave-valida') });
+    tenantRepository.seed({
+      id: 'tenant-1',
+      name: 'Empresa Teste',
+      apiKeyHash: hasher.hash('chave-valida'),
+    });
     const app = buildApp(hasher, tenantRepository, new NoopLogger());
 
     const response = await request(app).get('/protegido/tenant-1').set('x-api-key', 'chave-valida');
@@ -93,11 +104,17 @@ describe('requireApiKey', () => {
   it('[fecha o IDOR] com API key válida MAS :tenantId da rota DIFERENTE do tenant autenticado, responde 403', async () => {
     const hasher = new FakeApiKeyHasher();
     const tenantRepository = new FakeTenantRepository();
-    tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: hasher.hash('chave-do-tenant-1') });
+    tenantRepository.seed({
+      id: 'tenant-1',
+      name: 'Empresa Teste',
+      apiKeyHash: hasher.hash('chave-do-tenant-1'),
+    });
     const app = buildApp(hasher, tenantRepository, new NoopLogger());
 
     // Autentica como tenant-1, mas tenta acessar a rota de tenant-2.
-    const response = await request(app).get('/protegido/tenant-2').set('x-api-key', 'chave-do-tenant-1');
+    const response = await request(app)
+      .get('/protegido/tenant-2')
+      .set('x-api-key', 'chave-do-tenant-1');
 
     expect(response.status).toBe(403);
     expect(response.body).toMatchObject({ error: 'tenant_mismatch' });

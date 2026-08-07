@@ -33,7 +33,9 @@ describe('runSsePoller', () => {
     await jest.advanceTimersByTimeAsync(0); // deixa a microtask do primeiro tick() resolver
 
     expect(poll).toHaveBeenCalledTimes(1);
-    expect(res.write).toHaveBeenCalledWith(`data: ${JSON.stringify({ status: 200, body: { sessions: [] } })}\n\n`);
+    expect(res.write).toHaveBeenCalledWith(
+      `data: ${JSON.stringify({ status: 200, body: { sessions: [] } })}\n\n`,
+    );
   });
 
   it('faz poll novamente a cada intervalMs', async () => {
@@ -55,7 +57,10 @@ describe('runSsePoller', () => {
   it('quando poll() rejeita, escreve um evento SSE "error" e CONTINUA pollando (não encerra a conexão)', async () => {
     const res = createFakeRes();
     const req = createFakeReq();
-    const poll = jest.fn().mockRejectedValueOnce(new Error('falha transitória')).mockResolvedValueOnce({ ok: true });
+    const poll = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('falha transitória'))
+      .mockResolvedValueOnce({ ok: true });
 
     runSsePoller(req, res, poll, 2000);
     await jest.advanceTimersByTimeAsync(0);

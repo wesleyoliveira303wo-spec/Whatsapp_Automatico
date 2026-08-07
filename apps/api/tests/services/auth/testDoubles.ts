@@ -9,7 +9,10 @@ import {
   UserRepository,
   UserUpdate,
 } from '../../../src/services/auth/domain/repositories/UserRepository';
-import { NewRefreshToken, RefreshTokenRepository } from '../../../src/services/auth/domain/repositories/RefreshTokenRepository';
+import {
+  NewRefreshToken,
+  RefreshTokenRepository,
+} from '../../../src/services/auth/domain/repositories/RefreshTokenRepository';
 import {
   AuditLogPage,
   AuditLogRepository,
@@ -54,7 +57,8 @@ export class FakeUserRepository implements UserRepository {
     if (changes.role !== undefined) user.role = changes.role;
     if (changes.status !== undefined) user.status = changes.status;
     if (changes.lastLoginAt !== undefined) user.lastLoginAt = changes.lastLoginAt;
-    if (changes.mustChangePassword !== undefined) user.mustChangePassword = changes.mustChangePassword;
+    if (changes.mustChangePassword !== undefined)
+      user.mustChangePassword = changes.mustChangePassword;
     user.updatedAt = new Date();
     return { ...user };
   }
@@ -66,14 +70,17 @@ export class FakeUserRepository implements UserRepository {
       .filter((u) => (options.role ? u.role === options.role : true))
       .sort((a, b) => {
         const byTime = b.createdAt.getTime() - a.createdAt.getTime();
-        return byTime !== 0 ? byTime : (a.id < b.id ? 1 : -1);
+        return byTime !== 0 ? byTime : a.id < b.id ? 1 : -1;
       });
 
     const startIndex = options.cursor ? filtered.findIndex((u) => u.id === options.cursor) + 1 : 0;
     const slice = filtered.slice(startIndex, startIndex + options.limit + 1);
     const hasMore = slice.length > options.limit;
     const page = hasMore ? slice.slice(0, options.limit) : slice;
-    return { users: page.map((u) => ({ ...u })), nextCursor: hasMore ? page[page.length - 1].id : undefined };
+    return {
+      users: page.map((u) => ({ ...u })),
+      nextCursor: hasMore ? page[page.length - 1].id : undefined,
+    };
   }
 
   /** Helper de teste (nao faz parte do contrato de producao). */
@@ -131,7 +138,7 @@ export class FakeAuditLogRepository implements AuditLogRepository {
       .filter((e) => (options.action ? e.action === options.action : true))
       .sort((a, b) => {
         const byTime = b.occurredAt.getTime() - a.occurredAt.getTime();
-        return byTime !== 0 ? byTime : (a.id < b.id ? 1 : -1);
+        return byTime !== 0 ? byTime : a.id < b.id ? 1 : -1;
       });
 
     const startIndex = options.cursor ? filtered.findIndex((e) => e.id === options.cursor) + 1 : 0;

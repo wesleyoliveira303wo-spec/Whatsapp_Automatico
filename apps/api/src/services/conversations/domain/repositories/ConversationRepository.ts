@@ -16,6 +16,33 @@ export interface FindAllByTenantOptions {
   status?: Conversation['status'];
   limit: number;
   cursor?: string;
+  /**
+   * Milestone 6, Bloco M6H-2 — filtra pela sessão de WhatsApp específica
+   * (`WhatsAppConversation.sessionName`, já existe no schema desde o Bloco 2
+   * — sem migration). Ausente = todas as sessões do tenant (comportamento
+   * anterior, ainda usado por nada hoje — todas as telas passaram a viver
+   * dentro de uma sessão na Milestone 6, ADR #74).
+   */
+  sessionName?: string;
+  /**
+   * Reforma do escalonamento (2026-07-25) — quando `true`, filtra só
+   * conversas com `escalatedAt` definido (a IA pediu ajuda humana e ninguém
+   * assumiu ainda), independentemente de `status` (que agora continua
+   * `'bot'` nesse caso — ver `Conversation.escalatedAt`). Substitui, para
+   * este fim, o antigo filtro `status: 'human'` + `!assignedToUserId` no
+   * cliente (`useWaitingForHuman`) — que parava de funcionar com a IA não
+   * mudando mais `status` ao escalar. Combinável com `status`/`sessionName`
+   * (todos os filtros se combinam com E).
+   */
+  needsHumanAttention?: boolean;
+  /**
+   * ADR #94 (2026-08-01) — quando `false` (default de todo consumidor
+   * comercial: board Kanban, Analytics), filtra fora as conversas com
+   * `excludedFromPipeline: true`. Ausente/`undefined` = sem filtro (usado
+   * pela listagem geral da inbox, que deve continuar mostrando TODAS as
+   * conversas, incluindo as marcadas — só o Pipeline/Analytics as escondem).
+   */
+  excludedFromPipeline?: boolean;
 }
 
 /** Página de resultado de `findAllByTenant` — `nextCursor` ausente indica que não há próxima página. */
@@ -34,6 +61,15 @@ export interface ConversationPage {
  */
 export interface UpdateConversationStatusOptions {
   assignedToUserId?: string | null;
+  /**
+   * Reforma do escalonamento (2026-07-25) — mesmo padrão de
+   * `assignedToUserId` (`null` limpa, ausente não mexe), mas só `null` é um
+   * valor válido aqui: quem PÕE `escalatedAt` é sempre
+   * `flagNeedsHumanAttention` (a IA), nunca `updateStatus` — este método só
+   * precisa saber LIMPAR o campo quando um humano assume/devolve a
+   * conversa (`ConversationsService.escalateConversation`/`resumeConversation`).
+   */
+  escalatedAt?: null;
 }
 
 /**
@@ -123,15 +159,129 @@ export interface ConversationRepository {
   /**
    * Lista as conversas de um tenant, paginada por cursor (Milestone 3, Bloco
    * 5 — D11: suporta `GET .../conversations`). Ordenação fixa e estável
-   * (`createdAt` DESC, com `id` DESC como desempate — necessário para que o
+   * (`updatedAt` DESC, com `id` DESC como desempate — necessário para que o
    * cursor produza uma ordem determinística mesmo quando duas conversas têm
-   * o mesmo `createdAt`): mais recente primeiro, mesma convenção de
-   * "recente primeiro" já usada em todo `listRecentBy*`/`getSessionHistory`
-   * deste projeto.
+   * o mesmo `updatedAt`): mais recente ATIVIDADE primeiro (não mais criação —
+   * ver decisão de 2026-07-25 abaixo), mesma convenção de "recente primeiro"
+   * já usada em todo `listRecentBy*`/`getSessionHistory` deste projeto.
+   *
+   * Ordenação por `updatedAt` (não `createdAt`) desde 2026-07-25 — pedido do
+   * fundador: a inbox deve funcionar como WhatsApp/Telegram, com a conversa
+   * de atividade mais recente no topo (mensagem nova, escalada, mudança de
+   * status), não fixada pela ordem de criação. Nenhuma migration necessária:
+   * `updatedAt` já é `@updatedAt` no schema e já é tocado em todo
+   * `upsertByTenantSessionAndContact` (mensagem nova)/`updateStatus`/
+   * `flagNeedsHumanAttention` — só a leitura mudou de campo.
    *
    * `options.status`, se informado, filtra por `bot`/`human` — suporta uma
    * futura tela de "conversas assumidas por humano" (Bloco 6) sem precisar
    * reabrir este contrato.
    */
   findAllByTenant(tenantId: string, options: FindAllByTenantOptions): Promise<ConversationPage>;
+
+  /**
+   * Marca que a IA pediu atenção humana AGORA (reforma do escalonamento,
+   * 2026-07-25) — grava `escalatedAt = at`, sem tocar `status` nem
+   * `assignedToUserId`. Chamado tanto na primeira escalada de uma conversa
+   * quanto em escaladas REPETIDAS (a conversa já estava sinalizada, mas o
+   * cliente mandou outra mensagem que a IA também não soube responder) —
+   * sempre reescreve o timestamp, nunca é um no-op na segunda chamada, para
+   * sustentar um novo alerta na Dashboard a cada pedido de ajuda (não só no
+   * primeiro). Único ponto de escrita deste campo para `Date` — a limpeza
+   * (`null`) é responsabilidade de `updateStatus` (ver
+   * `UpdateConversationStatusOptions.escalatedAt`).
+   *
+   * `tenantId` explícito por defesa em profundidade, mesmo racional de
+   * `updateStatus`. Devolve `undefined` (não lança) se a conversa não
+   * existir ou não pertencer a `tenantId`.
+   */
+  flagNeedsHumanAttention(
+    tenantId: string,
+    conversationId: string,
+    at: Date,
+  ): Promise<Conversation | undefined>;
+
+  /**
+   * Incrementa `unreadCount` em +1 (indicador de não lidas, 2026-07-25) —
+   * chamado por `MessageIngestionService` a cada mensagem INBOUND persistida.
+   * Operação atômica no nível do banco (implementações reais devem usar
+   * `increment`, nunca ler-modificar-escrever — duas mensagens quase
+   * simultâneas do mesmo contato não podem perder um incremento por corrida).
+   * `tenantId` explícito por defesa em profundidade, mesmo racional dos
+   * demais métodos deste port. Silenciosamente não-op (não lança) se a
+   * conversa não existir/não pertencer ao tenant — mesmo espírito de
+   * `updateMany` com `count === 0` já usado em `updateStatus`/
+   * `flagNeedsHumanAttention`; quem chama (`MessageIngestionService`) já
+   * trata esta chamada como auxiliar/resiliente.
+   */
+  incrementUnreadCount(tenantId: string, conversationId: string): Promise<void>;
+
+  /**
+   * Zera `unreadCount` (indicador de não lidas, 2026-07-25) — chamado por
+   * `ConversationsService.markAsRead()` quando um operador abre a conversa
+   * pela Dashboard (`POST .../conversations/:id/read`). Idempotente: marcar
+   * como lida uma conversa já com `unreadCount === 0` não é erro. Devolve a
+   * `Conversation` atualizada, ou `undefined` (não lança) se não existir/não
+   * pertencer ao tenant — mesmo padrão de `updateStatus`/
+   * `flagNeedsHumanAttention`.
+   */
+  markAsRead(tenantId: string, conversationId: string): Promise<Conversation | undefined>;
+
+  /**
+   * Grava `stage`/`stageSetBy`/`stageUpdatedAt` de uma conversa — pipeline
+   * de CRM (Milestone 6, Bloco M6H-5, 2026-07-30). Usado tanto por ação
+   * humana explícita (`ConversationsService.updateStage`, sempre permitida,
+   * `setBy: 'human'`) quanto pela IA (`AiReplyJobProcessor`, só quando a
+   * policy `shouldAiUpdateStage` permitir, `setBy: 'ai'`) — a decisão de SE
+   * a escrita deve acontecer é responsabilidade de quem chama, não deste
+   * método (mesma separação já usada entre `flagNeedsHumanAttention` e
+   * quem decide escalar).
+   *
+   * `stageUpdatedAt` é sempre `now()` no momento da escrita (implementação
+   * real usa a hora do servidor de banco, não recebe a data como parâmetro —
+   * diferente de `flagNeedsHumanAttention`, que recebe `at` explícito por já
+   * ter esse precedente; aqui não há necessidade de controlar o timestamp
+   * de fora).
+   *
+   * `tenantId` explícito por defesa em profundidade, mesmo racional dos
+   * demais métodos deste port. Devolve `undefined` (não lança) se a
+   * conversa não existir/não pertencer ao tenant.
+   */
+  updateStage(
+    tenantId: string,
+    conversationId: string,
+    stage: Conversation['stage'],
+    setBy: Conversation['stageSetBy'],
+  ): Promise<Conversation | undefined>;
+
+  /**
+   * Grava `excludedFromPipeline` (ADR #94, 2026-08-01) — marca/desmarca uma
+   * conversa como fora do funil comercial. Sempre uma ação humana explícita
+   * (`ConversationsService.setExcludedFromPipeline`); a IA nunca chama este
+   * método. `tenantId` explícito por defesa em profundidade, mesmo racional
+   * dos demais métodos deste port. Devolve `undefined` (não lança) se a
+   * conversa não existir/não pertencer ao tenant.
+   */
+  setExcludedFromPipeline(
+    tenantId: string,
+    conversationId: string,
+    excluded: boolean,
+  ): Promise<Conversation | undefined>;
+
+  /**
+   * Grava o resumo da conversa gerado pela IA (Redesign 2026-08-05, R5) —
+   * `aiSummary`/`aiSummaryMessageCount`/`aiSummaryUpdatedAt` (este último
+   * sempre `now()` no momento da escrita, mesmo racional de `updateStage`).
+   * Chamado só por `ConversationSummaryService` (`services/ai`), nunca
+   * automaticamente — geração é sempre sob demanda (botão). `tenantId`
+   * explícito por defesa em profundidade, mesmo racional dos demais métodos
+   * deste port. Devolve `undefined` (não lança) se a conversa não
+   * existir/não pertencer ao tenant.
+   */
+  updateAiSummary(
+    tenantId: string,
+    conversationId: string,
+    summary: string,
+    messageCount: number,
+  ): Promise<Conversation | undefined>;
 }

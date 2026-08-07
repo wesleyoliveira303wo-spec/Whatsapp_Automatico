@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+
 interface LoadMoreButtonProps {
   onClick: () => void;
   loading: boolean;
@@ -10,19 +12,26 @@ interface LoadMoreButtonProps {
  * Reutilizavel por qualquer lista paginada por cursor futura. Renderiza
  * nada quando nao ha proxima pagina — um botao desabilitado permanente
  * seria ruido visual sem informacao.
+ *
+ * Milestone 6, Bloco M6E-2: retrofit sobre `Button` (variant `outline`).
  */
-export default function LoadMoreButton({ onClick, loading, hasMore }: LoadMoreButtonProps): JSX.Element | null {
+export default function LoadMoreButton({
+  onClick,
+  loading,
+  hasMore,
+}: LoadMoreButtonProps): JSX.Element | null {
   if (!hasMore) {
     return null;
   }
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={onClick}
       disabled={loading}
-      className="self-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+      className="self-center"
     >
       {loading ? 'Carregando…' : 'Carregar mais'}
-    </button>
+    </Button>
   );
 }

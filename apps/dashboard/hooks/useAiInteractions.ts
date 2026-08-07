@@ -17,7 +17,10 @@ export interface UseAiInteractionsResult {
  * `AiInteraction` documenta esse uso). Sem SSE (D23: dado de auditoria,
  * mesmo padrao de `HistoryList`).
  */
-export function useAiInteractions(conversationId: string | null, limit?: number): UseAiInteractionsResult {
+export function useAiInteractions(
+  conversationId: string | null,
+  limit?: number,
+): UseAiInteractionsResult {
   const [interactions, setInteractions] = useState<AiInteractionSummary[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);

@@ -21,7 +21,9 @@ describe('createAiComposition (Milestone 3, Bloco 5 — D6/D15)', () => {
 
     const composition = createAiComposition(fakePrisma, new NoopLogger());
 
-    expect(composition.aiBusinessProfileRepository).toBeInstanceOf(PrismaAiBusinessProfileRepository);
+    expect(composition.aiBusinessProfileRepository).toBeInstanceOf(
+      PrismaAiBusinessProfileRepository,
+    );
     expect(composition.aiBusinessProfileService).toBeInstanceOf(AiBusinessProfileService);
   });
 });

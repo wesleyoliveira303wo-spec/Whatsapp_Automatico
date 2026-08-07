@@ -2,11 +2,13 @@ import type {
   PrismaClient,
   AiProviderType as PrismaAiProviderType,
   AiInteractionStatus as PrismaAiInteractionStatus,
+  AiEscalationReason as PrismaAiEscalationReason,
 } from '@prisma/client';
 
 import { AiInteraction } from '../../domain/entities/AiInteraction';
 import { AiInteractionRepository } from '../../domain/repositories/AiInteractionRepository';
 import { AiProviderName } from '../../domain/providers/AiProviderName';
+import { EscalationReason } from '../../domain/escalationSignal';
 
 const PROVIDER_TO_PRISMA: Record<AiProviderName, PrismaAiProviderType> = {
   claude: 'CLAUDE' as PrismaAiProviderType,
@@ -30,6 +32,17 @@ const PRISMA_TO_STATUS: Record<string, AiInteraction['status']> = {
   SUCCESS: 'success',
   VALIDATION_REJECTED: 'validation_rejected',
   PROVIDER_ERROR: 'provider_error',
+};
+
+/** Fase 1, Bloco F1.4 (2026-08-01) — mesmo padrão de `STATUS_TO_PRISMA`/`PRISMA_TO_STATUS`. */
+const ESCALATION_REASON_TO_PRISMA: Record<EscalationReason, PrismaAiEscalationReason> = {
+  unknown_answer: 'UNKNOWN_ANSWER' as PrismaAiEscalationReason,
+  requested_human: 'REQUESTED_HUMAN' as PrismaAiEscalationReason,
+};
+
+const PRISMA_TO_ESCALATION_REASON: Record<string, EscalationReason> = {
+  UNKNOWN_ANSWER: 'unknown_answer',
+  REQUESTED_HUMAN: 'requested_human',
 };
 
 /**
@@ -57,6 +70,7 @@ interface AiInteractionRow {
   latencyMs: number;
   status: string;
   errorMessage: string | null;
+  escalationReason: string | null;
   createdAt: Date;
 }
 
@@ -75,6 +89,9 @@ function toDomain(row: AiInteractionRow): AiInteraction {
     latencyMs: row.latencyMs,
     status: PRISMA_TO_STATUS[row.status],
     errorMessage: row.errorMessage ?? undefined,
+    escalationReason: row.escalationReason
+      ? PRISMA_TO_ESCALATION_REASON[row.escalationReason]
+      : undefined,
     createdAt: row.createdAt,
   };
 }
@@ -118,6 +135,9 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
         latencyMs: interaction.latencyMs,
         status: STATUS_TO_PRISMA[interaction.status],
         errorMessage: interaction.errorMessage,
+        escalationReason: interaction.escalationReason
+          ? ESCALATION_REASON_TO_PRISMA[interaction.escalationReason]
+          : undefined,
       },
     });
 
@@ -143,7 +163,11 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
    * no port) — uma `conversationId` de outro tenant simplesmente não
    * corresponde a nenhuma linha, devolvendo lista vazia.
    */
-  async listByConversation(tenantId: string, conversationId: string, limit: number): Promise<AiInteraction[]> {
+  async listByConversation(
+    tenantId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<AiInteraction[]> {
     const rows = await this.prisma.aiInteraction.findMany({
       where: { tenantId, conversationId },
       orderBy: { createdAt: 'desc' },
@@ -157,6 +181,21 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
   async listByTenant(tenantId: string, limit: number): Promise<AiInteraction[]> {
     const rows = await this.prisma.aiInteraction.findMany({
       where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return rows.map(toDomain);
+  }
+
+  /** Fase 1, Bloco F1.4 (2026-08-01) — ver docstring do port. */
+  async listUnansweredQuestions(tenantId: string, limit: number): Promise<AiInteraction[]> {
+    const rows = await this.prisma.aiInteraction.findMany({
+      where: {
+        tenantId,
+        status: 'SUCCESS' as PrismaAiInteractionStatus,
+        escalationReason: 'UNKNOWN_ANSWER' as PrismaAiEscalationReason,
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });

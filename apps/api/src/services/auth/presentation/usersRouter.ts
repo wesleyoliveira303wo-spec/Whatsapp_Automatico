@@ -7,8 +7,12 @@ import { RequestWithPrincipal } from '../../../shared/presentation/authenticate'
 import { UserManagementActor, UserManagementService } from '../application/UserManagementService';
 import { AuthRequestMeta } from '../application/AuthService';
 
-const tenantIdParamSchema = z.object({ tenantId: z.string().trim().min(1, 'tenantId nao pode ser vazio') });
-const userIdParamSchema = tenantIdParamSchema.extend({ userId: z.string().trim().min(1, 'userId nao pode ser vazio') });
+const tenantIdParamSchema = z.object({
+  tenantId: z.string().trim().min(1, 'tenantId nao pode ser vazio'),
+});
+const userIdParamSchema = tenantIdParamSchema.extend({
+  userId: z.string().trim().min(1, 'userId nao pode ser vazio'),
+});
 
 // O Zod aceita QUALQUER cargo do catalogo (inclusive 'owner'): a regra "quem
 // pode criar/mover para qual cargo" mora NUM LUGAR SO (UserManagementService/
@@ -64,7 +68,8 @@ function toActor(req: Request): UserManagementActor {
 
 function toMeta(req: Request): AuthRequestMeta {
   return {
-    userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    userAgent:
+      typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
     ip: req.ip,
   };
 }
@@ -108,7 +113,12 @@ export function createUsersRouter(userManagementService: UserManagementService):
       const body = validateOrRespond(createUserBodySchema, req.body, res);
       if (!body) return;
 
-      const user = await userManagementService.createUser(params.tenantId, toActor(req), body, toMeta(req));
+      const user = await userManagementService.createUser(
+        params.tenantId,
+        toActor(req),
+        body,
+        toMeta(req),
+      );
       res.status(201).json({ user });
     }),
   );
@@ -122,7 +132,13 @@ export function createUsersRouter(userManagementService: UserManagementService):
       const body = validateOrRespond(changeRoleBodySchema, req.body, res);
       if (!body) return;
 
-      const user = await userManagementService.changeRole(params.tenantId, toActor(req), params.userId, body.role, toMeta(req));
+      const user = await userManagementService.changeRole(
+        params.tenantId,
+        toActor(req),
+        params.userId,
+        body.role,
+        toMeta(req),
+      );
       res.status(200).json({ user });
     }),
   );
@@ -134,7 +150,12 @@ export function createUsersRouter(userManagementService: UserManagementService):
       const params = validateOrRespond(userIdParamSchema, req.params, res);
       if (!params) return;
 
-      const user = await userManagementService.suspendUser(params.tenantId, toActor(req), params.userId, toMeta(req));
+      const user = await userManagementService.suspendUser(
+        params.tenantId,
+        toActor(req),
+        params.userId,
+        toMeta(req),
+      );
       res.status(200).json({ user });
     }),
   );
@@ -146,7 +167,12 @@ export function createUsersRouter(userManagementService: UserManagementService):
       const params = validateOrRespond(userIdParamSchema, req.params, res);
       if (!params) return;
 
-      const user = await userManagementService.reactivateUser(params.tenantId, toActor(req), params.userId, toMeta(req));
+      const user = await userManagementService.reactivateUser(
+        params.tenantId,
+        toActor(req),
+        params.userId,
+        toMeta(req),
+      );
       res.status(200).json({ user });
     }),
   );

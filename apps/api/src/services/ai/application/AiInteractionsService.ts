@@ -42,15 +42,33 @@ export class AiInteractionsService {
     private readonly logger: Logger,
   ) {}
 
-  async listInteractions(tenantId: string, options: ListInteractionsOptions = {}): Promise<AiInteraction[]> {
+  async listInteractions(
+    tenantId: string,
+    options: ListInteractionsOptions = {},
+  ): Promise<AiInteraction[]> {
     await this.assertTenantExists(tenantId);
     const limit = Math.min(options.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
 
     if (options.conversationId) {
-      return this.aiInteractionRepository.listByConversation(tenantId, options.conversationId, limit);
+      return this.aiInteractionRepository.listByConversation(
+        tenantId,
+        options.conversationId,
+        limit,
+      );
     }
 
     return this.aiInteractionRepository.listByTenant(tenantId, limit);
+  }
+
+  /**
+   * Fase 1, Bloco F1.4 (2026-08-01) — critério de aceite: "uma consulta
+   * simples já consegue listar as N perguntas mais recentes que a IA não
+   * soube responder". Mesmo default/teto de `listInteractions`.
+   */
+  async listUnansweredQuestions(tenantId: string, limit?: number): Promise<AiInteraction[]> {
+    await this.assertTenantExists(tenantId);
+    const resolvedLimit = Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+    return this.aiInteractionRepository.listUnansweredQuestions(tenantId, resolvedLimit);
   }
 
   private async assertTenantExists(tenantId: string): Promise<void> {

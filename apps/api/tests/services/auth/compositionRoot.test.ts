@@ -10,7 +10,11 @@ describe('createAuthComposition (Milestone 5, Bloco M5C)', () => {
 
     const composition = createAuthComposition(
       fakePrisma,
-      { accessTokenSecret: 'segredo-bem-comprido-de-teste-123456', accessTokenTtlSeconds: 900, refreshTokenTtlMs: 604800000 },
+      {
+        accessTokenSecret: 'segredo-bem-comprido-de-teste-123456',
+        accessTokenTtlSeconds: 900,
+        refreshTokenTtlMs: 604800000,
+      },
       new NoopLogger(),
     );
 
@@ -27,7 +31,11 @@ describe('createAuthComposition (Milestone 5, Bloco M5C)', () => {
   it('propaga o erro de secret vazio (Hs256AccessTokenService recusa)', () => {
     const fakePrisma = {} as unknown as PrismaClient;
     expect(() =>
-      createAuthComposition(fakePrisma, { accessTokenSecret: '', accessTokenTtlSeconds: 900, refreshTokenTtlMs: 1 }, new NoopLogger()),
+      createAuthComposition(
+        fakePrisma,
+        { accessTokenSecret: '', accessTokenTtlSeconds: 900, refreshTokenTtlMs: 1 },
+        new NoopLogger(),
+      ),
     ).toThrow();
   });
 });

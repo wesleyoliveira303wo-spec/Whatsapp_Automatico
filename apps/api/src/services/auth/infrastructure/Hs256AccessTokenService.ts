@@ -15,7 +15,13 @@ import { UserRole } from '../domain/entities/User';
  * - Expiracao (`exp`) sempre conferida.
  * O `clock` e injetavel para testar expiracao de forma deterministica.
  */
-const VALID_ROLES: ReadonlySet<string> = new Set(['owner', 'administrator', 'manager', 'operator', 'read_only']);
+const VALID_ROLES: ReadonlySet<string> = new Set([
+  'owner',
+  'administrator',
+  'manager',
+  'operator',
+  'read_only',
+]);
 
 interface JwtPayload {
   userId?: unknown;
@@ -86,7 +92,11 @@ export class Hs256AccessTokenService implements AccessTokenService {
     }
 
     // 5. Formato dos claims.
-    if (typeof payload.userId !== 'string' || typeof payload.tenantId !== 'string' || typeof payload.role !== 'string') {
+    if (
+      typeof payload.userId !== 'string' ||
+      typeof payload.tenantId !== 'string' ||
+      typeof payload.role !== 'string'
+    ) {
       return null;
     }
     if (!VALID_ROLES.has(payload.role)) {

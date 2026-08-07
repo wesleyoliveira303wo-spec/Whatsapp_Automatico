@@ -8,7 +8,11 @@ function fakeReq(ip: string, body?: Record<string, unknown>): Request {
 function fakeRes(): { res: Response; statusMock: jest.Mock; jsonMock: jest.Mock } {
   const jsonMock = jest.fn();
   const statusMock = jest.fn().mockReturnValue({ json: jsonMock });
-  return { res: { status: statusMock, json: jsonMock } as unknown as Response, statusMock, jsonMock };
+  return {
+    res: { status: statusMock, json: jsonMock } as unknown as Response,
+    statusMock,
+    jsonMock,
+  };
 }
 
 describe('createRateLimiter (Milestone 5, Bloco M5H)', () => {
@@ -38,7 +42,10 @@ describe('createRateLimiter (Milestone 5, Bloco M5H)', () => {
 
     expect(next).toHaveBeenCalledTimes(2);
     expect(statusMock).toHaveBeenCalledWith(429);
-    expect(jsonMock).toHaveBeenCalledWith({ error: 'too_many_requests', message: 'Muitas tentativas. Tente novamente em instantes.' });
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: 'too_many_requests',
+      message: 'Muitas tentativas. Tente novamente em instantes.',
+    });
   });
 
   it('janela expira (relogio injetado avanca): volta a deixar passar', () => {

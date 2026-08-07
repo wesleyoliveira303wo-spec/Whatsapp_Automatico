@@ -1,45 +1,157 @@
 import Link from 'next/link';
-import ConversationStatusBadge from './ConversationStatusBadge';
-import { formatDateTime, formatContactJid } from '@/lib/formatters';
+import { cn } from '@/lib/utils';
+import {
+  formatConversationTimestamp,
+  formatContactDisplayName,
+  formatConversationStatusLabel,
+  formatConversationStageLabel,
+} from '@/lib/formatters';
+import ContactAvatar from './ContactAvatar';
+import TagChip from './TagChip';
 import type { ConversationSummary } from '@/lib/clientApi';
+
+/** Redesign 2026-08-05 (R4) — teto de chips exibidos na linha da lista, antes de resumir em "+N" (espaço é escasso numa linha compacta de inbox). */
+const MAX_LIST_TAGS = 3;
 
 interface ConversationListItemProps {
   conversation: ConversationSummary;
+  /** Milestone 6, Bloco M6H-2 — destaca a linha da conversa aberta no painel ao lado (padrão WhatsApp/Telegram: lista + chat lado a lado). */
+  active?: boolean;
 }
 
 /**
- * Uma linha da lista de conversas (Milestone 3, Bloco 6). Leva ao detalhe
- * (`/conversations/:id`) — todas as acoes (escalar/retomar) vivem so la,
- * mantendo a lista somente-leitura e simples (mesmo padrao de
- * `SessionListItem`, M2).
+ * Uma linha da lista de conversas — Milestone 3, Bloco 6, redesenhada na
+ * Milestone 6, Bloco M6H-2 (ADR #76) como linha compacta de inbox, e
+ * novamente no reskin 2026-08-06 (Design System, tela Conversas) para bater
+ * pixel a pixel com o mockup: linha vira um "card" arredondado (12px, sem
+ * `border-b` entre itens — hierarquia por espaço, não por borda), com um
+ * indicador verde na borda esquerda quando selecionada e um rótulo "Bot"/
+ * "Humano" ao lado do nome (derivado de `status`, já existia como dado).
+ *
+ * `/sessions/:sessionName/conversations/:id` usa `conversation.sessionName`,
+ * que já vem no DTO — funciona mesmo antes/depois do filtro server-side
+ * (M6H-2), já que cada linha sempre sabe a própria sessão.
  */
-export default function ConversationListItem({ conversation }: ConversationListItemProps): JSX.Element {
-  // Feature N2: "aguardando atendente" = escalada para humano e ainda sem dono.
-  // Destaque visual (borda/fundo âmbar + selo) para saltar aos olhos na fila.
-  const waitingForHuman = conversation.status === 'human' && !conversation.assignedToUserId;
+export default function ConversationListItem({
+  conversation,
+  active = false,
+}: ConversationListItemProps): JSX.Element {
+  // Reforma do escalonamento (2026-07-25): "aguardando atendente" = a IA
+  // pediu atenção humana (`escalatedAt` definido) — a conversa pode continuar
+  // em `status: 'bot'` nesse caso, a IA segue respondendo até alguém assumir.
+  const waitingForHuman = Boolean(conversation.escalatedAt);
 
   return (
     <Link
-      href={`/conversations/${encodeURIComponent(conversation.id)}`}
-      className={`flex items-center justify-between rounded-lg border p-4 shadow-sm transition hover:shadow ${
-        waitingForHuman
-          ? 'border-l-4 border-amber-400 bg-amber-50 hover:border-amber-500'
-          : 'border-gray-200 bg-white hover:border-primary'
-      }`}
+      href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
+      className={cn(
+        'relative flex gap-[11px] rounded-lg py-[11px] pl-3 pr-[11px] transition-colors',
+        active
+          ? 'bg-muted'
+          : waitingForHuman
+            ? 'bg-warning/5 hover:bg-warning/10'
+            : 'hover:bg-muted',
+      )}
     >
-      <div>
-        <p className="font-semibold text-gray-800">{formatContactJid(conversation.contactJid)}</p>
-        <p className="text-sm text-gray-500">Sessao: {conversation.sessionName}</p>
-      </div>
-      <div className="flex items-center gap-4">
-        {waitingForHuman && (
-          <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">Aguardando atendente</span>
-        )}
-        <div className="text-right text-sm text-gray-500">
-          <p>Ultima atualizacao</p>
-          <p>{formatDateTime(conversation.updatedAt)}</p>
+      {active && (
+        <span
+          className="absolute left-[3px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary"
+          aria-hidden="true"
+        />
+      )}
+      <ContactAvatar
+        sessionName={conversation.sessionName}
+        contactJid={conversation.contactJid}
+        contactName={conversation.contactName}
+        waitingForHuman={waitingForHuman}
+        className="h-[38px] w-[38px] text-[13px]"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <p className="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-tight text-foreground">
+            {formatContactDisplayName(conversation.contactJid, conversation.contactName)}
+          </p>
+          <span
+            className={cn(
+              'shrink-0 text-[10.5px] font-semibold',
+              conversation.status === 'human' ? 'text-warning-emphasis' : 'text-success-emphasis',
+            )}
+          >
+            {conversation.status === 'human' ? 'Humano' : 'Bot'}
+          </span>
+          <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
+            {formatConversationTimestamp(conversation.lastMessageAt ?? conversation.createdAt)}
+          </span>
         </div>
-        <ConversationStatusBadge status={conversation.status} />
+        <div className="mt-[3px] flex items-center gap-2">
+          {/* Reskin 2026-08-06 (Design System, tela Conversas) — a prévia SEMPRE
+              mostra a última mensagem real (ou o rótulo de status na ausência
+              dela), mesmo numa conversa aguardando atendente: o mockup nunca
+              sobrepõe esse texto, o sinal de escalonamento já é comunicado
+              pelo ponto no avatar + pelo selo abaixo. */}
+          <p className="min-w-0 flex-1 truncate text-[12.5px] leading-[1.35] text-muted-foreground">
+            {conversation.lastMessagePreview || formatConversationStatusLabel(conversation.status)}
+          </p>
+          {conversation.unreadCount > 0 && (
+            <span
+              className="grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground"
+              title={`${conversation.unreadCount} mensagem(ns) não lida(s)`}
+            >
+              {conversation.unreadCount}
+            </span>
+          )}
+        </div>
+        <div className="mt-[7px] flex flex-nowrap items-center gap-[5px] overflow-hidden">
+          {/* Selos de Pipeline — só um é exibido por vez:
+              - "Aguardando atendente" (reforma do escalonamento): a IA pediu ajuda humana.
+              - "Não cliente" (ADR #96): conversa excluída do funil comercial.
+              - Estágio atual (ADR #84): estágio do funil quando dentro do pipeline.
+                "Novo" (default) é omitido — não agrega informação, toda conversa
+                começa aí. Os terminais "Fechado"/"Perdido" recebem cores distintas
+                para reconhecimento imediato. */}
+          {waitingForHuman ? (
+            <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/[.13] px-[7px] text-[11px] font-semibold text-warning-emphasis">
+              <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
+              Aguardando atendente
+            </span>
+          ) : conversation.excludedFromPipeline ? (
+            <span
+              className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-dashed border-muted-foreground/40 px-[7px] text-[11px] font-medium text-muted-foreground"
+              title="Marcada como Não cliente no Pipeline — a IA não responde aqui."
+            >
+              <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
+              Não cliente
+            </span>
+          ) : conversation.stage !== 'new' ? (
+            <span
+              className={cn(
+                'inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-[7px] text-[11px] font-semibold',
+                conversation.stage === 'contacted' && 'bg-muted text-muted-foreground',
+                conversation.stage === 'negotiating' && 'bg-warning/[.12] text-warning-emphasis',
+                conversation.stage === 'closed_won' && 'bg-success/[.12] text-success-emphasis',
+                conversation.stage === 'closed_lost' &&
+                  'bg-destructive/10 text-destructive-emphasis',
+              )}
+              title={`Estágio no Pipeline: ${formatConversationStageLabel(conversation.stage)}`}
+            >
+              <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
+              {formatConversationStageLabel(conversation.stage)}
+            </span>
+          ) : null}
+          {conversation.tags.slice(0, MAX_LIST_TAGS).map((tag) => (
+            <TagChip
+              key={tag.id}
+              name={tag.name}
+              color={tag.color}
+              className="h-5 shrink-0 px-[7px] text-[11px] font-medium"
+            />
+          ))}
+          {conversation.tags.length > MAX_LIST_TAGS && (
+            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+              +{conversation.tags.length - MAX_LIST_TAGS}
+            </span>
+          )}
+        </div>
       </div>
     </Link>
   );

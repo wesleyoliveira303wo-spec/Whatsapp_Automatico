@@ -26,25 +26,25 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Descrição técnica**: `ARCHITECTURE.md`, `PROJECT_CONTEXT.md`, `CODING_STANDARDS.md` e `specs/M003-Conversations.md` existem no repositório e descrevem, em detalhe, um sistema diferente do que foi de fato implementado nos Blocos 1–5 (ver tabela comparativa abaixo). Nenhum destes 4 arquivos tem uma única menção nas ADRs #45–#57, que são as únicas fontes que documentam o que foi realmente decidido e construído.
 
-| Estes 4 documentos descrevem | O código real implementa |
-|---|---|
-| GraphQL + REST, Apollo Server | Só REST (Express) |
-| JWT RS256 + RBAC | API key por tenant + cookie httpOnly cifrado (BFF) |
-| React Query + Zustand + shadcn/ui | Nenhuma lib de estado/cache; Tailwind puro |
-| Winston logger | `Logger` port próprio + `ConsoleLogger`/`NoopLogger` |
-| `AppError` genérico com `statusCode` | Erros de domínio nomeados por caso, mapeados manualmente por error handler path-scoped |
-| Puppeteer para WhatsApp Web | Baileys (WebSocket direto) |
+| Estes 4 documentos descrevem                                                                                         | O código real implementa                                                                     |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| GraphQL + REST, Apollo Server                                                                                        | Só REST (Express)                                                                            |
+| JWT RS256 + RBAC                                                                                                     | API key por tenant + cookie httpOnly cifrado (BFF)                                           |
+| React Query + Zustand + shadcn/ui                                                                                    | Nenhuma lib de estado/cache; Tailwind puro                                                   |
+| Winston logger                                                                                                       | `Logger` port próprio + `ConsoleLogger`/`NoopLogger`                                         |
+| `AppError` genérico com `statusCode`                                                                                 | Erros de domínio nomeados por caso, mapeados manualmente por error handler path-scoped       |
+| Puppeteer para WhatsApp Web                                                                                          | Baileys (WebSocket direto)                                                                   |
 | `Conversation.status`: 7 valores, com `Contact`/`Tag`/`Attachment`/`InternalNote`/`ConversationEvent`, webhooks, RLS | `Conversation.status: 'bot' \| 'human'` (2 valores). Sem nenhuma dessas entidades/mecanismos |
-| Kubernetes + Helm + OpenTelemetry + Prometheus/Grafana | `docker-compose.yml` local; nenhuma instrumentação de métricas encontrada |
+| Kubernetes + Helm + OpenTelemetry + Prometheus/Grafana                                                               | `docker-compose.yml` local; nenhuma instrumentação de métricas encontrada                    |
 
 **Impacto arquitetural**: decide se o Bloco 6 é uma extensão de UI sobre o que já existe (escopo estritamente frontend, ~2 semanas de trabalho) ou uma reabertura de modelo de dados que invalidaria decisões já aceitas em ADRs anteriores.
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — `CLAUDE.md` + `DECISIONS.md` + `PROJECT_STATUS.md` + `MILESTONE_003_AI_AUTORESPONDER.md` + o código real são a única fonte de verdade; os 4 documentos acima são tratados como scaffolding obsoleto, mesma categoria do domínio legado congelado (ADR #11) e do `eslint.config.js` "nunca exercitado" (ADR #53)** (RECOMENDADA) | Mantém consistência com tudo que já foi construído e aprovado — nenhum retrabalho, nenhuma ADR invalidada. É exatamente a fonte que os levantamentos dos Blocos 3–5 já usaram, com sucesso. | Os 4 documentos continuam existindo no repositório sem um aviso explícito de que estão obsoletos — risco de confundir uma pessoa (humana ou IA) que os abra sem o contexto desta auditoria. |
-| **B — `specs/M003-Conversations.md` é tratado como especificação vigente**, expandindo o escopo do Bloco 6 (e retroativamente dos Blocos 1–5) para `Contact`/`Tag`/`Attachment`/`InternalNote`/`ConversationEvent`, webhooks, RLS, JWT | Alinha a documentação a uma visão mais rica de CRM/conversas. | Desproporcional ao que foi pedido nas últimas rodadas ("lista de conversas, timeline, escalonamento, AI interactions"); invalidaria o modelo de `Conversation`/`Message` já implementado e testado (73 suítes/510 testes); nenhuma ADR de #45–#57 jamais previu isso. Rejeitada. |
+| Opção                                                                                                                                                                                                                                                                                                                                 | Descrição                                                                                                                                                                                   | Vantagens                                                                                                                                                                                                                                                                        | Desvantagens |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **A — `CLAUDE.md` + `DECISIONS.md` + `PROJECT_STATUS.md` + `MILESTONE_003_AI_AUTORESPONDER.md` + o código real são a única fonte de verdade; os 4 documentos acima são tratados como scaffolding obsoleto, mesma categoria do domínio legado congelado (ADR #11) e do `eslint.config.js` "nunca exercitado" (ADR #53)** (RECOMENDADA) | Mantém consistência com tudo que já foi construído e aprovado — nenhum retrabalho, nenhuma ADR invalidada. É exatamente a fonte que os levantamentos dos Blocos 3–5 já usaram, com sucesso. | Os 4 documentos continuam existindo no repositório sem um aviso explícito de que estão obsoletos — risco de confundir uma pessoa (humana ou IA) que os abra sem o contexto desta auditoria.                                                                                      |
+| **B — `specs/M003-Conversations.md` é tratado como especificação vigente**, expandindo o escopo do Bloco 6 (e retroativamente dos Blocos 1–5) para `Contact`/`Tag`/`Attachment`/`InternalNote`/`ConversationEvent`, webhooks, RLS, JWT                                                                                                | Alinha a documentação a uma visão mais rica de CRM/conversas.                                                                                                                               | Desproporcional ao que foi pedido nas últimas rodadas ("lista de conversas, timeline, escalonamento, AI interactions"); invalidaria o modelo de `Conversation`/`Message` já implementado e testado (73 suítes/510 testes); nenhuma ADR de #45–#57 jamais previu isso. Rejeitada. |
 
 **Recomendação**: **A**, com uma ação de higiene documental registrada como melhoria (não parte deste bloco): adicionar um aviso nos 4 arquivos stale apontando para as fontes reais.
 
@@ -60,11 +60,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — `createApiClient(resource: string)`, factory que fecha sobre o recurso** (RECOMENDADA) | `callApi` atual permanece intocado para os ~7 call sites existentes (`pages/api/sessions/*`); um `createApiClient('conversations')`/`createApiClient('ai-interactions')` novo é chamado uma vez por módulo de rotas proxy. | Zero regressão nos call sites atuais; alinhado ao padrão de composition root já usado no backend (funções que constroem e fecham sobre dependências). | Nenhuma real. |
-| **B — Parâmetro `resource` adicionado à assinatura de `callApi()`** | Menor mudança de código em si. | Quebra a assinatura em todo call site existente — mudança mecânica, mas mudança, em ~7 arquivos que hoje funcionam. | Rejeitada por desnecessária dado que (A) resolve o mesmo problema sem tocar código estável. |
-| **C — Duplicar a função por recurso** | Zero mudança no arquivo existente. | Viola DRY e a Regra Permanente #2 do `CLAUDE.md` ("código duplicado é proibição"). Rejeitada. |
+| Opção                                                                                        | Descrição                                                                                                                                                                                                                  | Vantagens                                                                                                                                             | Desvantagens                                                                                |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **A — `createApiClient(resource: string)`, factory que fecha sobre o recurso** (RECOMENDADA) | `callApi` atual permanece intocado para os ~7 call sites existentes (`pages/api/sessions/*`); um `createApiClient('conversations')`/`createApiClient('ai-interactions')` novo é chamado uma vez por módulo de rotas proxy. | Zero regressão nos call sites atuais; alinhado ao padrão de composition root já usado no backend (funções que constroem e fecham sobre dependências). | Nenhuma real.                                                                               |
+| **B — Parâmetro `resource` adicionado à assinatura de `callApi()`**                          | Menor mudança de código em si.                                                                                                                                                                                             | Quebra a assinatura em todo call site existente — mudança mecânica, mas mudança, em ~7 arquivos que hoje funcionam.                                   | Rejeitada por desnecessária dado que (A) resolve o mesmo problema sem tocar código estável. |
+| **C — Duplicar a função por recurso**                                                        | Zero mudança no arquivo existente.                                                                                                                                                                                         | Viola DRY e a Regra Permanente #2 do `CLAUDE.md` ("código duplicado é proibição"). Rejeitada.                                                         |
 
 **Recomendação**: **A**.
 
@@ -78,10 +78,10 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Espelhar exatamente a estrutura de `sessions`, um arquivo por rota/verbo** (RECOMENDADA) | Cada rota valida seu próprio método/params via `requireStringParam`, consistente e revisável, mesmo padrão testável de `tests/pages/api/sessions/*.test.ts`. | Nenhuma. |
-| **B — Catch-all genérico `pages/api/conversations/[...path].ts`** | Menos arquivos. | Reintroduz opacidade que o projeto evitou até aqui — perde validação explícita por rota. Rejeitada. |
+| Opção                                                                                          | Descrição                                                                                                                                                    | Vantagens                                                                                           | Desvantagens |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ------------ |
+| **A — Espelhar exatamente a estrutura de `sessions`, um arquivo por rota/verbo** (RECOMENDADA) | Cada rota valida seu próprio método/params via `requireStringParam`, consistente e revisável, mesmo padrão testável de `tests/pages/api/sessions/*.test.ts`. | Nenhuma.                                                                                            |
+| **B — Catch-all genérico `pages/api/conversations/[...path].ts`**                              | Menos arquivos.                                                                                                                                              | Reintroduz opacidade que o projeto evitou até aqui — perde validação explícita por rota. Rejeitada. |
 
 **Recomendação**: **A**. **Pré-requisito**: D21 resolvido primeiro (as rotas novas dependem do client generalizado).
 
@@ -95,11 +95,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — SSE uniforme nos 3 recursos** | Menor decisão nova. | Multiplica conexões sem critério; não resolve paginação. Rejeitada. |
+| Opção                                                                                                                                                                                              | Descrição                                                                                                                                                              | Vantagens                                                                                                                                             | Desvantagens |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **A — SSE uniforme nos 3 recursos**                                                                                                                                                                | Menor decisão nova.                                                                                                                                                    | Multiplica conexões sem critério; não resolve paginação. Rejeitada.                                                                                   |
 | **B — Híbrido: SSE só para o que muda com a tela aberta (lista de conversas, status da conversa); fetch simples + botão de atualizar para histórico de mensagens e AI Interactions** (RECOMENDADA) | Mesma ferramenta que `HistoryList.tsx` já usa hoje para dado de auditoria (fetch único, sem SSE); sem dependência nova; usa exatamente a infraestrutura que já existe. | Dois padrões de fetch coexistindo na mesma tela — aceitável, é o que já acontece hoje entre `useSessionDetail` (SSE) e `HistoryList` (fetch simples). |
-| **C — Introduzir TanStack Query agora, só para os recursos novos** | Resolve cache/paginação/invalidação de uma vez (`useInfiniteQuery` desenhado para cursor). | Dependência nova; padrão que os hooks existentes não seguem — inconsistência deliberada até uma migração mais ampla futura. |
+| **C — Introduzir TanStack Query agora, só para os recursos novos**                                                                                                                                 | Resolve cache/paginação/invalidação de uma vez (`useInfiniteQuery` desenhado para cursor).                                                                             | Dependência nova; padrão que os hooks existentes não seguem — inconsistência deliberada até uma migração mais ampla futura.                           |
 
 **Recomendação**: **B** para este bloco; **C** registrada como decisão de médio prazo, separada, não amarrada a esta feature. **Pré-requisito**: decisão precisa vir antes de D24 (interdependentes).
 
@@ -111,11 +111,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Botão "carregar mais" (acumula páginas em estado local)** (RECOMENDADA) | Sem dependência nova; adequado a um painel B2B interno; testável sem jsdom (lógica de acumulação é pura). | Nenhuma. |
-| **B — Scroll infinito (`IntersectionObserver`)** | UX "moderna". | Maior superfície de bug num projeto sem testes de componente (D29). |
-| **C — Paginação numerada tradicional** | Mais simples de implementar. | Pior UX para acompanhar conversas "indo e vindo". |
+| Opção                                                                         | Descrição                                                                                                 | Vantagens                                                           | Desvantagens |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------ |
+| **A — Botão "carregar mais" (acumula páginas em estado local)** (RECOMENDADA) | Sem dependência nova; adequado a um painel B2B interno; testável sem jsdom (lógica de acumulação é pura). | Nenhuma.                                                            |
+| **B — Scroll infinito (`IntersectionObserver`)**                              | UX "moderna".                                                                                             | Maior superfície de bug num projeto sem testes de componente (D29). |
+| **C — Paginação numerada tradicional**                                        | Mais simples de implementar.                                                                              | Pior UX para acompanhar conversas "indo e vindo".                   |
 
 **Recomendação**: **A**. **Pré-requisito**: D23 resolvido (paginação por cursor não combina com SSE contínuo).
 
@@ -127,10 +127,10 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Filtro resolvido no servidor (nova query a cada troca)** (RECOMENDADA) | Única opção compatível com D24 (paginação). | Nenhuma. |
-| **B — Filtro client-side sobre lista já carregada por completo** | — | Só funciona se a lista inteira coubesse em memória — contradiz D24 por construção. Rejeitada. |
+| Opção                                                                        | Descrição                                   | Vantagens                                                                                     | Desvantagens |
+| ---------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------ |
+| **A — Filtro resolvido no servidor (nova query a cada troca)** (RECOMENDADA) | Única opção compatível com D24 (paginação). | Nenhuma.                                                                                      |
+| **B — Filtro client-side sobre lista já carregada por completo**             | —                                           | Só funciona se a lista inteira coubesse em memória — contradiz D24 por construção. Rejeitada. |
 
 **Recomendação**: **A**. **Pré-requisito**: D24 resolvido primeiro (mesma direção — servidor).
 
@@ -144,11 +144,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Mostrar só o status ATUAL da conversa (badge no cabeçalho do detalhe), sem marcador na timeline** (RECOMENDADA para este bloco) | Zero mudança de backend; YAGNI puro. | Não atende literalmente "representar mensagens escaladas" na timeline — só "status atual". Limitação a documentar explicitamente na tela (mesmo espírito de D12/Bloco 5). |
-| **B — Inferir a posição da escalada por heurística (ex.: gap entre `AiInteraction`s)** | Tenta atender ao requisito sem tocar o backend. | Não-determinístico — categoria de aproximação que este projeto tem evitado sistematicamente (D11/D12 do Bloco 5 sempre preferiram exatidão). Rejeitada. |
-| **C — Introduzir `ConversationStatusEvent` agora (novo model Prisma + escrita em `updateStatus()`)** | Resolve de verdade, mesmo padrão já usado para sessões WhatsApp. | Expande o escopo do Bloco 6 para dentro do backend — deixaria de ser "só frontend"; reabriria `ConversationRepository`/`PrismaConversationRepository`/`ConversationsService`, já testados e fechados no Bloco 5. |
+| Opção                                                                                                                                 | Descrição                                                        | Vantagens                                                                                                                                                                                                        | Desvantagens |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **A — Mostrar só o status ATUAL da conversa (badge no cabeçalho do detalhe), sem marcador na timeline** (RECOMENDADA para este bloco) | Zero mudança de backend; YAGNI puro.                             | Não atende literalmente "representar mensagens escaladas" na timeline — só "status atual". Limitação a documentar explicitamente na tela (mesmo espírito de D12/Bloco 5).                                        |
+| **B — Inferir a posição da escalada por heurística (ex.: gap entre `AiInteraction`s)**                                                | Tenta atender ao requisito sem tocar o backend.                  | Não-determinístico — categoria de aproximação que este projeto tem evitado sistematicamente (D11/D12 do Bloco 5 sempre preferiram exatidão). Rejeitada.                                                          |
+| **C — Introduzir `ConversationStatusEvent` agora (novo model Prisma + escrita em `updateStatus()`)**                                  | Resolve de verdade, mesmo padrão já usado para sessões WhatsApp. | Expande o escopo do Bloco 6 para dentro do backend — deixaria de ser "só frontend"; reabriria `ConversationRepository`/`PrismaConversationRepository`/`ConversationsService`, já testados e fechados no Bloco 5. |
 
 **Recomendação**: **A** para este bloco, com a limitação documentada explicitamente. **C** registrada como item de backlog — se escolhida, precisaria virar um sub-bloco de BACKEND antes do frontend poder consumi-la.
 
@@ -160,10 +160,10 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Buscar todas as `AiInteraction` da conversa uma vez (endpoint já existe) e casar client-side por `messageId`** (RECOMENDADA) | Zero mudança de backend; custo O(n) sobre lista já pequena por conversa; o próprio Domain já documenta esse uso na docstring de `AiInteraction.messageId`. | Nenhuma. |
-| **B — Novo método de porta `findByMessageId` no backend** | Mais explícito. | Escopo de backend, fora deste levantamento (que é só frontend). |
+| Opção                                                                                                                              | Descrição                                                                                                                                                  | Vantagens                                                       | Desvantagens |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------ |
+| **A — Buscar todas as `AiInteraction` da conversa uma vez (endpoint já existe) e casar client-side por `messageId`** (RECOMENDADA) | Zero mudança de backend; custo O(n) sobre lista já pequena por conversa; o próprio Domain já documenta esse uso na docstring de `AiInteraction.messageId`. | Nenhuma.                                                        |
+| **B — Novo método de porta `findByMessageId` no backend**                                                                          | Mais explícito.                                                                                                                                            | Escopo de backend, fora deste levantamento (que é só frontend). |
 
 **Recomendação**: **A**.
 
@@ -175,11 +175,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Painel embutido em `/conversations/:id` (mesmo padrão de `HistoryList` embutido em `/sessions/:sessionName`)** (RECOMENDADA) | Menor esforço; segue precedente direto. | Nenhuma. |
-| **B — Página própria `/ai-interactions` (visão agregada cross-conversa, billing)** | Útil para dono do negócio olhar custo agregado. | Perde contexto da conversa; não foi pedido explicitamente. |
-| **C — Ambos** | Cobre os dois casos de uso reais. | Mais trabalho, fora do escopo pedido. |
+| Opção                                                                                                                              | Descrição                                       | Vantagens                                                  | Desvantagens |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- | ------------ |
+| **A — Painel embutido em `/conversations/:id` (mesmo padrão de `HistoryList` embutido em `/sessions/:sessionName`)** (RECOMENDADA) | Menor esforço; segue precedente direto.         | Nenhuma.                                                   |
+| **B — Página própria `/ai-interactions` (visão agregada cross-conversa, billing)**                                                 | Útil para dono do negócio olhar custo agregado. | Perde contexto da conversa; não foi pedido explicitamente. |
+| **C — Ambos**                                                                                                                      | Cobre os dois casos de uso reais.               | Mais trabalho, fora do escopo pedido.                      |
 
 **Recomendação**: **A**; (B)/(C) registradas como melhoria opcional.
 
@@ -191,11 +191,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Manter o padrão atual (zero jsdom), extrair lógica para `lib/` puro** | Sem decisão de infraestrutura nova no meio de uma feature. | Ignora o próprio aviso da ADR #51. |
-| **B — Adicionar jsdom + Testing Library agora** | Resolve a lacuna de vez. | Decisão estrutural sendo tomada como efeito colateral de uma feature; exigiria reconfigurar `jest.config.js` (`testEnvironment` do projeto `dashboard`), avaliação separada. |
-| **C — Testar as rotas BFF novas (já testáveis sem jsdom, mesmo padrão de `tests/pages/api/sessions/*`), deixando componentes React sem teste automatizado** (RECOMENDADA) | Cobre o que já é testável com a infraestrutura atual; não fecha a porta para (B) depois. | Componentes `.tsx` continuam sem teste automatizado (mesmo risco já aceito e documentado pela ADR #51). |
+| Opção                                                                                                                                                                     | Descrição                                                                                | Vantagens                                                                                                                                                                    | Desvantagens |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **A — Manter o padrão atual (zero jsdom), extrair lógica para `lib/` puro**                                                                                               | Sem decisão de infraestrutura nova no meio de uma feature.                               | Ignora o próprio aviso da ADR #51.                                                                                                                                           |
+| **B — Adicionar jsdom + Testing Library agora**                                                                                                                           | Resolve a lacuna de vez.                                                                 | Decisão estrutural sendo tomada como efeito colateral de uma feature; exigiria reconfigurar `jest.config.js` (`testEnvironment` do projeto `dashboard`), avaliação separada. |
+| **C — Testar as rotas BFF novas (já testáveis sem jsdom, mesmo padrão de `tests/pages/api/sessions/*`), deixando componentes React sem teste automatizado** (RECOMENDADA) | Cobre o que já é testável com a infraestrutura atual; não fecha a porta para (B) depois. | Componentes `.tsx` continuam sem teste automatizado (mesmo risco já aceito e documentado pela ADR #51).                                                                      |
 
 **Recomendação**: **C** para este bloco; **B** como decisão própria, separada, a ser levada a você antes ou depois do Bloco 6 — não dentro dele.
 
@@ -207,11 +207,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Continuar ad hoc** | Zero esforço extra. | Aprofunda uma inconsistência já dupla (com `CLAUDE.md` e com os docs stale). |
-| **B — Definir agora, no `tailwind.config.js`, os tokens mínimos que `CLAUDE.md` §9 já formaliza, aplicados só aos componentes novos** (RECOMENDADA) | Fecha a lacuna aos poucos, sem migração retroativa cara. | Nenhuma real. |
-| **C — Adotar shadcn/ui, seguindo `ARCHITECTURE.md`/`CODING_STANDARDS.md`** | Alinharia com esses documentos. | Inconsistente com a recomendação de D20-A (esses documentos não são fonte de verdade); dependências novas não triviais (Radix UI). Rejeitada. |
+| Opção                                                                                                                                               | Descrição                                                | Vantagens                                                                                                                                     | Desvantagens |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **A — Continuar ad hoc**                                                                                                                            | Zero esforço extra.                                      | Aprofunda uma inconsistência já dupla (com `CLAUDE.md` e com os docs stale).                                                                  |
+| **B — Definir agora, no `tailwind.config.js`, os tokens mínimos que `CLAUDE.md` §9 já formaliza, aplicados só aos componentes novos** (RECOMENDADA) | Fecha a lacuna aos poucos, sem migração retroativa cara. | Nenhuma real.                                                                                                                                 |
+| **C — Adotar shadcn/ui, seguindo `ARCHITECTURE.md`/`CODING_STANDARDS.md`**                                                                          | Alinharia com esses documentos.                          | Inconsistente com a recomendação de D20-A (esses documentos não são fonte de verdade); dependências novas não triviais (Radix UI). Rejeitada. |
 
 **Recomendação**: **B**, limitado ao essencial (cor primária), aplicado só aos componentes novos.
 
@@ -223,11 +223,11 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Manter sem feedback de sucesso explícito** | — | Sem confirmação de que a ação "pegou". |
-| **B — Banner inline de sucesso (mesmo componente de erro, cor diferente)** (RECOMENDADA) | Sem dependência nova; resolve o problema real. | Nenhuma. |
-| **C — Biblioteca de toast** | Feedback não-bloqueante. | Dependência nova não instalada hoje. |
+| Opção                                                                                    | Descrição                                      | Vantagens                              | Desvantagens |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------- | ------------ |
+| **A — Manter sem feedback de sucesso explícito**                                         | —                                              | Sem confirmação de que a ação "pegou". |
+| **B — Banner inline de sucesso (mesmo componente de erro, cor diferente)** (RECOMENDADA) | Sem dependência nova; resolve o problema real. | Nenhuma.                               |
+| **C — Biblioteca de toast**                                                              | Feedback não-bloqueante.                       | Dependência nova não instalada hoje.   |
 
 **Recomendação**: **B**.
 
@@ -239,10 +239,10 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Nenhum Context novo** (RECOMENDADA) | Consistente com o padrão atual (zero Context em todo o Dashboard hoje). | Nenhuma para o escopo pedido. |
-| **B/C — Context de sessão ou de dado "vivo" (contador no Sidebar)** | Resolveria um contador global futuro. | Não foi pedido; decisão nova, separada, se surgir. |
+| Opção                                                               | Descrição                                                               | Vantagens                                          | Desvantagens |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------- | ------------ |
+| **A — Nenhum Context novo** (RECOMENDADA)                           | Consistente com o padrão atual (zero Context em todo o Dashboard hoje). | Nenhuma para o escopo pedido.                      |
+| **B/C — Context de sessão ou de dado "vivo" (contador no Sidebar)** | Resolveria um contador global futuro.                                   | Não foi pedido; decisão nova, separada, se surgir. |
 
 **Recomendação**: **A**.
 
@@ -254,10 +254,10 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 **Opções possíveis**:
 
-| Opção | Descrição | Vantagens | Desvantagens |
-|---|---|---|---|
-| **A — Não virtualizar (YAGNI)** (RECOMENDADA) | 200 nós DOM não é volume que justifique virtualização em nenhum navegador moderno; decisão reversível sem custo de migração. | Nenhuma. |
-| **B — Virtualizar desde já** | — | Dependência nova sem necessidade demonstrada. Rejeitada. |
+| Opção                                         | Descrição                                                                                                                    | Vantagens                                                | Desvantagens |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------ |
+| **A — Não virtualizar (YAGNI)** (RECOMENDADA) | 200 nós DOM não é volume que justifique virtualização em nenhum navegador moderno; decisão reversível sem custo de migração. | Nenhuma.                                                 |
+| **B — Virtualizar desde já**                  | —                                                                                                                            | Dependência nova sem necessidade demonstrada. Rejeitada. |
 
 **Recomendação**: **A**.
 
@@ -273,14 +273,14 @@ Nenhum destes pontos bloqueia tecnicamente o Bloco 6 — mas quatro deles (D20, 
 
 ## 3. Riscos Encontrados
 
-| Risco | Categoria | Descrição | Mitigação recomendada |
-|---|---|---|---|
-| **Tratar `specs/M003-Conversations.md` como especificação vigente por engano (D20)** | Escopo/documentação | Expandiria o escopo para um CRM completo (`Contact`/`Tag`/`Attachment`/webhooks) nunca aprovado em nenhuma ADR real. | D20-A formalizado nesta rodada; considerar nota de "documento superado" nos 4 arquivos stale. |
-| **Implementar paginação antes de fechar a estratégia de dados** | Sequenciamento | D24 antes de D23 causaria retrabalho — são interdependentes. | Seguir a ordem D23 → D24 → D25 explicitamente. |
-| **Reaproveitar `StatusBadge` por atalho para status de conversa** | Acoplamento de tipos | `StatusBadge` é tipado a `WhatsAppSessionStatus`; forçar reuso quebraria o tipo ou exigiria `as any`. | Componente próprio `ConversationStatusBadge`, já planejado. |
-| **Multiplicar conexões SSE sem critério (D23-A rejeitada)** | Performance/UX | Degradaria a experiência sem necessidade real. | D23-B (híbrido) já recomendado. |
-| **Expectativa não atendida sobre "mensagens escaladas" na timeline (D26)** | Produto/UX | Sem marcador de transição, a timeline mostra só status atual — atendimento parcial do requisito original. | Confirmação explícita de D26-A antes de codar, para não ser descoberto como lacuna depois da entrega. |
-| **`tsconfig`/`jest.config.js` do Dashboard reconfigurados sem avaliação isolada (D29)** | Infraestrutura de teste | Adicionar jsdom "de passagem" dentro de uma feature de UI misturaria uma decisão estrutural com entrega de produto. | D29-C (rotas BFF testáveis sem jsdom) recomendado para este bloco; jsdom como decisão própria. |
+| Risco                                                                                   | Categoria               | Descrição                                                                                                            | Mitigação recomendada                                                                                 |
+| --------------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Tratar `specs/M003-Conversations.md` como especificação vigente por engano (D20)**    | Escopo/documentação     | Expandiria o escopo para um CRM completo (`Contact`/`Tag`/`Attachment`/webhooks) nunca aprovado em nenhuma ADR real. | D20-A formalizado nesta rodada; considerar nota de "documento superado" nos 4 arquivos stale.         |
+| **Implementar paginação antes de fechar a estratégia de dados**                         | Sequenciamento          | D24 antes de D23 causaria retrabalho — são interdependentes.                                                         | Seguir a ordem D23 → D24 → D25 explicitamente.                                                        |
+| **Reaproveitar `StatusBadge` por atalho para status de conversa**                       | Acoplamento de tipos    | `StatusBadge` é tipado a `WhatsAppSessionStatus`; forçar reuso quebraria o tipo ou exigiria `as any`.                | Componente próprio `ConversationStatusBadge`, já planejado.                                           |
+| **Multiplicar conexões SSE sem critério (D23-A rejeitada)**                             | Performance/UX          | Degradaria a experiência sem necessidade real.                                                                       | D23-B (híbrido) já recomendado.                                                                       |
+| **Expectativa não atendida sobre "mensagens escaladas" na timeline (D26)**              | Produto/UX              | Sem marcador de transição, a timeline mostra só status atual — atendimento parcial do requisito original.            | Confirmação explícita de D26-A antes de codar, para não ser descoberto como lacuna depois da entrega. |
+| **`tsconfig`/`jest.config.js` do Dashboard reconfigurados sem avaliação isolada (D29)** | Infraestrutura de teste | Adicionar jsdom "de passagem" dentro de uma feature de UI misturaria uma decisão estrutural com entrega de produto.  | D29-C (rotas BFF testáveis sem jsdom) recomendado para este bloco; jsdom como decisão própria.        |
 
 **Nenhuma violação de Clean Architecture foi encontrada** — o Bloco 6, tal como escopado (D20-A), não toca `apps/api` em nenhuma decisão recomendada; toda mudança fica em `apps/dashboard` (Presentation/BFF). **Nenhuma violação de DDD** — os bounded contexts (`whatsapp`, `conversations`, `ai`) permanecem com fronteiras claras; D28-A (painel embutido) não cruza a fronteira de Presentation do BACKEND (D16 do Bloco 5), é puramente uma composição de UI no frontend. **SOLID**: D21 (factory) preserva Open/Closed; D24 (paginação) e D25 (filtro) mantêm SRP dos hooks de listagem. **YAGNI/KISS**: aplicados de forma consistente em D26 (não inferir), D29 (não instalar jsdom "de passagem"), D30 (não adotar shadcn/ui), D32 (não introduzir Context), D33 (não virtualizar) — nenhuma decisão recomendada introduz infraestrutura sem necessidade demonstrada pelo escopo pedido.
 

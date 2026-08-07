@@ -95,27 +95,33 @@ Analytics deriva **todas** as métricas diretamente das tabelas existentes, por 
 > Mesma disciplina incremental dos Blocos 4/5/6: cada sub-bloco termina com lint + testes pertinentes + `tsc` verdes antes do próximo. Nenhum avança com a etapa anterior quebrada.
 
 ### M4A — Abertura da milestone (higiene + migration de índices)
+
 **Escopo**: (1) avisos de "documento superado, ver CLAUDE.md/DECISIONS.md" no topo dos 4 arquivos stale (`ARCHITECTURE.md`, `PROJECT_CONTEXT.md`, `CODING_STANDARDS.md`, `specs/M003-Conversations.md`) — fecha o risco de D20 pela terceira vez; (2) migration Prisma aditiva de D43 (`[tenantId, createdAt]` em `AiInteraction`, `[tenantId, occurredAt]` em `WhatsAppMessage`).
 **Critérios de aceite**: `prisma migrate dev` gera a migration; `prisma generate` limpo; os 536 testes existentes continuam verdes (nenhum contrato muda); nenhuma coluna alterada (só `@@index`). No sandbox, a corrupção conhecida do Prisma Client (ADR #56) pode impedir `generate` — documentar, validar na máquina real.
 **Sem código de feature.**
 
 ### M4B — Backend: domain + application de `services/analytics`
+
 **Escopo**: `AnalyticsRepository` (port, `services/analytics/domain/repositories/`) com métodos de agregação (`aiUsageByPeriod`, `messageFlowByPeriod`, `conversationCounts`, opcional `sessionStabilityByPeriod`); DTOs de série temporal (`AnalyticsPeriodPoint`, etc.); `AnalyticsService` (`application/`) que valida o tenant via `TenantRepository` (padrão `assertTenantExists`, herda o mapeamento correto de `TenantNotFoundError` — D14/Bloco 5), aplica o teto de janela (D48) e delega ao port. Erros de domínio próprios se necessário (ex.: `InvalidAnalyticsRangeError`).
 **Critérios de aceite**: testes unitários de `AnalyticsService` com um `FakeAnalyticsRepository` (janela inválida → erro; tenant inexistente → `TenantNotFoundError`; teto de janela aplicado; delegação correta). `costUsd` string ponta a ponta. Lint/tsc verdes.
 
 ### M4C — Backend: infrastructure + wiring
+
 **Escopo**: `PrismaAnalyticsRepository` (`$queryRaw`+`date_trunc` para séries; `aggregate`/`groupBy` para não-temporais; `costUsd` sempre string — D44/D46; `tenantId` sempre parâmetro vinculado — §4); `createAnalyticsComposition(prisma, logger)` (padrão dos composition roots existentes); `analyticsRouter` (Zod, thin router — D18) + `analyticsErrorHandler` (mapeia `TenantNotFoundError`, path-scoped — D14/D17); wiring em `index.ts` (montar sob `/api/tenants/:tenantId/analytics`, atrás de `requireApiKey`, error handler path-scoped; degradação graciosa não se aplica — analytics não depende de Redis).
 **Critérios de aceite**: teste de repo com Prisma mockado (formato do `$queryRaw`, parametrização de `tenantId`, `costUsd` string); teste de integração de rota (supertest + Fakes, incluindo fechamento de IDOR e faixa inválida → 400); `analyticsErrorHandler` mapeando `TenantNotFoundError` → 404 (teste dedicado, padrão Bloco 5). Lint/tsc; `tsc` do `apps/api` continua com só a corrupção pré-existente do Prisma Client (ADR #56), agora com eventuais novos call sites do mesmo tipo — documentar, sem impacto em teste.
 
 ### M4D — BFF (dashboard `pages/api`)
+
 **Escopo**: `createApiClient('analytics')` (D21, já pronto para reuso — só instanciar); rotas proxy `pages/api/analytics/{ai-usage,messages,conversations,session-stability}.ts` (proxy fino, `requireSession`, repassam `from`/`to`/`granularity`); DTOs de analytics em `lib/clientApi.ts` + funções `fetchAiUsage`/etc.
 **Critérios de aceite**: testes de rota (padrão `tests/pages/api/*`, `node`, sem jsdom) — repasse de query, 401 sem sessão, 405 por método. Lint/tsc.
 
 ### M4E — Dashboard: UI de Analytics
+
 **Escopo**: setup do terceiro projeto Jest `dashboard-jsdom` + `recharts`/`@testing-library`/`jsdom` no `package.json` (D49); `lib/analyticsView.ts` (transformações puras série→recharts, testadas em `node`); hooks (`useAiUsageAnalytics`, `useMessagesAnalytics`, `useConversationsAnalytics` — fetch simples, seletor de faixa de tempo em estado local); componentes de gráfico (`AiCostChart`, `MessageFlowChart`, `ConversationStatusChart`, `MetricCard`, `DateRangePicker`) usando o token `primary` (D30); página `pages/analytics.tsx` (guard `requirePageSession`, estados loading/erro/vazio); link "Analytics" no `Sidebar` (D50).
 **Critérios de aceite**: testes de `analyticsView` (`node`); primeiros testes de componente (`jsdom`) cobrindo estados loading/erro/vazio de pelo menos um gráfico; as suítes `node` existentes intocadas e verdes. Lint/tsc. `costUsd` convertido para número só na fronteira do recharts.
 
 ### M4F — Validação final + documentação
+
 **Escopo**: suíte completa (`node` + `dashboard-jsdom`), lint dos dois workspaces, `tsc`, `next build` (a confirmar na máquina real — pendência conhecida M2/M3); ADR nova de encerramento da M4; `MILESTONE_004_ANALYTICS_LEVANTAMENTO.md` marcado como concluído; `PROJECT_STATUS.md` §28; `ROADMAP.md` M4 → DONE.
 **Critérios de aceite**: todas as suítes verdes; lint limpo; `tsc` só com a corrupção conhecida do Prisma (ADR #56); documentação atualizada; relatório final com arquivos afetados, decisões implementadas, e confirmação de que nada além da M4 foi iniciado.
 
@@ -123,16 +129,16 @@ Analytics deriva **todas** as métricas diretamente das tabelas existentes, por 
 
 ## 4. Riscos
 
-| Risco | Categoria | Descrição | Mitigação |
-|---|---|---|---|
-| **Migration de índices (D43) toca o backend "protegido"** | Schema | Único ponto que altera o Prisma. | Estritamente aditiva (só `@@index`), aprovada explicitamente; não altera nenhuma coluna/contrato; 536 testes existentes continuam verdes como prova de não-regressão. |
-| **`$queryRaw` é a primeira SQL crua do projeto** | Segurança | Injection se `tenantId`/datas forem interpolados. | `Prisma.sql`/parâmetros vinculados SEMPRE; `tenantId` nunca concatenado; teste explícito de que a query é parametrizada. |
-| **jsdom reconfigura o Jest** | Tooling/testes | Trocar `testEnvironment` global quebraria as suítes `node` atuais. | Terceiro projeto Jest isolado (`dashboard-jsdom`); os projetos `api`/`dashboard` (node) ficam intocados. |
-| **Precisão de `costUsd` (D46)** | Correção de dados | Alguém faz `Number(sum)` "para o gráfico" e vaza float no transporte. | Invariante testada: DTO/JSON sempre string; conversão só no eixo do recharts. |
-| **`next build` não-validável no sandbox + recharts (bundle maior)** | Build | Compile webpack excede o teto de execução do ambiente. | Confirmar na máquina real (mesma pendência M2/M3, ADRs #50/#51). |
-| **Corrupção do Prisma Client no sandbox (ADR #56)** | Ambiente | `prisma generate` bloqueado por rede; novos call sites de agregação podem herdar erros de `tsc`. | Documentar; zero impacto em `npm test` (`import type` apagado pelo ts-jest); irrelevante na máquina real. |
-| **Bucket UTC pode confundir tenant em outro fuso (D45)** | UX/produto | "Por dia" à meia-noite UTC. | Limitação documentada na resposta da API; evolução (fuso por parâmetro) registrada, fora do escopo. |
-| **Tentação de cache/rollup ao ver latência (D51)** | Escopo | Uma agregação pesada pode tentar um rollup. | D51 é restrição-mãe: a resposta é índice/consulta melhor, nunca pré-agregação — proibido nesta milestone. |
+| Risco                                                               | Categoria         | Descrição                                                                                        | Mitigação                                                                                                                                                             |
+| ------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Migration de índices (D43) toca o backend "protegido"**           | Schema            | Único ponto que altera o Prisma.                                                                 | Estritamente aditiva (só `@@index`), aprovada explicitamente; não altera nenhuma coluna/contrato; 536 testes existentes continuam verdes como prova de não-regressão. |
+| **`$queryRaw` é a primeira SQL crua do projeto**                    | Segurança         | Injection se `tenantId`/datas forem interpolados.                                                | `Prisma.sql`/parâmetros vinculados SEMPRE; `tenantId` nunca concatenado; teste explícito de que a query é parametrizada.                                              |
+| **jsdom reconfigura o Jest**                                        | Tooling/testes    | Trocar `testEnvironment` global quebraria as suítes `node` atuais.                               | Terceiro projeto Jest isolado (`dashboard-jsdom`); os projetos `api`/`dashboard` (node) ficam intocados.                                                              |
+| **Precisão de `costUsd` (D46)**                                     | Correção de dados | Alguém faz `Number(sum)` "para o gráfico" e vaza float no transporte.                            | Invariante testada: DTO/JSON sempre string; conversão só no eixo do recharts.                                                                                         |
+| **`next build` não-validável no sandbox + recharts (bundle maior)** | Build             | Compile webpack excede o teto de execução do ambiente.                                           | Confirmar na máquina real (mesma pendência M2/M3, ADRs #50/#51).                                                                                                      |
+| **Corrupção do Prisma Client no sandbox (ADR #56)**                 | Ambiente          | `prisma generate` bloqueado por rede; novos call sites de agregação podem herdar erros de `tsc`. | Documentar; zero impacto em `npm test` (`import type` apagado pelo ts-jest); irrelevante na máquina real.                                                             |
+| **Bucket UTC pode confundir tenant em outro fuso (D45)**            | UX/produto        | "Por dia" à meia-noite UTC.                                                                      | Limitação documentada na resposta da API; evolução (fuso por parâmetro) registrada, fora do escopo.                                                                   |
+| **Tentação de cache/rollup ao ver latência (D51)**                  | Escopo            | Uma agregação pesada pode tentar um rollup.                                                      | D51 é restrição-mãe: a resposta é índice/consulta melhor, nunca pré-agregação — proibido nesta milestone.                                                             |
 
 **Nenhuma violação de Clean Architecture/DDD prevista**: `services/analytics` lê tabelas por SQL de leitura sem importar entidades ricas nem repositórios de outros contextos; a direção de dependência se mantém. O único acoplamento é a leitura de tabelas físicas de outros contextos — aceitável para um contexto de analytics read-only, e isolado no `AnalyticsRepository` (nunca vaza para Application/Presentation).
 
@@ -173,4 +179,4 @@ Analytics deriva **todas** as métricas diretamente das tabelas existentes, por 
 
 ---
 
-*Aguardando aprovação do plano de sub-blocos (M4A–M4F) antes de iniciar a implementação de M4A. Nenhum código deve ser escrito até essa aprovação.*
+_Aguardando aprovação do plano de sub-blocos (M4A–M4F) antes de iniciar a implementação de M4A. Nenhum código deve ser escrito até essa aprovação._

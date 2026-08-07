@@ -48,7 +48,10 @@ describe('GET/POST /api/sessions', () => {
 
     await handler(req, res);
 
-    expect(callApi).toHaveBeenCalledWith(SESSION, '', { method: 'POST', body: { sessionName: 'vendas' } });
+    expect(callApi).toHaveBeenCalledWith(SESSION, '', {
+      method: 'POST',
+      body: { sessionName: 'vendas' },
+    });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

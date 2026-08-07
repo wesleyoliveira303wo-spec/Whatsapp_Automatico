@@ -247,6 +247,36 @@ enum WhatsAppConversationStatus {
   @@map("whatsapp_conversation_status")
 }
 
+/// Estágio de funil de vendas de uma `WhatsAppConversation` — Milestone 6,
+/// Bloco M6H-5 (2026-07-30). Funil clássico de 5 estágios (2 terminais),
+/// fixo em código (não customizável por tenant nesta rodada — decisão do
+/// fundador, mesma disciplina de YAGNI já usada para `WhatsAppProviderType`/
+/// RBAC fixo: generalizar sem um segundo caso de uso real seria abstração
+/// especulativa). Deliberadamente SEM estágio "qualificação" separado
+/// (opção descartada pelo fundador) — `CONTACTED` já cobre esse papel.
+enum ConversationStage {
+  NEW
+  CONTACTED
+  NEGOTIATING
+  CLOSED_WON
+  CLOSED_LOST
+
+  @@map("conversation_stage")
+}
+
+/// Quem gravou o `ConversationStage` atual pela ÚLTIMA vez — mesmo racional
+/// de `WhatsAppConversationStatus`, um enum em vez de um booleano
+/// (`stageSetByHuman: true`) para ficar auto-explicativo no banco. Controla
+/// a policy "a IA nunca sobrescreve uma correção manual": a IA só pode
+/// gravar um novo estágio quando o valor atual deste campo for `AI` (ver
+/// `services/conversations/domain/policies/shouldAiUpdateStage.ts`).
+enum ConversationStageSetBy {
+  AI
+  HUMAN
+
+  @@map("conversation_stage_set_by")
+}
+
 /// Sentido de uma `WhatsAppMessage` dentro de uma conversa. Nome
 /// deliberadamente prefixado `WhatsAppMessage`, não `MessageDirection`: o
 /// schema já tem um enum `MessageDirection` no domínio legado "Milestone
@@ -257,6 +287,23 @@ enum WhatsAppMessageDirection {
   OUTBOUND
 
   @@map("whatsapp_message_direction")
+}
+
+/// Tipo de conteúdo de uma `WhatsAppMessage` — Fase 1, Bloco F1.1 (suporte a
+/// mídia, ver DECISIONS.md ADR #90). Espelha exatamente as categorias que o
+/// protocolo WhatsApp/Baileys distingue (`imageMessage`/`audioMessage`/
+/// `videoMessage`/`documentMessage`/`stickerMessage`) — nenhuma categoria
+/// nova inventada além do que o protocolo já separa. `TEXT` é o default e o
+/// único valor que existia implicitamente antes desta migration.
+enum WhatsAppMessageContentType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  STICKER
+
+  @@map("whatsapp_message_content_type")
 }
 
 // ---------- Models (WhatsApp Connectivity) ----------
@@ -289,8 +336,15 @@ model Tenant {
   // Milestone 5, Bloco M5A — usuarios e trilha de auditoria do tenant.
   users                 User[]
   auditLogs             AuditLog[]
-  // Base de Conhecimento (Nivel 1) — perfil de negocio unico por tenant.
-  aiBusinessProfile     AiBusinessProfile?
+  // Base de Conhecimento (Nivel 1) — um perfil de negocio POR SESSAO desde a
+  // Milestone 6, Bloco M6H-3 (2026-07-25) — antes era um unico perfil por
+  // tenant (campo escalar `?`); agora e uma lista, pois cada WhatsApp do
+  // tenant pode ter seu proprio "cerebro" (ver AiBusinessProfile).
+  aiBusinessProfiles    AiBusinessProfile[]
+  // Fase 1, Bloco F1.9 — respostas rapidas por sessao.
+  quickReplies          QuickReply[]
+  // Redesign 2026-08-05 (R4) — catálogo de tags livres por sessão.
+  tags                  WhatsAppTag[]
 
   @@map("tenants")
 }
@@ -424,6 +478,14 @@ model WhatsAppConversation {
   sessionName String                     @map("session_name")
   /// JID do contato no WhatsApp (`InboundWhatsAppMessage.from`, Bloco 1).
   contactJid String                      @map("contact_jid")
+  /// Milestone 6, Bloco M6H-2b — nome de exibição do WhatsApp (`pushName`,
+  /// capturado pelo `BaileysProvider` a cada mensagem inbound). Nullable: só
+  /// existe a partir da PRIMEIRA mensagem que carregar um `pushName` (nem
+  /// toda mensagem do Baileys traz — ex.: histórico de sincronização já
+  /// filtrado antes de chegar aqui). Reescrito a cada mensagem nova que
+  /// trouxer um nome (o contato pode mudar o nome de exibição no WhatsApp) —
+  /// nunca apagado por uma mensagem sem nome (ver `PrismaConversationRepository`).
+  contactName String?                    @map("contact_name")
   status      WhatsAppConversationStatus @default(BOT)
   /// Milestone 5, Bloco M5A (D57) — ownership: qual usuario assumiu esta
   /// conversa (o "dono atual" do atendimento). Coluna aditiva/nullable, SEM
@@ -431,11 +493,105 @@ model WhatsAppConversation {
   /// a entidade `User`). Preenchimento no M5D (escalate/resume/reassign);
   /// o historico atribuido vive no `AuditLog`.
   assignedToUserId String?             @map("assigned_to_user_id")
+  /// Milestone 6 (reforma do escalonamento, 2026-07-25) — quando a IA pediu
+  /// atenção humana pela ÚLTIMA vez (marcador de escalonamento OU falha ao
+  /// gerar resposta), sem tirar a IA do circuito: `status` NÃO muda mais
+  /// neste momento (só quando um humano de fato clica "Assumir conversa" —
+  /// ver `ConversationsService.escalateConversation`, que também LIMPA este
+  /// campo). `null` = ninguém pediu ajuda desde a última vez que um humano
+  /// assumiu/a conversa foi criada. Reescrito (não só definido uma vez) a
+  /// cada nova escalada — mesmo numa conversa que já estava sinalizada —
+  /// para sustentar um novo alerta na Dashboard a cada pedido de ajuda,
+  /// não só no primeiro.
+  escalatedAt DateTime?                  @map("escalated_at")
+  /// Indicador de não lidas (2026-07-25, pedido do fundador) — quantas
+  /// mensagens INBOUND chegaram desde a última vez que um humano abriu esta
+  /// conversa pela Dashboard. Denormalizado (contador, não um `COUNT(*)` a
+  /// cada listagem): incrementado atomicamente em
+  /// `MessageIngestionService.handle()` a cada mensagem inbound persistida, e
+  /// zerado por `ConversationsService.markAsRead()` (`POST .../read`, novo
+  /// endpoint) quando o operador abre a conversa. Nunca decrementado
+  /// individualmente — sempre um reset completo para 0, mesmo racional de um
+  /// "marcar tudo como lido". Mensagens OUTBOUND (da IA ou de um operador)
+  /// nunca incrementam este campo — só o que o CONTATO manda é "não lido".
+  unreadCount Int                        @default(0) @map("unread_count")
+  /// Milestone 6, Bloco M6H-5 (2026-07-30) — estágio no funil de vendas. Toda
+  /// conversa nasce em `NEW` (default, sem exigir preenchimento em nenhum
+  /// ponto de criação existente — `upsertByTenantSessionAndContact` continua
+  /// funcionando sem mudança). Gravado tanto por ação humana explícita
+  /// (`ConversationsService.updateStage`, sempre permitida) quanto pela IA
+  /// junto com cada resposta (`AiReplyJobProcessor`, só quando `stageSetBy`
+  /// atual for `AI` — ver policy `shouldAiUpdateStage`).
+  stage       ConversationStage          @default(NEW)
+  /// Quem gravou `stage` pela última vez. Default `AI`: a IA pode classificar
+  /// livremente até que um humano corrija manualmente pela primeira vez —
+  /// a partir daí a IA nunca mais sobrescreve aquela conversa (decisão do
+  /// fundador: evita o card "voltar sozinho" depois de uma correção).
+  stageSetBy      ConversationStageSetBy @default(AI) @map("stage_set_by")
+  /// Quando `stage` foi gravado pela última vez (por IA ou humano) —
+  /// independente de `updatedAt` (que qualquer campo bumpa, ADR #79/#82) para
+  /// permitir, no futuro, medir "tempo parado num estágio" sem ambiguidade
+  /// com outra atividade da conversa (nova mensagem, marcar como lida etc.).
+  stageUpdatedAt  DateTime               @default(now()) @map("stage_updated_at")
+  /// ADR #94 (2026-08-01, validação Fase 1) — marca uma conversa como FORA
+  /// do funil comercial (amigo/família/fornecedor/funcionário falando no
+  /// mesmo número do WhatsApp usado pela empresa). Atributo ORTOGONAL a
+  /// `stage`/`status`: não é mais um estágio do Kanban (um card "Não é
+  /// cliente" ao lado de "Negociando" não é um estágio, é uma exclusão) —
+  /// é um flag independente, mesmo padrão de `escalatedAt`/`unreadCount`
+  /// nesta mesma entidade. Default `false`: toda conversa nasce dentro do
+  /// funil comercial, igual sempre foi. Efeito em cascata é só FILTRO, não
+  /// exclusão de dado: `shouldAutoRespond` para de liberar a IA, o board
+  /// Kanban e o funil de Analytics passam a ignorar (`WHERE NOT
+  /// excluded_from_pipeline`), mas mensagens/histórico continuam 100%
+  /// acessíveis — só sai das telas comerciais, nunca do banco. Marcação
+  /// deliberadamente MANUAL nesta rodada (nunca a IA) — errar aqui
+  /// (marcar um cliente de verdade como "não comercial") é pior que não
+  /// marcar nada.
+  excludedFromPipeline Boolean @default(false) @map("excluded_from_pipeline")
+  /// Fase 1, Bloco F1.7 (2026-08-01) — trecho da ÚLTIMA mensagem (qualquer
+  /// direção, inbound ou outbound), para a linha da lista de Conversas
+  /// (padrão Intercom/Slack/WhatsApp Web: "prévia" ao lado do horário).
+  /// Denormalizado (mesmo padrão de `unreadCount`/`stageUpdatedAt` nesta
+  /// mesma entidade) — gravado por `PrismaMessageRepository.create()` num
+  /// único ponto de escrita (TODA mensagem, de qualquer origem — ingestão
+  /// inbound, envio de texto/mídia do operador, resposta da IA — passa por
+  /// esse método), nunca calculado por consulta a cada listagem. Para
+  /// mensagens de mídia sem legenda, guarda um rótulo textual (ex.: "📷
+  /// Imagem") em vez de string vazia — ver `buildMessagePreview()`.
+  /// `null` só para conversas sem nenhuma mensagem ainda (nunca deveria
+  /// acontecer na prática, toda conversa nasce de uma mensagem inbound, mas
+  /// o tipo é opcional por segurança).
+  lastMessagePreview String? @map("last_message_preview")
+  /// Acompanha `lastMessagePreview` — quando a última mensagem ocorreu.
+  /// Redundante com `updatedAt` na maioria dos casos, mas `updatedAt` também
+  /// muda por escalonamento/estágio/leitura (ADR #79/#82/#94), então não
+  /// serve como "quando a prévia foi gerada" de forma inequívoca.
+  lastMessageAt DateTime? @map("last_message_at")
+  /// Redesign 2026-08-05 (R5) — resumo da conversa gerado pela IA SOB
+  /// DEMANDA (botão "Gerar resumo"/"Atualizar" no painel de contexto, nunca
+  /// automático — custo previsível, controlado pelo operador). `null` até a
+  /// primeira geração. Não é o `systemPrompt` do autoresponder — prompt
+  /// dedicado, próprio deste recurso (ver `SummaryPromptBuilder`).
+  aiSummary String? @map("ai_summary")
+  /// Quando `aiSummary` foi gerado pela última vez — junto com
+  /// `aiSummaryMessageCount`, permite a UI mostrar "desatualizado" quando
+  /// mensagens novas chegaram depois da última geração, sem precisar
+  /// comparar timestamps de mensagem a mensagem.
+  aiSummaryUpdatedAt DateTime? @map("ai_summary_updated_at")
+  /// Quantas mensagens a conversa tinha no momento em que `aiSummary` foi
+  /// gerado — comparado com a contagem atual para acender o aviso de
+  /// "desatualizado" (ver docstring de `aiSummaryUpdatedAt`). `0` até a
+  /// primeira geração (nunca `null` — sempre comparável).
+  aiSummaryMessageCount Int @default(0) @map("ai_summary_message_count")
   createdAt   DateTime                   @default(now()) @map("created_at")
   updatedAt   DateTime                   @updatedAt @map("updated_at")
 
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   messages WhatsAppMessage[]
+  /// Redesign 2026-08-05 (R4) — tags livres atribuídas a esta conversa
+  /// (N:N via `WhatsAppConversationTag`). Ver `WhatsAppTag` para o catálogo.
+  conversationTags WhatsAppConversationTag[]
 
   /// Chave lógica única de uma conversa: um contato só tem UMA conversa por
   /// sessão de um tenant. Formaliza no banco a mesma garantia que
@@ -444,6 +600,10 @@ model WhatsAppConversation {
   /// `WhatsAppSession.@@unique([tenantId, sessionName])`, ADR #25/P6).
   @@unique([tenantId, sessionName, contactJid])
   @@index([tenantId])
+  /// Suporta o board Kanban (M6H-5/M6I): buscar todas as conversas de UMA
+  /// sessão, agrupadas por estágio — mesmo racional de índice composto já
+  /// usado em `WhatsAppSessionEvent(tenantId, sessionName, occurredAt)`.
+  @@index([tenantId, sessionName, stage])
   @@map("whatsapp_conversations")
 }
 
@@ -469,7 +629,29 @@ model WhatsAppMessage {
   tenantId       String                   @map("tenant_id")
   conversationId String                   @map("conversation_id")
   direction      WhatsAppMessageDirection
+  /// Para mídia (`contentType != TEXT`): a legenda (`caption`) quando houver,
+  /// ou string vazia — nunca `null`, para não forçar todo consumidor
+  /// existente (`PromptBuilder`, `MessageTimeline`) a tratar ausência.
   content        String
+  /// Fase 1, Bloco F1.1 (ADR #90). Default `TEXT` preserva compatibilidade
+  /// total com toda linha existente antes desta migration (nenhum backfill
+  /// necessário — toda mensagem já persistida É texto, por definição: mídia
+  /// era descartada antes de chegar aqui).
+  contentType    WhatsAppMessageContentType @default(TEXT) @map("content_type")
+  /// Mimetype do arquivo de mídia (ex.: `image/jpeg`, `audio/ogg; codecs=opus`).
+  /// `NULL` quando `contentType == TEXT`.
+  mediaMimeType  String?                  @map("media_mime_type")
+  /// URL `.enc` bruta do CDN do WhatsApp (ADR #90) — expira e é inútil sem
+  /// `mediaKeyEncrypted`; nunca servida diretamente ao cliente do Dashboard,
+  /// só consumida internamente por `WhatsAppProvider.downloadMedia()`.
+  mediaUrl       String?                  @map("media_url") @db.Text
+  /// `mediaKey` do protocolo Signal/WhatsApp, cifrada pelo mesmo `Cipher`
+  /// (AES-256-GCM, chave derivada por tenant) já usado em
+  /// `TenantCredential.value` — NUNCA em texto plano (ADR #90).
+  mediaKeyEncrypted String?               @map("media_key_encrypted") @db.Text
+  /// Nome de arquivo original, quando o WhatsApp o informa (comum em
+  /// mensagens de documento). `NULL` para os demais tipos/quando ausente.
+  mediaFileName  String?                  @map("media_file_name")
   /// Instante de negócio (recebida/enviada) — distinto de `createdAt`
   /// (quando a linha foi persistida). Mesmo padrão de
   /// `WhatsAppSessionEvent.occurredAt`.
@@ -526,6 +708,24 @@ enum AiInteractionStatus {
   @@map("ai_interaction_status")
 }
 
+/// Fase 1, Bloco F1.4 (2026-08-01) — motivo da escalada para atendimento
+/// humano, quando `AiInteraction.status = SUCCESS` E a IA emitiu um marcador
+/// de escalonamento (espelha `EscalationReason`,
+/// `services/ai/domain/escalationSignal.ts`). `null` = a IA não escalou
+/// nesta tentativa (resposta normal, ou falha antes de gerar qualquer
+/// conteúdo).
+enum AiEscalationReason {
+  /// A IA não sabia responder com segurança — sinal de LACUNA real de
+  /// conteúdo (pré-requisito para a captura automática de lacunas, ADR #71
+  /// itens b/c).
+  UNKNOWN_ANSWER
+  /// O cliente pediu explicitamente para falar com uma pessoa — preferência
+  /// do cliente, não uma lacuna de conteúdo.
+  REQUESTED_HUMAN
+
+  @@map("ai_escalation_reason")
+}
+
 // ---------- Models (IA — Milestone 3, Bloco 3b) ----------
 
 /// Registro de auditoria/billing de UMA tentativa de geração de resposta de
@@ -568,6 +768,10 @@ model AiInteraction {
   latencyMs      Int                  @map("latency_ms")
   status         AiInteractionStatus
   errorMessage   String?              @map("error_message") @db.Text
+  /// Fase 1, Bloco F1.4 (2026-08-01) — ver docstring de `AiEscalationReason`.
+  /// Nullable/aditivo: `null` para toda interação gravada antes deste bloco
+  /// e para qualquer tentativa em que a IA não escalou.
+  escalationReason AiEscalationReason? @map("escalation_reason")
   createdAt      DateTime             @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -605,16 +809,119 @@ model AiInteraction {
 ///
 /// `content` @db.Text: sem limite pratico de tamanho (catalogos podem ser
 /// longos). Aditiva e isolada: nenhuma tabela existente e alterada.
+/// Milestone 6, Bloco M6H-3 (2026-07-25) — migrado de 1:1 por TENANT para 1:1
+/// por SESSÃO de WhatsApp (`sessionName`): cada número atendido pelo Francis
+/// pode ter seu próprio "cérebro" (empresa/produto/preços diferentes por
+/// linha, ex.: uma franquia com um WhatsApp por unidade). `sessionName`
+/// aditivo/nullable na migration (para o backfill rodar antes do
+/// `NOT NULL`); a chave única passou de `tenantId` sozinho para
+/// `(tenantId, sessionName)` — ver `20260725160000_ai_business_profile_per_session`.
 model AiBusinessProfile {
-  id        String   @id @default(uuid())
-  tenantId  String   @unique @map("tenant_id")
-  content   String   @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  content     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  /// F1.8 — Horário de atendimento configurável por sessão (2026-08-01).
+  /// Quando `offHoursEnabled` é true e o horário atual (no `timezone`) estiver
+  /// fora do intervalo [`workingHoursStart`, `workingHoursEnd`) nos dias
+  /// `workingDays` (bitmask: bit0=Dom, bit1=Seg…bit6=Sáb; 62=Seg-Sex),
+  /// o `PromptBuilder` injeta um aviso no system prompt para a IA informar o
+  /// cliente sobre o horário — sem silenciar a resposta (a IA continua
+  /// respondendo dentro do seu conhecimento, só sinaliza o horário).
+  offHoursEnabled   Boolean @default(false) @map("off_hours_enabled")
+  offHoursMessage   String? @db.Text @map("off_hours_message")
+  workingHoursStart String? @map("working_hours_start")
+  workingHoursEnd   String? @map("working_hours_end")
+  workingDays       Int     @default(62) @map("working_days")
+  timezone          String  @default("America/Sao_Paulo") @map("timezone")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, sessionName])
   @@map("ai_business_profiles")
+}
+
+/// Fase 1, Bloco F1.9 — respostas rapidas (templates) para o atendente
+/// humano inserir com um clique no MessageComposer. POR SESSAO (nao por
+/// tenant, mesmo padrao de AiBusinessProfile/M6H-3): cada WhatsApp pode ter
+/// seu proprio conjunto de respostas prontas. Sem `@@unique` — varias linhas
+/// por (tenantId, sessionName), ordenadas por createdAt na leitura.
+model QuickReply {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  content     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sessionName])
+  @@map("quick_replies")
+}
+
+/// Redesign 2026-08-05 (R4) — paleta FIXA de cores de tag (8 opções — decisão
+/// do fundador via `AskUserQuestion`: "bolinhas" de cor pré-definidas, não
+/// hex livre, para garantir legibilidade em ambos os temas sem cálculo de
+/// contraste em tempo real). Enum (não `String` livre) — mesmo racional já
+/// usado para `ConversationStage`/`WhatsAppMessageContentType`: conjunto
+/// fechado, o Prisma/Postgres recusam um valor fora da lista na origem.
+enum TagColor {
+  GRAY
+  RED
+  ORANGE
+  AMBER
+  GREEN
+  TEAL
+  BLUE
+  PURPLE
+
+  @@map("tag_color")
+}
+
+/// Redesign 2026-08-05 (R4) — catálogo de tags livres, POR SESSÃO (mesmo
+/// padrão do Cérebro da IA/Respostas Rápidas, ADR #82): cada WhatsApp tem
+/// seu próprio conjunto de etiquetas. Deliberadamente `WhatsAppTag`, NÃO o
+/// `model Tag` do domínio legado congelado (ADR #11) — mesmo racional de
+/// prefixo já usado por `WhatsAppConversation`/`WhatsAppMessage` para evitar
+/// colisão de nome no Prisma Client (namespace único por schema).
+model WhatsAppTag {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  name        String
+  color       TagColor @default(GRAY)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant           Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationTags WhatsAppConversationTag[]
+
+  /// Nome único por sessão (não faz sentido duas tags "VIP" na mesma sessão).
+  @@unique([tenantId, sessionName, name])
+  @@index([tenantId, sessionName])
+  @@map("whatsapp_tags")
+}
+
+/// Redesign 2026-08-05 (R4) — junção N:N entre conversa e tag. Sem `id`
+/// próprio: a chave primária composta já garante "no máximo uma atribuição
+/// da mesma tag à mesma conversa" (idempotente por construção — atribuir de
+/// novo não duplica linha). `onDelete: Cascade` nos dois lados: apagar a
+/// conversa OU a tag limpa as atribuições, sem linha órfã.
+model WhatsAppConversationTag {
+  conversationId String   @map("conversation_id")
+  tagId          String   @map("tag_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag          WhatsAppTag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, tagId])
+  @@index([tagId])
+  @@map("whatsapp_conversation_tags")
 }
 
 // ---------- Enums (Auth / Multiusuario — Milestone 5, Bloco M5A) ----------

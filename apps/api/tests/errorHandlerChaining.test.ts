@@ -33,7 +33,10 @@ function buildApp(): Express {
   app.get('/api/tenants/:tenantId/conversations/boom', () => {
     throw new ConversationNotFoundError('conversation-x');
   });
-  app.use('/api/tenants/:tenantId/conversations', createConversationsErrorHandler(new NoopLogger()));
+  app.use(
+    '/api/tenants/:tenantId/conversations',
+    createConversationsErrorHandler(new NoopLogger()),
+  );
 
   return app;
 }

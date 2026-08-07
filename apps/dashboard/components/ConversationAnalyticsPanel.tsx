@@ -1,4 +1,5 @@
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { CHART_COLORS } from '@/lib/chartTheme';
 import type { NewConversationsPoint, ConversationStatusCounts } from '@/lib/clientApi';
 
 interface ConversationAnalyticsPanelProps {
@@ -7,40 +8,66 @@ interface ConversationAnalyticsPanelProps {
   errorMessage: string | null;
 }
 
-/** Painel de conversas (Milestone 4, Bloco M4E — D42): serie de novas conversas por dia + retrato atual bot/humano. */
+/**
+ * Painel de "Conversas novas" (Milestone 4, Bloco M4E — D42): série de novas
+ * conversas por dia + retrato atual bot/humano.
+ *
+ * Reskin 2026-08-07 (Design System, tela Analytics) — gráfico igual ao de
+ * `AiUsageChart` (sparkline sem eixo/grade/tooltip), com a legenda de status
+ * abaixo (ponto colorido + rótulo + contagem), igual ao mockup. O mockup de
+ * amostra inclui uma 3ª categoria fictícia ("Aguardando") que não existe nos
+ * dados reais — `ConversationStatusCounts` só tem `bot`/`human` (o produto
+ * não guarda uma contagem separada de "aguardando atendente" aqui); mostrar
+ * um número inventado violaria a mesma regra que já vale para tamanho de
+ * arquivo/duplo-check de leitura em outras telas — por isso a legenda real
+ * tem 2 itens, não 3. Cores mantidas iguais ao resto do produto (bot=verde
+ * `success`, humano=âmbar `warning`, mesmo par de `ConversationStatusBadge`).
+ */
 export default function ConversationAnalyticsPanel({
   newConversations,
   statusCounts,
   errorMessage,
 }: ConversationAnalyticsPanelProps): JSX.Element {
   if (errorMessage) {
-    return <p className="text-sm text-red-600">{errorMessage}</p>;
+    return <p className="text-sm text-destructive">{errorMessage}</p>;
   }
   if (newConversations === null || statusCounts === null) {
-    return <p className="text-sm text-gray-500">Carregando conversas…</p>;
+    return <p className="text-sm text-muted-foreground">Carregando conversas…</p>;
   }
 
   return (
-    <div className="flex flex-col gap-4" data-testid="conversation-analytics-panel">
-      <div className="flex gap-4 text-sm">
-        <span className="rounded-full bg-green-100 px-3 py-1 font-semibold text-green-800">Bot: {statusCounts.bot}</span>
-        <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-800">Humano: {statusCounts.human}</span>
-      </div>
+    <div className="flex flex-col gap-3" data-testid="conversation-analytics-panel">
       {newConversations.length === 0 ? (
-        <p className="text-sm text-gray-500">Nenhuma conversa nova no periodo.</p>
+        <p className="text-sm text-muted-foreground">Nenhuma conversa nova no período.</p>
       ) : (
-        <div className="h-48 w-full">
+        <div className="h-[100px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={newConversations} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip />
-              <Line type="monotone" dataKey="count" name="Novas conversas" stroke="#0A74DA" dot={false} />
-            </LineChart>
+            <AreaChart data={newConversations} margin={{ top: 3, right: 3, bottom: 3, left: 3 }}>
+              <Area
+                type="monotone"
+                dataKey="count"
+                stroke={CHART_COLORS.primary}
+                strokeWidth={2}
+                fill={CHART_COLORS.primary}
+                fillOpacity={0.08}
+                dot={{ r: 2.5, stroke: 'none', fill: CHART_COLORS.primary }}
+                activeDot={false}
+                isAnimationActive={false}
+              />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       )}
+      <div className="flex flex-wrap gap-3.5">
+        <span className="flex items-center gap-1.5 text-xs text-foreground-secondary">
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-success" aria-hidden="true" />
+          Bot respondendo · {statusCounts.bot}
+        </span>
+        <span className="flex items-center gap-1.5 text-xs text-foreground-secondary">
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-warning" aria-hidden="true" />
+          Atendimento humano · {statusCounts.human}
+        </span>
+      </div>
     </div>
   );
 }

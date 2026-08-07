@@ -1,4 +1,9 @@
-import type { PrismaClient, Prisma, UserRole as PrismaUserRole, UserStatus as PrismaUserStatus } from '@prisma/client';
+import type {
+  PrismaClient,
+  Prisma,
+  UserRole as PrismaUserRole,
+  UserStatus as PrismaUserStatus,
+} from '@prisma/client';
 
 import { User, UserRole, UserStatus } from '../../domain/entities/User';
 import {
@@ -99,7 +104,9 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async findByTenantAndEmail(tenantId: string, email: string): Promise<User | null> {
-    const row = await this.prisma.user.findUnique({ where: { tenantId_email: { tenantId, email } } });
+    const row = await this.prisma.user.findUnique({
+      where: { tenantId_email: { tenantId, email } },
+    });
     return row ? toDomain(row) : null;
   }
 
@@ -135,7 +142,8 @@ export class PrismaUserRepository implements UserRepository {
     if (changes.role !== undefined) data.role = ROLE_TO_PRISMA[changes.role];
     if (changes.status !== undefined) data.status = STATUS_TO_PRISMA[changes.status];
     if (changes.lastLoginAt !== undefined) data.lastLoginAt = changes.lastLoginAt;
-    if (changes.mustChangePassword !== undefined) data.mustChangePassword = changes.mustChangePassword;
+    if (changes.mustChangePassword !== undefined)
+      data.mustChangePassword = changes.mustChangePassword;
 
     const result = await this.prisma.user.updateMany({ where: { id }, data });
     if (result.count === 0) {

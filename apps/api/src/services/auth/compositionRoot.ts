@@ -14,10 +14,12 @@ import { Sha256RefreshTokenCodec } from './infrastructure/Sha256RefreshTokenCode
 import { RefreshTokenService } from './application/RefreshTokenService';
 import { AuthService } from './application/AuthService';
 import { UserManagementService } from './application/UserManagementService';
+import { AuditLogService } from './application/AuditLogService';
 import { createAuthRouter } from './presentation/authRouter';
 import { createAuthErrorHandler } from './presentation/authErrorHandler';
 import { createUsersRouter } from './presentation/usersRouter';
 import { createUsersErrorHandler } from './presentation/usersErrorHandler';
+import { createAuditLogRouter } from './presentation/auditLogRouter';
 
 /** Config de auth vinda do ambiente (segredo do cracha + validades). Resolvida em `index.ts`. */
 export interface AuthConfig {
@@ -46,18 +48,39 @@ export interface AuthComposition {
   userManagementService: UserManagementService;
   usersRouter: Router;
   usersErrorHandler: ErrorRequestHandler;
+  /** Painel de auditoria (Fase 1, Bloco F1.5). Campo ADITIVO. */
+  auditLogService: AuditLogService;
+  auditLogRouter: Router;
 }
 
-export function createAuthComposition(prisma: PrismaClient, config: AuthConfig, logger: Logger): AuthComposition {
+export function createAuthComposition(
+  prisma: PrismaClient,
+  config: AuthConfig,
+  logger: Logger,
+): AuthComposition {
   const userRepository = new PrismaUserRepository(prisma);
   const refreshTokenRepository = new PrismaRefreshTokenRepository(prisma);
   const auditLogRepository = new PrismaAuditLogRepository(prisma);
 
   const passwordHasher = new ScryptPasswordHasher();
-  const accessTokenService = new Hs256AccessTokenService(config.accessTokenSecret, config.accessTokenTtlSeconds);
-  const refreshTokenService = new RefreshTokenService(refreshTokenRepository, new Sha256RefreshTokenCodec(), config.refreshTokenTtlMs);
+  const accessTokenService = new Hs256AccessTokenService(
+    config.accessTokenSecret,
+    config.accessTokenTtlSeconds,
+  );
+  const refreshTokenService = new RefreshTokenService(
+    refreshTokenRepository,
+    new Sha256RefreshTokenCodec(),
+    config.refreshTokenTtlMs,
+  );
 
-  const authService = new AuthService(userRepository, passwordHasher, accessTokenService, refreshTokenService, auditLogRepository, logger);
+  const authService = new AuthService(
+    userRepository,
+    passwordHasher,
+    accessTokenService,
+    refreshTokenService,
+    auditLogRepository,
+    logger,
+  );
 
   const requireUser = createRequireUser(accessTokenService);
   // Milestone 5, Bloco M5H — freio anti-forca-bruta nas rotas pre-autenticacao
@@ -80,6 +103,11 @@ export function createAuthComposition(prisma: PrismaClient, config: AuthConfig, 
   const usersRouter = createUsersRouter(userManagementService);
   const usersErrorHandler = createUsersErrorHandler(logger);
 
+  // Fase 1, Bloco F1.5 — reusa a MESMA instância de `auditLogRepository` já
+  // usada por `authService`/`userManagementService` (nada duplicado).
+  const auditLogService = new AuditLogService(auditLogRepository);
+  const auditLogRouter = createAuditLogRouter(auditLogService);
+
   return {
     authService,
     authRouter,
@@ -89,5 +117,7 @@ export function createAuthComposition(prisma: PrismaClient, config: AuthConfig, 
     userManagementService,
     usersRouter,
     usersErrorHandler,
+    auditLogService,
+    auditLogRouter,
   };
 }

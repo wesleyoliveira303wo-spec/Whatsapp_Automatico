@@ -23,7 +23,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
   const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+  // Milestone 6, Bloco M6H-2 — repassa `sessionName` tal como recebido, mesmo padrão dos demais.
+  const sessionName = typeof req.query.sessionName === 'string' ? req.query.sessionName : undefined;
+  // Reforma do escalonamento (2026-07-25) — repassa `needsHumanAttention` tal como recebido.
+  const needsHumanAttention =
+    typeof req.query.needsHumanAttention === 'string' ? req.query.needsHumanAttention : undefined;
+  // ADR #94 (2026-08-01) — repassa `excludedFromPipeline` tal como recebido.
+  const excludedFromPipeline =
+    typeof req.query.excludedFromPipeline === 'string' ? req.query.excludedFromPipeline : undefined;
 
-  const { status: httpStatus, body } = await callConversationsApi(session, '', { query: { status, limit, cursor } });
+  const { status: httpStatus, body } = await callConversationsApi(session, '', {
+    query: { status, limit, cursor, sessionName, needsHumanAttention, excludedFromPipeline },
+  });
   res.status(httpStatus).json(body);
 }

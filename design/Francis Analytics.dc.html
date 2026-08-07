@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #F3F3F1; }
+  * { box-sizing: border-box; }
+  body { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #0E6E52; text-decoration: none; }
+  a:hover { color: #0A5540; }
+  .fx-scroll { scrollbar-width: thin; scrollbar-color: #D8DAD4 transparent; }
+  .fx-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .fx-scroll::-webkit-scrollbar-thumb { background: #DCDED8; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+</style>
+</helmet>
+
+<div style="height: 100vh; display: flex; flex-direction: column; background: #F3F3F1; color: #16211C; overflow: hidden;">
+
+  <header style="height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 16px; background: #F3F3F1; border-bottom: 1px solid #E6E7E3;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="width: 22px; height: 22px; border-radius: 7px; background: #0E6E52; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; letter-spacing: -0.02em;">F</div>
+      <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.02em;">Francis</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 12.5px; color: #5C6B64;">Vértice Vendas</span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #16A34A;"></span>
+      <span style="font-size: 12.5px; color: #5C6B64;">Conectado</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <nav style="position: relative; width: 56px; flex: 0 0 56px; background: #F3F3F1; border-right: 1px solid #E6E7E3; display: flex; flex-direction: column; align-items: center; padding: 10px 0 12px;">
+      <button title="Vértice Vendas · Conectado — voltar a todos os WhatsApps" aria-label="Voltar a todos os WhatsApps" style="position: relative; width: 34px; height: 34px; margin: 2px 0 14px; padding: 0; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; display: grid; place-items: center; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;" style-hover="background: rgba(14,110,82,0.18);">
+        F
+        <span style="position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 999px; background: #16A34A; border: 2px solid #F3F3F1;"></span>
+      </button>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+        <button title="Conversas" aria-label="Conversas" style="position: relative; width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-2.8-.4L4 21l1.4-4.2A8.2 8.2 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z" /></svg>
+          <span style="position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 999px; background: #D0342C; border: 2px solid #F3F3F1;"></span>
+        </button>
+        <button title="Pipeline" aria-label="Pipeline" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5" /><rect x="10" y="4" width="5" height="11" rx="1.5" /><rect x="17" y="4" width="4" height="7" rx="1.5" /></svg>
+        </button>
+        <button title="Analytics" aria-label="Analytics" aria-current="page" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; cursor: pointer;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l4-5 3 3 4-6" /></svg>
+        </button>
+        <button title="IA" aria-label="IA" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3.5" /><path d="M12 3.5V7" /><circle cx="9.2" cy="13" r="1.1" fill="currentColor" stroke="none" /><circle cx="14.8" cy="13" r="1.1" fill="currentColor" stroke="none" /></svg>
+        </button>
+      </div>
+      <div style="flex: 1;"></div>
+      <button title="Tema escuro" aria-label="Alternar tema" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+      </button>
+      <button title="Configurações e conta" aria-label="Configurações e conta" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.2 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3 15a1.7 1.7 0 0 0-1.7-1.4H1.2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3 8.2" /></svg>
+      </button>
+    </nav>
+
+    <section class="fx-scroll" style="flex: 1; min-width: 0; overflow-y: auto; min-height: 0;">
+      <div style="max-width: 1120px; padding: 20px 24px 40px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+          <div>
+            <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;">Analytics</h1>
+            <p style="margin: 4px 0 0; font-size: 13px; color: #5C6B64;">Métricas de custo, volume e estabilidade da operação.</p>
+          </div>
+          <div style="display: flex; gap: 4px; background: #FAFAF9; border: 1px solid #E6E7E3; border-radius: 10px; padding: 3px;">
+            <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="4">
+              <button onClick="{{ r.onClick }}" style="height: 27px; padding: 0 11px; border: 0; border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; background: {{ r.bg }}; color: {{ r.fg }};">{{ r.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: {{ metricsCols }}; gap: 12px; margin-bottom: 20px;">
+          <sc-for list="{{ metrics }}" as="m" hint-placeholder-count="3">
+            <div style="padding: 16px 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+              <div style="font-size: 12px; color: #5C6B64; margin-bottom: 8px;">{{ m.label }}</div>
+              <div style="font-size: 25px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;">{{ m.value }}</div>
+              <div style="font-size: 11.5px; color: #5C6B64; margin-top: 6px;">{{ m.hint }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: grid; grid-template-columns: {{ chartsCols }}; gap: 12px;">
+          <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+            <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 2px;">Uso de IA por dia</div>
+            <div style="font-size: 11.5px; color: #5C6B64; margin-bottom: 14px;">Custo estimado em dólares, por dia do período.</div>
+            <div>{{ aiUsageChart }}</div>
+          </div>
+          <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+            <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 2px;">Fluxo de mensagens</div>
+            <div style="font-size: 11.5px; color: #5C6B64; margin-bottom: 14px;">Entrada (cliente) vs. saída (IA + humano).</div>
+            <div>{{ messageFlowChart }}</div>
+          </div>
+          <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+            <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 2px;">Conversas novas</div>
+            <div style="font-size: 11.5px; color: #5C6B64; margin-bottom: 14px;">Novas conversas por dia e distribuição por status atual.</div>
+            <div>{{ conversationsChart }}</div>
+            <div style="display: flex; gap: 14px; margin-top: 12px;">
+              <sc-for list="{{ statusBreakdown }}" as="b" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #3E4A44;"><span style="width: 7px; height: 7px; border-radius: 999px; background: {{ b.dot }};"></span>{{ b.label }} · {{ b.value }}</div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+            <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 2px;">Funil do Pipeline</div>
+            <div style="font-size: 11.5px; color: #5C6B64; margin-bottom: 14px;">Retrato atual — não varia com o período selecionado.</div>
+            <div>{{ funnelChart }}</div>
+          </div>
+          <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+            <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 2px;">Taxa de escalonamento</div>
+            <div style="font-size: 11.5px; color: #5C6B64; margin-bottom: 14px;">% de conversas que precisaram de humano, por dia.</div>
+            <div>{{ escalationChart }}</div>
+          </div>
+          <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+            <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 2px;">Estabilidade da sessão</div>
+            <div style="font-size: 11.5px; color: #5C6B64; margin-bottom: 14px;">Quedas de conexão registradas por dia.</div>
+            <div>{{ stabilityChart }}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+function lineChart(values, color, w, h, fmt) {
+  const max = Math.max(...values, 1);
+  const step = w / (values.length - 1);
+  const pts = values.map((v, i) => [i * step, h - (v / max) * (h - 6) - 3]);
+  const d = "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L");
+  const area = d + ` L${w},${h} L0,${h} Z`;
+  const dots = pts.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.5" fill="${color}" />`).join("");
+  return React.createElement("svg", { width: "100%", height: h + 4, viewBox: `0 0 ${w} ${h + 4}`, style: { display: "block" } },
+    React.createElement("path", { d: area, fill: color, opacity: 0.08 }),
+    React.createElement("path", { d, fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }),
+    React.createElement("g", { dangerouslySetInnerHTML: { __html: dots } })
+  );
+}
+
+function dualBar(a, b, colorA, colorB, w, h) {
+  const max = Math.max(...a, ...b, 1);
+  const n = a.length;
+  const gap = 6, groupW = w / n, barW = (groupW - gap) / 2;
+  const bars = [];
+  for (let i = 0; i < n; i++) {
+    const x = i * groupW;
+    const ha = (a[i] / max) * (h - 4), hb = (b[i] / max) * (h - 4);
+    bars.push(`<rect x="${x.toFixed(1)}" y="${(h - ha).toFixed(1)}" width="${barW.toFixed(1)}" height="${ha.toFixed(1)}" rx="2" fill="${colorA}" />`);
+    bars.push(`<rect x="${(x + barW + 2).toFixed(1)}" y="${(h - hb).toFixed(1)}" width="${barW.toFixed(1)}" height="${hb.toFixed(1)}" rx="2" fill="${colorB}" />`);
+  }
+  return React.createElement("svg", { width: "100%", height: h, viewBox: `0 0 ${w} ${h}`, style: { display: "block" } },
+    React.createElement("g", { dangerouslySetInnerHTML: { __html: bars.join("") } }));
+}
+
+function hBars(rows, w) {
+  const max = Math.max(...rows.map(r => r.value), 1);
+  const barH = 22, gap = 12;
+  const h = rows.length * (barH + gap) - gap;
+  const parts = rows.map((r, i) => {
+    const y = i * (barH + gap);
+    const bw = (r.value / max) * (w - 90);
+    return `<text x="0" y="${y + barH / 2 + 4}" font-size="11.5" fill="#3E4A44" font-family="Instrument Sans, sans-serif">${r.label}</text>
+      <rect x="86" y="${y}" width="${(w - 90).toFixed(1)}" height="${barH}" rx="5" fill="#F2F3F0" />
+      <rect x="86" y="${y}" width="${bw.toFixed(1)}" height="${barH}" rx="5" fill="#0E6E52" opacity="${0.85 - i * 0.09}" />
+      <text x="${w - 2}" y="${y + barH / 2 + 4}" font-size="11.5" fill="#16211C" font-weight="600" text-anchor="end" font-family="Instrument Sans, sans-serif">${r.value}</text>`;
+  });
+  return React.createElement("svg", { width: "100%", height: h, viewBox: `0 0 ${w} ${h}`, style: { display: "block" } },
+    React.createElement("g", { dangerouslySetInnerHTML: { __html: parts.join("") } }));
+}
+
+const AI_USAGE = [1.2, 1.8, 1.5, 2.4, 1.9, 2.7, 2.1];
+const MSG_IN = [42, 55, 38, 61, 47, 58, 50];
+const MSG_OUT = [45, 58, 40, 63, 50, 60, 53];
+const NEW_CONVOS = [3, 5, 2, 6, 4, 7, 5];
+const ESCALATION = [8, 12, 6, 15, 9, 11, 7];
+const STABILITY = [0, 1, 0, 0, 2, 0, 0];
+const RANGES = ["7 dias", "14 dias", "30 dias", "90 dias"];
+
+class Component extends DCLogic {
+  state = { range: "7 dias", vw: typeof window !== "undefined" ? window.innerWidth : 1440 };
+
+  componentDidMount() {
+    this.onResize = () => this.setState({ vw: window.innerWidth });
+    window.addEventListener("resize", this.onResize);
+  }
+  componentWillUnmount() { window.removeEventListener("resize", this.onResize); }
+
+  renderVals() {
+    const s = this.state;
+    const narrow = s.vw < 860;
+    return {
+      metricsCols: narrow ? "1fr" : "repeat(3, 1fr)",
+      chartsCols: narrow ? "1fr" : "1fr 1fr",
+      ranges: RANGES.map(r => ({
+        label: r, bg: r === s.range ? "#16211C" : "transparent", fg: r === s.range ? "#FFFFFF" : "#5C6B64",
+        onClick: () => this.setState({ range: r })
+      })),
+      metrics: [
+        { label: "Custo de IA no período", value: "US$ 13,42", hint: "232 interações" },
+        { label: "Interações de IA", value: "232", hint: "Média de 1,2s de latência" },
+        { label: "Mensagens (entrada + saída)", value: "1.048", hint: "551 recebidas · 497 enviadas" }
+      ],
+      aiUsageChart: lineChart(AI_USAGE, "#0E6E52", 460, 120),
+      messageFlowChart: dualBar(MSG_IN, MSG_OUT, "#0E6E52", "#C9D9D2", 460, 120),
+      conversationsChart: lineChart(NEW_CONVOS, "#0E6E52", 460, 100),
+      statusBreakdown: [
+        { label: "Bot respondendo", value: 4, dot: "#16A34A" },
+        { label: "Atendimento humano", value: 2, dot: "#C4790C" },
+        { label: "Aguardando", value: 1, dot: "#D0342C" }
+      ],
+      funnelChart: hBars([
+        { label: "Novo", value: 2 }, { label: "Contatado", value: 2 }, { label: "Negociando", value: 2 },
+        { label: "Fechado", value: 1 }, { label: "Perdido", value: 1 }
+      ], 460),
+      escalationChart: lineChart(ESCALATION, "#C4790C", 460, 100),
+      stabilityChart: dualBar(STABILITY, STABILITY.map(() => 0), "#D0342C", "transparent", 460, 100)
+    };
+  }
+}
+
+</script>
+</body>
+</html>

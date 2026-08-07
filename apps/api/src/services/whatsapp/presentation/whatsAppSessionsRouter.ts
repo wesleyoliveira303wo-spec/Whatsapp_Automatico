@@ -1,6 +1,9 @@
 import { Router, Request } from 'express';
 import { z } from 'zod';
-import { WhatsAppSessionService, WhatsAppSessionActor } from '../application/WhatsAppSessionService';
+import {
+  WhatsAppSessionService,
+  WhatsAppSessionActor,
+} from '../application/WhatsAppSessionService';
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 import { RequestWithPrincipal } from '../../../shared/presentation/authenticate';
@@ -19,9 +22,19 @@ function toMeta(req: Request): { userAgent?: string; ip?: string } {
   return { userAgent: typeof userAgent === 'string' ? userAgent : undefined, ip: req.ip };
 }
 
-const tenantIdParamSchema = z.object({ tenantId: z.string().trim().min(1, 'tenantId não pode ser vazio') });
-const sessionNameParamSchema = z.object({ sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio') });
-const createSessionBodySchema = z.object({ sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio') });
+const tenantIdParamSchema = z.object({
+  tenantId: z.string().trim().min(1, 'tenantId não pode ser vazio'),
+});
+const sessionNameParamSchema = z.object({
+  sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio'),
+});
+/** Milestone 6, Bloco M6H-2b — JID do contato (ex.: `5511999999999@s.whatsapp.net`), sempre URL-encoded pelo chamador (ver BFF `.../avatar.ts`). */
+const contactJidParamSchema = z.object({
+  contactJid: z.string().trim().min(1, 'contactJid não pode ser vazio'),
+});
+const createSessionBodySchema = z.object({
+  sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio'),
+});
 /**
  * M2, Fase 2 — `limit` é opcional e vem de query string (`?limit=`), sempre
  * uma string nesse ponto; `z.coerce.number()` converte antes de validar
@@ -99,7 +112,12 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
       const body = validateOrRespond(createSessionBodySchema, req.body, res);
       if (!body) return;
 
-      const session = await sessionService.initSession(params.tenantId, body.sessionName, toActor(req), toMeta(req));
+      const session = await sessionService.initSession(
+        params.tenantId,
+        body.sessionName,
+        toActor(req),
+        toMeta(req),
+      );
       res.status(200).json(session);
     }),
   );
@@ -108,7 +126,11 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
     '/:sessionName',
     requirePermission('session:read'),
     asyncHandler(async (req, res) => {
-      const params = validateOrRespond(tenantIdParamSchema.merge(sessionNameParamSchema), req.params, res);
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
       if (!params) return;
 
       const session = await sessionService.getSessionStatus(params.tenantId, params.sessionName);
@@ -120,11 +142,43 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
     '/:sessionName/qrcode',
     requirePermission('session:read'),
     asyncHandler(async (req, res) => {
-      const params = validateOrRespond(tenantIdParamSchema.merge(sessionNameParamSchema), req.params, res);
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
       if (!params) return;
 
       const qrCode = await sessionService.getSessionQRCode(params.tenantId, params.sessionName);
       res.status(200).json({ qrCode });
+    }),
+  );
+
+  /**
+   * Milestone 6, Bloco M6H-2b — foto de perfil de um contato desta sessão,
+   * consultada ao vivo no provider (nunca persistida — ver
+   * `WhatsAppProvider.getProfilePictureUrl`). Mesma permissão de leitura de
+   * sessão (`session:read`): quem já pode ver a sessão pode ver as fotos dos
+   * contatos que conversam com ela. `avatarUrl: undefined` (nunca 404) é uma
+   * resposta válida — a UI trata como "sem foto", não como erro.
+   */
+  router.get(
+    '/:sessionName/contacts/:contactJid/avatar',
+    requirePermission('session:read'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema).merge(contactJidParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const avatarUrl = await sessionService.getContactAvatarUrl(
+        params.tenantId,
+        params.sessionName,
+        params.contactJid,
+      );
+      res.status(200).json({ avatarUrl });
     }),
   );
 
@@ -139,12 +193,20 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
     '/:sessionName/history',
     requirePermission('session:read'),
     asyncHandler(async (req, res) => {
-      const params = validateOrRespond(tenantIdParamSchema.merge(sessionNameParamSchema), req.params, res);
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
       if (!params) return;
       const query = validateOrRespond(historyQuerySchema, req.query, res);
       if (!query) return;
 
-      const events = await sessionService.getSessionHistory(params.tenantId, params.sessionName, query.limit);
+      const events = await sessionService.getSessionHistory(
+        params.tenantId,
+        params.sessionName,
+        query.limit,
+      );
       res.status(200).json({ events });
     }),
   );
@@ -153,10 +215,19 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
     '/:sessionName',
     requirePermission('session:disconnect'),
     asyncHandler(async (req, res) => {
-      const params = validateOrRespond(tenantIdParamSchema.merge(sessionNameParamSchema), req.params, res);
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
       if (!params) return;
 
-      await sessionService.disconnectSession(params.tenantId, params.sessionName, toActor(req), toMeta(req));
+      await sessionService.disconnectSession(
+        params.tenantId,
+        params.sessionName,
+        toActor(req),
+        toMeta(req),
+      );
       res.status(204).send();
     }),
   );
@@ -174,10 +245,19 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
     '/:sessionName/remove',
     requirePermission('session:remove'),
     asyncHandler(async (req, res) => {
-      const params = validateOrRespond(tenantIdParamSchema.merge(sessionNameParamSchema), req.params, res);
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
       if (!params) return;
 
-      await sessionService.removeSession(params.tenantId, params.sessionName, toActor(req), toMeta(req));
+      await sessionService.removeSession(
+        params.tenantId,
+        params.sessionName,
+        toActor(req),
+        toMeta(req),
+      );
       res.status(204).send();
     }),
   );

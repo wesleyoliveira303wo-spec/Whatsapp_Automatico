@@ -4,14 +4,20 @@ import {
   ReconnectionPolicyConfig,
 } from '../../../../src/services/whatsapp/infrastructure/providers/baileys/WhatsAppReconnectionPolicy';
 
-function createFakeLogger(): Logger & { calls: { level: string; message: string; meta?: Record<string, unknown> }[] } {
+function createFakeLogger(): Logger & {
+  calls: { level: string; message: string; meta?: Record<string, unknown> }[];
+} {
   const calls: { level: string; message: string; meta?: Record<string, unknown> }[] = [];
   const logger = {
     calls,
-    debug: (message: string, meta?: Record<string, unknown>) => calls.push({ level: 'debug', message, meta }),
-    info: (message: string, meta?: Record<string, unknown>) => calls.push({ level: 'info', message, meta }),
-    warn: (message: string, meta?: Record<string, unknown>) => calls.push({ level: 'warn', message, meta }),
-    error: (message: string, meta?: Record<string, unknown>) => calls.push({ level: 'error', message, meta }),
+    debug: (message: string, meta?: Record<string, unknown>) =>
+      calls.push({ level: 'debug', message, meta }),
+    info: (message: string, meta?: Record<string, unknown>) =>
+      calls.push({ level: 'info', message, meta }),
+    warn: (message: string, meta?: Record<string, unknown>) =>
+      calls.push({ level: 'warn', message, meta }),
+    error: (message: string, meta?: Record<string, unknown>) =>
+      calls.push({ level: 'error', message, meta }),
     child: () => logger,
   };
   return logger;
@@ -84,7 +90,12 @@ describe('WhatsAppReconnectionPolicy', () => {
   });
 
   it('nunca ultrapassa maxDelayMs, mesmo com muitas falhas consecutivas', () => {
-    const config: ReconnectionPolicyConfig = { baseDelayMs: 100, factor: 10, maxDelayMs: 500, maxConsecutiveFailures: 10 };
+    const config: ReconnectionPolicyConfig = {
+      baseDelayMs: 100,
+      factor: 10,
+      maxDelayMs: 500,
+      maxConsecutiveFailures: 10,
+    };
     const policy = new WhatsAppReconnectionPolicy(config, createFakeLogger());
     const onRetry = jest.fn();
 
@@ -128,7 +139,9 @@ describe('WhatsAppReconnectionPolicy', () => {
     }
     policy.scheduleReconnect('connection_lost', onRetry); // excede o limite
 
-    const warnLog = logger.calls.find((c) => c.level === 'warn' && String(c.message).includes('Circuito de reconexão aberto'));
+    const warnLog = logger.calls.find(
+      (c) => c.level === 'warn' && String(c.message).includes('Circuito de reconexão aberto'),
+    );
     expect(warnLog).toBeDefined();
   });
 

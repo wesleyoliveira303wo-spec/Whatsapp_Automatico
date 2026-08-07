@@ -17,7 +17,10 @@ export interface UseMessagesTimelineResult {
  * em ordem cronologica (mais antiga primeiro — inversao feita no
  * `ConversationsService`, D12 do Bloco 5), nada a reordenar aqui.
  */
-export function useMessagesTimeline(conversationId: string | null, limit?: number): UseMessagesTimelineResult {
+export function useMessagesTimeline(
+  conversationId: string | null,
+  limit?: number,
+): UseMessagesTimelineResult {
   const [messages, setMessages] = useState<ConversationMessage[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);

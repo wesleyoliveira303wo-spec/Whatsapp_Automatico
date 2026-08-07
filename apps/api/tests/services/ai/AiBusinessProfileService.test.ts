@@ -4,6 +4,8 @@ import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogge
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 
+const SESSION = 'sessao-1';
+
 function buildSut(): {
   sut: AiBusinessProfileService;
   profiles: FakeAiBusinessProfileRepository;
@@ -16,27 +18,38 @@ function buildSut(): {
   return { sut, profiles, tenants };
 }
 
-describe('AiBusinessProfileService (Base de Conhecimento — Nível 1)', () => {
+describe('AiBusinessProfileService (Base de Conhecimento — Nível 1, por sessão desde M6H-3)', () => {
   describe('getProfile', () => {
-    it('devolve null quando o tenant existe mas não tem perfil', async () => {
+    it('devolve null quando o tenant existe mas a sessão não tem perfil', async () => {
       const { sut } = buildSut();
 
-      expect(await sut.getProfile('tenant-1')).toBeNull();
+      expect(await sut.getProfile('tenant-1', SESSION)).toBeNull();
     });
 
     it('devolve o perfil quando existe', async () => {
       const { sut, profiles } = buildSut();
-      profiles.seed('tenant-1', 'Salão da Maria.');
+      profiles.seed('tenant-1', SESSION, 'Salão da Maria.');
 
-      const profile = await sut.getProfile('tenant-1');
+      const profile = await sut.getProfile('tenant-1', SESSION);
 
       expect(profile?.content).toBe('Salão da Maria.');
+    });
+
+    it('não mistura perfis de sessões diferentes do mesmo tenant', async () => {
+      const { sut, profiles } = buildSut();
+      profiles.seed('tenant-1', SESSION, 'Perfil da sessão 1.');
+      profiles.seed('tenant-1', 'sessao-2', 'Perfil da sessão 2.');
+
+      expect((await sut.getProfile('tenant-1', SESSION))?.content).toBe('Perfil da sessão 1.');
+      expect((await sut.getProfile('tenant-1', 'sessao-2'))?.content).toBe('Perfil da sessão 2.');
     });
 
     it('lança TenantNotFoundError quando o tenant não existe', async () => {
       const { sut } = buildSut();
 
-      await expect(sut.getProfile('tenant-inexistente')).rejects.toThrow(TenantNotFoundError);
+      await expect(sut.getProfile('tenant-inexistente', SESSION)).rejects.toThrow(
+        TenantNotFoundError,
+      );
     });
   });
 
@@ -44,26 +57,49 @@ describe('AiBusinessProfileService (Base de Conhecimento — Nível 1)', () => {
     it('faz upsert e devolve o perfil persistido', async () => {
       const { sut, profiles } = buildSut();
 
-      const saved = await sut.saveProfile('tenant-1', 'Barbearia do João.');
+      const saved = await sut.saveProfile('tenant-1', SESSION, { content: 'Barbearia do João.' });
 
       expect(saved.content).toBe('Barbearia do João.');
-      expect(await profiles.findByTenant('tenant-1')).not.toBeNull();
+      expect(await profiles.findByTenantAndSession('tenant-1', SESSION)).not.toBeNull();
     });
 
-    it('sobrescreve o conteúdo anterior (idempotente por tenant)', async () => {
+    it('sobrescreve o conteúdo anterior (idempotente por tenant+sessão)', async () => {
       const { sut, profiles } = buildSut();
-      profiles.seed('tenant-1', 'Texto antigo');
+      profiles.seed('tenant-1', SESSION, 'Texto antigo');
 
-      await sut.saveProfile('tenant-1', 'Texto novo');
+      await sut.saveProfile('tenant-1', SESSION, { content: 'Texto novo' });
 
-      expect((await profiles.findByTenant('tenant-1'))?.content).toBe('Texto novo');
+      expect((await profiles.findByTenantAndSession('tenant-1', SESSION))?.content).toBe(
+        'Texto novo',
+      );
+    });
+
+    it('persiste campos de horário de atendimento (F1.8)', async () => {
+      const { sut } = buildSut();
+
+      const saved = await sut.saveProfile('tenant-1', SESSION, {
+        content: 'Salão da Maria.',
+        offHoursEnabled: true,
+        workingHoursStart: '09:00',
+        workingHoursEnd: '18:00',
+        workingDays: 62,
+        timezone: 'America/Sao_Paulo',
+      });
+
+      expect(saved.offHoursEnabled).toBe(true);
+      expect(saved.workingHoursStart).toBe('09:00');
+      expect(saved.workingHoursEnd).toBe('18:00');
+      expect(saved.workingDays).toBe(62);
+      expect(saved.timezone).toBe('America/Sao_Paulo');
     });
 
     it('lança TenantNotFoundError quando o tenant não existe (não cria perfil órfão)', async () => {
       const { sut, profiles } = buildSut();
 
-      await expect(sut.saveProfile('tenant-inexistente', 'x')).rejects.toThrow(TenantNotFoundError);
-      expect(await profiles.findByTenant('tenant-inexistente')).toBeNull();
+      await expect(
+        sut.saveProfile('tenant-inexistente', SESSION, { content: 'x' }),
+      ).rejects.toThrow(TenantNotFoundError);
+      expect(await profiles.findByTenantAndSession('tenant-inexistente', SESSION)).toBeNull();
     });
   });
 });

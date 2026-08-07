@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'create-feature',
-  description: 'Guide the team through planning, implementation, testing, and documentation of a new feature.',
-  phases: [{ title: 'Plan' }, { title: 'Implement' }, { title: 'Test' }, { title: 'Document' }, { title: 'Review' }],
+name: 'create-feature',
+description: 'Guide the team through planning, implementation, testing, and documentation of a new feature.',
+phases: [{ title: 'Plan' }, { title: 'Implement' }, { title: 'Test' }, { title: 'Document' }, { title: 'Review' }],
 };
 
 // Phase: Plan

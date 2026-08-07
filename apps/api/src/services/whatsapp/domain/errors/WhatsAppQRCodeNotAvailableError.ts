@@ -15,7 +15,9 @@
  */
 export class WhatsAppQRCodeNotAvailableError extends Error {
   constructor(tenantId: string, sessionName: string) {
-    super(`QR Code ainda não disponível para esta sessão (tenantId=${tenantId}, sessionName=${sessionName}) — aguarde o evento de conexão gerar um.`);
+    super(
+      `QR Code ainda não disponível para esta sessão (tenantId=${tenantId}, sessionName=${sessionName}) — aguarde o evento de conexão gerar um.`,
+    );
     this.name = 'WhatsAppQRCodeNotAvailableError';
   }
 }

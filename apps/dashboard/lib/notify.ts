@@ -17,7 +17,9 @@ export function ensureNotificationPermission(): void {
 /** Toca um bipe curto (Web Audio) — dois tons rápidos, discreto o bastante para ambiente de trabalho. */
 export function playAlertSound(): void {
   if (typeof window === 'undefined') return;
-  const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const AudioCtx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) return;
   try {
     const ctx = new AudioCtx();

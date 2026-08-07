@@ -249,6 +249,51 @@ export class SessionManager {
   }
 
   /**
+   * Envia mídia — Fase 1, Bloco F1.3. Thin passthrough, mesmo padrão de
+   * `sendMessage`/`downloadMedia`: sem lock de ciclo de vida (não interfere
+   * com `init()`/`disconnect()` em andamento), propaga
+   * `WhatsAppNotConnectedError` sem capturar.
+   */
+  async sendMediaMessage(
+    to: string,
+    media: {
+      contentType: 'image' | 'audio' | 'video' | 'document';
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    },
+  ): Promise<void> {
+    await this.provider.sendMediaMessage(to, media);
+  }
+
+  /**
+   * URL da foto de perfil de `jid` — Milestone 6, Bloco M6H-2b. Mesmo padrão
+   * de `getQRCode()`/`sendMessage()`: thin passthrough ao `provider`, sem
+   * lock de ciclo de vida (leitura independente, não uma transição de
+   * `init()`/`disconnect()`). Nunca lança (ver `WhatsAppProvider.
+   * getProfilePictureUrl`) — `undefined` é um resultado normal, não
+   * propagado como erro.
+   */
+  async getProfilePictureUrl(jid: string): Promise<string | undefined> {
+    return this.provider.getProfilePictureUrl(jid);
+  }
+
+  /**
+   * Baixa e descriptografa o binário de uma mídia de mensagem (Fase 1,
+   * Bloco F1.1, ADR #90) — mesmo padrão de thin passthrough de
+   * `getProfilePictureUrl`/`sendMessage`.
+   */
+  async downloadMedia(media: {
+    contentType: 'image' | 'audio' | 'video' | 'document' | 'sticker';
+    mimeType: string;
+    url: string;
+    mediaKeyEncrypted: string;
+  }): Promise<Buffer | undefined> {
+    return this.provider.downloadMedia(media);
+  }
+
+  /**
    * Geração atual desta instância — ver docstring da classe e do campo
    * `generation`. Usado por `WhatsAppConnectionRegistry.evictIfCurrent()`
    * para decidir, com segurança, se é seguro remover esta instância do seu
@@ -300,7 +345,10 @@ export class SessionManager {
     if (this.ownedSessionId !== undefined) {
       return this.ownedSessionId;
     }
-    const existing = await this.repo.findByTenantAndSessionName(this.sessionKey.tenantId, this.sessionKey.sessionName);
+    const existing = await this.repo.findByTenantAndSessionName(
+      this.sessionKey.tenantId,
+      this.sessionKey.sessionName,
+    );
     if (existing) {
       this.ownedSessionId = existing.id;
     }
@@ -368,11 +416,16 @@ export class SessionManager {
     // entre a leitura de `existing` acima e esta escrita. O `id` definitivo
     // desta sessão é sempre o do RETORNO do upsert, nunca o `id`
     // especulativo gerado em `candidateSession` acima.
-    const initialSession = await this.repo.upsertByTenantAndSessionName(tenantId, sessionName, candidateSession, {
-      status: 'connecting',
-      lastSeen: now,
-      updatedAt: now,
-    });
+    const initialSession = await this.repo.upsertByTenantAndSessionName(
+      tenantId,
+      sessionName,
+      candidateSession,
+      {
+        status: 'connecting',
+        lastSeen: now,
+        updatedAt: now,
+      },
+    );
     const sessionId = initialSession.id;
 
     this.ownedSessionId = sessionId;
@@ -449,6 +502,15 @@ export class SessionManager {
             from: event.from,
             content: event.content,
             receivedAt: event.receivedAt,
+            // ADR #97: repassa a direção da mensagem; `undefined` ≡ 'inbound'
+            // (compatibilidade total com eventos anteriores a esta extensão).
+            direction: event.direction,
+            contactName: event.contactName,
+            // Fase 1, Bloco F1.1 (ADR #90) — repassa tipo/referência de
+            // mídia ao handler sem interpretar o conteúdo (SessionManager só
+            // roteia eventos, nunca decide o que fazer com eles).
+            contentType: event.contentType,
+            media: event.media,
           });
         } catch (error) {
           this.logger.error('Falha ao repassar mensagem recebida ao MessageReceivedHandler', {

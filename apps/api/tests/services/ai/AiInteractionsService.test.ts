@@ -5,7 +5,9 @@ import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogge
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionRepository';
 
-function buildInteraction(overrides: Partial<Omit<AiInteraction, 'id' | 'createdAt'>> = {}): Omit<AiInteraction, 'id' | 'createdAt'> {
+function buildInteraction(
+  overrides: Partial<Omit<AiInteraction, 'id' | 'createdAt'>> = {},
+): Omit<AiInteraction, 'id' | 'createdAt'> {
   return {
     tenantId: 'tenant-1',
     conversationId: 'conversation-1',
@@ -29,7 +31,11 @@ function buildService(): {
   const aiInteractionRepository = new FakeAiInteractionRepository();
   const tenantRepository = new FakeTenantRepository();
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: 'hash-qualquer' });
-  const service = new AiInteractionsService(aiInteractionRepository, tenantRepository, new NoopLogger());
+  const service = new AiInteractionsService(
+    aiInteractionRepository,
+    tenantRepository,
+    new NoopLogger(),
+  );
   return { service, aiInteractionRepository, tenantRepository };
 }
 
@@ -67,12 +73,16 @@ describe('AiInteractionsService (Milestone 3, Bloco 5 - D13)', () => {
   it('lanca TenantNotFoundError quando o tenant nao existe', async () => {
     const { service } = buildService();
 
-    await expect(service.listInteractions('tenant-inexistente')).rejects.toThrow(TenantNotFoundError);
+    await expect(service.listInteractions('tenant-inexistente')).rejects.toThrow(
+      TenantNotFoundError,
+    );
   });
 
   it('conversationId de outro tenant devolve lista vazia (nao vaza dados - defesa em profundidade do proprio repositorio)', async () => {
     const { service, aiInteractionRepository } = buildService();
-    await aiInteractionRepository.record(buildInteraction({ tenantId: 'tenant-2', conversationId: 'conversation-1' }));
+    await aiInteractionRepository.record(
+      buildInteraction({ tenantId: 'tenant-2', conversationId: 'conversation-1' }),
+    );
 
     const result = await service.listInteractions('tenant-1', { conversationId: 'conversation-1' });
 

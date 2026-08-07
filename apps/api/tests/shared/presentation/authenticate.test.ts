@@ -1,4 +1,7 @@
-import { createAuthenticate, RequestWithPrincipal } from '../../../src/shared/presentation/authenticate';
+import {
+  createAuthenticate,
+  RequestWithPrincipal,
+} from '../../../src/shared/presentation/authenticate';
 import { Hs256AccessTokenService } from '../../../src/services/auth/infrastructure/Hs256AccessTokenService';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeApiKeyHasher } from '../security/FakeApiKeyHasher';
@@ -7,7 +10,10 @@ import type { Request, Response } from 'express';
 
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
 
-function build(): { authenticate: ReturnType<typeof createAuthenticate>; access: Hs256AccessTokenService } {
+function build(): {
+  authenticate: ReturnType<typeof createAuthenticate>;
+  access: Hs256AccessTokenService;
+} {
   const access = new Hs256AccessTokenService(SECRET, 900);
   const hasher = new FakeApiKeyHasher();
   const tenants = new FakeTenantRepository();
@@ -19,7 +25,11 @@ function build(): { authenticate: ReturnType<typeof createAuthenticate>; access:
 function fakeRes(): { res: Response; statusMock: jest.Mock; jsonMock: jest.Mock } {
   const jsonMock = jest.fn();
   const statusMock = jest.fn().mockReturnValue({ json: jsonMock });
-  return { res: { status: statusMock, json: jsonMock } as unknown as Response, statusMock, jsonMock };
+  return {
+    res: { status: statusMock, json: jsonMock } as unknown as Response,
+    statusMock,
+    jsonMock,
+  };
 }
 
 function makeReq(headers: Record<string, string>, params: Record<string, string> = {}): Request {
@@ -45,7 +55,12 @@ describe('createAuthenticate (Milestone 5, Bloco M5D)', () => {
     await flush();
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect((req as RequestWithPrincipal).principal).toEqual({ kind: 'user', userId: 'u1', tenantId: 'tenant-1', role: 'operator' });
+    expect((req as RequestWithPrincipal).principal).toEqual({
+      kind: 'user',
+      userId: 'u1',
+      tenantId: 'tenant-1',
+      role: 'operator',
+    });
   });
 
   it('API key valida -> principal machine + next', async () => {
@@ -58,7 +73,10 @@ describe('createAuthenticate (Milestone 5, Bloco M5D)', () => {
     await flush();
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect((req as RequestWithPrincipal).principal).toEqual({ kind: 'machine', tenantId: 'tenant-1' });
+    expect((req as RequestWithPrincipal).principal).toEqual({
+      kind: 'machine',
+      tenantId: 'tenant-1',
+    });
   });
 
   it('sem crachá e sem API key -> 401', async () => {

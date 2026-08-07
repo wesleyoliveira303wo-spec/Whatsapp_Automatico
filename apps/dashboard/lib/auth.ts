@@ -38,7 +38,9 @@ export type ProtectedPageGuard =
  * proxy. Sessão de MÁQUINA (API key) não tem usuário, logo nunca cai no
  * portão — comportamento pré-M5F intacto.
  */
-export function requireProtectedPageSession(context: GetServerSidePropsContext): ProtectedPageGuard {
+export function requireProtectedPageSession(
+  context: GetServerSidePropsContext,
+): ProtectedPageGuard {
   const session = requirePageSession(context);
   if (!session) {
     return { kind: 'redirect', redirect: { destination: '/login', permanent: false } };

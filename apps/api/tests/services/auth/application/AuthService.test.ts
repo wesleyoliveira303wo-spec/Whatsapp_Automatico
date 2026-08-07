@@ -4,7 +4,12 @@ import { Sha256RefreshTokenCodec } from '../../../../src/services/auth/infrastru
 import { Hs256AccessTokenService } from '../../../../src/services/auth/infrastructure/Hs256AccessTokenService';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { User } from '../../../../src/services/auth/domain/entities/User';
-import { FakeUserRepository, FakeRefreshTokenRepository, FakeAuditLogRepository, FakePasswordHasher } from '../testDoubles';
+import {
+  FakeUserRepository,
+  FakeRefreshTokenRepository,
+  FakeAuditLogRepository,
+  FakePasswordHasher,
+} from '../testDoubles';
 
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
 
@@ -34,8 +39,19 @@ function build(): {
   const refreshRepo = new FakeRefreshTokenRepository();
   const audit = new FakeAuditLogRepository();
   const access = new Hs256AccessTokenService(SECRET, 900);
-  const refresh = new RefreshTokenService(refreshRepo, new Sha256RefreshTokenCodec(), 7 * 24 * 60 * 60 * 1000);
-  const service = new AuthService(users, new FakePasswordHasher(), access, refresh, audit, new NoopLogger());
+  const refresh = new RefreshTokenService(
+    refreshRepo,
+    new Sha256RefreshTokenCodec(),
+    7 * 24 * 60 * 60 * 1000,
+  );
+  const service = new AuthService(
+    users,
+    new FakePasswordHasher(),
+    access,
+    refresh,
+    audit,
+    new NoopLogger(),
+  );
   return { service, users, refreshRepo, audit, access };
 }
 
@@ -49,11 +65,17 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(access.verify(result.accessToken)).toEqual({ userId: 'user-1', tenantId: 'tenant-1', role: 'operator' });
+        expect(access.verify(result.accessToken)).toEqual({
+          userId: 'user-1',
+          tenantId: 'tenant-1',
+          role: 'operator',
+        });
         expect(result.refreshToken).toBeTruthy();
         expect((result.user as Record<string, unknown>).passwordHash).toBeUndefined();
       }
-      expect(audit.all().some((e) => e.action === 'auth.login.success' && e.actorUserId === 'user-1')).toBe(true);
+      expect(
+        audit.all().some((e) => e.action === 'auth.login.success' && e.actorUserId === 'user-1'),
+      ).toBe(true);
     });
 
     it('senha errada: ok=false e audita login.failure (sem ator)', async () => {
@@ -126,7 +148,9 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
       await service.logout('tenant-1', 'user-1', login.refreshToken);
 
       expect(refreshRepo.all().every((t) => t.revokedAt !== undefined)).toBe(true);
-      expect(audit.all().some((e) => e.action === 'auth.logout' && e.actorUserId === 'user-1')).toBe(true);
+      expect(
+        audit.all().some((e) => e.action === 'auth.logout' && e.actorUserId === 'user-1'),
+      ).toBe(true);
     });
 
     it('getMe devolve o usuario publico (sem passwordHash); null quando nao existe', async () => {
@@ -157,7 +181,9 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
       expect(updated?.mustChangePassword).toBe(false);
       // Sessoes antigas morrem: todo refresh token do usuario revogado.
       expect(refreshRepo.all().every((t) => t.revokedAt !== undefined)).toBe(true);
-      expect(audit.all().some((e) => e.action === 'auth.password_changed' && e.actorUserId === 'user-1')).toBe(true);
+      expect(
+        audit.all().some((e) => e.action === 'auth.password_changed' && e.actorUserId === 'user-1'),
+      ).toBe(true);
     });
 
     it('senha atual errada: invalid_current_password, NADA muda, audita failure', async () => {

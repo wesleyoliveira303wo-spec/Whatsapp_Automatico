@@ -1,3 +1,4 @@
+import { NOT_CLIENT_COLUMN, type PipelineColumnKey } from './formatters';
 import type { ConversationSummary } from './clientApi';
 
 /**
@@ -28,6 +29,51 @@ export function mergeConversationPages(
 }
 
 /** Busca uma conversa por `id` numa lista ja carregada — `undefined` se ausente (quem chama decide o fallback). */
-export function findConversationById(conversations: ConversationSummary[], id: string): ConversationSummary | undefined {
+export function findConversationById(
+  conversations: ConversationSummary[],
+  id: string,
+): ConversationSummary | undefined {
   return conversations.find((conversation) => conversation.id === id);
+}
+
+/**
+ * Agrupa conversas nas COLUNAS do board Kanban — pipeline de CRM (Milestone
+ * 6, Bloco M6H-5; coluna "Não cliente" acrescentada em 2026-08-01, ADR #96).
+ * Função pura extraída de `PipelineBoard` pelo mesmo racional de
+ * `mergeConversationPages` acima: testável sem jsdom. Dentro de cada
+ * coluna, ordena por `stageUpdatedAt` DESC (card mais recentemente
+ * classificado/movido primeiro) — mesmo espírito de "atividade recente no
+ * topo" já usado em `findAllByTenant` (`apps/api`), mas aplicado ao
+ * timestamp de estágio, não ao de atividade geral da conversa (os dois
+ * campos existem justamente para essa distinção, ver ADR #83+1).
+ *
+ * REGRA DE DERIVAÇÃO (ADR #96): `excludedFromPipeline === true` manda a
+ * conversa para a coluna "Não cliente" INDEPENDENTE do `stage` que ela
+ * carregue por baixo. O `stage` antigo é deliberadamente preservado no dado
+ * (não é zerado ao marcar) — assim, sair da coluna é uma escolha explícita de
+ * destino no arrastar-e-soltar, sem precisar adivinhar de onde o card veio.
+ */
+export function groupConversationsByPipelineColumn(
+  conversations: ConversationSummary[],
+): Record<PipelineColumnKey, ConversationSummary[]> {
+  const groups: Record<PipelineColumnKey, ConversationSummary[]> = {
+    new: [],
+    contacted: [],
+    negotiating: [],
+    closed_won: [],
+    closed_lost: [],
+    [NOT_CLIENT_COLUMN]: [],
+  };
+  for (const conversation of conversations) {
+    const column: PipelineColumnKey = conversation.excludedFromPipeline
+      ? NOT_CLIENT_COLUMN
+      : conversation.stage;
+    groups[column].push(conversation);
+  }
+  for (const column of Object.keys(groups) as PipelineColumnKey[]) {
+    groups[column].sort(
+      (a, b) => new Date(b.stageUpdatedAt).getTime() - new Date(a.stageUpdatedAt).getTime(),
+    );
+  }
+  return groups;
 }

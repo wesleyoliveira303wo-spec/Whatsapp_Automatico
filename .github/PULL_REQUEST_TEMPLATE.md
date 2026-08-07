@@ -4,9 +4,11 @@ about: Submit a PR for review.
 ---
 
 # Description
+
 Please include a summary of the change and why it is needed. Link any related issues.
 
 # Type of change
+
 - [ ] Bug fix (non‑breaking change which fixes an issue)
 - [ ] New feature (non‑breaking change which adds a feature)
 - [ ] Enhancement (non‑breaking change which improves existing functionality)
@@ -15,6 +17,7 @@ Please include a summary of the change and why it is needed. Link any related is
 - [ ] Other (please describe):
 
 # Checklist
+
 - [ ] My code follows the style guidelines in `CODING_STANDARDS.md`
 - [ ] I have performed a self‑review of my code
 - [ ] I have added tests that prove my fix is effective or that my feature works

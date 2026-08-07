@@ -28,17 +28,29 @@ describe('createWhatsAppErrorHandler', () => {
     const handler = createWhatsAppErrorHandler(new NoopLogger());
     const res = buildRes();
 
-    handler(new WhatsAppQRCodeNotAvailableError('tenant-1', 'vendas'), {} as Request, res, jest.fn() as NextFunction);
+    handler(
+      new WhatsAppQRCodeNotAvailableError('tenant-1', 'vendas'),
+      {} as Request,
+      res,
+      jest.fn() as NextFunction,
+    );
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'qr_code_not_available' }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'qr_code_not_available' }),
+    );
   });
 
   it('[D14 - bug corrigido no Bloco 5] mapeia TenantNotFoundError para 404, em vez de cair no 500 generico', () => {
     const handler = createWhatsAppErrorHandler(new NoopLogger());
     const res = buildRes();
 
-    handler(new TenantNotFoundError('tenant-inexistente'), {} as Request, res, jest.fn() as NextFunction);
+    handler(
+      new TenantNotFoundError('tenant-inexistente'),
+      {} as Request,
+      res,
+      jest.fn() as NextFunction,
+    );
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'tenant_not_found' }));

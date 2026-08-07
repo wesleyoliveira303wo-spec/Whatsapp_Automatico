@@ -16,7 +16,9 @@ describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`));
+    const match = (res._headers['Set-Cookie'] as string).match(
+      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
+    );
     return match![1];
   }
 
@@ -47,8 +49,18 @@ describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
   });
 
   it('sessao de PESSOA: devolve o user e NUNCA os tokens', () => {
-    const user = { id: 'user-1', email: 'maria@empresa.com', role: 'manager', mustChangePassword: false };
-    const cookie = cookieFor({ tenantId: 'tenant-1', accessToken: 'acc-1', refreshToken: 'ref-1', user });
+    const user = {
+      id: 'user-1',
+      email: 'maria@empresa.com',
+      role: 'manager',
+      mustChangePassword: false,
+    };
+    const cookie = cookieFor({
+      tenantId: 'tenant-1',
+      accessToken: 'acc-1',
+      refreshToken: 'ref-1',
+      user,
+    });
     const req = createFakeReq({ method: 'GET', cookies: { [SESSION_COOKIE_NAME]: cookie } });
     const res = createFakeRes();
 

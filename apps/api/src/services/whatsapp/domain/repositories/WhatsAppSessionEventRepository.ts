@@ -31,5 +31,9 @@ export interface WhatsAppSessionEventRepository {
    * "histórico recente" do Dashboard (M2-B5), que nunca precisa da tabela
    * inteira de uma vez.
    */
-  listRecentByTenantAndSessionName(tenantId: string, sessionName: string, limit: number): Promise<WhatsAppSessionEvent[]>;
+  listRecentByTenantAndSessionName(
+    tenantId: string,
+    sessionName: string,
+    limit: number,
+  ): Promise<WhatsAppSessionEvent[]>;
 }

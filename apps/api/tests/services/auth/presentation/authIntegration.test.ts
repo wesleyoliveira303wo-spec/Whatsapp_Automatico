@@ -9,7 +9,12 @@ import { Hs256AccessTokenService } from '../../../../src/services/auth/infrastru
 import { createRequireUser } from '../../../../src/shared/presentation/requireUser';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { User } from '../../../../src/services/auth/domain/entities/User';
-import { FakeUserRepository, FakeRefreshTokenRepository, FakeAuditLogRepository, FakePasswordHasher } from '../testDoubles';
+import {
+  FakeUserRepository,
+  FakeRefreshTokenRepository,
+  FakeAuditLogRepository,
+  FakePasswordHasher,
+} from '../testDoubles';
 
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
 
@@ -29,8 +34,19 @@ function buildApp(): { app: Express; users: FakeUserRepository } {
   users.seed(seeded);
 
   const access = new Hs256AccessTokenService(SECRET, 900);
-  const refresh = new RefreshTokenService(new FakeRefreshTokenRepository(), new Sha256RefreshTokenCodec(), 7 * 24 * 60 * 60 * 1000);
-  const authService = new AuthService(users, new FakePasswordHasher(), access, refresh, new FakeAuditLogRepository(), new NoopLogger());
+  const refresh = new RefreshTokenService(
+    new FakeRefreshTokenRepository(),
+    new Sha256RefreshTokenCodec(),
+    7 * 24 * 60 * 60 * 1000,
+  );
+  const authService = new AuthService(
+    users,
+    new FakePasswordHasher(),
+    access,
+    refresh,
+    new FakeAuditLogRepository(),
+    new NoopLogger(),
+  );
   const requireUser = createRequireUser(access);
 
   const app = express();
@@ -43,7 +59,9 @@ function buildApp(): { app: Express; users: FakeUserRepository } {
 describe('Integracao authRouter (Milestone 5, Bloco M5C)', () => {
   it('POST /login com credenciais corretas: 200 + tokens + user sem passwordHash', async () => {
     const { app } = buildApp();
-    const res = await request(app).post('/api/tenants/tenant-1/auth/login').send({ email: 'joao@empresa.com', password: 'senha123' });
+    const res = await request(app)
+      .post('/api/tenants/tenant-1/auth/login')
+      .send({ email: 'joao@empresa.com', password: 'senha123' });
 
     expect(res.status).toBe(200);
     expect(res.body.accessToken).toBeTruthy();
@@ -54,7 +72,9 @@ describe('Integracao authRouter (Milestone 5, Bloco M5C)', () => {
 
   it('POST /login com senha errada: 401 invalid_credentials', async () => {
     const { app } = buildApp();
-    const res = await request(app).post('/api/tenants/tenant-1/auth/login').send({ email: 'joao@empresa.com', password: 'errada' });
+    const res = await request(app)
+      .post('/api/tenants/tenant-1/auth/login')
+      .send({ email: 'joao@empresa.com', password: 'errada' });
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('invalid_credentials');
   });
@@ -67,8 +87,12 @@ describe('Integracao authRouter (Milestone 5, Bloco M5C)', () => {
 
   it('POST /refresh renova os tokens (200)', async () => {
     const { app } = buildApp();
-    const login = await request(app).post('/api/tenants/tenant-1/auth/login').send({ email: 'joao@empresa.com', password: 'senha123' });
-    const res = await request(app).post('/api/tenants/tenant-1/auth/refresh').send({ refreshToken: login.body.refreshToken });
+    const login = await request(app)
+      .post('/api/tenants/tenant-1/auth/login')
+      .send({ email: 'joao@empresa.com', password: 'senha123' });
+    const res = await request(app)
+      .post('/api/tenants/tenant-1/auth/refresh')
+      .send({ refreshToken: login.body.refreshToken });
     expect(res.status).toBe(200);
     expect(res.body.accessToken).toBeTruthy();
   });
@@ -81,15 +105,21 @@ describe('Integracao authRouter (Milestone 5, Bloco M5C)', () => {
 
   it('GET /me com cracha valido: 200 + usuario', async () => {
     const { app } = buildApp();
-    const login = await request(app).post('/api/tenants/tenant-1/auth/login').send({ email: 'joao@empresa.com', password: 'senha123' });
-    const res = await request(app).get('/api/tenants/tenant-1/auth/me').set('authorization', `Bearer ${login.body.accessToken}`);
+    const login = await request(app)
+      .post('/api/tenants/tenant-1/auth/login')
+      .send({ email: 'joao@empresa.com', password: 'senha123' });
+    const res = await request(app)
+      .get('/api/tenants/tenant-1/auth/me')
+      .set('authorization', `Bearer ${login.body.accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe('user-1');
   });
 
   it('POST /logout com cracha valido: 204', async () => {
     const { app } = buildApp();
-    const login = await request(app).post('/api/tenants/tenant-1/auth/login').send({ email: 'joao@empresa.com', password: 'senha123' });
+    const login = await request(app)
+      .post('/api/tenants/tenant-1/auth/login')
+      .send({ email: 'joao@empresa.com', password: 'senha123' });
     const res = await request(app)
       .post('/api/tenants/tenant-1/auth/logout')
       .set('authorization', `Bearer ${login.body.accessToken}`)

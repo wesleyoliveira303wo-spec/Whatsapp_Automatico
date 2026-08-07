@@ -16,6 +16,17 @@ export interface MessageRepository {
   create(message: Omit<Message, 'id'>): Promise<Message>;
 
   /**
+   * Busca UMA mensagem por `id`, escopada a `tenantId` (Fase 1, Bloco F1.1,
+   * ADR #90) — usado pela rota de download de mídia
+   * (`GET .../messages/:messageId/media`), que precisa resolver a
+   * referência `Message.media` de uma mensagem específica antes de chamar
+   * `MediaDownloader`. Devolve `undefined` quando a mensagem não existe OU
+   * pertence a outro tenant — nunca lança (mesma defesa em profundidade já
+   * documentada em `listRecentByConversation`).
+   */
+  findById(tenantId: string, messageId: string): Promise<Message | undefined>;
+
+  /**
    * Devolve até `limit` mensagens mais recentes de uma conversa, DO MAIS
    * NOVO PARA O MAIS ANTIGO (`orderBy: { occurredAt: 'desc' }`) — mesma
    * convenção já usada por
@@ -42,5 +53,9 @@ export interface MessageRepository {
    * `conversationId` vindo de fora para decidir o que pertence a qual
    * tenant.
    */
-  listRecentByConversation(tenantId: string, conversationId: string, limit: number): Promise<Message[]>;
+  listRecentByConversation(
+    tenantId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<Message[]>;
 }

@@ -16,8 +16,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { status, body } = await callConversationsApi(session, `/${encodeURIComponent(conversationId)}/resume`, {
-    method: 'POST',
-  });
+  const { status, body } = await callConversationsApi(
+    session,
+    `/${encodeURIComponent(conversationId)}/resume`,
+    {
+      method: 'POST',
+    },
+  );
   res.status(status).json(body);
 }

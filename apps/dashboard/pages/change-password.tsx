@@ -1,8 +1,10 @@
 import type { GetServerSideProps } from 'next';
 import { useState, type FormEvent } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { requirePageSession } from '@/lib/auth';
 import { changePassword, ClientApiError } from '@/lib/clientApi';
+import { pageTitle } from '@/lib/brand';
 
 interface ChangePasswordPageProps {
   mustChange: boolean;
@@ -68,6 +70,9 @@ export default function ChangePasswordPage({ mustChange }: ChangePasswordPagePro
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
+      <Head>
+        <title>{pageTitle('Trocar senha')}</title>
+      </Head>
       <form
         onSubmit={handleSubmit}
         className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"

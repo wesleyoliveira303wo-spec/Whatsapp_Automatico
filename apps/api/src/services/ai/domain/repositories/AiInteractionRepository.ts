@@ -61,7 +61,11 @@ export interface AiInteractionRepository {
    * pertencer a outro tenant, devolve lista vazia (não lança, não vaza
    * existência de dados de outro tenant).
    */
-  listByConversation(tenantId: string, conversationId: string, limit: number): Promise<AiInteraction[]>;
+  listByConversation(
+    tenantId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<AiInteraction[]>;
 
   /**
    * Lista as interações de IA de um tenant inteiro, da mais recente para a
@@ -71,4 +75,17 @@ export interface AiInteractionRepository {
    * YAGNI, sem consumidor real ainda).
    */
   listByTenant(tenantId: string, limit: number): Promise<AiInteraction[]>;
+
+  /**
+   * Fase 1, Bloco F1.4 (2026-08-01) — critério de aceite: "uma consulta
+   * simples já consegue listar as N perguntas mais recentes que a IA não
+   * soube responder". Filtra por `status = 'success'` E
+   * `escalationReason = 'unknown_answer'` (a IA respondeu normalmente ao
+   * cliente, mas sinalizou que não sabia — distinto de `'requested_human'`,
+   * que não é uma lacuna de conteúdo). `tenantId` obrigatório (mesmo
+   * racional de defesa em profundidade dos demais métodos deste port);
+   * `messageId` costuma estar presente (é o `id` da pergunta original), mas
+   * não é garantido para interações gravadas antes deste bloco.
+   */
+  listUnansweredQuestions(tenantId: string, limit: number): Promise<AiInteraction[]>;
 }

@@ -1,0 +1,12 @@
+-- Reforma do escalonamento (2026-07-25): a IA deixa de tirar a si mesma do
+-- circuito ao pedir ajuda humana. Antes, "escalar" mudava status para
+-- HUMAN sem dono, o que interrompia shouldAutoRespond() e podia deixar o
+-- cliente sem resposta nenhuma ate alguem assumir. Agora "escalar" so marca
+-- este timestamp; status continua BOT e a IA segue tentando responder novas
+-- mensagens. status so vira HUMAN quando um atendente de fato clica
+-- "Assumir conversa" (nesse momento este campo tambem e limpo).
+--
+-- ADITIVA e SEGURA: coluna nova NULLABLE, sem backfill. Todas as conversas
+-- existentes ficam com escalated_at = NULL (nenhuma aparenta estar
+-- aguardando atenção humana até a próxima escalada real).
+ALTER TABLE "whatsapp_conversations" ADD COLUMN "escalated_at" TIMESTAMP(3);

@@ -17,7 +17,14 @@ import { Conversation } from '../entities/Conversation';
  * `MILESTONE_003_AI_AUTORESPONDER.md` §5, risco "Job na fila processado
  * depois que a conversa já foi escalonada", e §6, critério de aceite
  * correspondente).
+ *
+ * ADR #94 (2026-08-01) — segunda condição: uma conversa marcada
+ * `excludedFromPipeline` (amigo/família/fornecedor falando no mesmo número
+ * da empresa) nunca recebe resposta automática, independente de `status`.
+ * Checado aqui (não em `MessageIngestionService`/worker separadamente) pelo
+ * mesmo motivo de sempre — uma única função pura de Domain, reusada nos
+ * dois pontos que precisam da mesma decisão.
  */
 export function shouldAutoRespond(conversation: Conversation): boolean {
-  return conversation.status === 'bot';
+  return conversation.status === 'bot' && !conversation.excludedFromPipeline;
 }

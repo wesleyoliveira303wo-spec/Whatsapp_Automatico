@@ -28,7 +28,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'POST') {
-    const { status: apiStatus, body } = await callUsersApi(session, '', { method: 'POST', body: req.body });
+    const { status: apiStatus, body } = await callUsersApi(session, '', {
+      method: 'POST',
+      body: req.body,
+    });
     res.status(apiStatus).json(body);
     return;
   }

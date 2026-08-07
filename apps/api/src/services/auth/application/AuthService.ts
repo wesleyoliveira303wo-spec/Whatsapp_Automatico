@@ -14,7 +14,8 @@ export interface AuthRequestMeta {
 }
 
 /** Resultado do login — uniao discriminada. No caminho de FALHA, deliberadamente generico (sem dizer se foi email ou senha) para nao permitir enumeracao de usuarios. */
-export type LoginResult = { ok: true; accessToken: string; refreshToken: string; user: PublicUser } | { ok: false };
+export type LoginResult =
+  { ok: true; accessToken: string; refreshToken: string; user: PublicUser } | { ok: false };
 
 /** Resultado do refresh — uniao discriminada. */
 export type RefreshResult = { ok: true; accessToken: string; refreshToken: string } | { ok: false };
@@ -24,7 +25,8 @@ export type RefreshResult = { ok: true; accessToken: string; refreshToken: strin
  * `invalid_current_password` cobre tambem usuario inexistente/suspenso
  * (indistinguiveis de proposito, mesma anti-enumeracao do login).
  */
-export type ChangePasswordResult = { ok: true } | { ok: false; reason: 'invalid_current_password' | 'weak_password' };
+export type ChangePasswordResult =
+  { ok: true } | { ok: false; reason: 'invalid_current_password' | 'weak_password' };
 
 /**
  * Hash "isca" (formato scrypt valido, conteudo irrelevante) usado quando o
@@ -54,12 +56,20 @@ export class AuthService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async login(tenantId: string, email: string, password: string, meta: AuthRequestMeta = {}): Promise<LoginResult> {
+  async login(
+    tenantId: string,
+    email: string,
+    password: string,
+    meta: AuthRequestMeta = {},
+  ): Promise<LoginResult> {
     const user = await this.userRepository.findByTenantAndEmail(tenantId, email);
 
     // Timing: verifica sempre (contra o hash real, ou contra a isca) para que
     // "usuario inexistente" e "senha errada" levem tempos parecidos.
-    const passwordOk = await this.passwordHasher.verify(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    const passwordOk = await this.passwordHasher.verify(
+      password,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+    );
 
     if (!user || user.status !== 'active' || !passwordOk) {
       await this.audit(tenantId, null, 'auth.login.failure', { email }, meta);
@@ -67,7 +77,11 @@ export class AuthService {
     }
 
     const updated = await this.userRepository.update(user.id, { lastLoginAt: this.now() });
-    const accessToken = this.accessTokenService.issue({ userId: user.id, tenantId: user.tenantId, role: user.role });
+    const accessToken = this.accessTokenService.issue({
+      userId: user.id,
+      tenantId: user.tenantId,
+      role: user.role,
+    });
     const refreshToken = await this.refreshTokenService.issue(user.id, meta);
 
     await this.audit(tenantId, user.id, 'auth.login.success', {}, meta);
@@ -87,11 +101,20 @@ export class AuthService {
       return { ok: false };
     }
 
-    const accessToken = this.accessTokenService.issue({ userId: user.id, tenantId: user.tenantId, role: user.role });
+    const accessToken = this.accessTokenService.issue({
+      userId: user.id,
+      tenantId: user.tenantId,
+      role: user.role,
+    });
     return { ok: true, accessToken, refreshToken: rotated.token };
   }
 
-  async logout(tenantId: string, actorUserId: string, presentedRefreshToken: string, meta: AuthRequestMeta = {}): Promise<void> {
+  async logout(
+    tenantId: string,
+    actorUserId: string,
+    presentedRefreshToken: string,
+    meta: AuthRequestMeta = {},
+  ): Promise<void> {
     await this.refreshTokenService.revoke(presentedRefreshToken);
     await this.audit(tenantId, actorUserId, 'auth.logout', {}, meta);
   }
@@ -118,7 +141,10 @@ export class AuthService {
     const user = await this.userRepository.findById(userId);
 
     // Mesma defesa de timing do login: verifica sempre, mesmo sem usuario.
-    const currentOk = await this.passwordHasher.verify(currentPassword, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    const currentOk = await this.passwordHasher.verify(
+      currentPassword,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+    );
     if (!user || user.status !== 'active' || !currentOk) {
       if (user) {
         await this.audit(user.tenantId, user.id, 'auth.password_change.failure', {}, meta);

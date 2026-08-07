@@ -1,6 +1,7 @@
 # Claude Templates
 
 Reusable markdown or code snippet templates used by Claude during generation. Examples:
+
 - Pull request description template.
 - Commit message template.
 - Release note template.

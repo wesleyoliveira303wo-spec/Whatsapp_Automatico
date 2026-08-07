@@ -10,6 +10,8 @@ import {
   NewConversationsPoint,
   ConversationStatusCounts,
   SessionStabilityPoint,
+  PipelineFunnelCounts,
+  EscalationRatePoint,
 } from '../domain/AnalyticsMetrics';
 
 /**
@@ -34,6 +36,13 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * faixa, delega). Nenhum efeito colateral, nenhuma escrita, nenhum cache. Em
  * qualquer conflito futuro de performance, a resposta e indice/consulta melhor
  * (M4A/M4C), nunca pre-agregacao aqui.
+ *
+ * Milestone 6, Bloco M6H-4 (2026-07-26): todo metodo publico ganhou
+ * `sessionName` — mesmo padrao de `AiBusinessProfileService` (M6H-3). NAO
+ * valida que a sessao existe em `services/whatsapp` (baixo acoplamento entre
+ * bounded contexts, mesmo principio ja seguido no projeto): uma sessao
+ * inexistente so devolve series/contagens vazias, nunca um erro — e um
+ * resultado inerte, nao um estado prejudicial.
  */
 export class AnalyticsService {
   constructor(
@@ -42,38 +51,74 @@ export class AnalyticsService {
     private readonly logger: Logger,
   ) {}
 
-  /** Uso de IA por dia. */
-  async getAiUsage(tenantId: string, range: DateRange): Promise<AiUsagePoint[]> {
+  /** Uso de IA por dia, escopado a uma sessao. */
+  async getAiUsage(
+    tenantId: string,
+    sessionName: string,
+    range: DateRange,
+  ): Promise<AiUsagePoint[]> {
     await this.assertTenantExists(tenantId);
     this.assertValidRange(range);
-    return this.analyticsRepository.aiUsageByPeriod(tenantId, range);
+    return this.analyticsRepository.aiUsageByPeriod(tenantId, sessionName, range);
   }
 
-  /** Fluxo de mensagens inbound/outbound por dia. */
-  async getMessageFlow(tenantId: string, range: DateRange): Promise<MessageFlowPoint[]> {
+  /** Fluxo de mensagens inbound/outbound por dia, escopado a uma sessao. */
+  async getMessageFlow(
+    tenantId: string,
+    sessionName: string,
+    range: DateRange,
+  ): Promise<MessageFlowPoint[]> {
     await this.assertTenantExists(tenantId);
     this.assertValidRange(range);
-    return this.analyticsRepository.messageFlowByPeriod(tenantId, range);
+    return this.analyticsRepository.messageFlowByPeriod(tenantId, sessionName, range);
   }
 
-  /** Novas conversas por dia. */
-  async getNewConversations(tenantId: string, range: DateRange): Promise<NewConversationsPoint[]> {
+  /** Novas conversas por dia, escopado a uma sessao. */
+  async getNewConversations(
+    tenantId: string,
+    sessionName: string,
+    range: DateRange,
+  ): Promise<NewConversationsPoint[]> {
     await this.assertTenantExists(tenantId);
     this.assertValidRange(range);
-    return this.analyticsRepository.newConversationsByPeriod(tenantId, range);
+    return this.analyticsRepository.newConversationsByPeriod(tenantId, sessionName, range);
   }
 
-  /** Contagem atual de conversas por status (sem faixa de tempo — D42). */
-  async getConversationStatusCounts(tenantId: string): Promise<ConversationStatusCounts> {
+  /** Contagem atual de conversas por status (sem faixa de tempo — D42), escopado a uma sessao. */
+  async getConversationStatusCounts(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<ConversationStatusCounts> {
     await this.assertTenantExists(tenantId);
-    return this.analyticsRepository.conversationStatusCounts(tenantId);
+    return this.analyticsRepository.conversationStatusCounts(tenantId, sessionName);
   }
 
-  /** Estabilidade de sessao por dia (metrica opcional, D42). */
-  async getSessionStability(tenantId: string, range: DateRange): Promise<SessionStabilityPoint[]> {
+  /** Estabilidade de sessao por dia (metrica opcional, D42), escopado a uma sessao. */
+  async getSessionStability(
+    tenantId: string,
+    sessionName: string,
+    range: DateRange,
+  ): Promise<SessionStabilityPoint[]> {
     await this.assertTenantExists(tenantId);
     this.assertValidRange(range);
-    return this.analyticsRepository.sessionStabilityByPeriod(tenantId, range);
+    return this.analyticsRepository.sessionStabilityByPeriod(tenantId, sessionName, range);
+  }
+
+  /** Fase 1, Bloco F1.6 — contagem atual de conversas por estagio do Pipeline (sem faixa de tempo), escopado a uma sessao. */
+  async getPipelineFunnel(tenantId: string, sessionName: string): Promise<PipelineFunnelCounts> {
+    await this.assertTenantExists(tenantId);
+    return this.analyticsRepository.pipelineFunnelCounts(tenantId, sessionName);
+  }
+
+  /** Fase 1, Bloco F1.6 — taxa de escalonamento por dia, escopado a uma sessao. */
+  async getEscalationRate(
+    tenantId: string,
+    sessionName: string,
+    range: DateRange,
+  ): Promise<EscalationRatePoint[]> {
+    await this.assertTenantExists(tenantId);
+    this.assertValidRange(range);
+    return this.analyticsRepository.escalationRateByPeriod(tenantId, sessionName, range);
   }
 
   private async assertTenantExists(tenantId: string): Promise<void> {
@@ -95,14 +140,18 @@ export class AnalyticsService {
     const toMs = range.to.getTime();
 
     if (Number.isNaN(fromMs) || Number.isNaN(toMs)) {
-      throw new InvalidAnalyticsRangeError('Faixa de datas invalida (from/to nao sao datas validas).');
+      throw new InvalidAnalyticsRangeError(
+        'Faixa de datas invalida (from/to nao sao datas validas).',
+      );
     }
     if (fromMs > toMs) {
       throw new InvalidAnalyticsRangeError('Faixa de datas invalida: from e posterior a to.');
     }
     const windowDays = (toMs - fromMs) / MS_PER_DAY;
     if (windowDays > MAX_WINDOW_DAYS) {
-      throw new InvalidAnalyticsRangeError(`Janela de tempo excede o maximo de ${MAX_WINDOW_DAYS} dias.`);
+      throw new InvalidAnalyticsRangeError(
+        `Janela de tempo excede o maximo de ${MAX_WINDOW_DAYS} dias.`,
+      );
     }
   }
 }

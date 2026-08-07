@@ -81,7 +81,11 @@ describe('ConsoleLogger', () => {
     grandchild.debug('evento aninhado');
 
     const entry = parseLastCall(logSpy);
-    expect(entry).toMatchObject({ service: 'whatsapp', tenantId: 'tenant-1', sessionName: 'default' });
+    expect(entry).toMatchObject({
+      service: 'whatsapp',
+      tenantId: 'tenant-1',
+      sessionName: 'default',
+    });
   });
 
   it('deve serializar instâncias de Error em meta, preservando message e stack', () => {

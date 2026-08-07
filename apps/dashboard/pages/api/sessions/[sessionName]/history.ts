@@ -17,6 +17,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
-  const { status, body } = await callApi(session, `/${encodeURIComponent(sessionName)}/history`, { query: { limit } });
+  const { status, body } = await callApi(session, `/${encodeURIComponent(sessionName)}/history`, {
+    query: { limit },
+  });
   res.status(status).json(body);
 }

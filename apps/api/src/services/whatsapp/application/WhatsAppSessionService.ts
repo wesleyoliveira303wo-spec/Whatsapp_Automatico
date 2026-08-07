@@ -148,18 +148,67 @@ export class WhatsAppSessionService {
 
   /**
    * Lista todas as sessões de um tenant (M2, Fase 1 — suporte à tela de
-   * lista do Dashboard). Leitura direta do repositório — deliberadamente NÃO
-   * passa pelo Registry/`getOrCreate()`: instanciar um `SessionManager` (e,
-   * por trás dele, um `WhatsAppProvider`/socket Baileys) para CADA sessão só
-   * para listá-las teria um efeito colateral real e indesejado (abrir
-   * recursos de conexão que ninguém pediu). Por isso esta lista não inclui
-   * `generation` (que só existe em instâncias de `SessionManager` já vivas
-   * no Registry) — quem quiser esse dado consulta `getSessionStatus()` para
-   * a sessão específica.
+   * lista do Dashboard). Leitura de base do repositório — deliberadamente NÃO
+   * usa `Registry.getOrCreate()`: instanciar um `SessionManager` (e, por trás
+   * dele, um `WhatsAppProvider`/socket Baileys) para CADA sessão só para
+   * listá-las teria um efeito colateral real e indesejado (abrir recursos de
+   * conexão que ninguém pediu). Por isso esta lista não inclui `generation`
+   * (que só existe em instâncias de `SessionManager` já vivas no Registry) —
+   * quem quiser esse dado consulta `getSessionStatus()` para a sessão
+   * específica.
+   *
+   * Status ao vivo quando disponível (2026-07-25, correção de bug real):
+   * antes, o `status` devolvido aqui era só o valor CRU do banco — que só é
+   * atualizado de forma assíncrona por `SessionManager.subscribeToProviderEvents`
+   * enquanto uma instância dessa sessão está viva no Registry (ver docstring
+   * de `SessionManager`). Se o processo da API reinicia (ou uma sessão nunca
+   * foi tocada de novo depois de cair), o banco fica com o ÚLTIMO status
+   * conhecido — podendo mostrar "Conectado" na tela "Seus WhatsApps" muito
+   * depois de a conexão real ter caído, enquanto `getSessionStatus()` (usado
+   * em Configurações) já mostrava o valor correto por consultar o provider
+   * ao vivo. Correção: para cada sessão, `registry.peek()` (leitura pura, sem
+   * criar nada — ver docstring do método) tenta achar uma instância JÁ viva;
+   * se achar, sobrepõe `status` com `sessionManager.getStatus()` (a mesma
+   * fonte de verdade de `getSessionStatus()`). Sem instância viva, mantém o
+   * valor do banco como estava (nenhuma sessão nova é instanciada só para
+   * listar — a garantia original desta função continua intacta).
    */
   async listSessions(tenantId: string): Promise<WhatsAppSession[]> {
     await this.assertTenantExists(tenantId);
-    return this.sessionRepository.findAllByTenant(tenantId);
+    const sessions = await this.sessionRepository.findAllByTenant(tenantId);
+    return Promise.all(
+      sessions.map(async (session) => {
+        const live = this.registry.peek(tenantId, session.sessionName);
+        if (!live) {
+          return session;
+        }
+        try {
+          const liveSession = await live.getStatus();
+          return {
+            ...session,
+            status: liveSession.status,
+            phoneNumber: liveSession.phoneNumber ?? session.phoneNumber,
+          };
+        } catch (error) {
+          // getStatus() pode lançar WhatsAppSessionNotFoundError num caso
+          // extremo de dessincronia (sessão removida do banco entre o
+          // findAllByTenant acima e este ponto) — nunca deve derrubar a
+          // listagem inteira por causa de UMA sessão; cai para o valor do
+          // banco, mesma política de resiliência já usada em
+          // `getProfilePictureUrl`/demais leituras auxiliares deste bounded
+          // context.
+          this.logger.debug(
+            'Falha ao consultar status ao vivo de uma sessão em listSessions() — usando valor do banco',
+            {
+              tenantId,
+              sessionName: session.sessionName,
+              error,
+            },
+          );
+          return session;
+        }
+      }),
+    );
   }
 
   /**
@@ -179,16 +228,41 @@ export class WhatsAppSessionService {
    * arbitrariamente grande (`?limit=999999`) forçar uma consulta sem
    * controle de tamanho (CLAUDE.md §15, "Segurança primeiro").
    */
-  async getSessionHistory(tenantId: string, sessionName: string, limit: number = DEFAULT_HISTORY_LIMIT): Promise<WhatsAppSessionEvent[]> {
+  async getSessionHistory(
+    tenantId: string,
+    sessionName: string,
+    limit: number = DEFAULT_HISTORY_LIMIT,
+  ): Promise<WhatsAppSessionEvent[]> {
     await this.assertTenantExists(tenantId);
     const effectiveLimit = Math.min(limit, MAX_HISTORY_LIMIT);
-    return this.eventRepository.listRecentByTenantAndSessionName(tenantId, sessionName, effectiveLimit);
+    return this.eventRepository.listRecentByTenantAndSessionName(
+      tenantId,
+      sessionName,
+      effectiveLimit,
+    );
   }
 
   async getSessionQRCode(tenantId: string, sessionName: string): Promise<string> {
     await this.assertTenantExists(tenantId);
     const sessionManager = this.registry.getOrCreate(tenantId, sessionName);
     return sessionManager.getQRCode();
+  }
+
+  /**
+   * Foto de perfil de um contato (Milestone 6, Bloco M6H-2b) — mesmo padrão
+   * de `getSessionQRCode()` (valida tenant, delega ao `SessionManager` via
+   * Registry). `undefined` é uma resposta válida (contato sem foto, sessão
+   * sem conexão viva, privacidade) — nunca lança por ausência de foto, só
+   * por tenant inexistente (`assertTenantExists`).
+   */
+  async getContactAvatarUrl(
+    tenantId: string,
+    sessionName: string,
+    contactJid: string,
+  ): Promise<string | undefined> {
+    await this.assertTenantExists(tenantId);
+    const sessionManager = this.registry.getOrCreate(tenantId, sessionName);
+    return sessionManager.getProfilePictureUrl(contactJid);
   }
 
   async disconnectSession(

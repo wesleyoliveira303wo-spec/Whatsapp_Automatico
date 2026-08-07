@@ -29,7 +29,9 @@ describe('Hs256AccessTokenService (Milestone 5, Bloco M5B)', () => {
     const svc = new Hs256AccessTokenService(SECRET, 900);
     const token = svc.issue(CLAIMS);
     const [h, , s] = token.split('.');
-    const forgedPayload = Buffer.from(JSON.stringify({ userId: 'hacker', tenantId: 'tenant-1', role: 'owner', exp: 9999999999 })).toString('base64url');
+    const forgedPayload = Buffer.from(
+      JSON.stringify({ userId: 'hacker', tenantId: 'tenant-1', role: 'owner', exp: 9999999999 }),
+    ).toString('base64url');
     expect(svc.verify(`${h}.${forgedPayload}.${s}`)).toBeNull();
   });
 
@@ -43,7 +45,9 @@ describe('Hs256AccessTokenService (Milestone 5, Bloco M5B)', () => {
     const svc = new Hs256AccessTokenService(SECRET, 900);
     // Monta um token com header alg:none, assinatura vazia.
     const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ userId: 'u', tenantId: 't', role: 'owner', exp: 9999999999 })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ userId: 'u', tenantId: 't', role: 'owner', exp: 9999999999 }),
+    ).toString('base64url');
     expect(svc.verify(`${header}.${payload}.`)).toBeNull();
   });
 
@@ -56,7 +60,11 @@ describe('Hs256AccessTokenService (Milestone 5, Bloco M5B)', () => {
 
   it('role fora do conjunto conhecido e rejeitado mesmo com assinatura valida', () => {
     const svc = new Hs256AccessTokenService(SECRET, 900);
-    const token = svc.issue({ userId: 'u', tenantId: 't', role: 'inventado' as AccessTokenClaims['role'] });
+    const token = svc.issue({
+      userId: 'u',
+      tenantId: 't',
+      role: 'inventado' as AccessTokenClaims['role'],
+    });
     expect(svc.verify(token)).toBeNull();
   });
 });

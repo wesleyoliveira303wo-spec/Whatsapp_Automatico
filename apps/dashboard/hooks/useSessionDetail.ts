@@ -24,10 +24,17 @@ export interface UseSessionDetailResult {
  */
 export function useSessionDetail(sessionName: string | null): UseSessionDetailResult {
   const url = sessionName ? `/api/sessions/${encodeURIComponent(sessionName)}/stream` : null;
-  const { data, errorMessage: transientErrorMessage, connected } = useEventSource<SessionDetailStreamFrame>(url);
+  const {
+    data,
+    errorMessage: transientErrorMessage,
+    connected,
+  } = useEventSource<SessionDetailStreamFrame>(url);
 
   const session = data && data.status === 200 ? data.body : null;
-  const errorMessage = data && data.status !== 200 ? `Falha ao carregar sessão (status ${data.status}).` : transientErrorMessage;
+  const errorMessage =
+    data && data.status !== 200
+      ? `Falha ao carregar sessão (status ${data.status}).`
+      : transientErrorMessage;
 
   return { session, loading: data === null, errorMessage, connected };
 }

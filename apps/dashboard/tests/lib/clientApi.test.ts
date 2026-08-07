@@ -12,7 +12,8 @@ import {
 } from '../../lib/clientApi';
 
 function mockFetchOnce(status: number, body: unknown, textOverride?: string): jest.Mock {
-  const text = textOverride !== undefined ? textOverride : body === undefined ? '' : JSON.stringify(body);
+  const text =
+    textOverride !== undefined ? textOverride : body === undefined ? '' : JSON.stringify(body);
   const fetchMock = jest.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,

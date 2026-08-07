@@ -31,10 +31,17 @@ describe('PrismaAuditLogRepository (Milestone 5, Bloco M5A)', () => {
     const { repo, auditLog } = buildRepo();
     auditLog.create.mockResolvedValue(row('a-1', { metadata: { foo: 'bar' } }));
 
-    const result = await repo.record({ tenantId: 'tenant-1', actorUserId: 'user-1', action: 'auth.login.success', metadata: { foo: 'bar' } });
+    const result = await repo.record({
+      tenantId: 'tenant-1',
+      actorUserId: 'user-1',
+      action: 'auth.login.success',
+      metadata: { foo: 'bar' },
+    });
 
     expect(auditLog.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ action: 'auth.login.success', metadata: { foo: 'bar' } }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'auth.login.success', metadata: { foo: 'bar' } }),
+      }),
     );
     expect(result.metadata).toEqual({ foo: 'bar' });
   });
@@ -66,7 +73,12 @@ describe('PrismaAuditLogRepository (Milestone 5, Bloco M5A)', () => {
     const { repo, auditLog } = buildRepo();
     auditLog.findMany.mockResolvedValue([]);
 
-    await repo.listByTenant('tenant-1', { actorUserId: 'user-9', action: 'user.role_changed', limit: 10, cursor: 'a-5' });
+    await repo.listByTenant('tenant-1', {
+      actorUserId: 'user-9',
+      action: 'user.role_changed',
+      limit: 10,
+      cursor: 'a-5',
+    });
 
     expect(auditLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

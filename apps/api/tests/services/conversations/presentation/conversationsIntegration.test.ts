@@ -10,6 +10,7 @@ import { FakeApiKeyHasher } from '../../../shared/security/FakeApiKeyHasher';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../../auth/testDoubles';
 import { FakeConversationRepository, FakeMessageRepository } from '../testDoubles';
+import { FakeMediaSender } from '../../whatsapp/infrastructure/FakeMediaSender';
 import { Conversation } from '../../../../src/services/conversations/domain/entities/Conversation';
 import { UserRole } from '../../../../src/services/auth/domain/entities/User';
 
@@ -23,29 +24,53 @@ import { UserRole } from '../../../../src/services/auth/domain/entities/User';
  */
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
 
-function buildApp(): { app: Express; conversationRepository: FakeConversationRepository; access: Hs256AccessTokenService } {
+function buildApp(): {
+  app: Express;
+  conversationRepository: FakeConversationRepository;
+  access: Hs256AccessTokenService;
+  mediaSender: FakeMediaSender;
+} {
   const hasher = new FakeApiKeyHasher();
   const tenantRepository = new FakeTenantRepository();
-  tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: hasher.hash('chave-tenant-1') });
-  tenantRepository.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: hasher.hash('chave-tenant-2') });
+  tenantRepository.seed({
+    id: 'tenant-1',
+    name: 'Empresa Um',
+    apiKeyHash: hasher.hash('chave-tenant-1'),
+  });
+  tenantRepository.seed({
+    id: 'tenant-2',
+    name: 'Empresa Dois',
+    apiKeyHash: hasher.hash('chave-tenant-2'),
+  });
 
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
+  const mediaSender = new FakeMediaSender();
   const conversationsService = new ConversationsService(
     conversationRepository,
     messageRepository,
     tenantRepository,
     new FakeAuditLogRepository(),
     new NoopLogger(),
+    undefined,
+    undefined,
+    mediaSender,
   );
   const access = new Hs256AccessTokenService(SECRET, 900);
   const authenticate = createAuthenticate(access, hasher, tenantRepository, new NoopLogger());
 
   const app = express();
   app.use(express.json());
-  app.use('/api/tenants/:tenantId/conversations', authenticate, createConversationsRouter(conversationsService));
-  app.use('/api/tenants/:tenantId/conversations', createConversationsErrorHandler(new NoopLogger()));
-  return { app, conversationRepository, access };
+  app.use(
+    '/api/tenants/:tenantId/conversations',
+    authenticate,
+    createConversationsRouter(conversationsService),
+  );
+  app.use(
+    '/api/tenants/:tenantId/conversations',
+    createConversationsErrorHandler(new NoopLogger()),
+  );
+  return { app, conversationRepository, access, mediaSender };
 }
 
 function buildConversation(overrides: Partial<Conversation> = {}): Conversation {
@@ -55,13 +80,24 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
     sessionName: 'default',
     contactJid: '5511999999999@s.whatsapp.net',
     status: 'bot',
+    unreadCount: 0,
+    stage: 'new',
+    stageSetBy: 'ai',
+    stageUpdatedAt: new Date('2026-07-10T12:00:00Z'),
+    excludedFromPipeline: false,
+    tags: [],
     createdAt: new Date('2026-07-10T12:00:00Z'),
     updatedAt: new Date('2026-07-10T12:00:00Z'),
     ...overrides,
   };
 }
 
-function bearer(access: Hs256AccessTokenService, userId: string, role: UserRole, tenantId = 'tenant-1'): string {
+function bearer(
+  access: Hs256AccessTokenService,
+  userId: string,
+  role: UserRole,
+  tenantId = 'tenant-1',
+): string {
   return `Bearer ${access.issue({ userId, tenantId, role })}`;
 }
 
@@ -101,7 +137,9 @@ describe('Integração authenticate + RBAC + conversationsRouter (M3 Bloco 5 / M
 
   it('chave inválida -> 401', async () => {
     const { app } = buildApp();
-    const response = await request(app).get('/api/tenants/tenant-1/conversations').set('x-api-key', 'chave-nunca-vista');
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/conversations')
+      .set('x-api-key', 'chave-nunca-vista');
     expect(response.status).toBe(401);
   });
 
@@ -192,7 +230,9 @@ describe('Integração authenticate + RBAC + conversationsRouter (M3 Bloco 5 / M
     conversationRepository.seed(buildConversation({ id: 'conversation-1' }));
     conversationRepository.seed(buildConversation({ id: 'conversation-2' }));
 
-    const response = await request(app).get('/api/tenants/tenant-1/conversations').set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/conversations')
+      .set('x-api-key', 'chave-tenant-1');
 
     expect(response.status).toBe(200);
     expect(response.body.conversations).toHaveLength(2);
@@ -217,5 +257,325 @@ describe('Integração authenticate + RBAC + conversationsRouter (M3 Bloco 5 / M
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveProperty('messages');
+  });
+
+  // --- Pipeline de CRM (Milestone 6, Bloco M6H-5) — POST .../stage ---
+
+  it('chave da empresa (plano máquina) move o estágio normalmente, SEMPRE com stageSetBy "human" (200)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ stage: 'new', stageSetBy: 'ai' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/stage')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ stage: 'negotiating' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ stage: 'negotiating', stageSetBy: 'human' });
+  });
+
+  it('Operator (crachá) também pode mover o estágio (message:send, sem exigir ownership)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation({ status: 'human', assignedToUserId: 'op-2' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/stage')
+      .set('authorization', bearer(access, 'op-1', 'operator'))
+      .send({ stage: 'closed_won' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ stage: 'closed_won' });
+  });
+
+  it('ReadOnly NÃO pode mover o estágio -> 403 forbidden (RBAC)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/stage')
+      .set('authorization', bearer(access, 'ro-1', 'read_only'))
+      .send({ stage: 'contacted' });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'forbidden' });
+  });
+
+  it('stage fora do enum conhecido -> 400 invalid_params', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/stage')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ stage: 'valor-nao-existe' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: 'invalid_params' });
+  });
+
+  it('mover estágio de conversa inexistente -> 404 conversation_not_found', async () => {
+    const { app } = buildApp();
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-inexistente/stage')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ stage: 'contacted' });
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: 'conversation_not_found' });
+  });
+
+  it('[IDOR] chave do tenant-1 não move estágio de conversa do tenant-2 (403)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ tenantId: 'tenant-2' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-2/conversations/conversation-1/stage')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ stage: 'contacted' });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
+  });
+
+  // --- POST .../exclude-from-pipeline (ADR #94, 2026-08-01) ---
+
+  it('chave da empresa (plano máquina) marca a conversa como fora do funil comercial (200)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ excludedFromPipeline: false }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/exclude-from-pipeline')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ excluded: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ excludedFromPipeline: true });
+  });
+
+  it('Operator (crachá) também pode marcar/desmarcar (message:send, sem exigir ownership)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(
+      buildConversation({ status: 'human', assignedToUserId: 'op-2', excludedFromPipeline: true }),
+    );
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/exclude-from-pipeline')
+      .set('authorization', bearer(access, 'op-1', 'operator'))
+      .send({ excluded: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ excludedFromPipeline: false });
+  });
+
+  it('ReadOnly NÃO pode marcar/desmarcar -> 403 forbidden (RBAC)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/exclude-from-pipeline')
+      .set('authorization', bearer(access, 'ro-1', 'read_only'))
+      .send({ excluded: true });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'forbidden' });
+  });
+
+  it('excluded fora do tipo boolean -> 400 invalid_params', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/exclude-from-pipeline')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ excluded: 'sim' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: 'invalid_params' });
+  });
+
+  it('marcar conversa inexistente -> 404 conversation_not_found', async () => {
+    const { app } = buildApp();
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-inexistente/exclude-from-pipeline')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ excluded: true });
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: 'conversation_not_found' });
+  });
+
+  it('[IDOR] chave do tenant-1 não marca conversa do tenant-2 (403)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ tenantId: 'tenant-2' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-2/conversations/conversation-1/exclude-from-pipeline')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ excluded: true });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
+  });
+
+  it('GET / com ?excludedFromPipeline=false lista só as conversas dentro do funil comercial', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ id: 'c-dentro', excludedFromPipeline: false }));
+    conversationRepository.seed(buildConversation({ id: 'c-fora', excludedFromPipeline: true }));
+
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/conversations?excludedFromPipeline=false')
+      .set('x-api-key', 'chave-tenant-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c-dentro']);
+  });
+
+  // --- POST .../media (Fase 1, Bloco F1.3 — envio de mídia pelo operador) ---
+
+  describe('POST .../media', () => {
+    it('corpo bruto + headers x-media-*: 200, MediaSender chamado, Message devolvida com contentType real', async () => {
+      const { app, conversationRepository, mediaSender } = buildApp();
+      conversationRepository.seed(
+        buildConversation({
+          status: 'human',
+          sessionName: 'vendas',
+          contactJid: '5511999999999@s.whatsapp.net',
+        }),
+      );
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .set('x-media-caption', 'Segue a foto')
+        .send(Buffer.from('bytes-da-imagem'));
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        direction: 'outbound',
+        contentType: 'image',
+        content: 'Segue a foto',
+      });
+      expect(mediaSender.sendCalls).toEqual([
+        {
+          tenantId: 'tenant-1',
+          sessionName: 'vendas',
+          to: '5511999999999@s.whatsapp.net',
+          media: {
+            contentType: 'image',
+            buffer: Buffer.from('bytes-da-imagem'),
+            mimeType: 'image/jpeg',
+            caption: 'Segue a foto',
+            fileName: undefined,
+          },
+        },
+      ]);
+    });
+
+    it('sem x-media-content-type: 400, MediaSender NÃO é chamado', async () => {
+      const { app, conversationRepository, mediaSender } = buildApp();
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/jpeg')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(400);
+      expect(mediaSender.sendCalls).toHaveLength(0);
+    });
+
+    it('x-media-content-type fora do enum aceito (ex.: "sticker"): 400', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/webp')
+        .set('x-media-content-type', 'sticker')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(400);
+    });
+
+    it('corpo vazio: 400 empty_body', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.alloc(0));
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ error: 'empty_body' });
+    });
+
+    it('conversa em "bot" (ninguém assumiu): 409 conversation_not_human', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(409);
+      expect(response.body).toMatchObject({ error: 'conversation_not_human' });
+    });
+
+    it('MediaSender lança WhatsAppNotConnectedError: 502 whatsapp_not_connected', async () => {
+      const { app, conversationRepository, mediaSender } = buildApp();
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+      const { WhatsAppNotConnectedError } = jest.requireActual(
+        '../../../../src/services/whatsapp/domain/errors/WhatsAppNotConnectedError',
+      );
+      mediaSender.nextError = new WhatsAppNotConnectedError('tenant-1', 'default');
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(502);
+      expect(response.body).toMatchObject({ error: 'whatsapp_not_connected' });
+    });
+
+    it('[IDOR] chave do tenant-1 não envia mídia para conversa do tenant-2 (403)', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ tenantId: 'tenant-2', status: 'human' }));
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-2/conversations/conversation-1/media')
+        .set('x-api-key', 'chave-tenant-1')
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
+    });
+
+    it('ReadOnly (crachá) NÃO pode enviar mídia -> 403 forbidden (RBAC, mesma permissão message:send)', async () => {
+      const { app, conversationRepository, access } = buildApp();
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/conversations/conversation-1/media')
+        .set('authorization', bearer(access, 'ro-1', 'read_only'))
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({ error: 'forbidden' });
+    });
   });
 });

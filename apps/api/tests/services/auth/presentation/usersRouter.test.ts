@@ -130,12 +130,18 @@ describe('usersRouter — criacao', () => {
   it('owner cria operator: 201, sem passwordHash, mustChangePassword true', async () => {
     const { app } = buildApp(person('owner'));
 
-    const response = await request(app)
-      .post('/api/tenants/tenant-1/users')
-      .send({ email: 'maria@empresa.com', role: 'operator', temporaryPassword: 'senha-provisoria' });
+    const response = await request(app).post('/api/tenants/tenant-1/users').send({
+      email: 'maria@empresa.com',
+      role: 'operator',
+      temporaryPassword: 'senha-provisoria',
+    });
 
     expect(response.status).toBe(201);
-    expect(response.body.user).toMatchObject({ email: 'maria@empresa.com', role: 'operator', mustChangePassword: true });
+    expect(response.body.user).toMatchObject({
+      email: 'maria@empresa.com',
+      role: 'operator',
+      mustChangePassword: true,
+    });
     expect(response.body.user.passwordHash).toBeUndefined();
   });
 
@@ -164,9 +170,11 @@ describe('usersRouter — criacao', () => {
     const { app, users } = buildApp(person('owner'));
     seedUser(users, { email: 'maria@empresa.com' });
 
-    const response = await request(app)
-      .post('/api/tenants/tenant-1/users')
-      .send({ email: 'maria@empresa.com', role: 'operator', temporaryPassword: 'senha-provisoria' });
+    const response = await request(app).post('/api/tenants/tenant-1/users').send({
+      email: 'maria@empresa.com',
+      role: 'operator',
+      temporaryPassword: 'senha-provisoria',
+    });
 
     expect(response.status).toBe(409);
     expect(response.body).toMatchObject({ error: 'email_already_in_use' });
@@ -178,7 +186,9 @@ describe('usersRouter — ciclo de vida (cargo, suspensao, reset)', () => {
     const { app, users } = buildApp(person('owner'));
     const target = seedUser(users, { role: 'operator' });
 
-    const response = await request(app).patch(`/api/tenants/tenant-1/users/${target.id}/role`).send({ role: 'manager' });
+    const response = await request(app)
+      .patch(`/api/tenants/tenant-1/users/${target.id}/role`)
+      .send({ role: 'manager' });
 
     expect(response.status).toBe(200);
     expect(response.body.user.role).toBe('manager');
@@ -189,7 +199,9 @@ describe('usersRouter — ciclo de vida (cargo, suspensao, reset)', () => {
     const { app, users } = buildApp(person('administrator', actorId));
     seedUser(users, { id: actorId, role: 'administrator' });
 
-    const response = await request(app).patch(`/api/tenants/tenant-1/users/${actorId}/role`).send({ role: 'operator' });
+    const response = await request(app)
+      .patch(`/api/tenants/tenant-1/users/${actorId}/role`)
+      .send({ role: 'operator' });
 
     expect(response.status).toBe(422);
     expect(response.body).toMatchObject({ error: 'self_management_forbidden' });
@@ -203,7 +215,9 @@ describe('usersRouter — ciclo de vida (cargo, suspensao, reset)', () => {
     expect(suspended.status).toBe(200);
     expect(suspended.body.user.status).toBe('suspended');
 
-    const reactivated = await request(app).post(`/api/tenants/tenant-1/users/${target.id}/reactivate`);
+    const reactivated = await request(app).post(
+      `/api/tenants/tenant-1/users/${target.id}/reactivate`,
+    );
     expect(reactivated.status).toBe(200);
     expect(reactivated.body.user.status).toBe('active');
   });

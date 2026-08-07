@@ -1,7 +1,12 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
 
 import { AuditLog } from '../../domain/entities/AuditLog';
-import { AuditLogPage, AuditLogRepository, ListAuditLogsOptions, NewAuditLog } from '../../domain/repositories/AuditLogRepository';
+import {
+  AuditLogPage,
+  AuditLogRepository,
+  ListAuditLogsOptions,
+  NewAuditLog,
+} from '../../domain/repositories/AuditLogRepository';
 
 interface AuditLogRow {
   id: string;

@@ -129,7 +129,8 @@ export class WhatsAppReconnectionPolicy implements ReconnectionPolicy {
   }
 
   private computeDelayMs(): number {
-    const exponential = this.config.baseDelayMs * this.config.factor ** (this.consecutiveFailures - 1);
+    const exponential =
+      this.config.baseDelayMs * this.config.factor ** (this.consecutiveFailures - 1);
     return Math.min(exponential, this.config.maxDelayMs);
   }
 }

@@ -106,6 +106,26 @@ export class WhatsAppConnectionRegistry {
   }
 
   /**
+   * Devolve o `SessionManager` já existente para `(tenantId, sessionName)`
+   * SEM criar um novo — `undefined` se esta sessão nunca foi tocada nesta
+   * execução do processo (nenhum `getOrCreate()` prévio).
+   *
+   * Existe para `listSessions()` (Reforma do status ao vivo, 2026-07-25):
+   * listar todas as sessões de um tenant precisa saber, para CADA UMA, se já
+   * existe uma conexão viva neste processo — mas sem instanciar um
+   * `SessionManager`/`WhatsAppProvider`/socket Baileys novo só para
+   * descobrir isso (`getOrCreate()` faria exatamente isso, o mesmo efeito
+   * colateral indesejado que a docstring de `WhatsAppSessionService.
+   * listSessions()` já evitava desde a M2). `peek()` é uma leitura pura do
+   * Map, nunca cria — mesma categoria de responsabilidade de `getOrCreate()`/
+   * `evictIfCurrent()`, mas sem side effect nenhum.
+   */
+  peek(tenantId: string, sessionName: string): SessionManager | undefined {
+    const cacheKey = new WhatsAppSessionKey(tenantId, sessionName).toString();
+    return this.sessionManagers.get(cacheKey);
+  }
+
+  /**
    * Remove do Map o `SessionManager` de `(tenantId, sessionName)`, mas SÓ SE
    * a geração atual dele ainda for `expectedGeneration` (Production
    * Hardening, Bloco 4 — ver docstring de `SessionManager.generation`).

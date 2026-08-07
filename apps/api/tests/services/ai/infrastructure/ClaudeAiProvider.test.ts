@@ -10,7 +10,9 @@
  */
 jest.mock('@anthropic-ai/sdk', () => {
   const mockCreate = jest.fn();
-  const MockedAnthropic = jest.fn().mockImplementation(() => ({ messages: { create: mockCreate } }));
+  const MockedAnthropic = jest
+    .fn()
+    .mockImplementation(() => ({ messages: { create: mockCreate } }));
   (MockedAnthropic as unknown as { __mockCreate: jest.Mock }).__mockCreate = mockCreate;
   return { __esModule: true, default: MockedAnthropic };
 });
@@ -84,7 +86,12 @@ describe('ClaudeAiProvider', () => {
       messages: [{ role: 'user', content: 'Oi' }],
     });
 
-    expect(result).toEqual({ content: 'Olá! Como posso ajudar?', model: 'claude-x', tokensInput: 10, tokensOutput: 5 });
+    expect(result).toEqual({
+      content: 'Olá! Como posso ajudar?',
+      model: 'claude-x',
+      tokensInput: 10,
+      tokensOutput: 5,
+    });
   });
 
   it('concatena múltiplos blocos de texto e ignora blocos que não são de texto', async () => {

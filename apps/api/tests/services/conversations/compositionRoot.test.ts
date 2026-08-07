@@ -22,7 +22,11 @@ describe('createConversationsComposition (Milestone 3, Bloco 5 — D6/D15)', () 
     const fakePrisma = {} as unknown as PrismaClient;
     const fakeRedisConnection = {} as never;
 
-    const composition = createConversationsComposition(fakePrisma, fakeRedisConnection, new NoopLogger());
+    const composition = createConversationsComposition(
+      fakePrisma,
+      fakeRedisConnection,
+      new NoopLogger(),
+    );
 
     expect(composition.messageIngestionService).toBeInstanceOf(MessageIngestionService);
     expect(composition.conversationsService).toBeInstanceOf(ConversationsService);

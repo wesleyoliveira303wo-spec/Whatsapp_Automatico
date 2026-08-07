@@ -87,7 +87,10 @@ export class OutboundCommandConsumer {
       return;
     }
 
-    const sessionManager = this.connectionRegistry.getOrCreate(conversation.tenantId, conversation.sessionName);
+    const sessionManager = this.connectionRegistry.getOrCreate(
+      conversation.tenantId,
+      conversation.sessionName,
+    );
     await sessionManager.sendMessage(conversation.contactJid, command.content);
 
     const message = await this.messageRepository.create({
@@ -95,6 +98,12 @@ export class OutboundCommandConsumer {
       conversationId: command.conversationId,
       direction: 'outbound',
       content: command.content,
+      // Fase 1, Bloco F1.1 (ADR #90): todo envio outbound (IA ou operador
+      // humano) continua sendo texto nesta rodada — envio de mídia PELO
+      // operador é F1.3, ainda não implementado. Hardcoded, não herdado de
+      // `command`, porque `OutboundMessageCommand` ainda não carrega tipo de
+      // conteúdo (extensão natural quando F1.3 chegar).
+      contentType: 'text',
       occurredAt: new Date(),
     });
 

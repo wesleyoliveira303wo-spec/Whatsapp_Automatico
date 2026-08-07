@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #F3F3F1; }
+  * { box-sizing: border-box; }
+  body { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #0E6E52; text-decoration: none; }
+  a:hover { color: #0A5540; }
+  .fx-scroll { scrollbar-width: thin; scrollbar-color: #D8DAD4 transparent; }
+  .fx-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .fx-scroll::-webkit-scrollbar-thumb { background: #DCDED8; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  textarea { font-family: inherit; }
+</style>
+</helmet>
+
+<div style="height: 100vh; display: flex; flex-direction: column; background: #F3F3F1; color: #16211C; overflow: hidden;">
+
+  <header style="height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 16px; background: #F3F3F1; border-bottom: 1px solid #E6E7E3;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="width: 22px; height: 22px; border-radius: 7px; background: #0E6E52; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; letter-spacing: -0.02em;">F</div>
+      <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.02em;">Francis</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 12.5px; color: #5C6B64;">Vértice Vendas</span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #16A34A;"></span>
+      <span style="font-size: 12.5px; color: #5C6B64;">Conectado</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <nav style="position: relative; width: 56px; flex: 0 0 56px; background: #F3F3F1; border-right: 1px solid #E6E7E3; display: flex; flex-direction: column; align-items: center; padding: 10px 0 12px;">
+      <button title="Vértice Vendas · Conectado — voltar a todos os WhatsApps" aria-label="Voltar a todos os WhatsApps" style="position: relative; width: 34px; height: 34px; margin: 2px 0 14px; padding: 0; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; display: grid; place-items: center; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;" style-hover="background: rgba(14,110,82,0.18);">
+        F
+        <span style="position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 999px; background: #16A34A; border: 2px solid #F3F3F1;"></span>
+      </button>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+        <button title="Conversas" aria-label="Conversas" style="position: relative; width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-2.8-.4L4 21l1.4-4.2A8.2 8.2 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z" /></svg>
+          <span style="position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 999px; background: #D0342C; border: 2px solid #F3F3F1;"></span>
+        </button>
+        <button title="Pipeline" aria-label="Pipeline" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5" /><rect x="10" y="4" width="5" height="11" rx="1.5" /><rect x="17" y="4" width="4" height="7" rx="1.5" /></svg>
+        </button>
+        <button title="Analytics" aria-label="Analytics" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l4-5 3 3 4-6" /></svg>
+        </button>
+        <button title="IA" aria-label="IA" aria-current="page" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; cursor: pointer;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3.5" /><path d="M12 3.5V7" /><circle cx="9.2" cy="13" r="1.1" fill="currentColor" stroke="none" /><circle cx="14.8" cy="13" r="1.1" fill="currentColor" stroke="none" /></svg>
+        </button>
+      </div>
+      <div style="flex: 1;"></div>
+      <button title="Tema escuro" aria-label="Alternar tema" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+      </button>
+      <button title="Configurações e conta" aria-label="Configurações e conta" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.2 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3 15a1.7 1.7 0 0 0-1.7-1.4H1.2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3 8.2" /></svg>
+      </button>
+    </nav>
+
+    <section class="fx-scroll" style="flex: 1; min-width: 0; overflow-y: auto; min-height: 0;">
+      <div style="max-width: 780px; padding: 20px 24px 48px;">
+        <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;">IA</h1>
+        <p style="margin: 4px 0 20px; font-size: 13px; color: #5C6B64;">O que o Francis sabe sobre o seu negócio e as frases prontas do atendente.</p>
+
+        <div style="display: flex; gap: 4px; margin-bottom: 20px;">
+          <button onClick="{{ tabBrain }}" style="height: 34px; padding: 0 14px; border: 0; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ tabs.brainBg }}; color: {{ tabs.brainFg }};">Cérebro da IA</button>
+          <button onClick="{{ tabQuick }}" style="height: 34px; padding: 0 14px; border: 0; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: {{ tabs.quickBg }}; color: {{ tabs.quickFg }};">Respostas Rápidas</button>
+        </div>
+
+        <sc-if value="{{ tabs.brain }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="display: flex; gap: 4px; background: #FAFAF9; border: 1px solid #E6E7E3; border-radius: 10px; padding: 3px; width: fit-content; margin-bottom: 16px;">
+              <button onClick="{{ modeGuided }}" style="height: 27px; padding: 0 12px; border: 0; border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; background: {{ mode.guidedBg }}; color: {{ mode.guidedFg }};">Assistente Guiado</button>
+              <button onClick="{{ modeFree }}" style="height: 27px; padding: 0 12px; border: 0; border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; background: {{ mode.freeBg }}; color: {{ mode.freeFg }};">Texto livre</button>
+            </div>
+
+            <sc-if value="{{ mode.free }}" hint-placeholder-val="{{ true }}">
+              <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; margin-bottom: 16px;">
+                <textarea value="{{ brainText }}" onInput="{{ onBrainText }}" rows="10" placeholder="Ex.: Nome do negócio: Vértice Vendas. Vendemos equipamentos de climatização para empresas. Horário: seg-sáb, 8h-18h. Endereço: Av. Paulista, 1200. Formas de pagamento: PIX, boleto e cartão em até 12x…" style="width: 100%; border: 0; outline: none; resize: vertical; background: transparent; color: #16211C; font: inherit; font-size: 13.5px; line-height: 1.6;"></textarea>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 12px; border-top: 1px solid #EFF0EC;">
+                  <span style="font-size: 11.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">{{ brainCount }} / 20.000 caracteres</span>
+                  <button style="height: 34px; padding: 0 14px; border: 0; border-radius: 9px; background: #0E6E52; color: #FFFFFF; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;" style-hover="background: #0B5C45;">Salvar</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ mode.guided }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                  <span style="font-size: 12.5px; font-weight: 600;">Pergunta {{ quiz.step }} de 8</span>
+                  <span style="font-size: 12px; color: #5C6B64;">{{ quiz.title }}</span>
+                </div>
+                <div style="height: 6px; border-radius: 999px; background: #EFF0EC; overflow: hidden; margin-bottom: 18px;">
+                  <div style="height: 100%; border-radius: 999px; background: #0E6E52; width: {{ quiz.pct }};"></div>
+                </div>
+                <p style="margin: 0 0 12px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">{{ quiz.question }}</p>
+                <textarea rows="3" placeholder="Sua resposta…" style="width: 100%; border: 1px solid #E6E7E3; border-radius: 10px; padding: 10px 12px; outline: none; resize: vertical; background: #FAFAF9; color: #16211C; font: inherit; font-size: 13.5px; line-height: 1.55;"></textarea>
+                <div style="display: flex; justify-content: space-between; margin-top: 14px;">
+                  <button onClick="{{ quizBack }}" style="height: 34px; padding: 0 13px; border: 1px solid #E6E7E3; border-radius: 9px; background: #FFFFFF; color: #16211C; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;" style-hover="background: #F5F6F3;">Voltar</button>
+                  <button onClick="{{ quizNext }}" style="height: 34px; padding: 0 14px; border: 0; border-radius: 9px; background: #0E6E52; color: #FFFFFF; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;" style-hover="background: #0B5C45;">{{ quiz.nextLabel }}</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <button style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border: 1px solid #E6E7E3; border-radius: 9px; background: #FFFFFF; color: #16211C; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; margin-bottom: 20px;" style-hover="background: #F5F6F3;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>Cadastrar pergunta não respondida
+            </button>
+
+            <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                <span style="font-size: 13.5px; font-weight: 600;">Horário de atendimento</span>
+                <button onClick="{{ toggleHours }}" role="switch" aria-checked="{{ hoursOn }}" style="width: 38px; height: 22px; border: 0; border-radius: 999px; cursor: pointer; position: relative; background: {{ hoursSwitchBg }}; transition: background 0.15s;">
+                  <span style="position: absolute; top: 2px; left: {{ hoursKnobLeft }}; width: 18px; height: 18px; border-radius: 999px; background: #FFFFFF; transition: left 0.15s; box-shadow: 0 1px 2px rgba(16,24,20,0.2);"></span>
+                </button>
+              </div>
+              <sc-if value="{{ hoursOn }}" hint-placeholder-val="{{ true }}">
+                <div>
+                  <div style="display: flex; gap: 5px; margin-bottom: 14px;">
+                    <sc-for list="{{ days }}" as="d" hint-placeholder-count="7">
+                      <button onClick="{{ d.onClick }}" style="width: 34px; height: 30px; border: 0; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: {{ d.bg }}; color: {{ d.fg }};">{{ d.label }}</button>
+                    </sc-for>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+                    <label style="font-size: 12px; color: #5C6B64;">Das <input type="time" value="08:00" style="border: 1px solid #E6E7E3; border-radius: 7px; padding: 4px 7px; font: inherit; font-size: 12.5px; color: #16211C; margin: 0 4px;" /> às <input type="time" value="18:00" style="border: 1px solid #E6E7E3; border-radius: 7px; padding: 4px 7px; font: inherit; font-size: 12.5px; color: #16211C; margin: 0 4px;" /></label>
+                    <select style="border: 1px solid #E6E7E3; border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 12.5px; color: #16211C; background: #FFFFFF;">
+                      <option>América/São Paulo (GMT-3)</option>
+                    </select>
+                  </div>
+                  <label style="display: block; font-size: 12px; color: #5C6B64; margin-bottom: 6px;">Mensagem fora do expediente</label>
+                  <textarea rows="2" value="Nosso atendimento humano está fora do horário agora, mas a IA continua por aqui para te ajudar." style="width: 100%; border: 1px solid #E6E7E3; border-radius: 9px; padding: 9px 11px; outline: none; resize: vertical; background: #FAFAF9; color: #16211C; font: inherit; font-size: 13px; line-height: 1.5;"></textarea>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tabs.quick }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="padding: 14px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; margin-bottom: 14px; display: flex; gap: 8px;">
+              <input value="{{ newReply }}" onInput="{{ onNewReply }}" placeholder="Escreva uma nova resposta pronta…" style="flex: 1; height: 34px; padding: 0 12px; border: 1px solid #E6E7E3; border-radius: 9px; font: inherit; font-size: 13px; outline: none; background: #FAFAF9;" style-focus="border-color: #B9D3C8; box-shadow: 0 0 0 3px rgba(14,110,82,0.10);" />
+              <button onClick="{{ addReply }}" style="flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 15px; border: 0; border-radius: 9px; background: #0E6E52; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;" style-hover="background: #0B5C45;">Adicionar</button>
+            </div>
+            <div style="border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; overflow: hidden;">
+              <sc-for list="{{ replies }}" as="q" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid #EFF0EC;">
+                  <span style="flex: 1; font-size: 13px; line-height: 1.5; color: #3E4A44;">{{ q.text }}</span>
+                  <button title="Editar" aria-label="Editar" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #F2F3F0; color: #16211C;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5 19 6 8 17l-4 1 1-4z" /></svg>
+                  </button>
+                  <button onClick="{{ q.onDelete }}" title="Excluir" aria-label="Excluir" style="width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: rgba(192,60,48,0.10); color: #93342B;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" /><path d="M9 7V4h6v3" /></svg>
+                  </button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const QUIZ = [
+  "Qual é o nome do seu negócio?", "O que vocês vendem ou fazem?", "Quais são os preços principais?",
+  "Qual o horário de funcionamento?", "Qual o endereço?", "Quais formas de pagamento aceitam?",
+  "Qual o diferencial do negócio?", "Como deve ser o tom de voz da IA?"
+];
+const DAY_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+
+let REPLIES = [
+  "Oi! Aqui é a Ana, da Vértice. Em que posso ajudar?",
+  "Já enviei sua proposta por aqui — qualquer dúvida me chama.",
+  "Consigo verificar isso e te retorno em alguns minutos, tudo bem?",
+  "Obrigada pelo contato! Nosso horário de atendimento é de segunda a sábado, das 8h às 18h."
+];
+
+class Component extends DCLogic {
+  state = {
+    tab: "brain", mode: "free", brainText: "", quizStep: 1,
+    hoursOn: true, activeDays: [1,2,3,4,5,6],
+    replies: REPLIES.map((t, i) => ({ id: i, text: t })), newReply: ""
+  };
+
+  renderVals() {
+    const s = this.state;
+    const step = s.quizStep;
+    return {
+      tabs: {
+        brain: s.tab === "brain", quick: s.tab === "quick",
+        brainBg: s.tab === "brain" ? "#16211C" : "transparent", brainFg: s.tab === "brain" ? "#FFFFFF" : "#5C6B64",
+        quickBg: s.tab === "quick" ? "#16211C" : "transparent", quickFg: s.tab === "quick" ? "#FFFFFF" : "#5C6B64"
+      },
+      tabBrain: () => this.setState({ tab: "brain" }),
+      tabQuick: () => this.setState({ tab: "quick" }),
+      mode: {
+        free: s.mode === "free", guided: s.mode === "guided",
+        freeBg: s.mode === "free" ? "#FFFFFF" : "transparent", freeFg: s.mode === "free" ? "#16211C" : "#5C6B64",
+        guidedBg: s.mode === "guided" ? "#FFFFFF" : "transparent", guidedFg: s.mode === "guided" ? "#16211C" : "#5C6B64"
+      },
+      modeFree: () => this.setState({ mode: "free" }),
+      modeGuided: () => this.setState({ mode: "guided" }),
+      brainText: s.brainText,
+      onBrainText: e => this.setState({ brainText: e.target.value }),
+      brainCount: s.brainText.length,
+      quiz: {
+        step, title: "Assistente Guiado", question: QUIZ[step - 1],
+        pct: Math.round((step / 8) * 100) + "%", nextLabel: step === 8 ? "Concluir" : "Próxima"
+      },
+      quizBack: () => this.setState(st => ({ quizStep: Math.max(1, st.quizStep - 1) })),
+      quizNext: () => this.setState(st => ({ quizStep: Math.min(8, st.quizStep + 1) })),
+      hoursOn: s.hoursOn,
+      hoursSwitchBg: s.hoursOn ? "#0E6E52" : "#D9DBD5",
+      hoursKnobLeft: s.hoursOn ? "18px" : "2px",
+      toggleHours: () => this.setState(st => ({ hoursOn: !st.hoursOn })),
+      days: DAY_LABELS.map((label, i) => {
+        const active = s.activeDays.includes(i);
+        return {
+          label, bg: active ? "#0E6E52" : "#F2F3F0", fg: active ? "#FFFFFF" : "#5C6B64",
+          onClick: () => this.setState(st => ({
+            activeDays: active ? st.activeDays.filter(d => d !== i) : st.activeDays.concat([i])
+          }))
+        };
+      }),
+      newReply: s.newReply,
+      onNewReply: e => this.setState({ newReply: e.target.value }),
+      addReply: () => {
+        const t = s.newReply.trim();
+        if (!t) return;
+        this.setState(st => ({ replies: st.replies.concat([{ id: Date.now(), text: t }]), newReply: "" }));
+      },
+      replies: s.replies.map(r => ({
+        text: r.text, onDelete: () => this.setState(st => ({ replies: st.replies.filter(x => x.id !== r.id) }))
+      }))
+    };
+  }
+}
+
+</script>
+</body>
+</html>

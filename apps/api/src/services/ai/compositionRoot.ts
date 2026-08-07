@@ -38,8 +38,21 @@ export function createAiComposition(prisma: PrismaClient, logger: Logger): AiCom
   const aiBusinessProfileRepository = new PrismaAiBusinessProfileRepository(prisma);
   const tenantRepository = new PrismaTenantRepository(prisma);
 
-  const aiInteractionsService = new AiInteractionsService(aiInteractionRepository, tenantRepository, logger);
-  const aiBusinessProfileService = new AiBusinessProfileService(aiBusinessProfileRepository, tenantRepository, logger);
+  const aiInteractionsService = new AiInteractionsService(
+    aiInteractionRepository,
+    tenantRepository,
+    logger,
+  );
+  const aiBusinessProfileService = new AiBusinessProfileService(
+    aiBusinessProfileRepository,
+    tenantRepository,
+    logger,
+  );
 
-  return { aiInteractionRepository, aiInteractionsService, aiBusinessProfileRepository, aiBusinessProfileService };
+  return {
+    aiInteractionRepository,
+    aiInteractionsService,
+    aiBusinessProfileRepository,
+    aiBusinessProfileService,
+  };
 }

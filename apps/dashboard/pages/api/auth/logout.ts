@@ -1,5 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { clearSessionCookie, isUserSession, readSessionFromRequest } from '../../../lib/dashboardSession';
+import {
+  clearSessionCookie,
+  isUserSession,
+  readSessionFromRequest,
+} from '../../../lib/dashboardSession';
 import { getApiBaseUrl } from '../../../lib/apiClient';
 
 /**
@@ -24,11 +28,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const session = readSessionFromRequest(req);
   if (session && isUserSession(session)) {
     try {
-      await fetch(new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/logout`, getApiBaseUrl()), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
-        body: JSON.stringify({ refreshToken: session.refreshToken }),
-      });
+      await fetch(
+        new URL(
+          `/api/tenants/${encodeURIComponent(session.tenantId)}/auth/logout`,
+          getApiBaseUrl(),
+        ),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+          body: JSON.stringify({ refreshToken: session.refreshToken }),
+        },
+      );
     } catch {
       // Best-effort: falha de rede/API não impede o logout local.
     }

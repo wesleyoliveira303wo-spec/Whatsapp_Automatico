@@ -51,6 +51,30 @@ describe('permissions / hasPermission (Milestone 5, Bloco M5D)', () => {
     expect(hasPermission('operator', 'ai_profile:read')).toBe(false);
     expect(hasPermission('read_only', 'ai_profile:read')).toBe(false);
   });
+
+  it('Respostas rapidas (quick_reply): qualquer papel a partir de OPERATOR le/insere; so administrator/owner gerenciam', () => {
+    expect(hasPermission('owner', 'quick_reply:read')).toBe(true);
+    expect(hasPermission('owner', 'quick_reply:manage')).toBe(true);
+    expect(hasPermission('administrator', 'quick_reply:read')).toBe(true);
+    expect(hasPermission('administrator', 'quick_reply:manage')).toBe(true);
+    expect(hasPermission('manager', 'quick_reply:read')).toBe(true);
+    expect(hasPermission('manager', 'quick_reply:manage')).toBe(false);
+    expect(hasPermission('operator', 'quick_reply:read')).toBe(true);
+    expect(hasPermission('operator', 'quick_reply:manage')).toBe(false);
+    expect(hasPermission('read_only', 'quick_reply:read')).toBe(false);
+  });
+
+  it('Tags (Redesign R4): qualquer papel a partir de OPERATOR lê/atribui; só administrator/owner gerenciam o catálogo', () => {
+    expect(hasPermission('owner', 'tag:read')).toBe(true);
+    expect(hasPermission('owner', 'tag:manage')).toBe(true);
+    expect(hasPermission('administrator', 'tag:read')).toBe(true);
+    expect(hasPermission('administrator', 'tag:manage')).toBe(true);
+    expect(hasPermission('manager', 'tag:read')).toBe(true);
+    expect(hasPermission('manager', 'tag:manage')).toBe(false);
+    expect(hasPermission('operator', 'tag:read')).toBe(true);
+    expect(hasPermission('operator', 'tag:manage')).toBe(false);
+    expect(hasPermission('read_only', 'tag:read')).toBe(false);
+  });
 });
 
 describe('permissions / outranks (Milestone 5, Bloco M5E)', () => {

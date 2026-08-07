@@ -5,7 +5,11 @@ import { WhatsAppSession } from '../../../src/services/whatsapp/domain/entities/
 import { WhatsAppSessionKey } from '../../../src/services/whatsapp/domain/valueObjects/WhatsAppSessionKey';
 import { WhatsAppSessionNotFoundError } from '../../../src/services/whatsapp/domain/errors/WhatsAppSessionNotFoundError';
 import { Logger } from '../../../src/shared/domain/Logger';
-import { FakeWhatsAppSessionRepository, FakeWhatsAppSessionEventRepository, FakeMessageReceivedHandler } from './testDoubles';
+import {
+  FakeWhatsAppSessionRepository,
+  FakeWhatsAppSessionEventRepository,
+  FakeMessageReceivedHandler,
+} from './testDoubles';
 
 /**
  * Fake do provider — não depende do Baileys nem de rede. Serve só para
@@ -118,6 +122,57 @@ class FakeWhatsAppProvider implements WhatsAppProvider {
   hasListener(): boolean {
     return this.listener !== undefined;
   }
+
+  /** Milestone 6, Bloco M6H-2b — inerte por padrão, mesmo racional de `phoneNumber`/`qrCode`. */
+  public profilePictureUrl: string | undefined;
+
+  async getProfilePictureUrl(_jid: string): Promise<string | undefined> {
+    return this.profilePictureUrl;
+  }
+
+  /** Fase 1, Bloco F1.1 — inerte por padrão, mesmo racional de `profilePictureUrl`. */
+  public downloadMediaResult: Buffer | undefined;
+
+  async downloadMedia(_media: {
+    contentType: 'image' | 'audio' | 'video' | 'document' | 'sticker';
+    mimeType: string;
+    url: string;
+    mediaKeyEncrypted: string;
+  }): Promise<Buffer | undefined> {
+    return this.downloadMediaResult;
+  }
+
+  /** Fase 1, Bloco F1.3 — registra chamadas, mesmo racional de `sendMessageCalls`/`nextSendMessageError`. */
+  public sendMediaMessageCalls: {
+    to: string;
+    media: {
+      contentType: 'image' | 'audio' | 'video' | 'document';
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    };
+  }[] = [];
+
+  public nextSendMediaMessageError: Error | undefined;
+
+  async sendMediaMessage(
+    to: string,
+    media: {
+      contentType: 'image' | 'audio' | 'video' | 'document';
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    },
+  ): Promise<void> {
+    if (this.nextSendMediaMessageError) {
+      const error = this.nextSendMediaMessageError;
+      this.nextSendMediaMessageError = undefined;
+      throw error;
+    }
+    this.sendMediaMessageCalls.push({ to, media });
+  }
 }
 
 interface RecordedLogCall {
@@ -159,7 +214,11 @@ class FakeLogger implements Logger {
     return new FakeLogger({ ...this.bindings, ...bindings });
   }
 
-  private record(level: RecordedLogCall['level'], message: string, meta?: Record<string, unknown>): void {
+  private record(
+    level: RecordedLogCall['level'],
+    message: string,
+    meta?: Record<string, unknown>,
+  ): void {
     this.calls.push({ level, message, meta: { ...this.bindings, ...meta } });
   }
 }
@@ -181,7 +240,14 @@ function buildSut(
   const eventRepo = new FakeWhatsAppSessionEventRepository();
   const logger = new FakeLogger();
   const sessionKey = new WhatsAppSessionKey(tenantId, sessionName);
-  const sessionManager = new SessionManager(provider, sessionKey, repo, logger, eventRepo, messageReceivedHandler);
+  const sessionManager = new SessionManager(
+    provider,
+    sessionKey,
+    repo,
+    logger,
+    eventRepo,
+    messageReceivedHandler,
+  );
   return { sessionManager, provider, repo, eventRepo, logger, sessionKey };
 }
 
@@ -357,7 +423,11 @@ describe('SessionManager', () => {
         const { sessionManager, provider, repo } = buildSut();
         const session = await sessionManager.init();
 
-        provider.emitEvent({ type: 'status_changed', status: 'disconnected', disconnectReason: 'logged_out' });
+        provider.emitEvent({
+          type: 'status_changed',
+          status: 'disconnected',
+          disconnectReason: 'logged_out',
+        });
         await Promise.resolve();
         await Promise.resolve();
 
@@ -369,7 +439,11 @@ describe('SessionManager', () => {
         const { sessionManager, provider, repo } = buildSut();
         const session = await sessionManager.init();
 
-        provider.emitEvent({ type: 'status_changed', status: 'disconnected', disconnectReason: 'connection_lost' });
+        provider.emitEvent({
+          type: 'status_changed',
+          status: 'disconnected',
+          disconnectReason: 'connection_lost',
+        });
         await Promise.resolve();
         await Promise.resolve();
         expect((await repo.findById(session.id))?.disconnectReason).toBe('connection_lost');
@@ -389,11 +463,19 @@ describe('SessionManager', () => {
         const { sessionManager, provider, eventRepo, sessionKey } = buildSut();
         await sessionManager.init();
 
-        provider.emitEvent({ type: 'status_changed', status: 'disconnected', disconnectReason: 'connection_lost' });
+        provider.emitEvent({
+          type: 'status_changed',
+          status: 'disconnected',
+          disconnectReason: 'connection_lost',
+        });
         await Promise.resolve();
         await Promise.resolve();
 
-        const history = await eventRepo.listRecentByTenantAndSessionName(sessionKey.tenantId, sessionKey.sessionName, 10);
+        const history = await eventRepo.listRecentByTenantAndSessionName(
+          sessionKey.tenantId,
+          sessionKey.sessionName,
+          10,
+        );
         expect(history).toHaveLength(1);
         expect(history[0]).toMatchObject({
           tenantId: sessionKey.tenantId,
@@ -407,7 +489,11 @@ describe('SessionManager', () => {
         const { sessionManager, provider, eventRepo, sessionKey } = buildSut();
         await sessionManager.init();
 
-        provider.emitEvent({ type: 'status_changed', status: 'disconnected', disconnectReason: 'timed_out' });
+        provider.emitEvent({
+          type: 'status_changed',
+          status: 'disconnected',
+          disconnectReason: 'timed_out',
+        });
         await Promise.resolve();
         await Promise.resolve();
         // Espera real entre os dois eventos — garante `occurredAt`
@@ -418,7 +504,11 @@ describe('SessionManager', () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        const history = await eventRepo.listRecentByTenantAndSessionName(sessionKey.tenantId, sessionKey.sessionName, 10);
+        const history = await eventRepo.listRecentByTenantAndSessionName(
+          sessionKey.tenantId,
+          sessionKey.sessionName,
+          10,
+        );
         expect(history).toHaveLength(2);
         expect(history[0].status).toBe('connecting'); // mais recente primeiro
         expect(history[1].status).toBe('disconnected');
@@ -468,7 +558,7 @@ describe('SessionManager', () => {
       // assíncrono (`subscribeToProviderEvents`) rodou de verdade, e não
       // apenas que o estado final "por acaso" bateu por outro caminho.
       const asyncUpdateLog = logger.calls.find(
-        c => c.level === 'debug' && String(c.message).includes('Atualização assíncrona'),
+        (c) => c.level === 'debug' && String(c.message).includes('Atualização assíncrona'),
       );
       expect(asyncUpdateLog).toBeDefined();
     });
@@ -520,7 +610,10 @@ describe('SessionManager', () => {
     it('[ADR #29] duas chamadas concorrentes de init() na mesma instância resultam em uma única conexão (nunca duas)', async () => {
       const { sessionManager, provider } = buildSut();
 
-      const [sessionA, sessionB] = await Promise.all([sessionManager.init(), sessionManager.init()]);
+      const [sessionA, sessionB] = await Promise.all([
+        sessionManager.init(),
+        sessionManager.init(),
+      ]);
 
       // O mutex de ciclo de vida serializa as duas chamadas: a segunda só
       // roda depois que a primeira termina, e nesse ponto a lógica já
@@ -556,7 +649,7 @@ describe('SessionManager', () => {
     it('[ADR #29, F3] disconnect() aguarda um init() em andamento na mesma instância antes de rodar (evita socket criado depois do disconnect)', async () => {
       const { sessionManager, provider } = buildSut();
       let releaseConnect!: () => void;
-      provider.connectGate = new Promise<void>(resolve => {
+      provider.connectGate = new Promise<void>((resolve) => {
         releaseConnect = resolve;
       });
 
@@ -627,7 +720,7 @@ describe('SessionManager', () => {
     it('[ADR #29, F5] getStatus() não fica bloqueado por um init() em andamento na mesma instância (leitura livre, fora do lock de ciclo de vida)', async () => {
       const { sessionManager, provider } = buildSut();
       let releaseConnect!: () => void;
-      provider.connectGate = new Promise<void>(resolve => {
+      provider.connectGate = new Promise<void>((resolve) => {
         releaseConnect = resolve;
       });
 
@@ -677,16 +770,18 @@ describe('SessionManager', () => {
 
       await sessionManager.sendMessage('5511999999999@s.whatsapp.net', 'Olá!');
 
-      expect(provider.sendMessageCalls).toEqual([{ to: '5511999999999@s.whatsapp.net', content: 'Olá!' }]);
+      expect(provider.sendMessageCalls).toEqual([
+        { to: '5511999999999@s.whatsapp.net', content: 'Olá!' },
+      ]);
     });
 
     it('deve propagar um erro do provider (ex.: WhatsAppNotConnectedError), não engolir', async () => {
       const { sessionManager, provider } = buildSut();
       provider.nextSendMessageError = new Error('Falha simulada de envio');
 
-      await expect(sessionManager.sendMessage('5511999999999@s.whatsapp.net', 'Olá!')).rejects.toThrow(
-        'Falha simulada de envio',
-      );
+      await expect(
+        sessionManager.sendMessage('5511999999999@s.whatsapp.net', 'Olá!'),
+      ).rejects.toThrow('Falha simulada de envio');
     });
 
     it('não passa pelo lifecycleLock — pode ser chamado mesmo com init() em andamento', async () => {
@@ -698,7 +793,52 @@ describe('SessionManager', () => {
 
       await sessionManager.sendMessage('5511999999999@s.whatsapp.net', 'Olá durante init()');
 
-      expect(provider.sendMessageCalls).toEqual([{ to: '5511999999999@s.whatsapp.net', content: 'Olá durante init()' }]);
+      expect(provider.sendMessageCalls).toEqual([
+        { to: '5511999999999@s.whatsapp.net', content: 'Olá durante init()' },
+      ]);
+      void initPromise; // não aguardado deliberadamente: connect() nunca resolve neste teste
+    });
+  });
+
+  describe('sendMediaMessage (Fase 1, Bloco F1.3)', () => {
+    const MEDIA = {
+      contentType: 'image' as const,
+      buffer: Buffer.from('bytes'),
+      mimeType: 'image/jpeg',
+      caption: 'legenda',
+    };
+
+    it('deve delegar to/media diretamente ao provider', async () => {
+      const { sessionManager, provider } = buildSut();
+
+      await sessionManager.sendMediaMessage('5511999999999@s.whatsapp.net', MEDIA);
+
+      expect(provider.sendMediaMessageCalls).toEqual([
+        { to: '5511999999999@s.whatsapp.net', media: MEDIA },
+      ]);
+    });
+
+    it('deve propagar um erro do provider (ex.: WhatsAppNotConnectedError), não engolir', async () => {
+      const { sessionManager, provider } = buildSut();
+      provider.nextSendMediaMessageError = new Error('Falha simulada de envio de mídia');
+
+      await expect(
+        sessionManager.sendMediaMessage('5511999999999@s.whatsapp.net', MEDIA),
+      ).rejects.toThrow('Falha simulada de envio de mídia');
+    });
+
+    it('não passa pelo lifecycleLock — pode ser chamado mesmo com init() em andamento', async () => {
+      const { sessionManager, provider } = buildSut();
+      provider.connectGate = new Promise(() => {
+        // nunca resolve nesta chamada — connect() fica pendurado propositalmente
+      });
+      const initPromise = sessionManager.init();
+
+      await sessionManager.sendMediaMessage('5511999999999@s.whatsapp.net', MEDIA);
+
+      expect(provider.sendMediaMessageCalls).toEqual([
+        { to: '5511999999999@s.whatsapp.net', media: MEDIA },
+      ]);
       void initPromise; // não aguardado deliberadamente: connect() nunca resolve neste teste
     });
   });
@@ -709,10 +849,10 @@ describe('SessionManager', () => {
 
       const session = await sessionManager.init();
 
-      const debugCall = logger.calls.find(c => c.level === 'debug');
+      const debugCall = logger.calls.find((c) => c.level === 'debug');
       expect(debugCall?.meta).toMatchObject({ tenantId: 'tenant-1', sessionName: 'default' });
 
-      const infoCall = logger.calls.find(c => c.level === 'info');
+      const infoCall = logger.calls.find((c) => c.level === 'info');
       expect(infoCall?.meta).toMatchObject({
         tenantId: 'tenant-1',
         sessionName: 'default',
@@ -740,9 +880,13 @@ describe('SessionManager', () => {
       await sessionManager.init();
 
       const reuseLog = logger.calls.find(
-        c => c.level === 'info' && String(c.message).includes('reaproveitando'),
+        (c) => c.level === 'info' && String(c.message).includes('reaproveitando'),
       );
-      expect(reuseLog?.meta).toMatchObject({ tenantId: 'tenant-1', sessionName: 'default', sessionId: 'existing-id' });
+      expect(reuseLog?.meta).toMatchObject({
+        tenantId: 'tenant-1',
+        sessionName: 'default',
+        sessionId: 'existing-id',
+      });
     });
 
     it('deve logar info ao desconectar', async () => {
@@ -752,7 +896,7 @@ describe('SessionManager', () => {
 
       await sessionManager.disconnect();
 
-      const disconnectLog = logger.calls.find(c => c.level === 'info');
+      const disconnectLog = logger.calls.find((c) => c.level === 'info');
       expect(disconnectLog?.meta).toMatchObject({ sessionId: session.id });
     });
 
@@ -761,7 +905,7 @@ describe('SessionManager', () => {
 
       await expect(sessionManager.getStatus()).rejects.toThrow(WhatsAppSessionNotFoundError);
 
-      const warnLog = logger.calls.find(c => c.level === 'warn');
+      const warnLog = logger.calls.find((c) => c.level === 'warn');
       expect(warnLog?.meta).toMatchObject({ tenantId: 'tenant-1', sessionName: 'default' });
     });
 
@@ -770,11 +914,13 @@ describe('SessionManager', () => {
       await sessionManager.init();
       repo.failNextUpdate = true;
 
-      expect(() => provider.emitEvent({ type: 'status_changed', status: 'disconnected' })).not.toThrow();
+      expect(() =>
+        provider.emitEvent({ type: 'status_changed', status: 'disconnected' }),
+      ).not.toThrow();
       await Promise.resolve();
       await Promise.resolve();
 
-      const errorLog = logger.calls.find(c => c.level === 'error');
+      const errorLog = logger.calls.find((c) => c.level === 'error');
       expect(errorLog?.meta?.error).toBeInstanceOf(Error);
     });
   });
@@ -836,7 +982,12 @@ describe('SessionManager', () => {
       await sessionManager.init();
 
       const receivedAt = new Date('2026-07-09T12:00:00Z');
-      provider.emitEvent({ type: 'message_received', from: '5511999999999@s.whatsapp.net', content: 'Olá!', receivedAt });
+      provider.emitEvent({
+        type: 'message_received',
+        from: '5511999999999@s.whatsapp.net',
+        content: 'Olá!',
+        receivedAt,
+      });
       await Promise.resolve();
       await Promise.resolve();
 
@@ -855,7 +1006,14 @@ describe('SessionManager', () => {
       const { sessionManager, provider, repo } = buildSut();
       const session = await sessionManager.init();
 
-      expect(() => provider.emitEvent({ type: 'message_received', from: 'x@s.whatsapp.net', content: 'oi', receivedAt: new Date() })).not.toThrow();
+      expect(() =>
+        provider.emitEvent({
+          type: 'message_received',
+          from: 'x@s.whatsapp.net',
+          content: 'oi',
+          receivedAt: new Date(),
+        }),
+      ).not.toThrow();
       await Promise.resolve();
       await Promise.resolve();
 
@@ -872,7 +1030,12 @@ describe('SessionManager', () => {
       const { sessionManager, provider } = buildSut('tenant-1', 'default', handler);
       await sessionManager.init();
 
-      provider.emitEvent({ type: 'message_received', from: 'x@s.whatsapp.net', content: 'oi', receivedAt: new Date() });
+      provider.emitEvent({
+        type: 'message_received',
+        from: 'x@s.whatsapp.net',
+        content: 'oi',
+        receivedAt: new Date(),
+      });
       await Promise.resolve();
       await Promise.resolve();
 
@@ -885,7 +1048,14 @@ describe('SessionManager', () => {
       const { sessionManager, provider, logger } = buildSut('tenant-1', 'default', handler);
       await sessionManager.init();
 
-      expect(() => provider.emitEvent({ type: 'message_received', from: 'x@s.whatsapp.net', content: 'oi', receivedAt: new Date() })).not.toThrow();
+      expect(() =>
+        provider.emitEvent({
+          type: 'message_received',
+          from: 'x@s.whatsapp.net',
+          content: 'oi',
+          receivedAt: new Date(),
+        }),
+      ).not.toThrow();
       await Promise.resolve();
       await Promise.resolve();
 

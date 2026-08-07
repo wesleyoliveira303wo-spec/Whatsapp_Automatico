@@ -1,3 +1,189 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/**
+ * Reskin 2026-08-06 — porte do Design System aprovado (processo externo
+ * "Claude Design", ver `/design/Francis Design System.dc.html` e as 5 telas
+ * HTML de referência). Valores abaixo são a conversão HSL EXATA dos hex do
+ * Design System §2 (calculada cor a cor) — nenhum arredondamento perceptível.
+ * Mantém os MESMOS NOMES de variável já em uso desde R1 (nenhum componente
+ * muda de classe Tailwind), só recalibra o valor.
+ *
+ * Três tokens NOVOS (não existiam antes deste reskin):
+ * - `--panel` (#FAFAF9): fundo da lista de conversas/aside — distinto de
+ *   `--card` (#FFFFFF, conteúdo principal) e `--background` (#F3F3F1, casca
+ *   do rail/header). O Design System usa os três lado a lado na mesma tela.
+ * - `--foreground-secondary` (#3E4A44): 3º nível da hierarquia de texto
+ *   (primário `--foreground`/secundário aqui/terciário `--muted-foreground`).
+ * - `--success-emphasis`/`--warning-emphasis`/`--destructive-emphasis`: o
+ *   Design System §6 documenta que todo selo de estado usa fundo translúcido
+ *   (~12% do tom "ponto") + TEXTO NUMA VERSÃO MAIS ESCURA da mesma cor — não
+ *   o mesmo tom usado para pontos/ícones sólidos. Sem esses 3 tokens, o texto
+ *   do selo ficaria na cor errada (mais clara que o mockup pede).
+ *
+ * `--muted`/`--accent`: o mockup usa ~5 neutros de hover quase idênticos
+ * (`#F0F1EE`/`#F2F3F0`/`#E9EAE5`/`#F5F6F3`/`#EFF0EC`, todos a poucas unidades
+ * de RGB um do outro) para o mesmo papel ("neutro de hover/preenchimento
+ * sutil sobre --panel/--card"). Consolidados num único valor representativo
+ * (#F0F1EE) — diferença imperceptível a olho nu; tokens quase-duplicados não
+ * seriam manuteníveis. Estrutura/hierarquia/espaçamento do mockup preservados
+ * à risca; esta é só uma simplificação de implementação de cor pura.
+ *
+ * `.dark`: sem mockup escuro entregue (as 5 telas do Claude Design são só
+ * tema claro). Recalibrado por EXTRAPOLAÇÃO da mesma relação de contraste já
+ * validada em R1 — mesma lógica (verde mais claro/saturado, foreground
+ * escuro sobre fundo sólido) — nunca visualmente conferido, registrado como
+ * pendência no relatório final.
+ */
+
+/**
+ * Comentário histórico preservado (Milestone 6, Bloco M6A) — contexto de por
+ * que `--success`/`--warning` existem:
+ *
+ * `PRODUCT_PRINCIPLES.md` §2.3 fixa o significado de cor por status em todo o
+ * produto: verde = saudável/sucesso, âmbar = atenção/aguardando humano,
+ * vermelho = erro (`--destructive`), cinza = inativo (`--muted`).
+ */
+@layer base {
+  :root {
+    --background: 60 8% 95%;      /* #F3F3F1 — casca do rail/header */
+    --foreground: 153 20% 11%;    /* #16211C — texto primário */
+
+    --card: 0 0% 100%;            /* #FFFFFF — conteúdo principal */
+    --card-foreground: 153 20% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 153 20% 11%;
+
+    /* NOVO — fundo da lista de conversas/aside (#FAFAF9), distinto de --card e --background. */
+    --panel: 60 9% 98%;
+    --panel-foreground: 153 20% 11%;
+
+    --primary: 162 77% 24%;       /* #0E6E52 */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 80 10% 94%;
+    --secondary-foreground: 153 20% 11%;
+
+    --muted: 80 10% 94%;           /* consolidação dos ~5 neutros de hover do mockup, ver comentário acima */
+    --muted-foreground: 152 8% 39%; /* #5C6B64 — texto terciário */
+
+    /* NOVO — 2º nível da hierarquia de texto (#3E4A44), entre --foreground e --muted-foreground. */
+    --foreground-secondary: 150 9% 27%;
+
+    --accent: 80 10% 94%;
+    --accent-foreground: 153 20% 11%;
+
+    --destructive: 3 65% 49%;     /* #D0342C */
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 75 8% 90%;          /* #E6E7E3 */
+    --input: 75 8% 90%;
+    --ring: 162 77% 24%;
+
+    --radius: 0.75rem;            /* raio de superfície único do mockup (12px) — md/sm derivados cobrem 7-10px */
+
+    --success: 142 76% 36%;       /* #16A34A — ponto/ícone sólido */
+    --success-foreground: 210 40% 98%;
+    --success-emphasis: 143 56% 24%; /* NOVO #1B6136 — texto sobre selo translúcido */
+
+    --warning: 36 88% 41%;        /* #C4790C */
+    --warning-foreground: 210 40% 98%;
+    --warning-emphasis: 37 88% 29%;  /* NOVO #8A5809 */
+
+    --destructive-emphasis: 5 55% 37%; /* NOVO #93342B */
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    /* Reskin 2026-08-06: hierarquia de superfície extrapolada (sem mockup
+       escuro) — --panel e --card ganham um degrau de elevação sutil sobre
+       --background, mesma relação que o tema claro tem entre os três. */
+    --panel: 222 25% 7%;
+    --panel-foreground: 210 40% 98%;
+
+    --card: 222 20% 9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 20% 9%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Verde mais claro/saturado que o do tema claro — precisa ler bem sobre
+       fundo escuro; por isso o foreground é escuro (texto sobre um botão
+       verde-claro), não branco. */
+    --primary: 162 70% 39%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    /* NOVO — extrapolado entre --foreground e --muted-foreground escuros. */
+    --foreground-secondary: 210 15% 78%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 3 55% 42%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 162 70% 39%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 222.2 47.4% 11.2%;
+    /* Em tema escuro o tom "ponto" já contrasta bem sobre fundo translúcido — sem necessidade de uma 2ª variante mais escura (diferente do tema claro). */
+    --success-emphasis: 142 70% 45%;
+
+    --warning: 36 90% 55%;
+    --warning-foreground: 222.2 47.4% 11.2%;
+    --warning-emphasis: 36 90% 55%;
+
+    --destructive-emphasis: 3 55% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/*
+ * Reskin 2026-08-07 (pedido do fundador) — barra de rolagem discreta, mesma
+ * classe `.fx-scroll` de TODAS as telas do Design System (`Francis
+ * Conversas/Pipeline/Analytics/Cérebro da IA/Configurações.dc.html`): trilho
+ * transparente + polegar fino e arredondado, no lugar do scrollbar cru do
+ * navegador (grosso, quadrado, sempre visível) que apareceu na fila de
+ * filtros de Conversas ao rolar horizontalmente numa lista estreita.
+ * Cores via token (`--border`) em vez do hex fixo do mockup — se adapta
+ * sozinha ao tema claro/escuro, sem precisar de uma 2ª regra `.dark`.
+ * Aplicável a qualquer contêiner com overflow (`overflow-x-auto`/
+ * `overflow-y-auto`), não só à fila de filtros.
+ */
+.fx-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.fx-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.fx-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.fx-scroll::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}

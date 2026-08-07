@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { AiInteractionsService } from '../application/AiInteractionsService';
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 
-const tenantIdParamSchema = z.object({ tenantId: z.string().trim().min(1, 'tenantId não pode ser vazio') });
+const tenantIdParamSchema = z.object({
+  tenantId: z.string().trim().min(1, 'tenantId não pode ser vazio'),
+});
 
 /**
  * `conversationId`/`limit` opcionais na query (Milestone 3, Bloco 5 — D13:
@@ -12,6 +14,11 @@ const tenantIdParamSchema = z.object({ tenantId: z.string().trim().min(1, 'tenan
  */
 const listInteractionsQuerySchema = z.object({
   conversationId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().positive().optional(),
+});
+
+/** Fase 1, Bloco F1.4 (2026-08-01) — `GET .../ai-interactions/unanswered`, só `limit`. */
+const listUnansweredQuestionsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().optional(),
 });
 
@@ -31,6 +38,27 @@ const listInteractionsQuerySchema = z.object({
  */
 export function createAiInteractionsRouter(aiInteractionsService: AiInteractionsService): Router {
   const router = Router({ mergeParams: true });
+
+  // Fase 1, Bloco F1.4 (2026-08-01): montada ANTES de `/` — `/unanswered`
+  // não pode ser capturada por um `conversationId` na query da rota raiz
+  // (não há conflito de path aqui, mas a ordem segue o mesmo cuidado já
+  // registrado em outros routers deste projeto quando uma rota mais
+  // específica precisa vir antes de uma mais genérica).
+  router.get(
+    '/unanswered',
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(tenantIdParamSchema, req.params, res);
+      if (!params) return;
+      const query = validateOrRespond(listUnansweredQuestionsQuerySchema, req.query, res);
+      if (!query) return;
+
+      const interactions = await aiInteractionsService.listUnansweredQuestions(
+        params.tenantId,
+        query.limit,
+      );
+      res.status(200).json({ interactions });
+    }),
+  );
 
   router.get(
     '/',

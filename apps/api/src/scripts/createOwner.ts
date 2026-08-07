@@ -40,7 +40,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    const existing = await prisma.user.findUnique({ where: { tenantId_email: { tenantId, email } } });
+    const existing = await prisma.user.findUnique({
+      where: { tenantId_email: { tenantId, email } },
+    });
     if (existing) {
       console.error(`Ja existe um usuario com este e-mail neste tenant: ${email}`);
       process.exitCode = 1;

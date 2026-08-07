@@ -5,7 +5,8 @@
  * caminho ESPERADO, não uma condição excepcional (ver
  * `MILESTONE_003_AI_AUTORESPONDER.md` §2.3).
  */
-export type ReplyValidationResult = { valid: true; sanitized: string } | { valid: false; reason: string };
+export type ReplyValidationResult =
+  { valid: true; sanitized: string } | { valid: false; reason: string };
 
 /**
  * Decide se um texto gerado por IA é aceitável para envio — Milestone 3,
@@ -32,7 +33,10 @@ export function validateReply(content: string, maxLength: number): ReplyValidati
   }
 
   if (sanitized.length > maxLength) {
-    return { valid: false, reason: `Resposta excede o limite de ${maxLength} caracteres (${sanitized.length})` };
+    return {
+      valid: false,
+      reason: `Resposta excede o limite de ${maxLength} caracteres (${sanitized.length})`,
+    };
   }
 
   return { valid: true, sanitized };

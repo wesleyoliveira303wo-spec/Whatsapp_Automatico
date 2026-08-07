@@ -14,7 +14,10 @@ describe('sanitizeHeaders', () => {
   });
 
   it('redige cookie e set-cookie', () => {
-    const result = sanitizeHeaders({ cookie: 'session=abc', 'set-cookie': 'session=abc; HttpOnly' });
+    const result = sanitizeHeaders({
+      cookie: 'session=abc',
+      'set-cookie': 'session=abc; HttpOnly',
+    });
 
     expect(result.cookie).toBe('[REDACTED]');
     expect(result['set-cookie']).toBe('[REDACTED]');
@@ -28,7 +31,10 @@ describe('sanitizeHeaders', () => {
   });
 
   it('preserva headers não sensíveis inalterados', () => {
-    const result = sanitizeHeaders({ 'content-type': 'application/json', 'x-request-id': 'abc-123' });
+    const result = sanitizeHeaders({
+      'content-type': 'application/json',
+      'x-request-id': 'abc-123',
+    });
 
     expect(result['content-type']).toBe('application/json');
     expect(result['x-request-id']).toBe('abc-123');

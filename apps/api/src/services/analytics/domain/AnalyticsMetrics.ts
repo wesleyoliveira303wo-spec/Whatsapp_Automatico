@@ -73,3 +73,38 @@ export interface SessionStabilityPoint {
   disconnected: number;
   connecting: number;
 }
+
+/**
+ * Contagem ATUAL de conversas por estagio do Pipeline (Fase 1, Bloco F1.6 —
+ * Analytics de NEGOCIO, primeira metrica do bounded context que nao mede
+ * plataforma/uso de IA). Espelha `ConversationStatusCounts` (mesmo racional:
+ * retrato do estado corrente, nao serie temporal, por isso sem `DateRange`).
+ * Chaves em minusculas (mesma convencao de `ConversationStatusCounts.bot`/
+ * `.human` — o enum Prisma `ConversationStage` e maiusculo, mas o contrato
+ * exposto ao frontend segue lowercase, igual `ConversationStage` do domino
+ * de `services/conversations`).
+ */
+export interface PipelineFunnelCounts {
+  new: number;
+  contacted: number;
+  negotiating: number;
+  closed_won: number;
+  closed_lost: number;
+}
+
+/**
+ * Taxa de escalonamento por periodo (Fase 1, Bloco F1.6) — % de conversas
+ * CRIADAS naquele dia que em algum momento precisaram de ajuda humana
+ * (`escalatedAt IS NOT NULL`, independente do `status` atual — ver docstring
+ * do campo em `Conversation.ts`: a IA pode continuar respondendo mesmo apos
+ * escalar, `escalatedAt` so marca "pediu ajuda alguma vez"). Bucket por
+ * `createdAt` (nao por `escalatedAt`) — mede "das conversas que comecaram
+ * naquele dia, quantas precisaram de humano", nao "quantas escaladas
+ * aconteceram naquele dia" (uma conversa antiga poderia escalar hoje e
+ * inflar um dia sem novas conversas).
+ */
+export interface EscalationRatePoint {
+  date: string;
+  totalConversations: number;
+  escalatedConversations: number;
+}

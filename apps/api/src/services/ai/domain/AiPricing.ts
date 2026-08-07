@@ -92,6 +92,8 @@ export function calculateCostUsd(
     return '0';
   }
 
-  const cost = (tokensInput / 1_000_000) * price.inputPerMillionUsd + (tokensOutput / 1_000_000) * price.outputPerMillionUsd;
+  const cost =
+    (tokensInput / 1_000_000) * price.inputPerMillionUsd +
+    (tokensOutput / 1_000_000) * price.outputPerMillionUsd;
   return cost.toFixed(8);
 }

@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "lint-staged": "lint-staged",
-    "dev": "concurrently -n api,dashboard -c blue,green \"npm run dev -w apps/api\" \"npm run dev -w apps/dashboard\"",
+    "dev": "concurrently -n api,worker,dashboard -c blue,magenta,green \"cross-env PORT=4000 npm run dev -w apps/api\" \"npm run dev:worker -w apps/api\" \"npm run dev -w apps/dashboard\"",
     "build": "npm run build --workspaces --if-present",
     "lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint . --ext .js,.ts,.tsx",
     "test": "jest",

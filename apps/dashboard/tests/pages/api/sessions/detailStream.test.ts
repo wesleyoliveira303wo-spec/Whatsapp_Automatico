@@ -37,7 +37,10 @@ describe('GET /api/sessions/[sessionName]/stream (SSE, detalhe)', () => {
   });
 
   it('inicia runSsePoller com uma função poll() que delega a callApi(session, "/:sessionName")', async () => {
-    (callApi as jest.Mock).mockResolvedValue({ status: 200, body: { sessionName: 'vendas', generation: 2 } });
+    (callApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { sessionName: 'vendas', generation: 2 },
+    });
     const req = createFakeReq({ method: 'GET', query: { sessionName: 'vendas' } });
     const res = createFakeRes();
 

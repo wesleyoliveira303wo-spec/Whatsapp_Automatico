@@ -6,9 +6,11 @@ metadata:
 ---
 
 # Idioma oficial
+
 - **Português (Brasil)**
 
 ## Diretrizes
+
 - Toda comunicação escrita (documentação, mensagens de commit, PRs, relatórios, análises) deve ser em Português.
 - O inglês é permitido apenas para:
   - nomes de tecnologias (React, Prisma, Docker, Fastify, etc.)

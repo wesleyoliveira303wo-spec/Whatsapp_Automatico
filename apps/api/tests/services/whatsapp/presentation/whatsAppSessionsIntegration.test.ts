@@ -9,7 +9,11 @@ import { WhatsAppConnectionRegistry } from '../../../../src/services/whatsapp/ap
 import { WhatsAppSessionService } from '../../../../src/services/whatsapp/application/WhatsAppSessionService';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeWhatsAppProviderFactory } from '../infrastructure/FakeWhatsAppProviderFactory';
-import { FakeWhatsAppSessionRepository, FakeCredentialsStore, FakeWhatsAppSessionEventRepository } from '../testDoubles';
+import {
+  FakeWhatsAppSessionRepository,
+  FakeCredentialsStore,
+  FakeWhatsAppSessionEventRepository,
+} from '../testDoubles';
 import { FakeApiKeyHasher } from '../../../shared/security/FakeApiKeyHasher';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../../auth/testDoubles';
@@ -44,12 +48,25 @@ function bearer(userId: string, role: UserRole, tenantId = 'tenant-1'): string {
 function buildApp(): Express {
   const hasher = new FakeApiKeyHasher();
   const tenantRepository = new FakeTenantRepository();
-  tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: hasher.hash('chave-tenant-1') });
-  tenantRepository.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: hasher.hash('chave-tenant-2') });
+  tenantRepository.seed({
+    id: 'tenant-1',
+    name: 'Empresa Um',
+    apiKeyHash: hasher.hash('chave-tenant-1'),
+  });
+  tenantRepository.seed({
+    id: 'tenant-2',
+    name: 'Empresa Dois',
+    apiKeyHash: hasher.hash('chave-tenant-2'),
+  });
 
   const sessionRepository = new FakeWhatsAppSessionRepository();
   const eventRepository = new FakeWhatsAppSessionEventRepository();
-  const registry = new WhatsAppConnectionRegistry(new FakeWhatsAppProviderFactory(), sessionRepository, new NoopLogger(), eventRepository);
+  const registry = new WhatsAppConnectionRegistry(
+    new FakeWhatsAppProviderFactory(),
+    sessionRepository,
+    new NoopLogger(),
+    eventRepository,
+  );
   const sessionService = new WhatsAppSessionService(
     registry,
     tenantRepository,
@@ -62,11 +79,20 @@ function buildApp(): Express {
   // M5D-3: `authenticate` (dois-planos) no lugar de `requireApiKey` — chave da
   // empresa (maquina) OU craxa de pessoa (RBAC no router). Mesmo SECRET do
   // `access` de modulo, para os craxas emitidos nos testes validarem aqui.
-  const authenticate = createAuthenticate(new Hs256AccessTokenService(SECRET, 900), hasher, tenantRepository, new NoopLogger());
+  const authenticate = createAuthenticate(
+    new Hs256AccessTokenService(SECRET, 900),
+    hasher,
+    tenantRepository,
+    new NoopLogger(),
+  );
 
   const app = express();
   app.use(express.json());
-  app.use('/api/tenants/:tenantId/whatsapp-sessions', authenticate, createWhatsAppSessionsRouter(sessionService));
+  app.use(
+    '/api/tenants/:tenantId/whatsapp-sessions',
+    authenticate,
+    createWhatsAppSessionsRouter(sessionService),
+  );
   // Milestone 3, Bloco 5 (D17) - montado ESCOPADO ao path do proprio router,
   // nao mais globalmente sem path (correcao do bug de encadeamento de error
   // handlers - ver docstring de `createWhatsAppErrorHandler`/`index.ts`).
@@ -78,7 +104,9 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
   it('sem credencial alguma, nenhuma rota de sessao e alcancada (401)', async () => {
     const app = buildApp();
 
-    const response = await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
 
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ error: 'missing_credentials' });
@@ -99,10 +127,15 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
   it('[fecha o IDOR] API key valida do tenant-1 nao le o status de uma sessao do tenant-2 (403)', async () => {
     const app = buildApp();
     // Sessao real criada para tenant-2 com a propria chave de tenant-2.
-    await request(app).post('/api/tenants/tenant-2/whatsapp-sessions').set('x-api-key', 'chave-tenant-2').send({ sessionName: 'vendas' });
+    await request(app)
+      .post('/api/tenants/tenant-2/whatsapp-sessions')
+      .set('x-api-key', 'chave-tenant-2')
+      .send({ sessionName: 'vendas' });
 
     // tenant-1 tenta ler essa mesma sessao pela URL de tenant-2, usando a propria chave (valida, mas de outro tenant).
-    const response = await request(app).get('/api/tenants/tenant-2/whatsapp-sessions/vendas').set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get('/api/tenants/tenant-2/whatsapp-sessions/vendas')
+      .set('x-api-key', 'chave-tenant-1');
 
     expect(response.status).toBe(403);
     expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
@@ -134,9 +167,14 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
   describe('M2, Fase 1 - IDOR nas novas rotas (GET / lista e DELETE /:sessionName/remove)', () => {
     it('[fecha o IDOR] API key valida do tenant-1 nao lista as sessoes do tenant-2 (403, sem tocar o repositorio)', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-2/whatsapp-sessions').set('x-api-key', 'chave-tenant-2').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-2/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-2')
+        .send({ sessionName: 'vendas' });
 
-      const response = await request(app).get('/api/tenants/tenant-2/whatsapp-sessions').set('x-api-key', 'chave-tenant-1');
+      const response = await request(app)
+        .get('/api/tenants/tenant-2/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
@@ -144,18 +182,29 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
 
     it('com API key correspondente, GET / lista so as proprias sessoes do tenant (200)', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').set('x-api-key', 'chave-tenant-1').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1')
+        .send({ sessionName: 'vendas' });
 
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions').set('x-api-key', 'chave-tenant-1');
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(200);
       expect(response.body.sessions).toHaveLength(1);
-      expect(response.body.sessions[0]).toMatchObject({ tenantId: 'tenant-1', sessionName: 'vendas' });
+      expect(response.body.sessions[0]).toMatchObject({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+      });
     });
 
     it('[fecha o IDOR] API key valida do tenant-1 nao remove uma sessao do tenant-2 (403, sessao do tenant-2 permanece intacta)', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-2/whatsapp-sessions').set('x-api-key', 'chave-tenant-2').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-2/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-2')
+        .send({ sessionName: 'vendas' });
 
       const removeResponse = await request(app)
         .delete('/api/tenants/tenant-2/whatsapp-sessions/vendas/remove')
@@ -166,15 +215,22 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
 
       // Prova que a rejeicao aconteceu ANTES de qualquer efeito colateral: a
       // sessao do tenant-2 continua existindo, visivel pela propria chave dele.
-      const listResponse = await request(app).get('/api/tenants/tenant-2/whatsapp-sessions').set('x-api-key', 'chave-tenant-2');
+      const listResponse = await request(app)
+        .get('/api/tenants/tenant-2/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-2');
       expect(listResponse.body.sessions).toHaveLength(1);
     });
 
     it('com API key correspondente, DELETE /:sessionName/remove remove de fato a propria sessao (204)', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').set('x-api-key', 'chave-tenant-1').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1')
+        .send({ sessionName: 'vendas' });
 
-      const response = await request(app).delete('/api/tenants/tenant-1/whatsapp-sessions/vendas/remove').set('x-api-key', 'chave-tenant-1');
+      const response = await request(app)
+        .delete('/api/tenants/tenant-1/whatsapp-sessions/vendas/remove')
+        .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(204);
     });
@@ -183,7 +239,10 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
   describe('M2, Fase 2 - IDOR na rota de historico (GET /:sessionName/history)', () => {
     it('[fecha o IDOR] API key valida do tenant-1 nao le o historico de uma sessao do tenant-2 (403)', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-2/whatsapp-sessions').set('x-api-key', 'chave-tenant-2').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-2/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-2')
+        .send({ sessionName: 'vendas' });
 
       const response = await request(app)
         .get('/api/tenants/tenant-2/whatsapp-sessions/vendas/history')
@@ -195,7 +254,10 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
 
     it('com API key correspondente, GET /:sessionName/history responde 200 (200)', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').set('x-api-key', 'chave-tenant-1').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1')
+        .send({ sessionName: 'vendas' });
 
       const response = await request(app)
         .get('/api/tenants/tenant-1/whatsapp-sessions/vendas/history')
@@ -209,7 +271,9 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
   describe('Milestone 5, Bloco M5D-3 — RBAC por craxa de pessoa', () => {
     it('ReadOnly pode LISTAR sessoes (session:read) — 200', async () => {
       const app = buildApp();
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions').set('authorization', bearer('ro-1', 'read_only'));
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('authorization', bearer('ro-1', 'read_only'));
       expect(response.status).toBe(200);
     });
 
@@ -234,7 +298,10 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
 
     it('Operator NAO pode REMOVER sessao (falta session:remove) — 403 forbidden', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').set('x-api-key', 'chave-tenant-1').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1')
+        .send({ sessionName: 'vendas' });
 
       const response = await request(app)
         .delete('/api/tenants/tenant-1/whatsapp-sessions/vendas/remove')
@@ -245,7 +312,10 @@ describe('Integracao requireApiKey + whatsAppSessionsRouter (fluxo HTTP real, Pr
 
     it('Administrator pode REMOVER sessao (session:remove) — 204', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').set('x-api-key', 'chave-tenant-1').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .set('x-api-key', 'chave-tenant-1')
+        .send({ sessionName: 'vendas' });
 
       const response = await request(app)
         .delete('/api/tenants/tenant-1/whatsapp-sessions/vendas/remove')

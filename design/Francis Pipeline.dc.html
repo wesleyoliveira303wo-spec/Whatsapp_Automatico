@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #F3F3F1; }
+  * { box-sizing: border-box; }
+  body { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #0E6E52; text-decoration: none; }
+  a:hover { color: #0A5540; }
+  .fx-scroll { scrollbar-width: thin; scrollbar-color: #D8DAD4 transparent; }
+  .fx-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .fx-scroll::-webkit-scrollbar-thumb { background: #DCDED8; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  .fx-scroll::-webkit-scrollbar-track { background: transparent; }
+  @keyframes fx-fade-up { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translate(-50%, 0); } }
+</style>
+</helmet>
+
+<div style="height: 100vh; display: flex; flex-direction: column; background: #F3F3F1; color: #16211C; overflow: hidden;">
+
+  <header style="height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 16px; background: #F3F3F1; border-bottom: 1px solid #E6E7E3;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="width: 22px; height: 22px; border-radius: 7px; background: #0E6E52; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; letter-spacing: -0.02em;">F</div>
+      <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.02em;">Francis</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 12.5px; color: #5C6B64;">Vértice Vendas</span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #16A34A;"></span>
+      <span style="font-size: 12.5px; color: #5C6B64;">Conectado</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <nav style="position: relative; width: 56px; flex: 0 0 56px; background: #F3F3F1; border-right: 1px solid #E6E7E3; display: flex; flex-direction: column; align-items: center; padding: 10px 0 12px;">
+      <button title="Vértice Vendas · Conectado — voltar a todos os WhatsApps" aria-label="Voltar a todos os WhatsApps" style="position: relative; width: 34px; height: 34px; margin: 2px 0 14px; padding: 0; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; display: grid; place-items: center; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;" style-hover="background: rgba(14,110,82,0.18);">
+        F
+        <span style="position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 999px; background: #16A34A; border: 2px solid #F3F3F1;"></span>
+      </button>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+        <button title="Conversas" aria-label="Conversas" style="position: relative; width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-2.8-.4L4 21l1.4-4.2A8.2 8.2 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z" /></svg>
+          <span style="position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 999px; background: #D0342C; border: 2px solid #F3F3F1;"></span>
+        </button>
+        <button title="Pipeline" aria-label="Pipeline" aria-current="page" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; cursor: pointer;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5" /><rect x="10" y="4" width="5" height="11" rx="1.5" /><rect x="17" y="4" width="4" height="7" rx="1.5" /></svg>
+        </button>
+        <button title="Analytics" aria-label="Analytics" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l4-5 3 3 4-6" /></svg>
+        </button>
+        <button title="IA" aria-label="IA" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3.5" /><path d="M12 3.5V7" /><circle cx="9.2" cy="13" r="1.1" fill="currentColor" stroke="none" /><circle cx="14.8" cy="13" r="1.1" fill="currentColor" stroke="none" /></svg>
+        </button>
+      </div>
+      <div style="flex: 1;"></div>
+      <button title="Tema escuro" aria-label="Alternar tema" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+      </button>
+      <button title="Configurações e conta" aria-label="Configurações e conta" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.2 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3 15a1.7 1.7 0 0 0-1.7-1.4H1.2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3 8.2" /></svg>
+      </button>
+    </nav>
+
+    <section style="position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0;">
+      <div style="flex: 0 0 auto; padding: 20px 24px 14px; display: flex; align-items: baseline; justify-content: space-between;">
+        <div>
+          <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;">Pipeline</h1>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #5C6B64;">Funil de vendas da sessão Vértice Vendas.</p>
+        </div>
+        <span style="font-size: 12.5px; color: #5C6B64;">{{ totalCount }} conversas no funil</span>
+      </div>
+
+      <div class="fx-scroll" style="flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; padding: 0 24px 20px; display: flex; gap: 14px;">
+        <sc-for list="{{ columns }}" as="col" hint-placeholder-count="6">
+          <div onDragOver="{{ col.onDragOver }}" onDrop="{{ col.onDrop }}" style="flex: 0 0 268px; width: 268px; display: flex; flex-direction: column; min-height: 0; border-radius: 12px; background: {{ col.bg }}; border: {{ col.border }};">
+            <div style="flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 13px 13px 10px;">
+              <span style="width: 7px; height: 7px; border-radius: 999px; background: {{ col.dot }};"></span>
+              <span style="font-size: 13px; font-weight: 600; letter-spacing: -0.01em; flex: 1;">{{ col.name }}</span>
+              <span style="font-size: 11.5px; font-weight: 600; color: #5C6B64; background: rgba(0,0,0,0.04); padding: 1px 7px; border-radius: 999px;">{{ col.count }}</span>
+            </div>
+            <div class="fx-scroll" style="flex: 1; overflow-y: auto; min-height: 0; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 8px;">
+              <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+                <div draggable="true" onDragStart="{{ card.onDragStart }}" style="padding: 11px 12px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; cursor: grab; opacity: {{ card.opacity }};" style-hover="border-color: #D3D6CE;">
+                  <div style="display: flex; align-items: center; gap: 9px;">
+                    <div style="width: 28px; height: 28px; flex: 0 0 28px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: {{ card.avBg }}; color: {{ card.avFg }};">{{ card.initials }}</div>
+                    <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ card.name }}</span>
+                    <span title="{{ card.classifierTitle }}" style="flex: 0 0 auto; color: #5C6B64;">
+                      <sc-if value="{{ card.byAi }}" hint-placeholder-val="{{ true }}">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="4" y="7" width="16" height="12" rx="3.5" /><path d="M12 3.5V7" /></svg>
+                      </sc-if>
+                      <sc-if value="{{ card.byHuman }}" hint-placeholder-val="{{ false }}">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" /></svg>
+                      </sc-if>
+                    </span>
+                  </div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 0;">
+                    <sc-for list="{{ card.tags }}" as="t" hint-placeholder-count="1">
+                      <span style="height: 19px; padding: 0 6px; border-radius: 6px; font-size: 10.5px; font-weight: 500; display: inline-flex; align-items: center; background: {{ t.bg }}; color: {{ t.fg }};">{{ t.name }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 9px;">
+                    <span style="font-size: 11px; color: #5C6B64;">{{ card.stageAge }}</span>
+                    <a href="#" style="font-size: 11px; font-weight: 600; white-space: nowrap;" style-focus="outline: 2px solid #0E6E52; outline-offset: 2px; border-radius: 3px;">Ver conversa ›</a>
+                  </div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 20px 10px; text-align: center; font-size: 12px; color: #5C6B64;">Nenhum card aqui</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+        <div style="position: absolute; left: 50%; bottom: 24px; max-width: 460px; padding: 12px 16px; border-radius: 12px; background: #16211C; color: #FFFFFF; font-size: 12.5px; line-height: 1.5; box-shadow: 0 12px 32px rgba(16,24,20,0.24); animation: fx-fade-up 0.16s ease-out;">{{ toast }}</div>
+      </sc-if>
+    </section>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const TAG_COLORS = { gray: ["#EFF0EC","#4E5A54"], amber: ["#FAF0DA","#8A5F09"], teal: ["#E2F1EE","#0E6153"], blue: ["#E7EEFB","#1E4C93"], green: ["#E6F2EA","#1F6438"], orange: ["#FCEDE1","#8F4C12"], purple: ["#EFEAFA","#523499"] };
+function tag(name, c) { const x = TAG_COLORS[c] || TAG_COLORS.gray; return { name, bg: x[0], fg: x[1] }; }
+const AVATARS = [["#E4EFE9","#1F6448"],["#EDE9F8","#4E3696"],["#FBECE4","#8F4C1C"],["#E5EDFA","#1F4C90"],["#F7E9EC","#94324A"],["#E9F0DE","#4C6620"]];
+
+const STAGES = [
+  { id: "excluded", name: "Não cliente", dot: "#5C6B64" },
+  { id: "new", name: "Novo", dot: "#5C6B64" },
+  { id: "contacted", name: "Contatado", dot: "#5C6B64" },
+  { id: "negotiating", name: "Negociando", dot: "#C4790C" },
+  { id: "closed_won", name: "Fechado", dot: "#16A34A" },
+  { id: "closed_lost", name: "Perdido", dot: "#D0342C" }
+];
+
+let CARDS = [
+  { id: "1", name: "Camila Souza", av: 2, stage: "new", days: 0, byAi: true, tags: [tag("Site","gray")] },
+  { id: "2", name: "Bruno Freitas", av: 3, stage: "new", days: 1, byAi: true, tags: [] },
+  { id: "3", name: "Rafael Antunes", av: 1, stage: "contacted", days: 2, byAi: true, tags: [tag("Instalação","orange")] },
+  { id: "4", name: "Larissa Nunes", av: 4, stage: "contacted", days: 4, byHuman: true, tags: [tag("Orçamento","amber")] },
+  { id: "5", name: "Marina Duarte", av: 0, stage: "negotiating", days: 1, byHuman: true, tags: [tag("Plano Pro","teal"), tag("Boleto","blue")] },
+  { id: "6", name: "Grupo Vértice", av: 3, stage: "negotiating", days: 6, byHuman: true, tags: [tag("Proposta","amber"), tag("Enterprise","purple")] },
+  { id: "7", name: "Pedro Lacerda", av: 4, stage: "closed_won", days: 12, byAi: true, tags: [tag("NPS 10","green")] },
+  { id: "8", name: "Diego Martins", av: 5, stage: "closed_lost", days: 30, byHuman: true, tags: [] },
+  { id: "9", name: "Helena (contadora)", av: 5, stage: "excluded", days: 0, byHuman: true, tags: [] }
+];
+
+class Component extends DCLogic {
+  state = { cards: CARDS, dragId: null, toast: null };
+
+  showToast(text) {
+    clearTimeout(this._toastTimer);
+    this.setState({ toast: text });
+    this._toastTimer = setTimeout(() => this.setState({ toast: null }), 3200);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const columns = STAGES.map(st => {
+      const cards = s.cards.filter(c => c.stage === st.id).sort((a, b) => b.days - a.days);
+      return {
+        name: st.name, dot: st.dot, count: cards.length,
+        bg: st.id === "excluded" ? "transparent" : "#FAFAF9",
+        border: st.id === "excluded" ? "1px dashed #D9DBD5" : "1px solid #E6E7E3",
+        empty: cards.length === 0,
+        onDragOver: e => e.preventDefault(),
+        onDrop: e => {
+          e.preventDefault();
+          const id = s.dragId;
+          if (!id) return;
+          const card = s.cards.find(c => c.id === id);
+          this.setState(prev => ({ cards: prev.cards.map(c => c.id === id ? Object.assign({}, c, { stage: st.id, days: 0 }) : c), dragId: null }));
+          if (card && card.stage !== st.id) {
+            if (st.id === "excluded") this.showToast('Conversa movida para "Não cliente". A IA não responderá mais automaticamente este contato.');
+            else if (card.stage === "excluded") this.showToast("Conversa reincluída no funil. A IA voltou a responder normalmente.");
+          }
+        },
+        cards: cards.map(c => {
+          const av = AVATARS[c.av];
+          const initials = c.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+          return {
+            initials, name: c.name, avBg: av[0], avFg: av[1],
+            byAi: !!c.byAi, byHuman: !!c.byHuman,
+            classifierTitle: c.byAi ? "Classificado pela IA" : "Classificado por humano",
+            tags: c.tags,
+            stageAge: st.id === "excluded" ? "IA desligada" : (c.days === 0 ? "Há menos de 1 dia" : "Há " + c.days + (c.days === 1 ? " dia" : " dias") + " neste estágio"),
+            opacity: s.dragId === c.id ? "0.4" : "1",
+            onDragStart: () => this.setState({ dragId: c.id })
+          };
+        })
+      };
+    });
+    return { columns, totalCount: s.cards.filter(c => c.stage !== "excluded").length, toast: s.toast };
+  }
+}
+
+</script>
+</body>
+</html>

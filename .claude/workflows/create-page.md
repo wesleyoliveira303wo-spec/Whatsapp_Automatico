@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'create-page',
-  description: 'Workflow for adding a new Next.js page, including routing, data fetching, UI, tests, and docs.',
-  phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
+name: 'create-page',
+description: 'Workflow for adding a new Next.js page, including routing, data fetching, UI, tests, and docs.',
+phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
 };
 
 phase('Design');

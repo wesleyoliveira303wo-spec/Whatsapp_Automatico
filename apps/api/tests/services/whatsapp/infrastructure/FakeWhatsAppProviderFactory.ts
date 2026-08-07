@@ -60,6 +60,57 @@ export class NullWhatsAppProvider implements WhatsAppProvider {
     this.listener = listener;
   }
 
+  /** Milestone 6, Bloco M6H-2b — inerte por padrão, mesmo racional de `sendMessage`/`nextSendMessageError`. */
+  public nextProfilePictureUrl: string | undefined;
+
+  async getProfilePictureUrl(_jid: string): Promise<string | undefined> {
+    return this.nextProfilePictureUrl;
+  }
+
+  /** Fase 1, Bloco F1.1 — inerte por padrão: sem mídia nenhuma configurada, nenhum teste deste arquivo depende de mídia recebida. */
+  public nextDownloadMediaResult: Buffer | undefined;
+
+  async downloadMedia(_media: {
+    contentType: 'image' | 'audio' | 'video' | 'document' | 'sticker';
+    mimeType: string;
+    url: string;
+    mediaKeyEncrypted: string;
+  }): Promise<Buffer | undefined> {
+    return this.nextDownloadMediaResult;
+  }
+
+  /** Fase 1, Bloco F1.3 — registra chamadas, mesmo racional de `sendMessageCalls`/`nextSendMessageError`. */
+  public sendMediaMessageCalls: {
+    to: string;
+    media: {
+      contentType: 'image' | 'audio' | 'video' | 'document';
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    };
+  }[] = [];
+
+  public nextSendMediaMessageError: Error | undefined;
+
+  async sendMediaMessage(
+    to: string,
+    media: {
+      contentType: 'image' | 'audio' | 'video' | 'document';
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    },
+  ): Promise<void> {
+    if (this.nextSendMediaMessageError) {
+      const error = this.nextSendMediaMessageError;
+      this.nextSendMediaMessageError = undefined;
+      throw error;
+    }
+    this.sendMediaMessageCalls.push({ to, media });
+  }
+
   /**
    * Helper de teste (Production Hardening, Bloco 4) -- emite um evento para
    * o listener registrado, se houver. Necessario para os testes de

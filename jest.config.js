@@ -58,7 +58,9 @@ module.exports = {
      */
     {
       displayName: 'dashboard-jsdom',
-      testEnvironment: require.resolve('jest-environment-jsdom', { paths: [`${__dirname}/apps/dashboard`] }),
+      testEnvironment: require.resolve('jest-environment-jsdom', {
+        paths: [`${__dirname}/apps/dashboard`],
+      }),
       testMatch: ['<rootDir>/apps/dashboard/tests-jsdom/**/*.test.tsx'],
       // Stub de `ResizeObserver` (exigido pelo ResponsiveContainer do
       // recharts, ausente no jsdom) — ver docstring de tests-jsdom/setup.ts.

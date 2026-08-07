@@ -16,7 +16,12 @@ describe('createAiInteractionsErrorHandler (Milestone 3, Bloco 5)', () => {
     const handler = createAiInteractionsErrorHandler(new NoopLogger());
     const res = buildRes();
 
-    handler(new TenantNotFoundError('tenant-inexistente'), {} as Request, res, jest.fn() as NextFunction);
+    handler(
+      new TenantNotFoundError('tenant-inexistente'),
+      {} as Request,
+      res,
+      jest.fn() as NextFunction,
+    );
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'tenant_not_found' }));

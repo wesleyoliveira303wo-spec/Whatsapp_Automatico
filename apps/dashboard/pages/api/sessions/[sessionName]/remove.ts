@@ -16,6 +16,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { status } = await callApi(session, `/${encodeURIComponent(sessionName)}/remove`, { method: 'DELETE' });
+  const { status } = await callApi(session, `/${encodeURIComponent(sessionName)}/remove`, {
+    method: 'DELETE',
+  });
   res.status(status).end();
 }

@@ -24,9 +24,14 @@ describe('GET /api/conversations/stream (Milestone 3, Bloco 6 - D23)', () => {
 
     expect(runSsePoller).toHaveBeenCalledTimes(1);
     const poll = (runSsePoller as jest.Mock).mock.calls[0][2] as () => Promise<unknown>;
-    (callConversationsApi as jest.Mock).mockResolvedValue({ status: 200, body: { conversations: [] } });
+    (callConversationsApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { conversations: [] },
+    });
     await poll();
-    expect(callConversationsApi).toHaveBeenCalledWith(SESSION, '', { query: { status: 'bot', limit: undefined } });
+    expect(callConversationsApi).toHaveBeenCalledWith(SESSION, '', {
+      query: { status: 'bot', limit: undefined },
+    });
   });
 
   it('nao inicia o poller sem sessao valida', async () => {

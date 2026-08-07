@@ -17,21 +17,42 @@ import { AiInteraction } from '../../../../src/services/ai/domain/entities/AiInt
 function buildApp(): { app: Express; aiInteractionRepository: FakeAiInteractionRepository } {
   const hasher = new FakeApiKeyHasher();
   const tenantRepository = new FakeTenantRepository();
-  tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: hasher.hash('chave-tenant-1') });
-  tenantRepository.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: hasher.hash('chave-tenant-2') });
+  tenantRepository.seed({
+    id: 'tenant-1',
+    name: 'Empresa Um',
+    apiKeyHash: hasher.hash('chave-tenant-1'),
+  });
+  tenantRepository.seed({
+    id: 'tenant-2',
+    name: 'Empresa Dois',
+    apiKeyHash: hasher.hash('chave-tenant-2'),
+  });
 
   const aiInteractionRepository = new FakeAiInteractionRepository();
-  const aiInteractionsService = new AiInteractionsService(aiInteractionRepository, tenantRepository, new NoopLogger());
+  const aiInteractionsService = new AiInteractionsService(
+    aiInteractionRepository,
+    tenantRepository,
+    new NoopLogger(),
+  );
   const requireApiKey = createRequireApiKey(hasher, tenantRepository, new NoopLogger());
 
   const app = express();
   app.use(express.json());
-  app.use('/api/tenants/:tenantId/ai-interactions', requireApiKey, createAiInteractionsRouter(aiInteractionsService));
-  app.use('/api/tenants/:tenantId/ai-interactions', createAiInteractionsErrorHandler(new NoopLogger()));
+  app.use(
+    '/api/tenants/:tenantId/ai-interactions',
+    requireApiKey,
+    createAiInteractionsRouter(aiInteractionsService),
+  );
+  app.use(
+    '/api/tenants/:tenantId/ai-interactions',
+    createAiInteractionsErrorHandler(new NoopLogger()),
+  );
   return { app, aiInteractionRepository };
 }
 
-function buildInteraction(overrides: Partial<Omit<AiInteraction, 'id' | 'createdAt'>> = {}): Omit<AiInteraction, 'id' | 'createdAt'> {
+function buildInteraction(
+  overrides: Partial<Omit<AiInteraction, 'id' | 'createdAt'>> = {},
+): Omit<AiInteraction, 'id' | 'createdAt'> {
   return {
     tenantId: 'tenant-1',
     conversationId: 'conversation-1',
@@ -59,7 +80,9 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
   it('[fecha o IDOR] API key válida do tenant-1 não lista ai-interactions do tenant-2 (403)', async () => {
     const { app } = buildApp();
 
-    const response = await request(app).get('/api/tenants/tenant-2/ai-interactions').set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get('/api/tenants/tenant-2/ai-interactions')
+      .set('x-api-key', 'chave-tenant-1');
 
     expect(response.status).toBe(403);
   });
@@ -69,7 +92,9 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
     await aiInteractionRepository.record(buildInteraction({ conversationId: 'conversation-1' }));
     await aiInteractionRepository.record(buildInteraction({ conversationId: 'conversation-2' }));
 
-    const response = await request(app).get('/api/tenants/tenant-1/ai-interactions').set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/ai-interactions')
+      .set('x-api-key', 'chave-tenant-1');
 
     expect(response.status).toBe(200);
     expect(response.body.interactions).toHaveLength(2);
@@ -93,9 +118,82 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
     const { app, aiInteractionRepository } = buildApp();
     await aiInteractionRepository.record(buildInteraction({ costUsd: '0.00012345' }));
 
-    const response = await request(app).get('/api/tenants/tenant-1/ai-interactions').set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/ai-interactions')
+      .set('x-api-key', 'chave-tenant-1');
 
     expect(typeof response.body.interactions[0].costUsd).toBe('string');
     expect(response.body.interactions[0].costUsd).toBe('0.00012345');
+  });
+
+  describe('GET /unanswered (Fase 1, Bloco F1.4)', () => {
+    it('sem X-API-Key, a rota não é alcançada (401)', async () => {
+      const { app } = buildApp();
+
+      const response = await request(app).get('/api/tenants/tenant-1/ai-interactions/unanswered');
+
+      expect(response.status).toBe(401);
+    });
+
+    it('lista só interações com status success e escalationReason=unknown_answer (nunca requested_human/erro)', async () => {
+      const { app, aiInteractionRepository } = buildApp();
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer' }),
+      );
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'requested_human' }),
+      );
+      await aiInteractionRepository.record(buildInteraction({ status: 'provider_error' }));
+      await aiInteractionRepository.record(buildInteraction());
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(200);
+      expect(response.body.interactions).toHaveLength(1);
+      expect(response.body.interactions[0].escalationReason).toBe('unknown_answer');
+    });
+
+    it('[fecha o IDOR] API key do tenant-1 não lista as perguntas não respondidas do tenant-2 (403)', async () => {
+      const { app } = buildApp();
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-2/ai-interactions/unanswered')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(403);
+    });
+
+    it('respeita o parâmetro limit', async () => {
+      const { app, aiInteractionRepository } = buildApp();
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer' }),
+      );
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer' }),
+      );
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered?limit=1')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(200);
+      expect(response.body.interactions).toHaveLength(1);
+    });
+
+    it('"unanswered" não é interpretado como conversationId pela rota "/" (ordem de montagem correta)', async () => {
+      const { app, aiInteractionRepository } = buildApp();
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer' }),
+      );
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(200);
+      expect(response.body.interactions[0].conversationId).toBe('conversation-1');
+    });
   });
 });

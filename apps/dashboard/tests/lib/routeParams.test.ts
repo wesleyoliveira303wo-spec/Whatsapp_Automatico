@@ -14,7 +14,10 @@ describe('requireStringParam', () => {
 
     expect(requireStringParam(undefined, 'sessionName', res)).toBeUndefined();
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'invalid_params', message: 'sessionName não pode ser vazio' });
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'invalid_params',
+      message: 'sessionName não pode ser vazio',
+    });
   });
 
   it('responde 400 quando o valor é uma string vazia/só espaço', () => {

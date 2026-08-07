@@ -4,7 +4,12 @@ import { TenantNotFoundError } from '../../../../src/shared/tenant/domain/errors
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import type { Request, Response } from 'express';
 
-function fakeRes(): { res: Response; statusMock: jest.Mock; jsonMock: jest.Mock; headersSent: boolean } {
+function fakeRes(): {
+  res: Response;
+  statusMock: jest.Mock;
+  jsonMock: jest.Mock;
+  headersSent: boolean;
+} {
   const jsonMock = jest.fn();
   const statusMock = jest.fn().mockReturnValue({ json: jsonMock });
   const res = { headersSent: false, status: statusMock, json: jsonMock } as unknown as Response;
@@ -18,7 +23,9 @@ describe('createAnalyticsErrorHandler (Milestone 4, Bloco M4C)', () => {
     const { res, statusMock, jsonMock } = fakeRes();
     handler(new InvalidAnalyticsRangeError('faixa ruim'), {} as Request, res, jest.fn());
     expect(statusMock).toHaveBeenCalledWith(400);
-    expect(jsonMock).toHaveBeenCalledWith(expect.objectContaining({ error: 'invalid_analytics_range' }));
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'invalid_analytics_range' }),
+    );
   });
 
   it('TenantNotFoundError -> 404 tenant_not_found (convencao do projeto)', () => {

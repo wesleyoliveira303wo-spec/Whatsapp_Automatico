@@ -33,8 +33,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+  // Milestone 6, Bloco M6H-2 — congelado no momento da conexão, mesmo racional de `status` (ver docstring acima).
+  const sessionName = typeof req.query.sessionName === 'string' ? req.query.sessionName : undefined;
+  // Reforma do escalonamento (2026-07-25) — mesmo racional, congelado no momento da conexão.
+  const needsHumanAttention =
+    typeof req.query.needsHumanAttention === 'string' ? req.query.needsHumanAttention : undefined;
 
-  runSsePoller(req, res, () => callConversationsApi(session, '', { query: { status, limit } }));
+  runSsePoller(req, res, () =>
+    callConversationsApi(session, '', {
+      query: { status, limit, sessionName, needsHumanAttention },
+    }),
+  );
 }
 
 /** Mesmo racional de `pages/api/sessions/stream.ts`: conexao de longa duracao, evita o aviso do Next em dev. */

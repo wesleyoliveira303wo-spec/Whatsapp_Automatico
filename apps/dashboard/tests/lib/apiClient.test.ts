@@ -3,7 +3,8 @@ import { callApi, getApiBaseUrl } from '../../lib/apiClient';
 const SESSION = { tenantId: 'tenant-1', apiKey: 'chave-secreta' };
 
 function mockFetchOnce(status: number, body: unknown, textOverride?: string): jest.Mock {
-  const text = textOverride !== undefined ? textOverride : body === undefined ? '' : JSON.stringify(body);
+  const text =
+    textOverride !== undefined ? textOverride : body === undefined ? '' : JSON.stringify(body);
   const fetchMock = jest.fn().mockResolvedValue({
     status,
     text: async () => text,
@@ -63,7 +64,9 @@ describe('apiClient', () => {
       await callApi(SESSION, '/vendas/history', { query: { limit: 10 } });
 
       const [url] = fetchMock.mock.calls[0];
-      expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/whatsapp-sessions/vendas/history?limit=10');
+      expect(String(url)).toBe(
+        'http://api-de-teste:4000/api/tenants/tenant-1/whatsapp-sessions/vendas/history?limit=10',
+      );
     });
 
     it('omite parâmetros de query com valor undefined', async () => {
@@ -72,7 +75,9 @@ describe('apiClient', () => {
       await callApi(SESSION, '/vendas/history', { query: { limit: undefined } });
 
       const [url] = fetchMock.mock.calls[0];
-      expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/whatsapp-sessions/vendas/history');
+      expect(String(url)).toBe(
+        'http://api-de-teste:4000/api/tenants/tenant-1/whatsapp-sessions/vendas/history',
+      );
     });
 
     it('envia Content-Type e body serializado quando body é fornecido (POST)', async () => {
@@ -93,7 +98,12 @@ describe('apiClient', () => {
         tenantId: 'tenant-1',
         accessToken: 'acc-123',
         refreshToken: 'ref-123',
-        user: { id: 'user-1', email: 'maria@empresa.com', role: 'operator', mustChangePassword: false },
+        user: {
+          id: 'user-1',
+          email: 'maria@empresa.com',
+          role: 'operator',
+          mustChangePassword: false,
+        },
       };
 
       await callApi(userSession, '');

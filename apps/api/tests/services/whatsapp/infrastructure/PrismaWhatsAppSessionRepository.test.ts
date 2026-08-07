@@ -80,7 +80,11 @@ describe('PrismaWhatsAppSessionRepository', () => {
 
   it('findById() deve mapear disconnectReason do enum do Prisma de volta para o Domain quando presente (Production Hardening, Bloco 8a)', async () => {
     const prisma = createFakePrisma();
-    prisma.whatsAppSession.findUnique.mockResolvedValue({ ...SAMPLE_ROW, status: 'DISCONNECTED', disconnectReason: 'CONNECTION_LOST' });
+    prisma.whatsAppSession.findUnique.mockResolvedValue({
+      ...SAMPLE_ROW,
+      status: 'DISCONNECTED',
+      disconnectReason: 'CONNECTION_LOST',
+    });
     const repo = new PrismaWhatsAppSessionRepository(prisma as never);
 
     const session = await repo.findById('session-1');
@@ -151,7 +155,9 @@ describe('PrismaWhatsAppSessionRepository', () => {
       prisma.whatsAppSession.deleteMany.mockResolvedValue({ count: 0 });
       const repo = new PrismaWhatsAppSessionRepository(prisma as never);
 
-      await expect(repo.deleteByTenantAndSessionName('tenant-1', 'inexistente')).resolves.toBeUndefined();
+      await expect(
+        repo.deleteByTenantAndSessionName('tenant-1', 'inexistente'),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -159,7 +165,10 @@ describe('PrismaWhatsAppSessionRepository', () => {
     const prisma = createFakePrisma();
     const repo = new PrismaWhatsAppSessionRepository(prisma as never);
 
-    await repo.update('session-1', { status: 'disconnected', lastSeen: new Date('2026-07-06T11:00:00Z') });
+    await repo.update('session-1', {
+      status: 'disconnected',
+      lastSeen: new Date('2026-07-06T11:00:00Z'),
+    });
 
     expect(prisma.whatsAppSession.update).toHaveBeenCalledWith({
       where: { id: 'session-1' },

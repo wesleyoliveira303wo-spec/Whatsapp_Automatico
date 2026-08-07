@@ -12,7 +12,10 @@ export interface WhatsAppSessionRepository {
    * não respeita o isolamento por tenant (ver nota abaixo sobre `create()`/
    * `findAll()`, removidos nesta Milestone).
    */
-  findByTenantAndSessionName(tenantId: string, sessionName: string): Promise<WhatsAppSession | null>;
+  findByTenantAndSessionName(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<WhatsAppSession | null>;
 
   /**
    * Lista todas as sessões de UM tenant (M2, Fase 1 — suporte à tela de

@@ -2,6 +2,7 @@ import { AiProviderNotSupportedError } from '../domain/errors/AiProviderNotSuppo
 import { AiProvider } from '../domain/providers/AiProvider';
 import { AiProviderFactory } from '../domain/providers/AiProviderFactory';
 import { AiProviderName } from '../domain/providers/AiProviderName';
+import { Logger } from '../../../shared/domain/Logger';
 import { ClaudeAiProvider } from './ClaudeAiProvider';
 import { GeminiAiProvider } from './GeminiAiProvider';
 
@@ -62,15 +63,37 @@ export interface AiProviderFactoryOptions {
 export class AiProviderFactoryImpl implements AiProviderFactory {
   private readonly factories: Map<AiProviderName, () => AiProvider>;
 
-  constructor(options: AiProviderFactoryOptions) {
+  constructor(
+    options: AiProviderFactoryOptions,
+    // CORREÇÃO 2026-07-30 — `Logger` OPCIONAL, para repassar ao
+    // `GeminiAiProvider` (ver docstring lá: loga quando a resposta é cortada
+    // por `MAX_TOKENS`). Opcional para não quebrar `AiProviderFactoryImpl.test.ts`
+    // (que constrói a factory sem logger algum).
+    private readonly logger?: Logger,
+  ) {
     this.factories = new Map<AiProviderName, () => AiProvider>();
 
     const { claude, gemini } = options;
     if (claude) {
-      this.factories.set('claude', () => new ClaudeAiProvider(claude.apiKey, claude.model, claude.maxTokens));
+      this.factories.set(
+        'claude',
+        () => new ClaudeAiProvider(claude.apiKey, claude.model, claude.maxTokens),
+      );
     }
     if (gemini) {
-      this.factories.set('gemini', () => new GeminiAiProvider(gemini.apiKey, gemini.model, gemini.maxTokens));
+      this.factories.set(
+        'gemini',
+        () =>
+          new GeminiAiProvider(
+            gemini.apiKey,
+            gemini.model,
+            gemini.maxTokens,
+            fetch,
+            undefined,
+            {},
+            this.logger,
+          ),
+      );
     }
   }
 

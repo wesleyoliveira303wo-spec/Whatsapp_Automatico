@@ -4,7 +4,10 @@ import { FakeRefreshTokenRepository } from '../testDoubles';
 
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
 
-function build(now: () => Date = () => new Date()): { service: RefreshTokenService; repo: FakeRefreshTokenRepository } {
+function build(now: () => Date = () => new Date()): {
+  service: RefreshTokenService;
+  repo: FakeRefreshTokenRepository;
+} {
   const repo = new FakeRefreshTokenRepository();
   const service = new RefreshTokenService(repo, new Sha256RefreshTokenCodec(), TTL_MS, now);
   return { service, repo };

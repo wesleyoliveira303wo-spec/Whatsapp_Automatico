@@ -21,7 +21,9 @@ describe('GET /api/sessions/[sessionName]/history', () => {
 
     await handler(req, res);
 
-    expect(callApi).toHaveBeenCalledWith(SESSION, '/vendas/history', { query: { limit: undefined } });
+    expect(callApi).toHaveBeenCalledWith(SESSION, '/vendas/history', {
+      query: { limit: undefined },
+    });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

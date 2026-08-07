@@ -6,7 +6,10 @@ import IORedis from 'ioredis';
 
 import { PrismaConversationRepository } from './services/conversations/infrastructure/repositories/PrismaConversationRepository';
 import { PrismaMessageRepository } from './services/conversations/infrastructure/repositories/PrismaMessageRepository';
-import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './services/conversations/infrastructure/queues/AiReplyQueue';
+import {
+  AI_REPLY_QUEUE_NAME,
+  AiReplyJobData,
+} from './services/conversations/infrastructure/queues/AiReplyQueue';
 import { PrismaAiInteractionRepository } from './services/ai/infrastructure/repositories/PrismaAiInteractionRepository';
 import { PrismaAiBusinessProfileRepository } from './services/ai/infrastructure/repositories/PrismaAiBusinessProfileRepository';
 import { AiProviderFactoryImpl } from './services/ai/infrastructure/AiProviderFactoryImpl';
@@ -20,6 +23,7 @@ import {
   WhatsAppOutboundJobData,
 } from './services/whatsapp/infrastructure/queues/WhatsAppOutboundQueue';
 import { BullMqOutboundMessageDispatcher } from './services/whatsapp/infrastructure/dispatchers/BullMqOutboundMessageDispatcher';
+import { HttpMediaDownloader } from './services/whatsapp/infrastructure/HttpMediaDownloader';
 import { ConsoleLogger } from './shared/infrastructure/logging/ConsoleLogger';
 
 // Mesmo racional de `index.ts`: caminho absoluto calculado a partir de
@@ -84,6 +88,8 @@ async function main(): Promise<void> {
     AI_GEMINI_MAX_TOKENS,
     AI_PROMPT_VERSION,
     AI_HISTORY_LIMIT,
+    INTERNAL_API_SECRET,
+    INTERNAL_API_BASE_URL,
   } = process.env;
 
   // `AI_PROVIDER` default 'claude' — compatibilidade total com deploys
@@ -119,7 +125,9 @@ async function main(): Promise<void> {
     .map(([name]) => name);
 
   if (missing.length > 0) {
-    console.error(`worker: variáveis de ambiente obrigatórias ausentes: ${missing.join(', ')} (ver .env.example).`);
+    console.error(
+      `worker: variáveis de ambiente obrigatórias ausentes: ${missing.join(', ')} (ver .env.example).`,
+    );
     process.exit(1);
   }
 
@@ -133,24 +141,48 @@ async function main(): Promise<void> {
 
   // Só o provider escolhido é configurado na factory — os demais nem entram no
   // mapa (pedir um provider não configurado lança AiProviderNotSupportedError).
-  const aiProviderFactory = new AiProviderFactoryImpl({
-    claude:
-      selectedProvider === 'claude'
-        ? {
-            apiKey: CLAUDE_API_KEY as string,
-            model: AI_CLAUDE_MODEL as string,
-            maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
-          }
-        : undefined,
-    gemini:
-      selectedProvider === 'gemini'
-        ? {
-            apiKey: GEMINI_API_KEY as string,
-            model: AI_GEMINI_MODEL as string,
-            maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
-          }
-        : undefined,
-  });
+  const aiProviderFactory = new AiProviderFactoryImpl(
+    {
+      claude:
+        selectedProvider === 'claude'
+          ? {
+              apiKey: CLAUDE_API_KEY as string,
+              model: AI_CLAUDE_MODEL as string,
+              maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
+            }
+          : undefined,
+      gemini:
+        selectedProvider === 'gemini'
+          ? {
+              apiKey: GEMINI_API_KEY as string,
+              model: AI_GEMINI_MODEL as string,
+              maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
+            }
+          : undefined,
+    },
+    logger.child({ module: 'gemini-provider' }),
+  );
+
+  // Fase 1, Bloco F1.2 (interpretação de mídia pela IA) — OPCIONAL: sem
+  // `INTERNAL_API_SECRET`/`INTERNAL_API_BASE_URL` configurados, o worker
+  // segue funcionando exatamente como antes deste bloco (a IA só recebe a
+  // descrição factual de mídia, nunca o binário) — nunca um erro fatal por
+  // esta variável estar ausente, diferente das variáveis base/de provider
+  // (degradação graciosa, mesmo padrão de `aiBusinessProfileRepository`).
+  const mediaDownloader =
+    INTERNAL_API_SECRET && INTERNAL_API_BASE_URL
+      ? new HttpMediaDownloader(
+          INTERNAL_API_BASE_URL,
+          INTERNAL_API_SECRET,
+          logger.child({ module: 'media-downloader' }),
+        )
+      : undefined;
+  if (!mediaDownloader) {
+    logger.warn(
+      'INTERNAL_API_SECRET/INTERNAL_API_BASE_URL ausentes: interpretação de mídia pela IA desabilitada (ver .env.example) — a IA continua reconhecendo mídia por texto (Bloco F1.1).',
+    );
+  }
+
   const conversationAiService = new ConversationAiService(
     aiProviderFactory,
     selectedProvider,
@@ -160,6 +192,7 @@ async function main(): Promise<void> {
     // Base de Conhecimento (Nível 1): injeta o perfil de negócio do tenant no
     // prompt. `undefined` acima mantém o `maxReplyLength` no default.
     aiBusinessProfileRepository,
+    mediaDownloader,
   );
   const promptVersion = getPromptVersion(AI_PROMPT_VERSION ?? 'v1');
 
@@ -212,7 +245,10 @@ async function main(): Promise<void> {
     logger.error('Job ai-reply falhou', { jobId: job?.id, ...job?.data, error });
   });
 
-  logger.info('Worker de IA iniciado', { queue: AI_REPLY_QUEUE_NAME, promptVersion: promptVersion.id });
+  logger.info('Worker de IA iniciado', {
+    queue: AI_REPLY_QUEUE_NAME,
+    promptVersion: promptVersion.id,
+  });
 
   /**
    * Encerramento gracioso: aguarda o job em andamento (se houver) terminar

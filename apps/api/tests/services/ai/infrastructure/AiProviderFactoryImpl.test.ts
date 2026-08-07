@@ -11,7 +11,9 @@ describe('AiProviderFactoryImpl', () => {
   });
 
   it('create("gemini") devolve uma instância de GeminiAiProvider quando gemini está configurado', () => {
-    const factory = new AiProviderFactoryImpl({ gemini: { apiKey: 'api-key', model: 'gemini-2.5-flash' } });
+    const factory = new AiProviderFactoryImpl({
+      gemini: { apiKey: 'api-key', model: 'gemini-2.5-flash' },
+    });
 
     expect(factory.create('gemini')).toBeInstanceOf(GeminiAiProvider);
   });
@@ -33,7 +35,9 @@ describe('AiProviderFactoryImpl', () => {
   });
 
   it('repassa maxTokens recebido na config para o ClaudeAiProvider criado', () => {
-    const factory = new AiProviderFactoryImpl({ claude: { apiKey: 'api-key', model: 'claude-x', maxTokens: 256 } });
+    const factory = new AiProviderFactoryImpl({
+      claude: { apiKey: 'api-key', model: 'claude-x', maxTokens: 256 },
+    });
 
     const provider = factory.create('claude') as unknown as { maxTokens: number };
 
@@ -41,7 +45,9 @@ describe('AiProviderFactoryImpl', () => {
   });
 
   it('repassa maxTokens recebido na config para o GeminiAiProvider criado', () => {
-    const factory = new AiProviderFactoryImpl({ gemini: { apiKey: 'api-key', model: 'gemini-2.5-flash', maxTokens: 512 } });
+    const factory = new AiProviderFactoryImpl({
+      gemini: { apiKey: 'api-key', model: 'gemini-2.5-flash', maxTokens: 512 },
+    });
 
     const provider = factory.create('gemini') as unknown as { maxTokens: number };
 

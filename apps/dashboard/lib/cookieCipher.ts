@@ -47,7 +47,10 @@ export function encryptCookiePayload(secretBase64: string, plainText: string): s
 }
 
 /** Retorna `null` (em vez de lançar) quando o cookie está ausente, corrompido ou foi cifrado com uma chave diferente — chamadores tratam isso como "sem sessão válida", nunca como um erro 500. */
-export function decryptCookiePayload(secretBase64: string, cipherTextBase64: string): string | null {
+export function decryptCookiePayload(
+  secretBase64: string,
+  cipherTextBase64: string,
+): string | null {
   try {
     const key = decodeKey(secretBase64);
     const raw = Buffer.from(cipherTextBase64, 'base64');

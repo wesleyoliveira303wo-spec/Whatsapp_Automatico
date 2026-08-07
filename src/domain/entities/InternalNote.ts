@@ -13,9 +13,19 @@ export class InternalNote {
     this.props = { ...props };
   }
 
-  get id(): string { return this.props.id; }
-  get conversationId(): string { return this.props.conversationId; }
-  get authorId(): string { return this.props.authorId; }
-  get content(): string { return this.props.content; }
-  get createdAt(): Date { return this.props.createdAt; }
+  get id(): string {
+    return this.props.id;
+  }
+  get conversationId(): string {
+    return this.props.conversationId;
+  }
+  get authorId(): string {
+    return this.props.authorId;
+  }
+  get content(): string {
+    return this.props.content;
+  }
+  get createdAt(): Date {
+    return this.props.createdAt;
+  }
 }

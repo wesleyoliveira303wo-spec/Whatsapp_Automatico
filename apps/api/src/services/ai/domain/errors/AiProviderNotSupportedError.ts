@@ -16,7 +16,9 @@
  */
 export class AiProviderNotSupportedError extends Error {
   constructor(providerName: string) {
-    super(`Provider de IA "${providerName}" ainda não possui implementação registrada nesta factory.`);
+    super(
+      `Provider de IA "${providerName}" ainda não possui implementação registrada nesta factory.`,
+    );
     this.name = 'AiProviderNotSupportedError';
   }
 }

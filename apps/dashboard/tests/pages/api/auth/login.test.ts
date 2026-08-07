@@ -36,8 +36,15 @@ describe('POST /api/auth/login', () => {
   });
 
   it('valida a API key contra GET /whatsapp-sessions; se 200, grava o cookie e responde 200 { tenantId }', async () => {
-    (fetch as jest.Mock).mockResolvedValue({ status: 200, ok: true, text: async () => '{"sessions":[]}' });
-    const req = createFakeReq({ method: 'POST', body: { tenantId: 'tenant-1', apiKey: 'chave-valida' } });
+    (fetch as jest.Mock).mockResolvedValue({
+      status: 200,
+      ok: true,
+      text: async () => '{"sessions":[]}',
+    });
+    const req = createFakeReq({
+      method: 'POST',
+      body: { tenantId: 'tenant-1', apiKey: 'chave-valida' },
+    });
     const res = createFakeRes();
 
     await handler(req, res);
@@ -55,7 +62,10 @@ describe('POST /api/auth/login', () => {
 
   it('responde 401 invalid_credentials quando a API validar como 401/403, sem gravar cookie', async () => {
     (fetch as jest.Mock).mockResolvedValue({ status: 403, ok: false, text: async () => '' });
-    const req = createFakeReq({ method: 'POST', body: { tenantId: 'tenant-1', apiKey: 'chave-errada' } });
+    const req = createFakeReq({
+      method: 'POST',
+      body: { tenantId: 'tenant-1', apiKey: 'chave-errada' },
+    });
     const res = createFakeRes();
 
     await handler(req, res);
@@ -78,7 +88,12 @@ describe('POST /api/auth/login', () => {
 
   // --- Milestone 5, Bloco M5F-1: modo PESSOA (email + senha) ---
   describe('modo pessoa (email + senha)', () => {
-    const API_USER = { id: 'user-1', email: 'maria@empresa.com', role: 'operator', mustChangePassword: true };
+    const API_USER = {
+      id: 'user-1',
+      email: 'maria@empresa.com',
+      role: 'operator',
+      mustChangePassword: true,
+    };
 
     it('login ok: repassa para /auth/login da API, grava cookie e devolve { tenantId, user } SEM tokens', async () => {
       (fetch as jest.Mock).mockResolvedValue({
@@ -123,7 +138,10 @@ describe('POST /api/auth/login', () => {
     });
 
     it('email sem password: 400 sem chamar a API', async () => {
-      const req = createFakeReq({ method: 'POST', body: { tenantId: 'tenant-1', email: 'maria@empresa.com' } });
+      const req = createFakeReq({
+        method: 'POST',
+        body: { tenantId: 'tenant-1', email: 'maria@empresa.com' },
+      });
       const res = createFakeRes();
 
       await handler(req, res);

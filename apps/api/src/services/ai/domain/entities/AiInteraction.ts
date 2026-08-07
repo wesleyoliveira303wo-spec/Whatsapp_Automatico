@@ -1,4 +1,5 @@
 import { AiProviderName } from '../providers/AiProviderName';
+import { EscalationReason } from '../escalationSignal';
 
 /**
  * Registro de auditoria/billing de UMA tentativa de geração de resposta de
@@ -55,5 +56,13 @@ export interface AiInteraction {
   latencyMs: number;
   status: 'success' | 'validation_rejected' | 'provider_error';
   errorMessage?: string;
+  /**
+   * Fase 1, Bloco F1.4 (2026-08-01) — presente quando a IA escalou para
+   * atendimento humano nesta tentativa (`status: 'success'` E a resposta
+   * incluía um marcador de escalonamento). `undefined` = não escalou, ou a
+   * interação foi gravada antes deste bloco. Ver `EscalationReason` para o
+   * significado de cada valor.
+   */
+  escalationReason?: EscalationReason;
   createdAt: Date;
 }

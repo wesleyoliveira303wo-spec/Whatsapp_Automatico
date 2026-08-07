@@ -15,13 +15,18 @@ describe('POST /api/conversations/[conversationId]/resume (Milestone 3, Bloco 6 
   });
 
   it('delega a callConversationsApi com method POST no path /resume', async () => {
-    (callConversationsApi as jest.Mock).mockResolvedValue({ status: 200, body: { id: 'conv-1', status: 'bot' } });
+    (callConversationsApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { id: 'conv-1', status: 'bot' },
+    });
     const req = createFakeReq({ method: 'POST', query: { conversationId: 'conv-1' } });
     const res = createFakeRes();
 
     await handler(req, res);
 
-    expect(callConversationsApi).toHaveBeenCalledWith(SESSION, '/conv-1/resume', { method: 'POST' });
+    expect(callConversationsApi).toHaveBeenCalledWith(SESSION, '/conv-1/resume', {
+      method: 'POST',
+    });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

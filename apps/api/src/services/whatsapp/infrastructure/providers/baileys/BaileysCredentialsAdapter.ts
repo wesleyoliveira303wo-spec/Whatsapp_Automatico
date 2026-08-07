@@ -1,4 +1,12 @@
-import { AuthenticationCreds, AuthenticationState, BufferJSON, SignalDataTypeMap, initAuthCreds } from '@whiskeysockets/baileys';
+// Baileys 7.x é ESM puro — só `import type` (apagado na compilação) para os
+// tipos; os VALORES (`BufferJSON`, `initAuthCreds`) entram por `await import()`
+// dinâmico dentro da função async abaixo (que já é async). Ver comentário
+// equivalente em `BaileysProvider.ts`.
+import type {
+  AuthenticationCreds,
+  AuthenticationState,
+  SignalDataTypeMap,
+} from '@whiskeysockets/baileys';
 
 import { CredentialsStore } from '../../../../../shared/security/domain/CredentialsStore';
 
@@ -41,6 +49,10 @@ export async function useCredentialsStoreAuthState(
   tenantId: string,
   namespace: string,
 ): Promise<{ state: AuthenticationState; saveCreds: () => Promise<void> }> {
+  // Valores do Baileys (ESM) carregados dinamicamente. `BufferJSON` é capturado
+  // pelas closures `keys.get`/`keys.set`/`saveCreds` abaixo (mesmo escopo).
+  const { BufferJSON, initAuthCreds } = await import('@whiskeysockets/baileys');
+
   const storedCreds = await credentialsStore.get(tenantId, namespace, 'creds');
   const creds: AuthenticationCreds = storedCreds
     ? (JSON.parse(storedCreds, BufferJSON.reviver) as AuthenticationCreds)
@@ -58,7 +70,11 @@ export async function useCredentialsStoreAuthState(
 
           await Promise.all(
             ids.map(async (id) => {
-              const raw = await credentialsStore.get(tenantId, namespace, buildKeyId(type as string, id));
+              const raw = await credentialsStore.get(
+                tenantId,
+                namespace,
+                buildKeyId(type as string, id),
+              );
               if (raw) {
                 result[id] = JSON.parse(raw, BufferJSON.reviver) as SignalDataTypeMap[T];
               }
@@ -67,7 +83,9 @@ export async function useCredentialsStoreAuthState(
 
           return result;
         },
-        set: async (data: { [T in keyof SignalDataTypeMap]?: { [id: string]: SignalDataTypeMap[T] | null } }): Promise<void> => {
+        set: async (data: {
+          [T in keyof SignalDataTypeMap]?: { [id: string]: SignalDataTypeMap[T] | null };
+        }): Promise<void> => {
           const tasks: Promise<void>[] = [];
 
           for (const type of Object.keys(data) as (keyof SignalDataTypeMap)[]) {
@@ -82,7 +100,12 @@ export async function useCredentialsStoreAuthState(
 
               tasks.push(
                 value
-                  ? credentialsStore.set(tenantId, namespace, key, JSON.stringify(value, BufferJSON.replacer))
+                  ? credentialsStore.set(
+                      tenantId,
+                      namespace,
+                      key,
+                      JSON.stringify(value, BufferJSON.replacer),
+                    )
                   : credentialsStore.remove(tenantId, namespace, key),
               );
             }
@@ -93,7 +116,12 @@ export async function useCredentialsStoreAuthState(
       },
     },
     saveCreds: async (): Promise<void> => {
-      await credentialsStore.set(tenantId, namespace, 'creds', JSON.stringify(creds, BufferJSON.replacer));
+      await credentialsStore.set(
+        tenantId,
+        namespace,
+        'creds',
+        JSON.stringify(creds, BufferJSON.replacer),
+      );
     },
   };
 }

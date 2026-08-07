@@ -2,11 +2,16 @@ import { WhatsAppConnectionRegistry } from '../../../src/services/whatsapp/appli
 import { SessionManager } from '../../../src/services/whatsapp/application/SessionManager';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeWhatsAppProviderFactory } from './infrastructure/FakeWhatsAppProviderFactory';
-import { FakeWhatsAppSessionRepository, FakeWhatsAppSessionEventRepository, FakeMessageReceivedHandler } from './testDoubles';
+import {
+  FakeWhatsAppSessionRepository,
+  FakeWhatsAppSessionEventRepository,
+  FakeMessageReceivedHandler,
+} from './testDoubles';
 
-function buildRegistry(
-  messageReceivedHandler?: FakeMessageReceivedHandler,
-): { registry: WhatsAppConnectionRegistry; providerFactory: FakeWhatsAppProviderFactory } {
+function buildRegistry(messageReceivedHandler?: FakeMessageReceivedHandler): {
+  registry: WhatsAppConnectionRegistry;
+  providerFactory: FakeWhatsAppProviderFactory;
+} {
   const providerFactory = new FakeWhatsAppProviderFactory();
   const repo = new FakeWhatsAppSessionRepository();
   // Reaproveita o Null Object real de Infrastructure em vez de duplicar um
@@ -16,7 +21,13 @@ function buildRegistry(
   // nestes testes verifica o histórico em si (isso é responsabilidade de
   // SessionManager.test.ts), só precisa satisfazer o construtor.
   const eventRepo = new FakeWhatsAppSessionEventRepository();
-  const registry = new WhatsAppConnectionRegistry(providerFactory, repo, logger, eventRepo, messageReceivedHandler);
+  const registry = new WhatsAppConnectionRegistry(
+    providerFactory,
+    repo,
+    logger,
+    eventRepo,
+    messageReceivedHandler,
+  );
   return { registry, providerFactory };
 }
 
@@ -75,9 +86,14 @@ describe('WhatsAppConnectionRegistry', () => {
     // isso na prática, não só por leitura do código.
     const { registry, providerFactory } = buildRegistry();
 
-    const callConcurrently = async (): Promise<SessionManager> => registry.getOrCreate('tenant-1', 'vendas');
+    const callConcurrently = async (): Promise<SessionManager> =>
+      registry.getOrCreate('tenant-1', 'vendas');
 
-    const [a, b, c] = await Promise.all([callConcurrently(), callConcurrently(), callConcurrently()]);
+    const [a, b, c] = await Promise.all([
+      callConcurrently(),
+      callConcurrently(),
+      callConcurrently(),
+    ]);
 
     expect(a).toBe(b);
     expect(b).toBe(c);
@@ -118,10 +134,21 @@ describe('WhatsAppConnectionRegistry', () => {
       // recebida chegaria a `MessageIngestionService` em produção.
       const [createdProvider] = providerFactory.getCreatedProviders();
       const receivedAt = new Date('2026-07-16T10:00:00Z');
-      createdProvider.emitEvent({ type: 'message_received', from: '5511999999999@s.whatsapp.net', content: 'Oi!', receivedAt });
+      createdProvider.emitEvent({
+        type: 'message_received',
+        from: '5511999999999@s.whatsapp.net',
+        content: 'Oi!',
+        receivedAt,
+      });
 
       expect(handler.getAll()).toEqual([
-        { tenantId: 'tenant-1', sessionName: 'vendas', from: '5511999999999@s.whatsapp.net', content: 'Oi!', receivedAt },
+        {
+          tenantId: 'tenant-1',
+          sessionName: 'vendas',
+          from: '5511999999999@s.whatsapp.net',
+          content: 'Oi!',
+          receivedAt,
+        },
       ]);
     });
 
@@ -134,7 +161,12 @@ describe('WhatsAppConnectionRegistry', () => {
 
       const [createdProvider] = providerFactory.getCreatedProviders();
       expect(() =>
-        createdProvider.emitEvent({ type: 'message_received', from: 'x@s.whatsapp.net', content: 'oi', receivedAt: new Date() }),
+        createdProvider.emitEvent({
+          type: 'message_received',
+          from: 'x@s.whatsapp.net',
+          content: 'oi',
+          receivedAt: new Date(),
+        }),
       ).not.toThrow();
     });
   });

@@ -15,7 +15,10 @@ describe('requirePageSession (M2, Fase 4 — guarda de autenticação de página
 
   it('delega a readSessionFromRequest(context.req)', () => {
     const context = fakeContext();
-    (readSessionFromRequest as jest.Mock).mockReturnValue({ tenantId: 'tenant-1', apiKey: 'chave' });
+    (readSessionFromRequest as jest.Mock).mockReturnValue({
+      tenantId: 'tenant-1',
+      apiKey: 'chave',
+    });
 
     const result = requirePageSession(context);
 

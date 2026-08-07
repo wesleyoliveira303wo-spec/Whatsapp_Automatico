@@ -25,7 +25,9 @@ describe('BullMqOutboundMessageDispatcher', () => {
 
       await dispatcher.dispatch(command);
 
-      expect(queue.add).toHaveBeenCalledWith(WHATSAPP_OUTBOUND_JOB_NAME, command, { jobId: 'ai-interaction-1' });
+      expect(queue.add).toHaveBeenCalledWith(WHATSAPP_OUTBOUND_JOB_NAME, command, {
+        jobId: 'ai-interaction-1',
+      });
     });
 
     it('mensagem de operador (sem aiInteractionId): jobId = idempotencyKey', async () => {
@@ -35,7 +37,9 @@ describe('BullMqOutboundMessageDispatcher', () => {
 
       await dispatcher.dispatch(command);
 
-      expect(queue.add).toHaveBeenCalledWith(WHATSAPP_OUTBOUND_JOB_NAME, command, { jobId: 'agent-uuid-1' });
+      expect(queue.add).toHaveBeenCalledWith(WHATSAPP_OUTBOUND_JOB_NAME, command, {
+        jobId: 'agent-uuid-1',
+      });
     });
 
     it('propaga uma falha de queue.add() (não engole)', async () => {
@@ -43,7 +47,9 @@ describe('BullMqOutboundMessageDispatcher', () => {
       queue.add.mockRejectedValue(new Error('Falha simulada de conexão com Redis'));
       const dispatcher = new BullMqOutboundMessageDispatcher(queue as never);
 
-      await expect(dispatcher.dispatch(buildCommand())).rejects.toThrow('Falha simulada de conexão com Redis');
+      await expect(dispatcher.dispatch(buildCommand())).rejects.toThrow(
+        'Falha simulada de conexão com Redis',
+      );
     });
   });
 });

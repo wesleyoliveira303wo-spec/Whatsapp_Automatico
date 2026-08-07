@@ -80,7 +80,9 @@ export class UserManagementService {
     meta: AuthRequestMeta = {},
   ): Promise<PublicUser> {
     if (!outranks(actor.role, input.role)) {
-      throw new RoleNotAllowedError(`Cargo '${actor.role}' nao pode criar usuario com cargo '${input.role}'`);
+      throw new RoleNotAllowedError(
+        `Cargo '${actor.role}' nao pode criar usuario com cargo '${input.role}'`,
+      );
     }
     if (input.temporaryPassword.length < MIN_TEMPORARY_PASSWORD_LENGTH) {
       throw new WeakTemporaryPasswordError(MIN_TEMPORARY_PASSWORD_LENGTH);
@@ -102,7 +104,14 @@ export class UserManagementService {
     });
 
     this.logger.info('Usuario criado', { tenantId, userId: created.id, role: created.role });
-    await this.audit(tenantId, actor, 'user.created', created.id, { email, role: created.role }, meta);
+    await this.audit(
+      tenantId,
+      actor,
+      'user.created',
+      created.id,
+      { email, role: created.role },
+      meta,
+    );
     return toPublicUser(created);
   }
 
@@ -134,7 +143,14 @@ export class UserManagementService {
       throw new UserNotFoundError(targetUserId);
     }
 
-    await this.audit(tenantId, actor, 'user.role_changed', target.id, { from: target.role, to: newRole }, meta);
+    await this.audit(
+      tenantId,
+      actor,
+      'user.role_changed',
+      target.id,
+      { from: target.role, to: newRole },
+      meta,
+    );
     return toPublicUser(updated);
   }
 
@@ -149,7 +165,9 @@ export class UserManagementService {
       throw new SelfManagementError('suspender a propria conta');
     }
     if (!outranks(actor.role, target.role)) {
-      throw new RoleNotAllowedError(`Cargo '${actor.role}' nao pode suspender usuario com cargo '${target.role}'`);
+      throw new RoleNotAllowedError(
+        `Cargo '${actor.role}' nao pode suspender usuario com cargo '${target.role}'`,
+      );
     }
 
     const updated = await this.userRepository.update(target.id, { status: 'suspended' });
@@ -173,7 +191,9 @@ export class UserManagementService {
   ): Promise<PublicUser> {
     const target = await this.findTargetOrThrow(tenantId, targetUserId);
     if (!outranks(actor.role, target.role)) {
-      throw new RoleNotAllowedError(`Cargo '${actor.role}' nao pode reativar usuario com cargo '${target.role}'`);
+      throw new RoleNotAllowedError(
+        `Cargo '${actor.role}' nao pode reativar usuario com cargo '${target.role}'`,
+      );
     }
 
     const updated = await this.userRepository.update(target.id, { status: 'active' });
@@ -197,7 +217,9 @@ export class UserManagementService {
       throw new SelfManagementError('resetar a propria senha');
     }
     if (!outranks(actor.role, target.role)) {
-      throw new RoleNotAllowedError(`Cargo '${actor.role}' nao pode resetar a senha de cargo '${target.role}'`);
+      throw new RoleNotAllowedError(
+        `Cargo '${actor.role}' nao pode resetar a senha de cargo '${target.role}'`,
+      );
     }
     if (temporaryPassword.length < MIN_TEMPORARY_PASSWORD_LENGTH) {
       throw new WeakTemporaryPasswordError(MIN_TEMPORARY_PASSWORD_LENGTH);

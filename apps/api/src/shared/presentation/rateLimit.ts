@@ -86,7 +86,10 @@ export function createRateLimiter(options: RateLimitOptions): RequestHandler {
 
     existing.count += 1;
     if (existing.count > max) {
-      res.status(429).json({ error: 'too_many_requests', message: 'Muitas tentativas. Tente novamente em instantes.' });
+      res.status(429).json({
+        error: 'too_many_requests',
+        message: 'Muitas tentativas. Tente novamente em instantes.',
+      });
       return;
     }
     next();

@@ -6,6 +6,7 @@ metadata:
 ---
 
 ### Overview
+
 - Clean Architecture with four concentric layers.
 - Frontend: Next.js (React) + Tailwind + shadcn/ui.
 - Backend: Express + Apollo GraphQL, TypeScript.
@@ -15,14 +16,17 @@ metadata:
 - Deployment: Docker Compose for dev, Helm/K8s for prod.
 
 ### Rationale
+
 - Modularity enables independent scaling of services (e.g., AI workers).
 - Type safety across stack reduces runtime bugs.
 - RLS on PostgreSQL enforces tenant isolation.
 - Clean boundaries simplify testing and refactoring.
 
 ### Impact
+
 - All new code must respect layer boundaries and use dependency injection.
 - Documentation (API_SPECIFICATION, ARCHITECTURE) must be kept in sync.
 
 ### How to consult
+
 Reference this memory when evaluating new service designs, data models, or integration points.

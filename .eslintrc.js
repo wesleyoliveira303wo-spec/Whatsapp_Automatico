@@ -7,11 +7,7 @@ module.exports = {
   },
   parser: '@typescript-eslint/parser',
   plugins: ['@typescript-eslint'],
-  extends: [
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'prettier',
-  ],
+  extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended', 'prettier'],
   // `eslint.config.js` (raiz): stub legado do scaffold inicial (Milestone 0)
   // que reexporta este mesmo arquivo em formato "flat config" inválido —
   // sua mera presença faz o ESLint 8.57+ auto-detectar e preferir flat
@@ -41,7 +37,10 @@ module.exports = {
     // não são lidos no corpo — Express distingue error handlers de
     // middlewares normais pelo `fn.length === 4`): prefixo `_` sinaliza
     // "intencionalmente não usado" em vez de ser tratado como erro.
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+    ],
   },
   // Achado na validação real do Bloco M6A-6 (2026-07-23): `next.config.js`
   // (Milestone 5, `require('dotenv')`) e `tailwind.config.js` (Milestone 6,

@@ -1,58 +1,22 @@
 import handler from '../../../../pages/api/analytics/ai-usage';
 import { createFakeReq, createFakeRes } from '../../../testDoubles';
-import { requireSession } from '../../../../lib/dashboardSession';
-import { callAnalyticsApi } from '../../../../lib/apiClient';
 
-jest.mock('../../../../lib/dashboardSession');
-jest.mock('../../../../lib/apiClient');
-
-const SESSION = { tenantId: 'tenant-1', apiKey: 'chave' };
-
-describe('GET /api/analytics/ai-usage (Milestone 4, Bloco M4D)', () => {
-  beforeEach(() => {
-    jest.resetAllMocks();
-    (requireSession as jest.Mock).mockReturnValue(SESSION);
-  });
-
-  it('delega a callAnalyticsApi("/ai-usage") repassando from/to/granularity', async () => {
-    (callAnalyticsApi as jest.Mock).mockResolvedValue({ status: 200, body: { points: [] } });
-    const req = createFakeReq({ method: 'GET', query: { from: '2026-07-01', to: '2026-07-10', granularity: 'day' } });
-    const res = createFakeRes();
-
-    await handler(req, res);
-
-    expect(callAnalyticsApi).toHaveBeenCalledWith(SESSION, '/ai-usage', {
-      query: { from: '2026-07-01', to: '2026-07-10', granularity: 'day' },
-    });
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('repassa status de erro da API sem transformar (ex.: 400 de faixa invalida)', async () => {
-    (callAnalyticsApi as jest.Mock).mockResolvedValue({ status: 400, body: { error: 'invalid_analytics_range' } });
-    const req = createFakeReq({ method: 'GET', query: { from: '2026-07-10', to: '2026-07-01' } });
-    const res = createFakeRes();
-
-    await handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-  });
-
-  it('nao chama a API sem sessao valida', async () => {
-    (requireSession as jest.Mock).mockReturnValue(null);
+/**
+ * Rota flat `/api/analytics/ai-usage` DESATIVADA — migrada para
+ * `/api/sessions/:sessionName/analytics/ai-usage` (M6H-4, 2026-07-26, ver
+ * `tests/pages/api/sessions/analytics.test.ts`). Este teste só garante que a
+ * rota antiga devolve um aviso claro (410) em vez de comportamento
+ * inesperado — o arquivo não pode ser apagado neste ambiente. Mesmo padrão
+ * já usado para `pages/api/ai-profile/index.ts` (M6H-3).
+ */
+describe('proxy /api/analytics/ai-usage (DESATIVADO desde M6H-4)', () => {
+  it('devolve 410 route_moved para qualquer método', () => {
     const req = createFakeReq({ method: 'GET' });
     const res = createFakeRes();
 
-    await handler(req, res);
+    handler(req, res);
 
-    expect(callAnalyticsApi).not.toHaveBeenCalled();
-  });
-
-  it('responde 405 para metodos diferentes de GET', async () => {
-    const req = createFakeReq({ method: 'POST' });
-    const res = createFakeRes();
-
-    await handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(405);
+    expect(res.status).toHaveBeenCalledWith(410);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'route_moved' }));
   });
 });

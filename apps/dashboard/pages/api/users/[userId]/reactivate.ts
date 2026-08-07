@@ -16,6 +16,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const userId = requireStringParam(req.query.userId, 'userId', res);
   if (!userId) return;
 
-  const { status, body } = await callUsersApi(session, `/${encodeURIComponent(userId)}/reactivate`, { method: 'POST' });
+  const { status, body } = await callUsersApi(
+    session,
+    `/${encodeURIComponent(userId)}/reactivate`,
+    { method: 'POST' },
+  );
   res.status(status).json(body);
 }

@@ -14,15 +14,19 @@ interface AiInteractionPanelProps {
  * (`useAiInteractions`, D23/D27) — a MESMA lista alimenta a correlacao da
  * timeline, sem segunda chamada.
  */
-export default function AiInteractionPanel({ interactions, errorMessage, onRetry }: AiInteractionPanelProps): JSX.Element {
+export default function AiInteractionPanel({
+  interactions,
+  errorMessage,
+  onRetry,
+}: AiInteractionPanelProps): JSX.Element {
   if (errorMessage) {
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-sm text-red-600">{errorMessage}</p>
+        <p className="text-sm text-destructive">{errorMessage}</p>
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
         >
           Tentar novamente
         </button>
@@ -31,15 +35,17 @@ export default function AiInteractionPanel({ interactions, errorMessage, onRetry
   }
 
   if (interactions === null) {
-    return <p className="text-sm text-gray-500">Carregando interacoes…</p>;
+    return <p className="text-sm text-muted-foreground">Carregando interacoes…</p>;
   }
 
   if (interactions.length === 0) {
-    return <p className="text-sm text-gray-500">Nenhuma interacao de IA nesta conversa ainda.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">Nenhuma interacao de IA nesta conversa ainda.</p>
+    );
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-0.5">
       {interactions.map((interaction) => (
         <AiInteractionRow key={interaction.id} interaction={interaction} />
       ))}

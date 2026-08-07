@@ -1,7 +1,13 @@
 import { Queue } from 'bullmq';
 
-import { OutboundMessageCommand, OutboundMessageDispatcher } from '../../domain/dispatchers/OutboundMessageDispatcher';
-import { WHATSAPP_OUTBOUND_JOB_NAME, WhatsAppOutboundJobData } from '../queues/WhatsAppOutboundQueue';
+import {
+  OutboundMessageCommand,
+  OutboundMessageDispatcher,
+} from '../../domain/dispatchers/OutboundMessageDispatcher';
+import {
+  WHATSAPP_OUTBOUND_JOB_NAME,
+  WhatsAppOutboundJobData,
+} from '../queues/WhatsAppOutboundQueue';
 
 /**
  * Implementação real (produtor) de `OutboundMessageDispatcher` sobre a fila

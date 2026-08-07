@@ -6,10 +6,12 @@ describe('isDisconnectReasonRecoverable', () => {
     expect(isDisconnectReasonRecoverable('logged_out')).toBe(false);
   });
 
-  it.each<WhatsAppDisconnectReason>(['restart_required', 'connection_lost', 'timed_out', 'unknown'])(
-    'retorna true para %s (recuperável)',
-    (reason) => {
-      expect(isDisconnectReasonRecoverable(reason)).toBe(true);
-    },
-  );
+  it.each<WhatsAppDisconnectReason>([
+    'restart_required',
+    'connection_lost',
+    'timed_out',
+    'unknown',
+  ])('retorna true para %s (recuperável)', (reason) => {
+    expect(isDisconnectReasonRecoverable(reason)).toBe(true);
+  });
 });

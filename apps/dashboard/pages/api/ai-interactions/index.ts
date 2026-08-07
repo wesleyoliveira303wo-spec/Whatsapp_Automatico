@@ -19,9 +19,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const conversationId = typeof req.query.conversationId === 'string' ? req.query.conversationId : undefined;
+  const conversationId =
+    typeof req.query.conversationId === 'string' ? req.query.conversationId : undefined;
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
 
-  const { status, body } = await callAiInteractionsApi(session, '', { query: { conversationId, limit } });
+  const { status, body } = await callAiInteractionsApi(session, '', {
+    query: { conversationId, limit },
+  });
   res.status(status).json(body);
 }

@@ -40,7 +40,10 @@ describe('dashboardSession', () => {
       const cookieValue = extractCookieValue(setCookieHeader);
       const req = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookieValue } });
 
-      expect(readSessionFromRequest(req)).toEqual({ tenantId: 'tenant-1', apiKey: 'chave-secreta' });
+      expect(readSessionFromRequest(req)).toEqual({
+        tenantId: 'tenant-1',
+        apiKey: 'chave-secreta',
+      });
     });
 
     it('o cookie gravado é HttpOnly, SameSite=Lax e tem Max-Age > 0', () => {
@@ -135,7 +138,9 @@ describe('dashboardSession', () => {
   /** Monta um "access token" com o mesmo FORMATO do real (h.payload.sig, base64url) — o BFF so le o `exp`, nunca verifica assinatura. */
   function fakeAccessToken(expEpochSeconds: number): string {
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ exp: expEpochSeconds, userId: 'user-1' })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ exp: expEpochSeconds, userId: 'user-1' }),
+    ).toString('base64url');
     return `${header}.${payload}.assinatura-falsa`;
   }
 
@@ -149,7 +154,12 @@ describe('dashboardSession', () => {
       tenantId: 'tenant-1',
       accessToken: fakeAccessToken(expEpochSeconds),
       refreshToken: 'refresh-1',
-      user: { id: 'user-1', email: 'maria@empresa.com', role: 'operator', mustChangePassword: false },
+      user: {
+        id: 'user-1',
+        email: 'maria@empresa.com',
+        role: 'operator',
+        mustChangePassword: false,
+      },
     };
   }
 
@@ -228,12 +238,16 @@ describe('dashboardSession', () => {
       expect(result).toEqual({ ...session, accessToken: newToken, refreshToken: 'refresh-2' });
       // Cookie regravado com a sessao renovada (rotacao persistida).
       const rewritten = extractCookieValue(res._headers['Set-Cookie'] as string);
-      const reread = readSessionFromRequest(createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: rewritten } }));
+      const reread = readSessionFromRequest(
+        createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: rewritten } }),
+      );
       expect(reread).toEqual({ ...session, accessToken: newToken, refreshToken: 'refresh-2' });
     });
 
     it('renovacao recusada pela API (refresh revogado): limpa o cookie e responde 401', async () => {
-      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
       global.fetch = fetchMock as unknown as typeof fetch;
 
       const session = userSession(Math.floor(Date.now() / 1000) - 10); // ja vencido
@@ -248,7 +262,9 @@ describe('dashboardSession', () => {
     });
 
     it('API fora do ar durante a renovacao: tambem derruba a sessao (401), nunca lanca', async () => {
-      global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof fetch;
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof fetch;
 
       const session = userSession(Math.floor(Date.now() / 1000) - 10);
       const req = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookieFor(session) } });

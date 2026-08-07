@@ -1,4 +1,9 @@
-import type { AiUsagePoint, MessageFlowPoint } from './clientApi';
+import type {
+  AiUsagePoint,
+  MessageFlowPoint,
+  EscalationRatePoint,
+  PipelineFunnelCounts,
+} from './clientApi';
 
 /**
  * Funcoes PURAS de transformacao das series de analytics para o formato dos
@@ -73,7 +78,9 @@ export function sumCostUsd(points: AiUsagePoint[]): string {
     const [intPart, fracPart = ''] = p.costUsd.split('.');
     const frac = (fracPart + '0'.repeat(SCALE)).slice(0, SCALE);
     const negative = intPart.startsWith('-');
-    const abs = BigInt((negative ? intPart.slice(1) : intPart) || '0') * 10n ** BigInt(SCALE) + BigInt(frac || '0');
+    const abs =
+      BigInt((negative ? intPart.slice(1) : intPart) || '0') * 10n ** BigInt(SCALE) +
+      BigInt(frac || '0');
     total += negative ? -abs : abs;
   }
   const negative = total < 0n;
@@ -83,9 +90,65 @@ export function sumCostUsd(points: AiUsagePoint[]): string {
   return `${negative ? '-' : ''}${intPart}.${fracPart}`;
 }
 
+/** Ponto de grafico de taxa de escalonamento — `rate` em PORCENTAGEM (0-100, arredondada), calculada aqui na fronteira de renderizacao (Fase 1, Bloco F1.6, mesmo racional de `costUsdNumber`). Dia sem nenhuma conversa nova = `rate: 0` (nao `NaN`/`null` — nada para escalar). */
+export interface EscalationRateChartPoint {
+  date: string;
+  totalConversations: number;
+  escalatedConversations: number;
+  rate: number;
+}
+
+export function toEscalationRateChartPoints(
+  points: EscalationRatePoint[],
+): EscalationRateChartPoint[] {
+  return points.map((p) => ({
+    date: p.date,
+    totalConversations: p.totalConversations,
+    escalatedConversations: p.escalatedConversations,
+    rate:
+      p.totalConversations > 0
+        ? Math.round((p.escalatedConversations / p.totalConversations) * 100)
+        : 0,
+  }));
+}
+
+/** Zero-point de taxa de escalonamento, para `fillMissingDays`. */
+export function zeroEscalationRatePoint(date: string): EscalationRateChartPoint {
+  return { date, totalConversations: 0, escalatedConversations: 0, rate: 0 };
+}
+
+/**
+ * Reskin 2026-08-07 (Design System, tela Analytics) — os gráficos diários
+ * perderam o eixo X visível (o mockup não rotula dia a dia, só a forma da
+ * tendência), mas o dado exato continua acessível: cada ponto ganha um
+ * `title` nativo (tooltip do navegador) no formato "DD/MM: valor" — nada é
+ * perdido, só deixa de ocupar espaço fixo na tela. `date` chega como
+ * `YYYY-MM-DD` (UTC, D45); sem `new Date()` para não arriscar fuso do
+ * navegador deslocar o dia.
+ */
+export function formatChartDateLabel(date: string): string {
+  const [, month, day] = date.split('-');
+  return day && month ? `${day}/${month}` : date;
+}
+
+/**
+ * Reskin 2026-08-07 — o gráfico do funil (`PipelineFunnelChart`) virou só as
+ * barras horizontais (Design System: `hBars()`, sem badges ao lado); a taxa
+ * de conversão que aquelas badges mostravam continua calculada (é um dado
+ * real, útil, já exposto antes do reskin) — só migrou para o subtítulo do
+ * card em `analytics.tsx`, função pura extraída para ficar testável sem
+ * jsdom. `null` quando não há nenhum desfecho ainda (nada para dividir).
+ */
+export function pipelineConversionRate(funnel: PipelineFunnelCounts): number | null {
+  const closedTotal = funnel.closed_won + funnel.closed_lost;
+  return closedTotal > 0 ? Math.round((funnel.closed_won / closedTotal) * 100) : null;
+}
+
 /** Presets de faixa de tempo da pagina de analytics (D50) — UTC, terminando hoje. */
 export function presetRange(days: number, now: Date = new Date()): { from: string; to: string } {
   const to = now.toISOString().slice(0, 10);
-  const from = new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const from = new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
   return { from, to };
 }

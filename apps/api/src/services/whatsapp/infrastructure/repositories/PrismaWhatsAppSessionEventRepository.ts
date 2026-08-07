@@ -1,4 +1,8 @@
-import type { PrismaClient, WhatsAppSessionStatus as PrismaSessionStatus, WhatsAppDisconnectReason as PrismaDisconnectReason } from '@prisma/client';
+import type {
+  PrismaClient,
+  WhatsAppSessionStatus as PrismaSessionStatus,
+  WhatsAppDisconnectReason as PrismaDisconnectReason,
+} from '@prisma/client';
 
 import { WhatsAppSessionEvent } from '../../domain/entities/WhatsAppSessionEvent';
 import { WhatsAppSessionEventRepository } from '../../domain/repositories/WhatsAppSessionEventRepository';
@@ -23,7 +27,10 @@ const STATUS_TO_DOMAIN: Record<PrismaSessionStatus, WhatsAppSessionEvent['status
   DISCONNECTED: 'disconnected',
 } as Record<PrismaSessionStatus, WhatsAppSessionEvent['status']>;
 
-const DISCONNECT_REASON_TO_PRISMA: Record<NonNullable<WhatsAppSessionEvent['disconnectReason']>, PrismaDisconnectReason> = {
+const DISCONNECT_REASON_TO_PRISMA: Record<
+  NonNullable<WhatsAppSessionEvent['disconnectReason']>,
+  PrismaDisconnectReason
+> = {
   logged_out: 'LOGGED_OUT' as PrismaDisconnectReason,
   restart_required: 'RESTART_REQUIRED' as PrismaDisconnectReason,
   connection_lost: 'CONNECTION_LOST' as PrismaDisconnectReason,
@@ -31,7 +38,10 @@ const DISCONNECT_REASON_TO_PRISMA: Record<NonNullable<WhatsAppSessionEvent['disc
   unknown: 'UNKNOWN' as PrismaDisconnectReason,
 };
 
-const DISCONNECT_REASON_TO_DOMAIN: Record<PrismaDisconnectReason, NonNullable<WhatsAppSessionEvent['disconnectReason']>> = {
+const DISCONNECT_REASON_TO_DOMAIN: Record<
+  PrismaDisconnectReason,
+  NonNullable<WhatsAppSessionEvent['disconnectReason']>
+> = {
   LOGGED_OUT: 'logged_out',
   RESTART_REQUIRED: 'restart_required',
   CONNECTION_LOST: 'connection_lost',
@@ -54,7 +64,9 @@ function toDomain(row: WhatsAppSessionEventRow): WhatsAppSessionEvent {
     tenantId: row.tenantId,
     sessionName: row.sessionName,
     status: STATUS_TO_DOMAIN[row.status],
-    disconnectReason: row.disconnectReason ? DISCONNECT_REASON_TO_DOMAIN[row.disconnectReason] : undefined,
+    disconnectReason: row.disconnectReason
+      ? DISCONNECT_REASON_TO_DOMAIN[row.disconnectReason]
+      : undefined,
     occurredAt: row.occurredAt,
   };
 }
@@ -78,13 +90,19 @@ export class PrismaWhatsAppSessionEventRepository implements WhatsAppSessionEven
         tenantId: event.tenantId,
         sessionName: event.sessionName,
         status: STATUS_TO_PRISMA[event.status],
-        disconnectReason: event.disconnectReason ? DISCONNECT_REASON_TO_PRISMA[event.disconnectReason] : null,
+        disconnectReason: event.disconnectReason
+          ? DISCONNECT_REASON_TO_PRISMA[event.disconnectReason]
+          : null,
         occurredAt: event.occurredAt,
       },
     });
   }
 
-  async listRecentByTenantAndSessionName(tenantId: string, sessionName: string, limit: number): Promise<WhatsAppSessionEvent[]> {
+  async listRecentByTenantAndSessionName(
+    tenantId: string,
+    sessionName: string,
+    limit: number,
+  ): Promise<WhatsAppSessionEvent[]> {
     const rows = await this.prisma.whatsAppSessionEvent.findMany({
       where: { tenantId, sessionName },
       orderBy: { occurredAt: 'desc' },

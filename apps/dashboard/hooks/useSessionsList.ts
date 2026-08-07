@@ -31,14 +31,21 @@ export interface UseSessionsListResult {
 
 /** Lista de sessões do tenant (M2, Fase 4 — UI-1 + UI-3), mantida viva via `GET /api/sessions/stream` (Fase 3). Substitui um `fetch` único + polling manual: o SSE já poll a cada ~2s do lado do BFF (`SSE_POLL_INTERVAL_MS`). */
 export function useSessionsList(): UseSessionsListResult {
-  const { data, errorMessage: transientErrorMessage, connected } = useEventSource<SessionsStreamFrame>('/api/sessions/stream');
+  const {
+    data,
+    errorMessage: transientErrorMessage,
+    connected,
+  } = useEventSource<SessionsStreamFrame>('/api/sessions/stream');
 
   const sessions = useMemo(() => {
     if (!data || data.status !== 200) return [];
     return data.body.sessions;
   }, [data]);
 
-  const errorMessage = data && data.status !== 200 ? `Falha ao carregar sessões (status ${data.status}).` : transientErrorMessage;
+  const errorMessage =
+    data && data.status !== 200
+      ? `Falha ao carregar sessões (status ${data.status}).`
+      : transientErrorMessage;
 
   return { sessions, loading: data === null, errorMessage, connected };
 }

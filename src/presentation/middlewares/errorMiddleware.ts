@@ -1,7 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 
 // Map application errors to HTTP status codes
-export const errorHandler = (err: { name?: string; message?: string }, _req: Request, res: Response, _next: NextFunction): Response => {
+export const errorHandler = (
+  err: { name?: string; message?: string },
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): Response => {
   // Default to 500
   let status = 500;
   let message = 'Internal Server Error';

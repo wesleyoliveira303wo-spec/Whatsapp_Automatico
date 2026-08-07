@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'create-api',
-  description: 'Workflow for adding a new REST/GraphQL endpoint, including OpenAPI spec, implementation, tests, and documentation.',
-  phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
+name: 'create-api',
+description: 'Workflow for adding a new REST/GraphQL endpoint, including OpenAPI spec, implementation, tests, and documentation.',
+phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
 };
 
 phase('Design');

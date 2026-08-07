@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
-import StatusBadge from './StatusBadge';
 import { fetchHistory } from '@/lib/clientApi';
-import { formatDateTime, formatDisconnectReasonLabel } from '@/lib/formatters';
+import {
+  formatDateTime,
+  formatDisconnectReasonLabel,
+  statusDotClassName,
+  formatStatusLabel,
+} from '@/lib/formatters';
+import { cn } from '@/lib/utils';
 import type { WhatsAppSessionEvent } from '@/lib/clientApi';
 
 interface HistoryListProps {
@@ -40,30 +45,40 @@ export default function HistoryList({ sessionName, limit = 20 }: HistoryListProp
   }, [sessionName, limit]);
 
   if (errorMessage) {
-    return <p className="text-sm text-red-600">{errorMessage}</p>;
+    return <p className="text-sm text-destructive">{errorMessage}</p>;
   }
 
   if (events === null) {
-    return <p className="text-sm text-gray-500">Carregando histórico…</p>;
+    return <p className="text-sm text-muted-foreground">Carregando histórico…</p>;
   }
 
   if (events.length === 0) {
-    return <p className="text-sm text-gray-500">Nenhum evento registrado ainda.</p>;
+    return <p className="text-sm text-muted-foreground">Nenhum evento registrado ainda.</p>;
   }
 
   return (
-    <ul className="flex flex-col gap-2">
-      {events.map((event) => (
-        <li key={event.id} className="flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-sm">
-          <div className="flex items-center gap-3">
-            <StatusBadge status={event.status} />
-            {formatDisconnectReasonLabel(event.disconnectReason) && (
-              <span className="text-gray-500">{formatDisconnectReasonLabel(event.disconnectReason)}</span>
-            )}
-          </div>
-          <span className="text-gray-400">{formatDateTime(event.occurredAt)}</span>
-        </li>
-      ))}
+    <ul className="flex flex-col">
+      {events.map((event) => {
+        const reason = formatDisconnectReasonLabel(event.disconnectReason);
+        return (
+          <li
+            key={event.id}
+            className="flex items-center gap-2.5 border-t border-border/70 py-2.5 first:border-t-0"
+          >
+            <span
+              className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDotClassName(event.status))}
+              aria-hidden="true"
+            />
+            <span className="flex-1 text-[12.5px] text-foreground-secondary">
+              {formatStatusLabel(event.status)}
+              {reason ? ` (${reason})` : ''}
+            </span>
+            <span className="shrink-0 text-[11.5px] text-muted-foreground">
+              {formatDateTime(event.occurredAt)}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'fix-bug',
-  description: 'Process for reproducing, diagnosing, fixing, testing, and documenting a bug.',
-  phases: [{title:'Reproduce'},{title:'Diagnose'},{title:'Fix'},{title:'Test'},{title:'Document'},{title:'Review'}]
+name: 'fix-bug',
+description: 'Process for reproducing, diagnosing, fixing, testing, and documenting a bug.',
+phases: [{title:'Reproduce'},{title:'Diagnose'},{title:'Fix'},{title:'Test'},{title:'Document'},{title:'Review'}]
 };
 
 phase('Reproduce');

@@ -3,7 +3,10 @@ import { WhatsAppSession } from '../../../src/services/whatsapp/domain/entities/
 import { WhatsAppSessionEvent } from '../../../src/services/whatsapp/domain/entities/WhatsAppSessionEvent';
 import { WhatsAppSessionEventRepository } from '../../../src/services/whatsapp/domain/repositories/WhatsAppSessionEventRepository';
 import { CredentialsStore } from '../../../src/shared/security/domain/CredentialsStore';
-import { MessageReceivedHandler, InboundWhatsAppMessage } from '../../../src/services/whatsapp/domain/handlers/MessageReceivedHandler';
+import {
+  MessageReceivedHandler,
+  InboundWhatsAppMessage,
+} from '../../../src/services/whatsapp/domain/handlers/MessageReceivedHandler';
 
 /**
  * Fake compartilhado do `WhatsAppSessionRepository` — em memória, sem Prisma/
@@ -39,9 +42,14 @@ export class FakeWhatsAppSessionRepository implements WhatsAppSessionRepository 
     return this.sessions.get(id) ?? null;
   }
 
-  async findByTenantAndSessionName(tenantId: string, sessionName: string): Promise<WhatsAppSession | null> {
+  async findByTenantAndSessionName(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<WhatsAppSession | null> {
     return (
-      Array.from(this.sessions.values()).find((s) => s.tenantId === tenantId && s.sessionName === sessionName) ?? null
+      Array.from(this.sessions.values()).find(
+        (s) => s.tenantId === tenantId && s.sessionName === sessionName,
+      ) ?? null
     );
   }
 
@@ -156,7 +164,11 @@ export class FakeWhatsAppSessionEventRepository implements WhatsAppSessionEventR
     this.events.push({ ...event, id: `event-${this.nextId++}` });
   }
 
-  async listRecentByTenantAndSessionName(tenantId: string, sessionName: string, limit: number): Promise<WhatsAppSessionEvent[]> {
+  async listRecentByTenantAndSessionName(
+    tenantId: string,
+    sessionName: string,
+    limit: number,
+  ): Promise<WhatsAppSessionEvent[]> {
     return this.events
       .filter((e) => e.tenantId === tenantId && e.sessionName === sessionName)
       .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())

@@ -15,7 +15,11 @@ import { RequestWithPrincipal } from './authenticate';
  *   nunca deveria acontecer em producao.
  */
 export function requirePermission(permission: Permission): RequestHandler {
-  return function requirePermissionMiddleware(req: Request, res: Response, next: NextFunction): void {
+  return function requirePermissionMiddleware(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
     const principal = (req as RequestWithPrincipal).principal;
     if (!principal) {
       res.status(401).json({ error: 'not_authenticated', message: 'Autenticacao obrigatoria.' });

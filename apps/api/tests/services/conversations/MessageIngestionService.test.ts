@@ -1,6 +1,10 @@
 import { MessageIngestionService } from '../../../src/services/conversations/application/MessageIngestionService';
 import { InboundWhatsAppMessage } from '../../../src/services/whatsapp/domain/handlers/MessageReceivedHandler';
-import { FakeConversationRepository, FakeMessageRepository, FakeAiReplyScheduler } from './testDoubles';
+import {
+  FakeConversationRepository,
+  FakeMessageRepository,
+  FakeAiReplyScheduler,
+} from './testDoubles';
 
 function buildSut(): {
   sut: MessageIngestionService;
@@ -11,11 +15,17 @@ function buildSut(): {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
   const aiReplyScheduler = new FakeAiReplyScheduler();
-  const sut = new MessageIngestionService(conversationRepository, messageRepository, aiReplyScheduler);
+  const sut = new MessageIngestionService(
+    conversationRepository,
+    messageRepository,
+    aiReplyScheduler,
+  );
   return { sut, conversationRepository, messageRepository, aiReplyScheduler };
 }
 
-function buildInboundMessage(overrides: Partial<InboundWhatsAppMessage> = {}): InboundWhatsAppMessage {
+function buildInboundMessage(
+  overrides: Partial<InboundWhatsAppMessage> = {},
+): InboundWhatsAppMessage {
   return {
     tenantId: 'tenant-1',
     sessionName: 'default',
@@ -60,6 +70,60 @@ describe('MessageIngestionService', () => {
 
       expect(conversationRepository.getAll()).toHaveLength(2);
     });
+
+    it('salva contactName (pushName) na conversa quando o evento traz um (Milestone 6, Bloco M6H-2b)', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ contactName: 'Maria Silva' }));
+
+      expect(conversationRepository.getAll()[0]).toMatchObject({ contactName: 'Maria Silva' });
+    });
+
+    it('atualiza contactName numa mensagem seguinte, mas NÃO apaga o nome já salvo quando a mensagem seguinte não traz nome', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'primeira', contactName: 'Maria Silva' }));
+      await sut.handle(buildInboundMessage({ content: 'segunda', contactName: undefined }));
+
+      expect(conversationRepository.getAll()).toHaveLength(1);
+      expect(conversationRepository.getAll()[0]).toMatchObject({ contactName: 'Maria Silva' });
+    });
+  });
+
+  describe('indicador de não lidas (unreadCount, 2026-07-25)', () => {
+    it('incrementa unreadCount a cada mensagem inbound', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'primeira' }));
+      await sut.handle(buildInboundMessage({ content: 'segunda' }));
+      await sut.handle(buildInboundMessage({ content: 'terceira' }));
+
+      expect(conversationRepository.getAll()[0].unreadCount).toBe(3);
+    });
+
+    it('conversas de contatos diferentes têm contadores independentes', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ from: 'contato-a@s.whatsapp.net' }));
+      await sut.handle(buildInboundMessage({ from: 'contato-a@s.whatsapp.net' }));
+      await sut.handle(buildInboundMessage({ from: 'contato-b@s.whatsapp.net' }));
+
+      const all = conversationRepository.getAll();
+      expect(all.find((c) => c.contactJid === 'contato-a@s.whatsapp.net')?.unreadCount).toBe(2);
+      expect(all.find((c) => c.contactJid === 'contato-b@s.whatsapp.net')?.unreadCount).toBe(1);
+    });
+
+    it('uma falha ao incrementar unreadCount não impede o resto do fluxo (agendamento da IA)', async () => {
+      const { sut, conversationRepository, aiReplyScheduler } = buildSut();
+      const spy = jest
+        .spyOn(conversationRepository, 'incrementUnreadCount')
+        .mockRejectedValueOnce(new Error('falha simulada'));
+
+      await expect(sut.handle(buildInboundMessage())).resolves.toBeUndefined();
+
+      expect(spy).toHaveBeenCalled();
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+    });
   });
 
   describe('mensagem', () => {
@@ -94,7 +158,7 @@ describe('MessageIngestionService', () => {
       ]);
     });
 
-    it('NÃO agenda resposta de IA quando a conversa já foi escalonada a um humano', async () => {
+    it('NÃO agenda resposta de IA quando um humano está atendendo a conversa (com dono)', async () => {
       const { sut, conversationRepository, aiReplyScheduler } = buildSut();
       conversationRepository.seed({
         id: 'conversation-escalated',
@@ -102,6 +166,7 @@ describe('MessageIngestionService', () => {
         sessionName: 'default',
         contactJid: '5511999999999@s.whatsapp.net',
         status: 'human',
+        assignedToUserId: 'user-atendente',
         createdAt: new Date('2026-07-09T00:00:00.000Z'),
         updatedAt: new Date('2026-07-09T00:00:00.000Z'),
       });
@@ -111,7 +176,7 @@ describe('MessageIngestionService', () => {
       expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
     });
 
-    it('mesmo sem agendar IA, ainda assim persiste a mensagem de uma conversa escalonada', async () => {
+    it('mesmo sem agendar IA, ainda assim persiste a mensagem de uma conversa atendida por humano', async () => {
       const { sut, conversationRepository, messageRepository } = buildSut();
       conversationRepository.seed({
         id: 'conversation-escalated',
@@ -119,6 +184,7 @@ describe('MessageIngestionService', () => {
         sessionName: 'default',
         contactJid: '5511999999999@s.whatsapp.net',
         status: 'human',
+        assignedToUserId: 'user-atendente',
         createdAt: new Date('2026-07-09T00:00:00.000Z'),
         updatedAt: new Date('2026-07-09T00:00:00.000Z'),
       });
@@ -132,7 +198,202 @@ describe('MessageIngestionService', () => {
       const { sut, aiReplyScheduler } = buildSut();
       aiReplyScheduler.failNextSchedule = true;
 
-      await expect(sut.handle(buildInboundMessage())).rejects.toThrow('Falha simulada no AiReplyScheduler');
+      await expect(sut.handle(buildInboundMessage())).rejects.toThrow(
+        'Falha simulada no AiReplyScheduler',
+      );
+    });
+  });
+
+  describe('reativação do bot após silêncio (aguardando humano sem dono)', () => {
+    function seedWaitingConversation(conversationRepository: FakeConversationRepository): void {
+      conversationRepository.seed({
+        id: 'conversation-waiting',
+        tenantId: 'tenant-1',
+        sessionName: 'default',
+        contactJid: '5511999999999@s.whatsapp.net',
+        status: 'human',
+        // sem assignedToUserId — escalada mas ninguém assumiu (fila de espera).
+        createdAt: new Date('2026-07-10T10:00:00.000Z'),
+        updatedAt: new Date('2026-07-10T10:00:00.000Z'),
+      });
+    }
+
+    it('reassume no bot e agenda IA quando a última atividade foi há >= 30 min', async () => {
+      const { sut, conversationRepository, messageRepository, aiReplyScheduler } = buildSut();
+      seedWaitingConversation(conversationRepository);
+      // Última mensagem 31 min antes da nova (silêncio > 30 min).
+      await messageRepository.create({
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-waiting',
+        direction: 'outbound',
+        content: 'Já estou te encaminhando para um atendente.',
+        contentType: 'text',
+        occurredAt: new Date('2026-07-10T11:29:00.000Z'),
+      });
+
+      await sut.handle(buildInboundMessage({ receivedAt: new Date('2026-07-10T12:00:00.000Z') }));
+
+      // Voltou para o bot e a IA foi agendada.
+      const conversation = await conversationRepository.findById('conversation-waiting');
+      expect(conversation?.status).toBe('bot');
+      expect(conversation?.assignedToUserId).toBeUndefined();
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      expect(aiReplyScheduler.scheduleCalls[0].conversationId).toBe('conversation-waiting');
+    });
+
+    it('NÃO reassume (segue aguardando humano) quando o silêncio foi menor que 30 min', async () => {
+      const { sut, conversationRepository, messageRepository, aiReplyScheduler } = buildSut();
+      seedWaitingConversation(conversationRepository);
+      // Última mensagem só 15 min antes da nova (silêncio < 30 min).
+      await messageRepository.create({
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-waiting',
+        direction: 'outbound',
+        content: 'Já estou te encaminhando para um atendente.',
+        contentType: 'text',
+        occurredAt: new Date('2026-07-10T11:45:00.000Z'),
+      });
+
+      await sut.handle(buildInboundMessage({ receivedAt: new Date('2026-07-10T12:00:00.000Z') }));
+
+      const conversation = await conversationRepository.findById('conversation-waiting');
+      expect(conversation?.status).toBe('human');
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('NÃO reassume uma conversa que um humano assumiu (com dono), mesmo após muito silêncio', async () => {
+      const { sut, conversationRepository, messageRepository, aiReplyScheduler } = buildSut();
+      conversationRepository.seed({
+        id: 'conversation-owned',
+        tenantId: 'tenant-1',
+        sessionName: 'default',
+        contactJid: '5511999999999@s.whatsapp.net',
+        status: 'human',
+        assignedToUserId: 'user-atendente',
+        createdAt: new Date('2026-07-09T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-09T00:00:00.000Z'),
+      });
+      await messageRepository.create({
+        tenantId: 'tenant-1',
+        conversationId: 'conversation-owned',
+        direction: 'inbound',
+        content: 'mensagem antiga',
+        contentType: 'text',
+        occurredAt: new Date('2026-07-09T00:00:00.000Z'),
+      });
+
+      await sut.handle(buildInboundMessage({ receivedAt: new Date('2026-07-10T12:00:00.000Z') }));
+
+      const conversation = await conversationRepository.findById('conversation-owned');
+      expect(conversation?.status).toBe('human');
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+    });
+  });
+
+  // ADR #97 — mensagens enviadas pelo operador de outro dispositivo (WhatsApp
+  // mobile/web) chegam com direction='outbound'. Devem ser persistidas para
+  // espelhar o histórico real, mas NÃO devem acionar IA, incrementar unreadCount
+  // nem reativar o bot.
+  describe('mensagens outbound (operador enviou de outro dispositivo, ADR #97)', () => {
+    it('persiste a mensagem com direction=outbound', async () => {
+      const { sut, messageRepository } = buildSut();
+
+      await sut.handle(
+        buildInboundMessage({ direction: 'outbound', content: 'Boa tarde, cliente!' }),
+      );
+
+      const [msg] = messageRepository.getAll();
+      expect(msg.direction).toBe('outbound');
+      expect(msg.content).toBe('Boa tarde, cliente!');
+    });
+
+    it('NÃO agenda resposta de IA para mensagem outbound', async () => {
+      const { sut, aiReplyScheduler } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
+
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('NÃO incrementa unreadCount para mensagem outbound', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
+
+      // A conversa é criada normalmente, mas o contador de não lidas permanece 0.
+      expect(conversationRepository.getAll()[0].unreadCount).toBe(0);
+    });
+
+    it('cria/atualiza conversa normalmente (usa from = remoteJid do contato)', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(
+        buildInboundMessage({ direction: 'outbound', from: '5511888888888@s.whatsapp.net' }),
+      );
+
+      const conversations = conversationRepository.getAll();
+      expect(conversations).toHaveLength(1);
+      expect(conversations[0].contactJid).toBe('5511888888888@s.whatsapp.net');
+    });
+
+    it('omite contactName para mensagem outbound — pushName seria o nome do operador', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(
+        buildInboundMessage({
+          direction: 'outbound',
+          // contactName aqui seria o nome do operador — deve ser ignorado.
+          contactName: 'Wesley Francis',
+        }),
+      );
+
+      // A conversa é criada sem nome (contactName undefined na criação).
+      expect(conversationRepository.getAll()[0].contactName).toBeUndefined();
+    });
+
+    it('NÃO reativa o bot em conversa aguardando humano quando o operador envia do celular', async () => {
+      const { sut, conversationRepository, aiReplyScheduler } = buildSut();
+      // Conversa aguardando humano sem dono, há muito tempo sem atividade.
+      conversationRepository.seed({
+        id: 'conversation-waiting',
+        tenantId: 'tenant-1',
+        sessionName: 'default',
+        contactJid: '5511999999999@s.whatsapp.net',
+        status: 'human',
+        unreadCount: 0,
+        stage: 'new',
+        stageSetBy: 'ai',
+        stageUpdatedAt: new Date(),
+        excludedFromPipeline: false,
+        tags: [],
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-01T00:00:00.000Z'),
+        assignedToUserId: undefined, // sem dono = "aguardando"
+      });
+
+      // Operador envia mensagem do celular 2 horas depois (> 30 min de silêncio).
+      await sut.handle(
+        buildInboundMessage({
+          direction: 'outbound',
+          receivedAt: new Date('2026-07-10T12:00:00.000Z'),
+        }),
+      );
+
+      // Bot NÃO deve ser reativado — o operador já está respondendo pelo celular.
+      const conversation = conversationRepository
+        .getAll()
+        .find((c) => c.id === 'conversation-waiting');
+      expect(conversation?.status).toBe('human');
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('undefined direction é tratado como inbound (compatibilidade com emissores anteriores à ADR #97)', async () => {
+      const { sut, messageRepository, aiReplyScheduler } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: undefined }));
+
+      expect(messageRepository.getAll()[0].direction).toBe('inbound');
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
     });
   });
 });

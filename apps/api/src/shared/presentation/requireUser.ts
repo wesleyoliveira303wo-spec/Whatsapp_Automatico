@@ -1,5 +1,8 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
-import { AccessTokenClaims, AccessTokenService } from '../../services/auth/domain/AccessTokenService';
+import {
+  AccessTokenClaims,
+  AccessTokenService,
+} from '../../services/auth/domain/AccessTokenService';
 
 const AUTHORIZATION_HEADER = 'authorization';
 const BEARER_PREFIX = 'Bearer ';
@@ -38,20 +41,27 @@ export function createRequireUser(accessTokenService: AccessTokenService): Reque
   return function requireUser(req: Request, res: Response, next: NextFunction): void {
     const header = req.headers[AUTHORIZATION_HEADER];
     if (typeof header !== 'string' || !header.startsWith(BEARER_PREFIX)) {
-      res.status(401).json({ error: 'missing_access_token', message: 'Cabecalho Authorization: Bearer e obrigatorio.' });
+      res.status(401).json({
+        error: 'missing_access_token',
+        message: 'Cabecalho Authorization: Bearer e obrigatorio.',
+      });
       return;
     }
 
     const token = header.slice(BEARER_PREFIX.length).trim();
     const claims = accessTokenService.verify(token);
     if (!claims) {
-      res.status(401).json({ error: 'invalid_access_token', message: 'Cracha de acesso invalido ou expirado.' });
+      res
+        .status(401)
+        .json({ error: 'invalid_access_token', message: 'Cracha de acesso invalido ou expirado.' });
       return;
     }
 
     const tenantIdFromPath = req.params.tenantId;
     if (tenantIdFromPath !== undefined && tenantIdFromPath !== claims.tenantId) {
-      res.status(403).json({ error: 'tenant_mismatch', message: 'O cracha nao autoriza acesso a este tenant.' });
+      res
+        .status(403)
+        .json({ error: 'tenant_mismatch', message: 'O cracha nao autoriza acesso a este tenant.' });
       return;
     }
 

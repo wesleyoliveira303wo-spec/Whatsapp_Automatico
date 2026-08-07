@@ -1,6 +1,7 @@
 # Tasks
 
 ## Completed
+
 - Implemented domain layer for Conversations (entities, enums, value objects, repository interfaces)
 - Added unit tests for Contact, Conversation, Message
 - [x] Create root‑level documentation files (CLAUDE.md, ROADMAP.md, etc.)
@@ -19,6 +20,7 @@
 - [x] Append CHANGELOG, ROADMAP, DECISIONS entries for foundation work
 
 ## Pending
+
 - [x] Atualizar idioma oficial para Português (Brasil)
 - [ ] Write unit/integration test for API `/health` endpoint
 - [ ] Run full lint and format checks, fix any errors

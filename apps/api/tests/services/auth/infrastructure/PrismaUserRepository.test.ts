@@ -7,7 +7,10 @@ import type { PrismaClient } from '@prisma/client';
  * mapeamento linha -> entidade, e a semantica de `update` (updateMany +
  * findById, devolvendo `undefined` quando nao existe).
  */
-function buildRepo(overrides: Record<string, unknown> = {}): { repo: PrismaUserRepository; user: Record<string, jest.Mock> } {
+function buildRepo(overrides: Record<string, unknown> = {}): {
+  repo: PrismaUserRepository;
+  user: Record<string, jest.Mock>;
+} {
   const user = {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -45,7 +48,9 @@ describe('PrismaUserRepository (Milestone 5, Bloco M5A)', () => {
     });
 
     expect(user.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ role: 'ADMINISTRATOR', status: 'ACTIVE' }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ role: 'ADMINISTRATOR', status: 'ACTIVE' }),
+      }),
     );
     expect(result.role).toBe('administrator');
     expect(result.status).toBe('active');
@@ -88,7 +93,10 @@ describe('PrismaUserRepository (Milestone 5, Bloco M5A)', () => {
 
     const result = await repo.update('user-1', { role: 'manager' });
 
-    expect(user.updateMany).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: expect.objectContaining({ role: 'MANAGER' }) });
+    expect(user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: expect.objectContaining({ role: 'MANAGER' }),
+    });
     expect(result?.role).toBe('manager');
   });
 });
@@ -98,7 +106,13 @@ describe('PrismaUserRepository — senha provisoria + listagem (Milestone 5, Blo
     const { repo, user } = buildRepo();
     user.create.mockResolvedValue(ROW);
 
-    await repo.create({ tenantId: 'tenant-1', email: 'a@b.com', passwordHash: 'h', role: 'operator', status: 'active' });
+    await repo.create({
+      tenantId: 'tenant-1',
+      email: 'a@b.com',
+      passwordHash: 'h',
+      role: 'operator',
+      status: 'active',
+    });
 
     expect(user.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ mustChangePassword: false }) }),
@@ -177,7 +191,12 @@ describe('PrismaUserRepository — senha provisoria + listagem (Milestone 5, Blo
     const { repo, user } = buildRepo();
     user.findMany.mockResolvedValue([]);
 
-    await repo.listByTenant('tenant-1', { limit: 10, status: 'suspended', role: 'manager', cursor: 'user-9' });
+    await repo.listByTenant('tenant-1', {
+      limit: 10,
+      status: 'suspended',
+      role: 'manager',
+      cursor: 'user-9',
+    });
 
     expect(user.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

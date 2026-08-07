@@ -26,15 +26,23 @@ export function createUsersErrorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     if (error instanceof EmailAlreadyInUseError) {
-      res.status(409).json({ error: 'email_already_in_use', message: 'Ja existe um usuario com este e-mail.' });
+      res
+        .status(409)
+        .json({ error: 'email_already_in_use', message: 'Ja existe um usuario com este e-mail.' });
       return;
     }
     if (error instanceof RoleNotAllowedError) {
-      res.status(403).json({ error: 'role_not_allowed', message: 'Seu cargo nao permite esta acao sobre este usuario.' });
+      res.status(403).json({
+        error: 'role_not_allowed',
+        message: 'Seu cargo nao permite esta acao sobre este usuario.',
+      });
       return;
     }
     if (error instanceof SelfManagementError) {
-      res.status(422).json({ error: 'self_management_forbidden', message: 'Voce nao pode executar esta acao sobre a propria conta.' });
+      res.status(422).json({
+        error: 'self_management_forbidden',
+        message: 'Voce nao pode executar esta acao sobre a propria conta.',
+      });
       return;
     }
     if (error instanceof WeakTemporaryPasswordError) {

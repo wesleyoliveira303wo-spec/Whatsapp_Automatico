@@ -44,7 +44,11 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
   }
 
   /** Milestone 3, Bloco 5 (D13 — aditivo). Espelha `PrismaAiInteractionRepository.listByConversation()`. */
-  async listByConversation(tenantId: string, conversationId: string, limit: number): Promise<AiInteraction[]> {
+  async listByConversation(
+    tenantId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<AiInteraction[]> {
     return this.interactions
       .filter((i) => i.tenantId === tenantId && i.conversationId === conversationId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -55,6 +59,19 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
   async listByTenant(tenantId: string, limit: number): Promise<AiInteraction[]> {
     return this.interactions
       .filter((i) => i.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+  }
+
+  /** Fase 1, Bloco F1.4 (2026-08-01 — aditivo). Espelha `PrismaAiInteractionRepository.listUnansweredQuestions()`. */
+  async listUnansweredQuestions(tenantId: string, limit: number): Promise<AiInteraction[]> {
+    return this.interactions
+      .filter(
+        (i) =>
+          i.tenantId === tenantId &&
+          i.status === 'success' &&
+          i.escalationReason === 'unknown_answer',
+      )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, limit);
   }

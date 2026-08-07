@@ -5,7 +5,13 @@ import MetricCard from '../../components/MetricCard';
 
 describe('MetricCard (Milestone 4, Bloco M4E - jsdom, infra)', () => {
   it('exibe label e valor como string exata (D46)', () => {
-    render(<MetricCard label="Custo de IA no periodo" value="US$ 0.00123456" hint="String decimal exata" />);
+    render(
+      <MetricCard
+        label="Custo de IA no periodo"
+        value="US$ 0.00123456"
+        hint="String decimal exata"
+      />,
+    );
     expect(screen.getByText('Custo de IA no periodo')).toBeInTheDocument();
     expect(screen.getByText('US$ 0.00123456')).toBeInTheDocument();
     expect(screen.getByText('String decimal exata')).toBeInTheDocument();

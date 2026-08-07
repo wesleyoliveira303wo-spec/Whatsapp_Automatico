@@ -1,4 +1,7 @@
-import { createRequireUser, RequestWithAuthUser } from '../../../src/shared/presentation/requireUser';
+import {
+  createRequireUser,
+  RequestWithAuthUser,
+} from '../../../src/shared/presentation/requireUser';
 import { Hs256AccessTokenService } from '../../../src/services/auth/infrastructure/Hs256AccessTokenService';
 import type { Request, Response } from 'express';
 
@@ -24,7 +27,11 @@ describe('createRequireUser (Milestone 5, Bloco M5C)', () => {
     requireUser(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect((req as RequestWithAuthUser).authUser).toEqual({ userId: 'user-1', tenantId: 'tenant-1', role: 'operator' });
+    expect((req as RequestWithAuthUser).authUser).toEqual({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      role: 'operator',
+    });
   });
 
   it('sem header Authorization: 401', () => {
@@ -39,7 +46,10 @@ describe('createRequireUser (Milestone 5, Bloco M5C)', () => {
   });
 
   it('cracha invalido/adulterado: 401', () => {
-    const req = { headers: { authorization: 'Bearer lixo.invalido.aqui' }, params: {} } as unknown as Request;
+    const req = {
+      headers: { authorization: 'Bearer lixo.invalido.aqui' },
+      params: {},
+    } as unknown as Request;
     const { res, statusMock } = fakeRes();
     const next = jest.fn();
 
@@ -50,7 +60,10 @@ describe('createRequireUser (Milestone 5, Bloco M5C)', () => {
 
   it('[IDOR] cracha de um tenant nao acessa rota de OUTRO tenant: 403', () => {
     const token = access.issue({ userId: 'user-1', tenantId: 'tenant-1', role: 'operator' });
-    const req = { headers: { authorization: `Bearer ${token}` }, params: { tenantId: 'tenant-2' } } as unknown as Request;
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+      params: { tenantId: 'tenant-2' },
+    } as unknown as Request;
     const { res, statusMock } = fakeRes();
     const next = jest.fn();
 

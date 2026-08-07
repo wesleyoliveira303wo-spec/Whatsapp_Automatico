@@ -5,13 +5,33 @@ import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { AuditLogRepository } from '../../auth/domain/repositories/AuditLogRepository';
 import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/OutboundMessageDispatcher';
+import { MediaDownloader } from '../../whatsapp/domain/providers/MediaDownloader';
+import { MediaSender } from '../../whatsapp/domain/providers/MediaSender';
 import { Conversation } from '../domain/entities/Conversation';
-import { Message } from '../domain/entities/Message';
-import { ConversationRepository, ConversationPage } from '../domain/repositories/ConversationRepository';
+import { Message, MessageContentType } from '../domain/entities/Message';
+import {
+  ConversationRepository,
+  ConversationPage,
+} from '../domain/repositories/ConversationRepository';
 import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { ConversationNotFoundError } from '../domain/errors/ConversationNotFoundError';
 import { ConversationOwnershipError } from '../domain/errors/ConversationOwnershipError';
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
+import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
+import { AgentMediaTooLargeError } from '../domain/errors/AgentMediaTooLargeError';
+import { AgentMediaCache } from '../infrastructure/AgentMediaCache';
+
+/**
+ * Teto de tamanho para mídia enviada PELO OPERADOR — Fase 1, Bloco F1.3.
+ * 16MB é o limite prático que o próprio WhatsApp aplica à maioria dos tipos
+ * de mídia (documentos/vídeos); imagens/áudios costumam ser bem menores na
+ * prática, mas não há necessidade de um teto por tipo nesta rodada (YAGNI —
+ * o WhatsApp já rejeita do lado dele se o arquivo for grande demais para o
+ * tipo). Diferente de `MAX_MEDIA_BYTES_FOR_AI` (10MB, `ConversationAiService`,
+ * Bloco F1.2) — aquele é um controle de CUSTO de IA multimodal, não de
+ * protocolo; os dois valores são independentes de propósito.
+ */
+export const MAX_AGENT_MEDIA_UPLOAD_BYTES = 16 * 1024 * 1024;
 
 /** Milestone 3, Bloco 5 (D11) — default/teto de `listConversations()`, mesmo padrão de `WhatsAppSessionService`. */
 const DEFAULT_LIST_LIMIT = 50;
@@ -25,6 +45,12 @@ export interface ListConversationsOptions {
   status?: Conversation['status'];
   limit?: number;
   cursor?: string;
+  /** Milestone 6, Bloco M6H-2 — filtra por sessão de WhatsApp (ver `ConversationRepository.FindAllByTenantOptions`). */
+  sessionName?: string;
+  /** Reforma do escalonamento (2026-07-25) — filtra só conversas com `escalatedAt` definido (ver `ConversationRepository.FindAllByTenantOptions`). */
+  needsHumanAttention?: boolean;
+  /** ADR #94 (2026-08-01) — filtra por dentro/fora do funil comercial (ver `ConversationRepository.FindAllByTenantOptions`). Ausente = sem filtro. */
+  excludedFromPipeline?: boolean;
 }
 
 /**
@@ -73,7 +99,49 @@ export class ConversationsService {
     // ausente, `sendAgentMessage` recusa com erro claro. Em produção é sempre
     // injetado pelo composition root.
     private readonly outboundMessageDispatcher?: OutboundMessageDispatcher,
+    // Fase 1, Bloco F1.1 (ADR #90). OPCIONAL, mesmo padrão de
+    // `outboundMessageDispatcher`: sem ele configurado, `getMessageMedia`
+    // recusa com `MessageMediaNotFoundError` em vez de quebrar. Diferente de
+    // `outboundMessageDispatcher` (construído ANTES de `ConversationsService`
+    // em `createConversationsComposition`, D15), a implementação real deste
+    // port (`WhatsAppMediaDownloader`) só pode ser construída DEPOIS do
+    // `WhatsAppConnectionRegistry` existir — e `registry` só existe depois de
+    // `conversationsService`, por causa da ordem de composição já documentada
+    // em `index.ts` (`conversations` -> `whatsapp`, porque `whatsapp` consome
+    // `messageIngestionService` de `conversations`). Por isso `mediaDownloader`
+    // também pode ser atribuído depois via `setMediaDownloader` — não dá para
+    // resolver essa dependência circular de ORDEM só com parâmetro de
+    // construtor, ao contrário de todas as outras dependências desta classe.
+    private mediaDownloader?: MediaDownloader,
+    // Fase 1, Bloco F1.3. Mesmo padrão/mesmo motivo de `mediaDownloader`
+    // (ordem de composição circular: `conversations` é montado antes de
+    // `registry` existir) — também injetado tardiamente via setter.
+    private mediaSender?: MediaSender,
+    // Fase 1, Bloco F1.3 — DIFERENTE de `mediaDownloader`/`mediaSender`: não
+    // depende de `registry`/nenhum outro bounded context, então não tem o
+    // problema de ordem de composição circular; pode ser um parâmetro de
+    // construtor comum, com uma instância própria por padrão (cada teste que
+    // não se importa com o cache não precisa fornecer um).
+    private readonly agentMediaCache: AgentMediaCache = new AgentMediaCache(),
   ) {}
+
+  /**
+   * Injeção tardia de `mediaDownloader` (Fase 1, Bloco F1.1, ADR #90) — ver
+   * comentário do parâmetro no construtor para o porquê de existir um
+   * setter aqui. Chamado uma única vez por `index.ts`, logo após
+   * `createWhatsAppSessionsComposition` (que constrói `registry`).
+   */
+  setMediaDownloader(mediaDownloader: MediaDownloader): void {
+    this.mediaDownloader = mediaDownloader;
+  }
+
+  /**
+   * Injeção tardia de `mediaSender` (Fase 1, Bloco F1.3) — mesmo padrão/mesmo
+   * motivo de `setMediaDownloader`, chamado no mesmo lugar de `index.ts`.
+   */
+  setMediaSender(mediaSender: MediaSender): void {
+    this.mediaSender = mediaSender;
+  }
 
   /**
    * `POST .../conversations/:id/messages` — envia uma mensagem do OPERADOR pelo
@@ -101,7 +169,9 @@ export class ConversationsService {
   ): Promise<void> {
     await this.assertTenantExists(tenantId);
     if (!this.outboundMessageDispatcher) {
-      throw new Error('OutboundMessageDispatcher não configurado para envio de mensagens do operador.');
+      throw new Error(
+        'OutboundMessageDispatcher não configurado para envio de mensagens do operador.',
+      );
     }
 
     const existing = await this.conversationRepository.findById(conversationId);
@@ -111,12 +181,112 @@ export class ConversationsService {
     if (existing.status !== 'human') {
       throw new ConversationNotHumanError(conversationId);
     }
-    if (!actor.canResumeAny && existing.assignedToUserId !== undefined && existing.assignedToUserId !== actor.userId) {
+    if (
+      !actor.canResumeAny &&
+      existing.assignedToUserId !== undefined &&
+      existing.assignedToUserId !== actor.userId
+    ) {
       throw new ConversationOwnershipError(conversationId);
     }
 
-    await this.outboundMessageDispatcher.dispatch({ tenantId, conversationId, content, idempotencyKey: randomUUID() });
+    await this.outboundMessageDispatcher.dispatch({
+      tenantId,
+      conversationId,
+      content,
+      idempotencyKey: randomUUID(),
+    });
     await this.audit(tenantId, actor.userId, 'conversation.agent_message', conversationId, meta);
+  }
+
+  /**
+   * `POST .../conversations/:id/media` — envia uma mensagem de MÍDIA do
+   * OPERADOR pelo WhatsApp (Fase 1, Bloco F1.3). Mesmas pré-condições de
+   * `sendAgentMessage` (conversa existe/é do tenant, está em `'human'`,
+   * ownership) — reaproveita exatamente a mesma checagem, só troca o que é
+   * despachado ao final.
+   *
+   * DELIBERADAMENTE SÍNCRONO, sem passar pela fila `whatsapp-outbound` (ADR
+   * própria de F1.3, ver DECISIONS.md): o binário já chega em memória (o
+   * Router já leu o corpo bruto da requisição antes de chamar este método) e
+   * BullMQ/Redis não são feitos para carregar payloads binários grandes.
+   * Diferente de `sendAgentMessage`, este método:
+   * - chama `MediaSender.send()` diretamente e ESPERA o resultado antes de
+   *   retornar — se o WhatsApp recusar o envio (ex.: `WhatsAppNotConnectedError`),
+   *   a exceção propaga para o Router, que devolve erro AO OPERADOR na hora
+   *   (ele está com a tela aberta esperando, diferente do fluxo assíncrono de
+   *   texto/IA);
+   * - PERSISTE a `Message` outbound ele mesmo, só APÓS o envio confirmar
+   *   sucesso (mesma ordem de segurança do `OutboundCommandConsumer`: nunca
+   *   grava um registro de "enviado" antes de confirmar que foi enviado de
+   *   verdade) — devolve a `Message` criada (200, não 202: o chamador sabe
+   *   na hora se deu certo).
+   */
+  async sendAgentMediaMessage(
+    tenantId: string,
+    conversationId: string,
+    media: {
+      contentType: Exclude<MessageContentType, 'text' | 'sticker'>;
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    },
+    actor: ConversationActor = { canResumeAny: true },
+    meta: ConversationActionMeta = {},
+  ): Promise<Message> {
+    await this.assertTenantExists(tenantId);
+    if (!this.mediaSender) {
+      throw new Error('MediaSender não configurado para envio de mídia do operador.');
+    }
+    if (media.buffer.byteLength > MAX_AGENT_MEDIA_UPLOAD_BYTES) {
+      throw new AgentMediaTooLargeError(media.buffer.byteLength, MAX_AGENT_MEDIA_UPLOAD_BYTES);
+    }
+
+    const existing = await this.conversationRepository.findById(conversationId);
+    if (!existing || existing.tenantId !== tenantId) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    if (existing.status !== 'human') {
+      throw new ConversationNotHumanError(conversationId);
+    }
+    if (
+      !actor.canResumeAny &&
+      existing.assignedToUserId !== undefined &&
+      existing.assignedToUserId !== actor.userId
+    ) {
+      throw new ConversationOwnershipError(conversationId);
+    }
+
+    await this.mediaSender.send(tenantId, existing.sessionName, existing.contactJid, media);
+
+    const message = await this.messageRepository.create({
+      tenantId,
+      conversationId,
+      direction: 'outbound',
+      content: media.caption ?? '',
+      contentType: media.contentType,
+      // `url`/`mediaKeyEncrypted` vazios de propósito: mídia enviada pelo
+      // OPERADOR nunca teve (nem terá) uma referência ao CDN do WhatsApp —
+      // essa referência só existe para mídia RECEBIDA (ADR #90). O binário
+      // para reexibição fica só no `agentMediaCache` (ver `getMessageMedia`
+      // abaixo), nunca nesta referência persistida.
+      media: { mimeType: media.mimeType, url: '', mediaKeyEncrypted: '', fileName: media.fileName },
+      occurredAt: new Date(),
+    });
+    this.agentMediaCache.set(message.id, {
+      mimeType: media.mimeType,
+      fileName: media.fileName,
+      data: media.buffer,
+    });
+
+    await this.audit(
+      tenantId,
+      actor.userId,
+      'conversation.agent_media_message',
+      conversationId,
+      meta,
+    );
+    return message;
   }
 
   /**
@@ -125,6 +295,13 @@ export class ConversationsService {
    * M5D/D57: quem assumiu). Registra `conversation.escalated` na auditoria.
    * Idempotente quanto ao status. `actor`/`meta` são opcionais (default plano
    * máquina) para não quebrar chamadores/testes antigos — retrocompatível.
+   *
+   * Reforma do escalonamento (2026-07-25): este é agora o ÚNICO caminho que
+   * tira a IA do circuito — sempre limpa `escalatedAt` junto (`options.
+   * escalatedAt: null`), mesmo que a conversa não estivesse sinalizada (é
+   * um no-op seguro nesse caso). Antes desta reforma, a IA já colocava a
+   * conversa em `'human'` sozinha ao escalar; agora só uma ação humana
+   * explícita (este método) faz isso — ver `Conversation.escalatedAt`.
    */
   async escalateConversation(
     tenantId: string,
@@ -133,9 +310,15 @@ export class ConversationsService {
     meta: ConversationActionMeta = {},
   ): Promise<Conversation> {
     await this.assertTenantExists(tenantId);
-    const updated = await this.conversationRepository.updateStatus(tenantId, conversationId, 'human', {
-      assignedToUserId: actor.userId ?? null,
-    });
+    const updated = await this.conversationRepository.updateStatus(
+      tenantId,
+      conversationId,
+      'human',
+      {
+        assignedToUserId: actor.userId ?? null,
+        escalatedAt: null,
+      },
+    );
     if (!updated) {
       throw new ConversationNotFoundError(conversationId);
     }
@@ -149,6 +332,10 @@ export class ConversationsService {
    * qualquer um (`canResumeAny === false`, ex.: Operator) só retoma a que ele
    * mesmo assumiu — caso contrário `ConversationOwnershipError` (403). Registra
    * `conversation.resumed` na auditoria. Idempotente quanto ao status.
+   *
+   * Também limpa `escalatedAt` (defensivo — já deveria estar limpo desde que
+   * `escalateConversation` o assumiu; garante que devolver ao bot nunca deixa
+   * um sinalizador de "aguardando atendente" órfão para trás).
    */
   async resumeConversation(
     tenantId: string,
@@ -162,11 +349,23 @@ export class ConversationsService {
     if (!existing || existing.tenantId !== tenantId) {
       throw new ConversationNotFoundError(conversationId);
     }
-    if (!actor.canResumeAny && existing.assignedToUserId !== undefined && existing.assignedToUserId !== actor.userId) {
+    if (
+      !actor.canResumeAny &&
+      existing.assignedToUserId !== undefined &&
+      existing.assignedToUserId !== actor.userId
+    ) {
       throw new ConversationOwnershipError(conversationId);
     }
 
-    const updated = await this.conversationRepository.updateStatus(tenantId, conversationId, 'bot', { assignedToUserId: null });
+    const updated = await this.conversationRepository.updateStatus(
+      tenantId,
+      conversationId,
+      'bot',
+      {
+        assignedToUserId: null,
+        escalatedAt: null,
+      },
+    );
     if (!updated) {
       throw new ConversationNotFoundError(conversationId);
     }
@@ -193,13 +392,19 @@ export class ConversationsService {
   }
 
   /** `GET .../conversations` — lista paginada por cursor (D11). */
-  async listConversations(tenantId: string, options: ListConversationsOptions = {}): Promise<ConversationPage> {
+  async listConversations(
+    tenantId: string,
+    options: ListConversationsOptions = {},
+  ): Promise<ConversationPage> {
     await this.assertTenantExists(tenantId);
     const limit = Math.min(options.limit ?? DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
     return this.conversationRepository.findAllByTenant(tenantId, {
       status: options.status,
       limit,
       cursor: options.cursor,
+      sessionName: options.sessionName,
+      needsHumanAttention: options.needsHumanAttention,
+      excludedFromPipeline: options.excludedFromPipeline,
     });
   }
 
@@ -220,8 +425,179 @@ export class ConversationsService {
   async listMessages(tenantId: string, conversationId: string, limit?: number): Promise<Message[]> {
     await this.assertTenantExists(tenantId);
     const effectiveLimit = Math.min(limit ?? DEFAULT_MESSAGES_LIMIT, MAX_MESSAGES_LIMIT);
-    const recent = await this.messageRepository.listRecentByConversation(tenantId, conversationId, effectiveLimit);
+    const recent = await this.messageRepository.listRecentByConversation(
+      tenantId,
+      conversationId,
+      effectiveLimit,
+    );
     return recent.slice().reverse();
+  }
+
+  /**
+   * `GET .../conversations/:conversationId/messages/:messageId/media` —
+   * Fase 1, Bloco F1.1 (ADR #90). Resolve a `Message` (escopada ao tenant),
+   * confirma que ela pertence à `conversationId` informada e que é
+   * realmente uma mensagem de mídia (`media` presente), resolve o
+   * `sessionName` a partir da `Conversation` (mesma sessão de WhatsApp que
+   * recebeu a mensagem — necessário para achar a instância viva do
+   * provider), e delega o download/decriptação a `MediaDownloader`.
+   *
+   * Lança `MessageMediaNotFoundError` (→ 404 na Presentation) para TODAS as
+   * situações de "não deu para servir esta mídia" — mensagem inexistente,
+   * de outra conversa/tenant, sem `media` (é texto), `MediaDownloader` não
+   * configurado, ou o download em si falhou (`undefined`, nunca lança) —
+   * unificando o tratamento de erro num único caminho, em vez de expor ao
+   * cliente HTTP a diferença entre "não existe" e "não consegui baixar
+   * agora" (mesmo racional de `ConversationNotFoundError` não diferenciar
+   * "não existe" de "é de outro tenant").
+   *
+   * Fase 1, Bloco F1.3: consulta `agentMediaCache` PRIMEIRO — mídia enviada
+   * pelo OPERADOR nunca tem `url`/`mediaKeyEncrypted` reais (só existem para
+   * mídia recebida, ver `sendAgentMediaMessage`), então chamar
+   * `MediaDownloader` para ela sempre falharia; uma mensagem inbound nunca
+   * está no cache (só `sendAgentMediaMessage` grava nele), então essa
+   * consulta extra é inerte/rápida para o caso comum (mídia recebida).
+   */
+  async getMessageMedia(
+    tenantId: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<{ mimeType: string; fileName?: string; data: Buffer }> {
+    await this.assertTenantExists(tenantId);
+
+    const message = await this.messageRepository.findById(tenantId, messageId);
+    if (!message || message.conversationId !== conversationId || !message.media) {
+      throw new MessageMediaNotFoundError(messageId);
+    }
+
+    const cached = this.agentMediaCache.get(messageId);
+    if (cached) {
+      return cached;
+    }
+
+    const conversation = await this.conversationRepository.findById(conversationId);
+    if (!conversation || conversation.tenantId !== tenantId) {
+      throw new MessageMediaNotFoundError(messageId);
+    }
+
+    if (!this.mediaDownloader) {
+      this.logger.warn('Download de mídia pedido sem MediaDownloader configurado', {
+        tenantId,
+        messageId,
+      });
+      throw new MessageMediaNotFoundError(messageId);
+    }
+
+    const data = await this.mediaDownloader.download(tenantId, conversation.sessionName, {
+      contentType: message.contentType as 'image' | 'audio' | 'video' | 'document' | 'sticker',
+      mimeType: message.media.mimeType,
+      url: message.media.url,
+      mediaKeyEncrypted: message.media.mediaKeyEncrypted,
+    });
+    if (!data) {
+      throw new MessageMediaNotFoundError(messageId);
+    }
+
+    return { mimeType: message.media.mimeType, fileName: message.media.fileName, data };
+  }
+
+  /**
+   * `POST .../conversations/:id/read` — indicador de não lidas (2026-07-25):
+   * zera `unreadCount` quando um operador abre a conversa pela Dashboard.
+   * Sem `ConversationActor`/auditoria (diferente de escalate/resume/
+   * sendAgentMessage) — marcar como lida é uma ação de leitura/UX, não uma
+   * decisão de negócio que precise ficar na trilha de auditoria (mesmo
+   * racional de por que `getSessionStatus`/`listConversations` não auditam).
+   * Lança `ConversationNotFoundError` se a conversa não existir/não
+   * pertencer ao tenant — mesmo padrão de `escalateConversation`/
+   * `resumeConversation`.
+   */
+  async markAsRead(tenantId: string, conversationId: string): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    const updated = await this.conversationRepository.markAsRead(tenantId, conversationId);
+    if (!updated) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    return updated;
+  }
+
+  /**
+   * `POST .../conversations/:id/stage` — pipeline de CRM (Milestone 6, Bloco
+   * M6H-5): move a conversa manualmente para um novo estágio (board Kanban,
+   * arrastar card entre colunas). SEMPRE grava `stageSetBy: 'human'` — é o
+   * ÚNICO caminho de escrita deste campo com esse valor. ATENÇÃO (ADR #89):
+   * `stageSetBy: 'human'` é hoje apenas o REGISTRO de quem classificou por
+   * último — ele NÃO trava mais a IA. Até a ADR #88 travava: uma correção
+   * manual congelava o card para sempre, o que na prática fazia o Pipeline
+   * parar de refletir a conversa. Agora a IA reclassifica sempre; a proteção
+   * da correção humana passou a ser de DIREÇÃO, não de posse — a IA nunca
+   * move um card para trás no funil (ver policy `shouldAiUpdateStage`,
+   * checada só do lado da IA em `AiReplyJobProcessor`, nunca aqui: uma ação
+   * humana explícita pode mover o card em qualquer direção).
+   *
+   * Sem `ConversationActor`/ownership (diferente de `escalate`/`resume`):
+   * mover um card no board não é uma ação de POSSE do atendimento — qualquer
+   * operador com permissão de ver a sessão pode reclassificar o estágio de
+   * uma conversa, mesmo que outro tenha assumido o atendimento em si.
+   * Registra `conversation.stage_changed` na auditoria (mesmo padrão de
+   * `escalate`/`resume` — mudança de estágio é uma decisão de negócio
+   * rastreável, diferente de `markAsRead`).
+   */
+  async updateStage(
+    tenantId: string,
+    conversationId: string,
+    stage: Conversation['stage'],
+    actor: ConversationActor = { canResumeAny: true },
+    meta: ConversationActionMeta = {},
+  ): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    const updated = await this.conversationRepository.updateStage(
+      tenantId,
+      conversationId,
+      stage,
+      'human',
+    );
+    if (!updated) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    await this.audit(tenantId, actor.userId, 'conversation.stage_changed', conversationId, meta);
+    return updated;
+  }
+
+  /**
+   * `POST .../conversations/:id/exclude-from-pipeline` — ADR #94 (2026-08-01,
+   * validação Fase 1): marca/desmarca uma conversa como fora do funil
+   * comercial (amigo/família/fornecedor/funcionário no mesmo número da
+   * empresa). Sempre uma ação humana explícita — mesmo padrão de
+   * `updateStage` (auditoria, `actor`/`meta` opcionais). Ao marcar como
+   * excluída, a IA para de responder automaticamente na próxima mensagem
+   * (`shouldAutoRespond`); o histórico de mensagens já trocadas permanece
+   * intacto e acessível.
+   */
+  async setExcludedFromPipeline(
+    tenantId: string,
+    conversationId: string,
+    excluded: boolean,
+    actor: ConversationActor = { canResumeAny: true },
+    meta: ConversationActionMeta = {},
+  ): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    const updated = await this.conversationRepository.setExcludedFromPipeline(
+      tenantId,
+      conversationId,
+      excluded,
+    );
+    if (!updated) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    await this.audit(
+      tenantId,
+      actor.userId,
+      excluded ? 'conversation.excluded_from_pipeline' : 'conversation.included_in_pipeline',
+      conversationId,
+      meta,
+    );
+    return updated;
   }
 
   private async assertTenantExists(tenantId: string): Promise<void> {

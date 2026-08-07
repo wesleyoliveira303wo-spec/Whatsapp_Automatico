@@ -25,13 +25,21 @@ export class ScryptPasswordHasher implements PasswordHasher {
   hash(plainPassword: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const salt = randomBytes(16);
-      scrypt(plainPassword, salt, KEY_LENGTH, { N: DEFAULT_N, r: DEFAULT_R, p: DEFAULT_P }, (err, derivedKey) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(`scrypt:${DEFAULT_N}:${DEFAULT_R}:${DEFAULT_P}:${salt.toString('hex')}:${derivedKey.toString('hex')}`);
-      });
+      scrypt(
+        plainPassword,
+        salt,
+        KEY_LENGTH,
+        { N: DEFAULT_N, r: DEFAULT_R, p: DEFAULT_P },
+        (err, derivedKey) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(
+            `scrypt:${DEFAULT_N}:${DEFAULT_R}:${DEFAULT_P}:${salt.toString('hex')}:${derivedKey.toString('hex')}`,
+          );
+        },
+      );
     });
   }
 
@@ -54,7 +62,12 @@ export class ScryptPasswordHasher implements PasswordHasher {
         resolve(false);
         return;
       }
-      if (!Number.isInteger(N) || !Number.isInteger(r) || !Number.isInteger(p) || expected.length === 0) {
+      if (
+        !Number.isInteger(N) ||
+        !Number.isInteger(r) ||
+        !Number.isInteger(p) ||
+        expected.length === 0
+      ) {
         resolve(false);
         return;
       }

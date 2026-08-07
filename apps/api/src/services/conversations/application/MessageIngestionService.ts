@@ -1,8 +1,17 @@
-import { MessageReceivedHandler, InboundWhatsAppMessage } from '../../whatsapp/domain/handlers/MessageReceivedHandler';
+import {
+  MessageReceivedHandler,
+  InboundWhatsAppMessage,
+} from '../../whatsapp/domain/handlers/MessageReceivedHandler';
+import { Conversation } from '../domain/entities/Conversation';
 import { ConversationRepository } from '../domain/repositories/ConversationRepository';
 import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
+import {
+  DEFAULT_BOT_REACTIVATION_SILENCE_MS,
+  isWaitingForHumanUnowned,
+  shouldReactivateBot,
+} from '../domain/policies/shouldReactivateBot';
 
 /**
  * Implementa `MessageReceivedHandler` (porta de `services/whatsapp/domain`,
@@ -14,13 +23,25 @@ import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
  * `MILESTONE_003_AI_AUTORESPONDER.md` §3):
  * 1. Encontra ou cria a `Conversation` de (`tenantId`, `sessionName`,
  *    `from`) — atomicamente, via `ConversationRepository.upsertByTenantSessionAndContact`.
+ *    `contactName` (Milestone 6, Bloco M6H-2b — `pushName` do WhatsApp, se o
+ *    evento trouxe) viaja junto nesse mesmo `create`; a decisão de
+ *    ATUALIZAR ou não um nome já salvo é da implementação do repositório
+ *    (`PrismaConversationRepository`), não deste Service.
  * 2. Persiste a `Message` inbound.
- * 3. Se a conversa ainda estiver em modo `'bot'` (`shouldAutoRespond`),
- *    agenda uma resposta de IA via `AiReplyScheduler.schedule(...)` — nunca
- *    chama nenhum serviço de IA diretamente (§2.1: "`MessageIngestionService`
- *    e `ConversationAiService` NUNCA se chamam diretamente").
+ * 3. REATIVAÇÃO DO BOT (evolução N2, 2026-07-23): se a conversa está
+ *    aguardando humano sem dono (foi escalada, ninguém assumiu) e ficou em
+ *    silêncio por >= `botReactivationSilenceMs` (30 min por padrão), devolve
+ *    ao bot ANTES do passo 4 — assim o cliente que volta a escrever depois de
+ *    um tempo é atendido de novo pela IA, em vez de ficar mudo para sempre.
+ *    O silêncio é medido pelo intervalo até a última mensagem anterior (não
+ *    por `Conversation.updatedAt`, que o upsert do passo 1 acabou de bumpar).
+ * 4. Se a conversa está em modo `'bot'` (`shouldAutoRespond`) — de origem ou
+ *    recém-reativada no passo 3 —, agenda uma resposta de IA via
+ *    `AiReplyScheduler.schedule(...)` — nunca chama nenhum serviço de IA
+ *    diretamente (§2.1: "`MessageIngestionService` e `ConversationAiService`
+ *    NUNCA se chamam diretamente").
  *
- * Erros de qualquer uma das três etapas propagam para cima: `SessionManager`
+ * Erros de qualquer uma das etapas propagam para cima: `SessionManager`
  * (Bloco 1) já envolve a chamada a `MessageReceivedHandler.handle()` num
  * try/catch que loga a falha sem deixar propagar para o restante do fluxo de
  * eventos do provider — não há necessidade de duplicar esse tratamento aqui.
@@ -30,9 +51,18 @@ export class MessageIngestionService implements MessageReceivedHandler {
     private readonly conversationRepository: ConversationRepository,
     private readonly messageRepository: MessageRepository,
     private readonly aiReplyScheduler: AiReplyScheduler,
+    private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   ) {}
 
   async handle(message: InboundWhatsAppMessage): Promise<void> {
+    // ADR #97: mensagens enviadas pelo operador de outro dispositivo chegam com
+    // `direction='outbound'`. Devem ser persistidas para espelhar o histórico
+    // real do WhatsApp, mas não devem:
+    //   - incrementar o contador de não lidas (não é o cliente escrevendo);
+    //   - acionar a lógica de reativação do bot (o operador está ativo);
+    //   - agendar resposta da IA (o operador já está respondendo).
+    const isOutbound = (message.direction ?? 'inbound') === 'outbound';
+
     const conversation = await this.conversationRepository.upsertByTenantSessionAndContact(
       message.tenantId,
       message.sessionName,
@@ -42,22 +72,112 @@ export class MessageIngestionService implements MessageReceivedHandler {
         tenantId: message.tenantId,
         sessionName: message.sessionName,
         contactJid: message.from,
+        // Para mensagens outbound, `pushName` seria o nome do próprio operador
+        // — não do contato. Omitir evita sobrescrever o nome do contato já salvo.
+        contactName: isOutbound ? undefined : message.contactName,
         status: 'bot',
+        unreadCount: 0,
+        // Pipeline de CRM (Milestone 6, Bloco M6H-5) — toda conversa nasce em
+        // 'new', classificável pela IA (`stageSetBy: 'ai'`) até que um humano
+        // corrija manualmente (ver `shouldAiUpdateStage`). Só tem efeito na
+        // CRIAÇÃO: `upsertByTenantSessionAndContact` nunca sobrescreve esses
+        // campos numa conversa já existente (mesmo racional de `status`).
+        stage: 'new',
+        stageSetBy: 'ai',
+        stageUpdatedAt: message.receivedAt,
+        // ADR #94 (2026-08-01) — toda conversa nasce dentro do funil
+        // comercial; só um humano marca o contrário depois.
+        excludedFromPipeline: false,
         createdAt: message.receivedAt,
         updatedAt: message.receivedAt,
+        // Redesign 2026-08-05 (R4) — não lido pelo `create` do Prisma (tags
+        // não são um campo escalar, ver `PrismaConversationRepository`); só
+        // existe aqui para satisfazer a interface `Conversation`.
+        tags: [],
+        // Redesign 2026-08-05 (R5) — resumo por IA nasce sempre vazio; só
+        // existe aqui para satisfazer a interface `Conversation` (o `create`
+        // do Prisma nem grava este valor — a coluna já tem `@default(0)`).
+        aiSummaryMessageCount: 0,
       },
     );
+
+    // Reativação do bot: só faz sentido AVALIAR (uma consulta a mais) quando a
+    // conversa está aguardando humano sem dono. Não se aplica a mensagens
+    // outbound — se o operador está respondendo pelo celular, o bot não deve
+    // ser reativado por isso. A medição do silêncio usa a última mensagem
+    // ANTES da que está chegando, por isso é feita antes de criar a nova
+    // mensagem abaixo.
+    const effectiveConversation =
+      !isOutbound && isWaitingForHumanUnowned(conversation)
+        ? await this.maybeReactivateBot(conversation, message.receivedAt)
+        : conversation;
 
     const createdMessage = await this.messageRepository.create({
       tenantId: message.tenantId,
       conversationId: conversation.id,
-      direction: 'inbound',
+      // ADR #97: usa a direção real da mensagem; `undefined` ≡ 'inbound'
+      // (compatibilidade total com emissores anteriores a esta extensão).
+      direction: message.direction ?? 'inbound',
       content: message.content,
+      // Fase 1, Bloco F1.1 (ADR #90): `InboundWhatsAppMessage` ganhou os
+      // campos opcionais `contentType`/`media` para o bloco seguinte
+      // (F1.1-3, `BaileysProvider` reconhecendo mídia de verdade) — até lá,
+      // todo emissor real (`SessionManager`) ainda só produz mensagens de
+      // texto, então o fallback `?? 'text'` cobre 100% do tráfego atual sem
+      // mudar comportamento nenhum.
+      contentType: message.contentType ?? 'text',
+      media: message.media,
       occurredAt: message.receivedAt,
     });
 
-    if (shouldAutoRespond(conversation)) {
+    // Indicador de não lidas (2026-07-25): apenas mensagens INBOUND incrementam
+    // o contador — mensagens enviadas pelo operador não são "não lidas" para a
+    // Dashboard. Zerado só quando um humano abre a conversa
+    // (`ConversationsService.markAsRead`). Resiliente: uma falha aqui não
+    // deve impedir o fluxo principal — loga e segue.
+    if (!isOutbound) {
+      try {
+        await this.conversationRepository.incrementUnreadCount(message.tenantId, conversation.id);
+      } catch {
+        // Silencioso de propósito: o indicador de não lidas é auxiliar, sua
+        // falha não deve derrubar a ingestão da mensagem em si.
+      }
+    }
+
+    if (!isOutbound && shouldAutoRespond(effectiveConversation)) {
       await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
     }
+  }
+
+  /**
+   * Se a conversa (aguardando humano sem dono) ficou em silêncio além do
+   * limite, devolve ao bot (`updateStatus('bot', { assignedToUserId: null })`)
+   * e retorna a conversa já atualizada; caso contrário, retorna a original
+   * inalterada. `lastActivityAt` = `occurredAt` da mensagem mais recente antes
+   * desta (ou `createdAt` da conversa, se ainda não houver mensagens — caso de
+   * borda improvável, mas seguro).
+   */
+  private async maybeReactivateBot(conversation: Conversation, now: Date): Promise<Conversation> {
+    const [lastMessage] = await this.messageRepository.listRecentByConversation(
+      conversation.tenantId,
+      conversation.id,
+      1,
+    );
+    const lastActivityAt = lastMessage?.occurredAt ?? conversation.createdAt;
+
+    if (!shouldReactivateBot(conversation, now, lastActivityAt, this.botReactivationSilenceMs)) {
+      return conversation;
+    }
+
+    const reverted = await this.conversationRepository.updateStatus(
+      conversation.tenantId,
+      conversation.id,
+      'bot',
+      { assignedToUserId: null },
+    );
+    // `updateStatus` devolve `undefined` só se a conversa sumiu no meio (corrida
+    // improvável) — nesse caso mantém a original (o passo 4 então não agenda IA,
+    // porque ela ainda está em 'human').
+    return reverted ?? conversation;
   }
 }

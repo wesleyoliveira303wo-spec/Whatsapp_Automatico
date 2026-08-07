@@ -25,7 +25,10 @@ describe('GET/DELETE /api/sessions/[sessionName]', () => {
   });
 
   it('GET delega a callApi(session, "/:sessionName") e encaminha status/body', async () => {
-    (callApi as jest.Mock).mockResolvedValue({ status: 200, body: { sessionName: 'vendas', generation: 1 } });
+    (callApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { sessionName: 'vendas', generation: 1 },
+    });
     const req = createFakeReq({ method: 'GET', query: { sessionName: 'vendas' } });
     const res = createFakeRes();
 

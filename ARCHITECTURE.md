@@ -50,18 +50,20 @@ graph LR
 ---
 
 ## 2. Layered Structure (Clean Architecture)
-| Layer | Responsibility | Typical Modules |
-|-------|----------------|-------------------|
-| **Presentation** (UI) | React components, pages, client‑side state. | `frontend/` – pages, components, hooks. |
-| **Application** (Use‑cases) | Orchestrates business rules, calls domain services. | `backend/services/` – campaign orchestrator, lead manager. |
-| **Domain** | Core business entities, interfaces, validation. | `src/shared/types/`, `src/shared/validation/` |
-| **Infrastructure** | External adapters: DB, queue, external APIs (WhatsApp, Claude). | `backend/infra/` – Prisma, Redis client, HTTP wrappers. |
+
+| Layer                       | Responsibility                                                  | Typical Modules                                            |
+| --------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Presentation** (UI)       | React components, pages, client‑side state.                     | `frontend/` – pages, components, hooks.                    |
+| **Application** (Use‑cases) | Orchestrates business rules, calls domain services.             | `backend/services/` – campaign orchestrator, lead manager. |
+| **Domain**                  | Core business entities, interfaces, validation.                 | `src/shared/types/`, `src/shared/validation/`              |
+| **Infrastructure**          | External adapters: DB, queue, external APIs (WhatsApp, Claude). | `backend/infra/` – Prisma, Redis client, HTTP wrappers.    |
 
 All dependencies point **inward**; outer layers may depend on inner ones, never the reverse.
 
 ---
 
 ## 3. Frontend
+
 - **Framework**: Next.js (React) with TypeScript.
 - **Styling**: Tailwind CSS + shadcn/ui component library.
 - **State Management**: React Query for async data, Zustand for global UI state.
@@ -76,7 +78,9 @@ All dependencies point **inward**; outer layers may depend on inner ones, never 
 ---
 
 ## 4. Backend (API Gateway & Services)
+
 ### 4.1 API Gateway
+
 - **Node.js v20 + Express** – lightweight, typed via TypeScript.
 - **GraphQL** for flexible data fetching (Apollo Server) and **REST** for simple CRUD.
 - **Middlewares**:
@@ -86,18 +90,20 @@ All dependencies point **inward**; outer layers may depend on inner ones, never 
   - **Observability** (OpenTelemetry instrumentation).
 
 ### 4.2 Services
-| Service | Responsibility | External Dependencies |
-|---------|----------------|---------------------------|
-| **WhatsApp Service** | Handles QR login, inbound/outbound messaging, session state. | Puppeteer (WebSocket to WhatsApp Web) or future Cloud API. |
-| **AI Service** | Wraps Claude API, caches embeddings, manages prompt templates. | Claude API (HTTPS), Redis cache. |
-| **Scheduler** | BullMQ workers execute campaign jobs, retries, rate‑limited sends. | Redis (queue), DB (campaign state). |
-| **CRM Service** | Core domain logic: lead lifecycle, campaign rules, conversion tracking. | DB, AI Service (auto‑qualification). |
-| **Analytics Service** | Emits events to Prometheus, stores raw events for dashboards. | PostgreSQL (event store), Prometheus exporter. |
-| **Auth Service** | JWT issuance, refresh, password hashing, optional 2FA. | PostgreSQL (users), bcrypt. |
+
+| Service               | Responsibility                                                          | External Dependencies                                      |
+| --------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **WhatsApp Service**  | Handles QR login, inbound/outbound messaging, session state.            | Puppeteer (WebSocket to WhatsApp Web) or future Cloud API. |
+| **AI Service**        | Wraps Claude API, caches embeddings, manages prompt templates.          | Claude API (HTTPS), Redis cache.                           |
+| **Scheduler**         | BullMQ workers execute campaign jobs, retries, rate‑limited sends.      | Redis (queue), DB (campaign state).                        |
+| **CRM Service**       | Core domain logic: lead lifecycle, campaign rules, conversion tracking. | DB, AI Service (auto‑qualification).                       |
+| **Analytics Service** | Emits events to Prometheus, stores raw events for dashboards.           | PostgreSQL (event store), Prometheus exporter.             |
+| **Auth Service**      | JWT issuance, refresh, password hashing, optional 2FA.                  | PostgreSQL (users), bcrypt.                                |
 
 ---
 
 ## 5. Database (PostgreSQL + Prisma)
+
 - **Schema** defined in `prisma/schema.prisma` (see `DATABASE.md`).
 - **Multi‑tenant design**: every table contains a `tenantId` foreign key. Row‑level security policies enforce isolation.
 - **Indexes** on high‑cardinality columns (`phone`, `status`, `createdAt`).
@@ -107,6 +113,7 @@ All dependencies point **inward**; outer layers may depend on inner ones, never 
 ---
 
 ## 6. Messaging Queue (BullMQ + Redis)
+
 - **BullMQ** provides reliable job processing with retries, back‑off, and concurrency limits.
 - **Queue Types**:
   - `campaign:send` – scheduled messages.
@@ -143,23 +150,27 @@ Starting with Milestone 3, the backend is split into two process roles, both req
 ---
 
 ## 7. WhatsApp Integration
+
 ### 7.1 Current Implementation (QR Code)
+
 - Puppeteer launches a headless Chrome instance.
 - QR image is streamed to the frontend via WebSocket.
 - Session cookies stored in Redis with a TTL; refreshed automatically.
 - Incoming messages are captured via the WebSocket, parsed, and routed to the CRM service.
 
 ### 7.2 Future Migration Path
-| Phase | Action |
-|-------|--------|
-| **Phase 1** | QR login with Puppeteer (M0).
-| **Phase 2** | Abstract `WhatsAppProvider` interface.
+
+| Phase       | Action                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| **Phase 1** | QR login with Puppeteer (M0).                                                               |
+| **Phase 2** | Abstract `WhatsAppProvider` interface.                                                      |
 | **Phase 3** | Implement `CloudAPIProvider` using WhatsApp Cloud API once business verification completed. |
-| **Phase 4** | Seamless switch via DI container; no code changes in higher layers. |
+| **Phase 4** | Seamless switch via DI container; no code changes in higher layers.                         |
 
 ---
 
 ## 8. AI Service (Claude Integration)
+
 - **Prompt templates** live under `shared/promptTemplates/` and are version‑controlled.
 - **Token usage monitoring** via `analytics:track` events (`tokensUsed`, `model`).
 - **Caching**: Responses for identical prompts within a 5‑minute window are cached in Redis (key = hash(prompt+context)).
@@ -168,20 +179,22 @@ Starting with Milestone 3, the backend is split into two process roles, both req
 ---
 
 ## 9. Observability & Monitoring
-| Component | Metrics |
-|-----------|---------|
-| API Gateway | Request latency, error rate, auth failures. |
+
+| Component        | Metrics                                            |
+| ---------------- | -------------------------------------------------- |
+| API Gateway      | Request latency, error rate, auth failures.        |
 | Worker processes | Job success/failure, processing time, queue depth. |
-| Database | Connection pool size, query latency, deadlocks. |
-| Redis | Memory usage, hit/miss rate. |
-| AI Service | Tokens per request, average latency, cost. |
-| Frontend | Page load time, JS error rate. |
+| Database         | Connection pool size, query latency, deadlocks.    |
+| Redis            | Memory usage, hit/miss rate.                       |
+| AI Service       | Tokens per request, average latency, cost.         |
+| Frontend         | Page load time, JS error rate.                     |
 
 Metrics are exported via Prometheus client libraries and visualised in Grafana dashboards (`docs/diagrams/grafana-dashboard.png`).
 
 ---
 
 ## 10. Security Considerations
+
 - **Transport security**: All external traffic forced over HTTPS (TLS 1.3). Nginx ingress terminates TLS.
 - **Auth**: JWT signed with RS256; refresh tokens stored HttpOnly, SameSite=Strict.
 - **Data at rest**: PostgreSQL column‑level encryption for PII; Redis data encrypted via `redis-cli --tls`.
@@ -193,15 +206,17 @@ Metrics are exported via Prometheus client libraries and visualised in Grafana d
 ---
 
 ## 11. Deployment Model
-| Environment | Containerization | Orchestration |
-|------------|-------------------|--------------|
-| **Local dev** | Docker Compose (Postgres, Redis, API, Frontend) | Docker Compose |
-| **Staging / Prod** | Multi‑stage Docker images (builder + runtime) | Kubernetes (Helm chart `helm/whatsapp-automation/`) |
-| **CI/CD** | GitHub Actions run lint, test, build, push images, Helm upgrade. |
+
+| Environment        | Containerization                                                 | Orchestration                                       |
+| ------------------ | ---------------------------------------------------------------- | --------------------------------------------------- |
+| **Local dev**      | Docker Compose (Postgres, Redis, API, Frontend)                  | Docker Compose                                      |
+| **Staging / Prod** | Multi‑stage Docker images (builder + runtime)                    | Kubernetes (Helm chart `helm/whatsapp-automation/`) |
+| **CI/CD**          | GitHub Actions run lint, test, build, push images, Helm upgrade. |
 
 ---
 
 ## 12. Extensibility Guidelines
+
 1. **Add a new service** – create an interface in `src/backend/domain/` and register implementation in the DI container (`src/backend/infra/container.ts`).
 2. **Expose new API** – add a GraphQL resolver or REST controller; keep request validation separate from business logic.
 3. **Add a new tenant‑specific feature** – guard with `tenantId` in service layer; write integration tests for at least two tenants.
@@ -210,8 +225,9 @@ Metrics are exported via Prometheus client libraries and visualised in Grafana d
 ---
 
 ## 13. Decision Log
+
 All architectural decisions are captured in `DECISIONS.md` with rationale, trade‑offs, and date. Refer to that file for historical context.
 
 ---
 
-*Generated by Claude Code – your AI architect for the WhatsApp Automation Platform.*
+_Generated by Claude Code – your AI architect for the WhatsApp Automation Platform._

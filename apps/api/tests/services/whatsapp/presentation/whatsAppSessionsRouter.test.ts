@@ -6,7 +6,11 @@ import { WhatsAppConnectionRegistry } from '../../../../src/services/whatsapp/ap
 import { WhatsAppSessionService } from '../../../../src/services/whatsapp/application/WhatsAppSessionService';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeWhatsAppProviderFactory } from '../infrastructure/FakeWhatsAppProviderFactory';
-import { FakeWhatsAppSessionRepository, FakeCredentialsStore, FakeWhatsAppSessionEventRepository } from '../testDoubles';
+import {
+  FakeWhatsAppSessionRepository,
+  FakeCredentialsStore,
+  FakeWhatsAppSessionEventRepository,
+} from '../testDoubles';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../../auth/testDoubles';
 import { RequestWithPrincipal } from '../../../../src/shared/presentation/authenticate';
@@ -40,7 +44,12 @@ function buildAppWithEventRepo(): { app: Express; eventRepo: FakeWhatsAppSession
   // compartilham a mesma tabela via Prisma.
   const sessionRepository = new FakeWhatsAppSessionRepository();
   const eventRepo = new FakeWhatsAppSessionEventRepository();
-  const registry = new WhatsAppConnectionRegistry(new FakeWhatsAppProviderFactory(), sessionRepository, new NoopLogger(), eventRepo);
+  const registry = new WhatsAppConnectionRegistry(
+    new FakeWhatsAppProviderFactory(),
+    sessionRepository,
+    new NoopLogger(),
+    eventRepo,
+  );
   const tenantRepository = new FakeTenantRepository();
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
   tenantRepository.seed({ id: 'tenant-2', name: 'Outra Empresa', apiKeyHash: null });
@@ -76,7 +85,9 @@ describe('whatsAppSessionsRouter', () => {
   it('POST /api/tenants/:tenantId/whatsapp-sessions cria/conecta a sessão e responde 200 com o corpo da sessão', async () => {
     const app = buildApp();
 
-    const response = await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ tenantId: 'tenant-1', sessionName: 'vendas' });
@@ -94,7 +105,9 @@ describe('whatsAppSessionsRouter', () => {
   it('POST responde 400 quando tenantId no path é só espaço em branco', async () => {
     const app = buildApp();
 
-    const response = await request(app).post('/api/tenants/%20%20/whatsapp-sessions').send({ sessionName: 'vendas' });
+    const response = await request(app)
+      .post('/api/tenants/%20%20/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('invalid_params');
@@ -103,7 +116,9 @@ describe('whatsAppSessionsRouter', () => {
   it('GET .../:sessionName responde 404 (WhatsAppSessionNotFoundError) para sessão nunca conectada', async () => {
     const app = buildApp();
 
-    const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu');
+    const response = await request(app).get(
+      '/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu',
+    );
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe('session_not_found');
@@ -111,7 +126,9 @@ describe('whatsAppSessionsRouter', () => {
 
   it('GET .../:sessionName responde 200 depois de um POST de conexão', async () => {
     const app = buildApp();
-    await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+    await request(app)
+      .post('/api/tenants/tenant-1/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
 
     const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/vendas');
 
@@ -121,25 +138,50 @@ describe('whatsAppSessionsRouter', () => {
 
   it('GET .../:sessionName/qrcode responde 200 com o QR do provider', async () => {
     const app = buildApp();
-    await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+    await request(app)
+      .post('/api/tenants/tenant-1/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
 
-    const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/vendas/qrcode');
+    const response = await request(app).get(
+      '/api/tenants/tenant-1/whatsapp-sessions/vendas/qrcode',
+    );
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ qrCode: expect.any(String) });
   });
 
+  it('GET .../:sessionName/contacts/:contactJid/avatar responde 200 com avatarUrl (Milestone 6, Bloco M6H-2b)', async () => {
+    const app = buildApp();
+    await request(app)
+      .post('/api/tenants/tenant-1/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
+
+    const response = await request(app).get(
+      '/api/tenants/tenant-1/whatsapp-sessions/vendas/contacts/5511888888888%40s.whatsapp.net/avatar',
+    );
+
+    // NullWhatsAppProvider (fake) é inerte por padrão — avatarUrl vem
+    // undefined, mas a rota responde 200 (nunca 404 por ausência de foto,
+    // ver docstring do router).
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ avatarUrl: undefined });
+  });
+
   it('DELETE .../:sessionName responde 204, inclusive para sessão nunca conectada (idempotente)', async () => {
     const app = buildApp();
 
-    const response = await request(app).delete('/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu');
+    const response = await request(app).delete(
+      '/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu',
+    );
 
     expect(response.status).toBe(204);
   });
 
   it('isola tenants: sessão criada para tenant-1 não aparece para tenant-2 com o mesmo sessionName', async () => {
     const app = buildApp();
-    await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+    await request(app)
+      .post('/api/tenants/tenant-1/whatsapp-sessions')
+      .send({ sessionName: 'vendas' });
 
     const response = await request(app).get('/api/tenants/tenant-2/whatsapp-sessions/vendas');
 
@@ -158,18 +200,25 @@ describe('whatsAppSessionsRouter', () => {
 
     it('responde 200 com as sessões do tenant depois de conectar', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .send({ sessionName: 'vendas' });
 
       const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions');
 
       expect(response.status).toBe(200);
       expect(response.body.sessions).toHaveLength(1);
-      expect(response.body.sessions[0]).toMatchObject({ tenantId: 'tenant-1', sessionName: 'vendas' });
+      expect(response.body.sessions[0]).toMatchObject({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+      });
     });
 
     it('isola tenants: lista de tenant-2 não inclui sessão criada para tenant-1', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .send({ sessionName: 'vendas' });
 
       const response = await request(app).get('/api/tenants/tenant-2/whatsapp-sessions');
 
@@ -191,16 +240,22 @@ describe('whatsAppSessionsRouter', () => {
     it('responde 204, inclusive para sessão nunca conectada (idempotente)', async () => {
       const app = buildApp();
 
-      const response = await request(app).delete('/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu/remove');
+      const response = await request(app).delete(
+        '/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu/remove',
+      );
 
       expect(response.status).toBe(204);
     });
 
     it('remove de fato: sessão some da listagem e de GET /:sessionName depois de removida', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .send({ sessionName: 'vendas' });
 
-      const removeResponse = await request(app).delete('/api/tenants/tenant-1/whatsapp-sessions/vendas/remove');
+      const removeResponse = await request(app).delete(
+        '/api/tenants/tenant-1/whatsapp-sessions/vendas/remove',
+      );
       const listResponse = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions');
 
       expect(removeResponse.status).toBe(204);
@@ -209,9 +264,13 @@ describe('whatsAppSessionsRouter', () => {
 
     it('não afeta a contrato de DELETE /:sessionName (desconectar) — continua respondendo 204 sem remover o registro', async () => {
       const app = buildApp();
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .send({ sessionName: 'vendas' });
 
-      const disconnectResponse = await request(app).delete('/api/tenants/tenant-1/whatsapp-sessions/vendas');
+      const disconnectResponse = await request(app).delete(
+        '/api/tenants/tenant-1/whatsapp-sessions/vendas',
+      );
       const listResponse = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions');
 
       expect(disconnectResponse.status).toBe(204);
@@ -225,7 +284,9 @@ describe('whatsAppSessionsRouter', () => {
     it('responde 200 com lista vazia quando a sessão nunca teve nenhuma transição registrada', async () => {
       const app = buildApp();
 
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu/history');
+      const response = await request(app).get(
+        '/api/tenants/tenant-1/whatsapp-sessions/nunca-existiu/history',
+      );
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ events: [] });
@@ -233,23 +294,51 @@ describe('whatsAppSessionsRouter', () => {
 
     it('responde 200 com os eventos gravados, do mais novo para o mais antigo', async () => {
       const { app, eventRepo } = buildAppWithEventRepo();
-      await eventRepo.append({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'connecting', occurredAt: new Date('2026-07-09T10:00:00Z') });
-      await eventRepo.append({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'disconnected', disconnectReason: 'timed_out', occurredAt: new Date('2026-07-09T10:05:00Z') });
+      await eventRepo.append({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'connecting',
+        occurredAt: new Date('2026-07-09T10:00:00Z'),
+      });
+      await eventRepo.append({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'disconnected',
+        disconnectReason: 'timed_out',
+        occurredAt: new Date('2026-07-09T10:05:00Z'),
+      });
 
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/vendas/history');
+      const response = await request(app).get(
+        '/api/tenants/tenant-1/whatsapp-sessions/vendas/history',
+      );
 
       expect(response.status).toBe(200);
       expect(response.body.events).toHaveLength(2);
-      expect(response.body.events[0]).toMatchObject({ status: 'disconnected', disconnectReason: 'timed_out' });
+      expect(response.body.events[0]).toMatchObject({
+        status: 'disconnected',
+        disconnectReason: 'timed_out',
+      });
       expect(response.body.events[1]).toMatchObject({ status: 'connecting' });
     });
 
     it('respeita ?limit= na query string', async () => {
       const { app, eventRepo } = buildAppWithEventRepo();
-      await eventRepo.append({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'connecting', occurredAt: new Date('2026-07-09T10:00:00Z') });
-      await eventRepo.append({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'disconnected', occurredAt: new Date('2026-07-09T10:05:00Z') });
+      await eventRepo.append({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'connecting',
+        occurredAt: new Date('2026-07-09T10:00:00Z'),
+      });
+      await eventRepo.append({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'disconnected',
+        occurredAt: new Date('2026-07-09T10:05:00Z'),
+      });
 
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/vendas/history?limit=1');
+      const response = await request(app).get(
+        '/api/tenants/tenant-1/whatsapp-sessions/vendas/history?limit=1',
+      );
 
       expect(response.status).toBe(200);
       expect(response.body.events).toHaveLength(1);
@@ -258,7 +347,9 @@ describe('whatsAppSessionsRouter', () => {
     it('responde 400 quando ?limit= não é um inteiro positivo', async () => {
       const app = buildApp();
 
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/vendas/history?limit=abc');
+      const response = await request(app).get(
+        '/api/tenants/tenant-1/whatsapp-sessions/vendas/history?limit=abc',
+      );
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('invalid_params');
@@ -266,11 +357,20 @@ describe('whatsAppSessionsRouter', () => {
 
     it('sobrevive à remoção da sessão: histórico continua consultável depois de DELETE /:sessionName/remove', async () => {
       const { app, eventRepo } = buildAppWithEventRepo();
-      await eventRepo.append({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'connecting', occurredAt: new Date() });
-      await request(app).post('/api/tenants/tenant-1/whatsapp-sessions').send({ sessionName: 'vendas' });
+      await eventRepo.append({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'connecting',
+        occurredAt: new Date(),
+      });
+      await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions')
+        .send({ sessionName: 'vendas' });
 
       await request(app).delete('/api/tenants/tenant-1/whatsapp-sessions/vendas/remove');
-      const response = await request(app).get('/api/tenants/tenant-1/whatsapp-sessions/vendas/history');
+      const response = await request(app).get(
+        '/api/tenants/tenant-1/whatsapp-sessions/vendas/history',
+      );
 
       expect(response.status).toBe(200);
       expect(response.body.events).toHaveLength(1);

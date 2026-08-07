@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #F3F3F1; }
+  * { box-sizing: border-box; }
+  body { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #0E6E52; text-decoration: none; }
+  a:hover { color: #0A5540; }
+  .fx-scroll { scrollbar-width: thin; scrollbar-color: #D8DAD4 transparent; }
+  .fx-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .fx-scroll::-webkit-scrollbar-thumb { background: #DCDED8; border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+</style>
+</helmet>
+
+<div style="height: 100vh; display: flex; flex-direction: column; background: #F3F3F1; color: #16211C; overflow: hidden;">
+
+  <header style="height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px 0 16px; background: #F3F3F1; border-bottom: 1px solid #E6E7E3;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="width: 22px; height: 22px; border-radius: 7px; background: #0E6E52; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; letter-spacing: -0.02em;">F</div>
+      <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.02em;">Francis</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 12.5px; color: #5C6B64;">Vértice Vendas</span>
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #16A34A;"></span>
+      <span style="font-size: 12.5px; color: #5C6B64;">Conectado</span>
+    </div>
+  </header>
+
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <nav style="position: relative; width: 56px; flex: 0 0 56px; background: #F3F3F1; border-right: 1px solid #E6E7E3; display: flex; flex-direction: column; align-items: center; padding: 10px 0 12px;">
+      <button title="Vértice Vendas · Conectado — voltar a todos os WhatsApps" aria-label="Voltar a todos os WhatsApps" style="position: relative; width: 34px; height: 34px; margin: 2px 0 14px; padding: 0; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; display: grid; place-items: center; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;" style-hover="background: rgba(14,110,82,0.18);">
+        F
+        <span style="position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 999px; background: #16A34A; border: 2px solid #F3F3F1;"></span>
+      </button>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+        <button title="Conversas" aria-label="Conversas" style="position: relative; width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.6 9.6 0 0 1-2.8-.4L4 21l1.4-4.2A8.2 8.2 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z" /></svg>
+          <span style="position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 999px; background: #D0342C; border: 2px solid #F3F3F1;"></span>
+        </button>
+        <button title="Pipeline" aria-label="Pipeline" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5" /><rect x="10" y="4" width="5" height="11" rx="1.5" /><rect x="17" y="4" width="4" height="7" rx="1.5" /></svg>
+        </button>
+        <button title="Analytics" aria-label="Analytics" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5" /><path d="M4 19h16" /><path d="M8 15l4-5 3 3 4-6" /></svg>
+        </button>
+        <button title="IA" aria-label="IA" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3.5" /><path d="M12 3.5V7" /><circle cx="9.2" cy="13" r="1.1" fill="currentColor" stroke="none" /><circle cx="14.8" cy="13" r="1.1" fill="currentColor" stroke="none" /></svg>
+        </button>
+      </div>
+      <div style="flex: 1;"></div>
+      <button title="Tema escuro" aria-label="Alternar tema" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #E9EAE5; color: #16211C;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+      </button>
+      <button title="Configurações e conta" aria-label="Configurações e conta" aria-current="page" style="width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 11px; background: rgba(14,110,82,0.10); color: #0E6E52; cursor: pointer;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.2 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3 15a1.7 1.7 0 0 0-1.7-1.4H1.2a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3 8.2" /></svg>
+      </button>
+    </nav>
+
+    <section class="fx-scroll" style="flex: 1; min-width: 0; overflow-y: auto; min-height: 0;">
+      <div style="max-width: 840px; padding: 20px 24px 48px;">
+        <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;">Configurações</h1>
+        <p style="margin: 4px 0 20px; font-size: 13px; color: #5C6B64;">Conexão, equipe, auditoria e tags da sessão Vértice Vendas.</p>
+
+        <div style="display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #E6E7E3;">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+            <button onClick="{{ t.onClick }}" style="height: 38px; padding: 0 4px; margin-right: 20px; border: 0; border-bottom: 2px solid {{ t.border }}; background: transparent; font: inherit; font-size: 13.5px; font-weight: 600; color: {{ t.fg }}; cursor: pointer;">{{ t.label }}</button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ tab === 'conexao' }}" hint-placeholder-val="{{ true }}">
+          <div style="display: grid; grid-template-columns: {{ conexaoCols }}; gap: 14px;">
+            <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(14,110,82,0.10); color: #0E6E52; display: grid; place-items: center;">
+                  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3" /><path d="M11 18h2" /></svg>
+                </div>
+                <div>
+                  <div style="font-size: 15px; font-weight: 600;">Vértice Vendas</div>
+                  <div style="display: flex; align-items: center; gap: 5px; margin-top: 2px;"><span style="width: 6px; height: 6px; border-radius: 999px; background: #16A34A;"></span><span style="font-size: 12px; color: #5C6B64;">Conectado · +55 11 3244-0090</span></div>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12.5px; margin-bottom: 18px;">
+                <div><div style="color: #5C6B64; margin-bottom: 2px;">Conectado desde</div><div style="font-weight: 500;">03/03/2025</div></div>
+                <div><div style="color: #5C6B64; margin-bottom: 2px;">Última atividade</div><div style="font-weight: 500;">Há 2 minutos</div></div>
+                <div><div style="color: #5C6B64; margin-bottom: 2px;">Geração da instância</div><div style="font-weight: 500;">#14</div></div>
+                <div><div style="color: #5C6B64; margin-bottom: 2px;">Criada em</div><div style="font-weight: 500;">18/01/2025</div></div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button style="flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 13px; border: 1px solid #E6E7E3; border-radius: 9px; background: #FFFFFF; color: #16211C; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;" style-hover="background: #F5F6F3;">Desconectar</button>
+                <button style="flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent; color: #93342B; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;" style-hover="background: rgba(192,60,48,0.08);">Remover sessão</button>
+              </div>
+            </div>
+
+            <div style="padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+              <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 12px;">Reconectar via QR Code</div>
+              <div style="display: flex; gap: 14px; align-items: flex-start;">
+                <div style="width: 96px; height: 96px; border-radius: 10px; background: repeating-linear-gradient(45deg, #16211C 0 6px, transparent 6px 12px); background-color: #FFFFFF; border: 1px solid #E6E7E3; flex: 0 0 96px;"></div>
+                <ol style="margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.9; color: #3E4A44;">
+                  <li>Abra o WhatsApp no celular</li>
+                  <li>Toque em Aparelhos conectados</li>
+                  <li>Escaneie este código</li>
+                </ol>
+              </div>
+            </div>
+
+            <div style="grid-column: 1 / -1; padding: 18px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3;">
+              <div style="font-size: 13.5px; font-weight: 600; margin-bottom: 10px;">Histórico recente</div>
+              <div style="display: flex; flex-direction: column;">
+                <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid #EFF0EC;">
+                    <span style="width: 6px; height: 6px; border-radius: 999px; background: {{ h.dot }};"></span>
+                    <span style="flex: 1; font-size: 12.5px; color: #3E4A44;">{{ h.label }}</span>
+                    <span style="font-size: 11.5px; color: #5C6B64;">{{ h.time }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tab === 'equipe' }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="padding: 14px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; margin-bottom: 14px; display: flex; gap: 8px;">
+              <input placeholder="Nome" style="flex: 1; height: 34px; padding: 0 12px; border: 1px solid #E6E7E3; border-radius: 9px; font: inherit; font-size: 13px; outline: none; background: #FAFAF9;" />
+              <input placeholder="E-mail" style="flex: 1; height: 34px; padding: 0 12px; border: 1px solid #E6E7E3; border-radius: 9px; font: inherit; font-size: 13px; outline: none; background: #FAFAF9;" />
+              <select style="height: 34px; padding: 0 10px; border: 1px solid #E6E7E3; border-radius: 9px; font: inherit; font-size: 13px; background: #FAFAF9; color: #16211C;">
+                <option>Operador</option><option>Gerente</option><option>Administrador</option>
+              </select>
+              <button style="flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 15px; border: 0; border-radius: 9px; background: #0E6E52; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;" style-hover="background: #0B5C45;">Criar usuário</button>
+            </div>
+            <div class="fx-scroll" style="border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; overflow-x: auto;">
+              <div style="min-width: 640px; display: grid; grid-template-columns: 1.4fr 1.6fr 1fr 0.8fr 90px; padding: 10px 16px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5C6B64; border-bottom: 1px solid #EFF0EC;">
+                <span>Nome</span><span>E-mail</span><span>Cargo</span><span>Status</span><span></span>
+              </div>
+              <sc-for list="{{ team }}" as="u" hint-placeholder-count="4">
+                <div style="min-width: 640px; display: grid; grid-template-columns: 1.4fr 1.6fr 1fr 0.8fr 90px; align-items: center; padding: 11px 16px; border-bottom: 1px solid #EFF0EC; font-size: 13px;">
+                  <span style="font-weight: 500;">{{ u.name }}</span>
+                  <span style="color: #5C6B64; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ u.email }}</span>
+                  <span style="color: #3E4A44;">{{ u.role }}</span>
+                  <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: {{ u.statusFg }};"><span style="width: 5px; height: 5px; border-radius: 999px; background: currentColor;"></span>{{ u.status }}</span>
+                  <button title="Mais ações" aria-label="Mais ações" style="width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #5C6B64; cursor: pointer; justify-self: end;" style-hover="background: #F2F3F0; color: #16211C;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+                  </button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tab === 'auditoria' }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+              <select style="height: 34px; padding: 0 10px; border: 1px solid #E6E7E3; border-radius: 9px; font: inherit; font-size: 12.5px; background: #FFFFFF; color: #16211C;">
+                <option>Todas as ações</option><option>Assumir conversa</option><option>Devolver ao bot</option><option>Alterar cargo</option>
+              </select>
+            </div>
+            <div class="fx-scroll" style="border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; overflow-x: auto;">
+              <div style="min-width: 520px; display: grid; grid-template-columns: 130px 1fr 200px; padding: 10px 16px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5C6B64; border-bottom: 1px solid #EFF0EC;">
+                <span>Quando</span><span>Ação</span><span>Usuário</span>
+              </div>
+              <sc-for list="{{ audit }}" as="a" hint-placeholder-count="6">
+                <div style="min-width: 520px; display: grid; grid-template-columns: 130px 1fr 200px; align-items: center; padding: 11px 16px; border-bottom: 1px solid #EFF0EC; font-size: 12.5px;">
+                  <span style="color: #5C6B64;">{{ a.time }}</span>
+                  <span style="color: #16211C;">{{ a.action }}</span>
+                  <span style="color: #5C6B64;">{{ a.user }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <button style="width: 100%; height: 34px; margin-top: 10px; border: 1px solid #E6E7E3; border-radius: 10px; background: #FFFFFF; color: #5C6B64; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;" style-hover="background: #F5F6F3; color: #16211C;">Carregar mais</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ tab === 'tags' }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="padding: 16px; border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; margin-bottom: 14px;">
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <input value="{{ newTagName }}" onInput="{{ onNewTagName }}" placeholder="Nome da tag" style="flex: 1; height: 34px; padding: 0 12px; border: 1px solid #E6E7E3; border-radius: 9px; font: inherit; font-size: 13px; outline: none; background: #FAFAF9;" />
+                <div style="display: flex; gap: 6px;">
+                  <sc-for list="{{ swatches }}" as="sw" hint-placeholder-count="8">
+                    <button onClick="{{ sw.onClick }}" aria-label="{{ sw.name }}" style="width: 24px; height: 24px; border-radius: 999px; border: {{ sw.ring }}; background: {{ sw.color }}; cursor: pointer; padding: 0;"></button>
+                  </sc-for>
+                </div>
+                <button onClick="{{ addTag }}" style="flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 15px; border: 0; border-radius: 9px; background: #0E6E52; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;" style-hover="background: #0B5C45;">Adicionar</button>
+              </div>
+            </div>
+            <div style="border-radius: 12px; background: #FFFFFF; border: 1px solid #E6E7E3; overflow: hidden;">
+              <sc-for list="{{ tags }}" as="t" hint-placeholder-count="5">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #EFF0EC;">
+                  <span style="height: 24px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; background: {{ t.bg }}; color: {{ t.fg }};">{{ t.name }}</span>
+                  <span style="flex: 1;"></span>
+                  <button title="Editar" aria-label="Editar" style="width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: #F2F3F0; color: #16211C;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5 19 6 8 17l-4 1 1-4z" /></svg>
+                  </button>
+                  <button onClick="{{ t.onDelete }}" title="Excluir" aria-label="Excluir" style="width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #5C6B64; cursor: pointer;" style-hover="background: rgba(192,60,48,0.10); color: #93342B;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" /><path d="M9 7V4h6v3" /></svg>
+                  </button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const TAB_LIST = [
+  { id: "conexao", label: "Conexão" }, { id: "equipe", label: "Equipe" },
+  { id: "auditoria", label: "Auditoria" }, { id: "tags", label: "Tags" }
+];
+const SWATCHES = [
+  ["Cinza","#8B958F"],["Vermelho","#D0342C"],["Laranja","#C25A15"],["Âmbar","#C4790C"],
+  ["Verde","#16A34A"],["Teal","#0E6E52"],["Azul","#2A5FBF"],["Roxo","#6B3FCB"]
+];
+const TAG_COLORS = { gray:["#EFF0EC","#4E5A54"], red:["#FBE9E7","#9B2F26"], orange:["#FCEDE1","#8F4C12"], amber:["#FAF0DA","#8A5F09"], green:["#E6F2EA","#1F6438"], teal:["#E2F1EE","#0E6153"], blue:["#E7EEFB","#1E4C93"], purple:["#EFEAFA","#523499"] };
+
+let TEAM = [
+  { name: "Ana Ribeiro", email: "ana.ribeiro@vertice.com.br", role: "Gerente", status: "Ativo" },
+  { name: "Diego Martins", email: "diego.martins@vertice.com.br", role: "Operador", status: "Ativo" },
+  { name: "Sofia Prado", email: "sofia.prado@vertice.com.br", role: "Operador", status: "Suspenso" },
+  { name: "Igor Cunha", email: "igor.cunha@vertice.com.br", role: "Administrador", status: "Ativo" }
+];
+let HISTORY = [
+  { label: "Conectado", time: "há 2 min", dot: "#16A34A" },
+  { label: "Conectando…", time: "há 3 min", dot: "#C4790C" },
+  { label: "Desconectado (reinício de rotina)", time: "ontem, 23:41", dot: "#9AA39D" }
+];
+let AUDIT = [
+  { time: "há 2 min", action: "Assumiu a conversa de Marina Duarte", user: "ana.ribeiro@vertice.com.br" },
+  { time: "há 9 min", action: "Devolveu ao bot a conversa de Camila Souza", user: "diego.martins@vertice.com.br" },
+  { time: "há 1h", action: "Moveu Grupo Vértice para Negociando", user: "ana.ribeiro@vertice.com.br" },
+  { time: "há 3h", action: "Suspendeu o usuário Sofia Prado", user: "igor.cunha@vertice.com.br" },
+  { time: "ontem", action: "Criou a tag Enterprise", user: "igor.cunha@vertice.com.br" },
+  { time: "ontem", action: "Alterou cargo de Diego Martins para Operador", user: "igor.cunha@vertice.com.br" }
+];
+let TAGS = [
+  { name: "Instalação", color: "orange" }, { name: "Plano Pro", color: "teal" }, { name: "Boleto", color: "blue" },
+  { name: "Proposta", color: "amber" }, { name: "Enterprise", color: "purple" }
+];
+
+class Component extends DCLogic {
+  state = { tab: "conexao", newTagName: "", newTagColor: "teal", tags: TAGS.map((t, i) => Object.assign({ id: i }, t)), vw: typeof window !== "undefined" ? window.innerWidth : 1440 };
+
+  componentDidMount() {
+    this.onResize = () => this.setState({ vw: window.innerWidth });
+    window.addEventListener("resize", this.onResize);
+  }
+  componentWillUnmount() { window.removeEventListener("resize", this.onResize); }
+
+  renderVals() {
+    const s = this.state;
+    const narrow = s.vw < 860;
+    return {
+      conexaoCols: narrow ? "1fr" : "1.3fr 1fr",
+      tabs: TAB_LIST.map(t => ({
+        label: t.label, border: t.id === s.tab ? "#0E6E52" : "transparent",
+        fg: t.id === s.tab ? "#16211C" : "#5C6B64", onClick: () => this.setState({ tab: t.id })
+      })),
+      tab: s.tab,
+      history: HISTORY,
+      team: TEAM.map(u => Object.assign({}, u, { statusFg: u.status === "Ativo" ? "#1B6136" : "#93342B" })),
+      audit: AUDIT,
+      swatches: SWATCHES.map(([name, color]) => ({
+        name, color, ring: s.newTagColor === name ? "2px solid #16211C" : "2px solid transparent",
+        onClick: () => this.setState({ newTagColor: name })
+      })),
+      newTagName: s.newTagName,
+      onNewTagName: e => this.setState({ newTagName: e.target.value }),
+      addTag: () => {
+        const name = s.newTagName.trim();
+        if (!name) return;
+        const colorKey = Object.keys(TAG_COLORS)[SWATCHES.findIndex(sw => sw[0] === s.newTagColor)] || "teal";
+        this.setState(st => ({ tags: st.tags.concat([{ id: Date.now(), name, color: colorKey }]), newTagName: "" }));
+      },
+      tags: s.tags.map(t => {
+        const c = TAG_COLORS[t.color] || TAG_COLORS.gray;
+        return { name: t.name, bg: c[0], fg: c[1], onDelete: () => this.setState(st => ({ tags: st.tags.filter(x => x.id !== t.id) })) };
+      })
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -120,7 +120,11 @@ describe('UserManagementService — criar usuario (Milestone 5, Bloco M5E-2)', (
 
     for (const role of ['administrator', 'owner'] as const) {
       await expect(
-        service.createUser('tenant-1', admin, { email: 'x@y.com', role, temporaryPassword: 'senha-provisoria' }),
+        service.createUser('tenant-1', admin, {
+          email: 'x@y.com',
+          role,
+          temporaryPassword: 'senha-provisoria',
+        }),
       ).rejects.toBeInstanceOf(RoleNotAllowedError);
     }
   });
@@ -144,7 +148,11 @@ describe('UserManagementService — criar usuario (Milestone 5, Bloco M5E-2)', (
     const { service } = buildService();
 
     await expect(
-      service.createUser('tenant-1', actorOf('owner'), { email: 'x@y.com', role: 'operator', temporaryPassword: '1234567' }),
+      service.createUser('tenant-1', actorOf('owner'), {
+        email: 'x@y.com',
+        role: 'operator',
+        temporaryPassword: '1234567',
+      }),
     ).rejects.toBeInstanceOf(WeakTemporaryPasswordError);
   });
 });
@@ -174,7 +182,10 @@ describe('UserManagementService — mudanca de cargo', () => {
 
     expect(updated.role).toBe('manager');
     expect(audit.all()).toEqual([
-      expect.objectContaining({ action: 'user.role_changed', metadata: { from: 'operator', to: 'manager' } }),
+      expect.objectContaining({
+        action: 'user.role_changed',
+        metadata: { from: 'operator', to: 'manager' },
+      }),
     ]);
   });
 
@@ -184,7 +195,12 @@ describe('UserManagementService — mudanca de cargo', () => {
     users.seed(target);
 
     await expect(
-      service.changeRole('tenant-1', { userId: target.id, role: 'administrator' }, target.id, 'owner'),
+      service.changeRole(
+        'tenant-1',
+        { userId: target.id, role: 'administrator' },
+        target.id,
+        'owner',
+      ),
     ).rejects.toBeInstanceOf(SelfManagementError);
   });
 
@@ -203,9 +219,9 @@ describe('UserManagementService — mudanca de cargo', () => {
     const target = buildUser({ role: 'administrator' });
     users.seed(target);
 
-    await expect(service.changeRole('tenant-1', actorOf('manager'), target.id, 'read_only')).rejects.toBeInstanceOf(
-      RoleNotAllowedError,
-    );
+    await expect(
+      service.changeRole('tenant-1', actorOf('manager'), target.id, 'read_only'),
+    ).rejects.toBeInstanceOf(RoleNotAllowedError);
   });
 
   it('alvo inexistente OU de outro tenant = UserNotFoundError (indistinguiveis, sem vazamento entre tenants)', async () => {
@@ -213,9 +229,9 @@ describe('UserManagementService — mudanca de cargo', () => {
     const otherTenantUser = buildUser({ tenantId: 'tenant-2', role: 'operator' });
     users.seed(otherTenantUser);
 
-    await expect(service.changeRole('tenant-1', actorOf('owner'), 'nao-existe', 'manager')).rejects.toBeInstanceOf(
-      UserNotFoundError,
-    );
+    await expect(
+      service.changeRole('tenant-1', actorOf('owner'), 'nao-existe', 'manager'),
+    ).rejects.toBeInstanceOf(UserNotFoundError);
     await expect(
       service.changeRole('tenant-1', actorOf('owner'), otherTenantUser.id, 'manager'),
     ).rejects.toBeInstanceOf(UserNotFoundError);
@@ -227,14 +243,24 @@ describe('UserManagementService — suspensao e reativacao', () => {
     const { service, users, refreshTokens, audit } = buildService();
     const target = buildUser({ role: 'operator' });
     users.seed(target);
-    await refreshTokens.create({ userId: target.id, tokenHash: 'h1', expiresAt: new Date(Date.now() + 86_400_000) });
-    await refreshTokens.create({ userId: target.id, tokenHash: 'h2', expiresAt: new Date(Date.now() + 86_400_000) });
+    await refreshTokens.create({
+      userId: target.id,
+      tokenHash: 'h1',
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    await refreshTokens.create({
+      userId: target.id,
+      tokenHash: 'h2',
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
 
     const updated = await service.suspendUser('tenant-1', actorOf('administrator'), target.id);
 
     expect(updated.status).toBe('suspended');
     expect(refreshTokens.all().every((t) => t.revokedAt !== undefined)).toBe(true);
-    expect(audit.all()).toEqual([expect.objectContaining({ action: 'user.suspended', targetId: target.id })]);
+    expect(audit.all()).toEqual([
+      expect.objectContaining({ action: 'user.suspended', targetId: target.id }),
+    ]);
   });
 
   it('ninguem se auto-suspende (SelfManagementError)', async () => {
@@ -252,9 +278,9 @@ describe('UserManagementService — suspensao e reativacao', () => {
     const ownerUser = buildUser({ role: 'owner' });
     users.seed(ownerUser);
 
-    await expect(service.suspendUser('tenant-1', actorOf('owner'), ownerUser.id)).rejects.toBeInstanceOf(
-      RoleNotAllowedError,
-    );
+    await expect(
+      service.suspendUser('tenant-1', actorOf('owner'), ownerUser.id),
+    ).rejects.toBeInstanceOf(RoleNotAllowedError);
   });
 
   it('reativa um suspenso e audita', async () => {
@@ -265,7 +291,9 @@ describe('UserManagementService — suspensao e reativacao', () => {
     const updated = await service.reactivateUser('tenant-1', actorOf('manager'), target.id);
 
     expect(updated.status).toBe('active');
-    expect(audit.all()).toEqual([expect.objectContaining({ action: 'user.reactivated', targetId: target.id })]);
+    expect(audit.all()).toEqual([
+      expect.objectContaining({ action: 'user.reactivated', targetId: target.id }),
+    ]);
   });
 });
 
@@ -274,9 +302,18 @@ describe('UserManagementService — reset de senha', () => {
     const { service, users, refreshTokens, audit } = buildService();
     const target = buildUser({ role: 'operator', passwordHash: 'hashed:antiga' });
     users.seed(target);
-    await refreshTokens.create({ userId: target.id, tokenHash: 'h1', expiresAt: new Date(Date.now() + 86_400_000) });
+    await refreshTokens.create({
+      userId: target.id,
+      tokenHash: 'h1',
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
 
-    const updated = await service.resetPassword('tenant-1', actorOf('administrator'), target.id, 'nova-provisoria');
+    const updated = await service.resetPassword(
+      'tenant-1',
+      actorOf('administrator'),
+      target.id,
+      'nova-provisoria',
+    );
 
     expect(updated.mustChangePassword).toBe(true);
     expect((await users.findById(target.id))?.passwordHash).toBe('hashed:nova-provisoria');
@@ -293,7 +330,12 @@ describe('UserManagementService — reset de senha', () => {
     users.seed(target);
 
     await expect(
-      service.resetPassword('tenant-1', { userId: target.id, role: 'administrator' }, target.id, 'nova-provisoria'),
+      service.resetPassword(
+        'tenant-1',
+        { userId: target.id, role: 'administrator' },
+        target.id,
+        'nova-provisoria',
+      ),
     ).rejects.toBeInstanceOf(SelfManagementError);
   });
 

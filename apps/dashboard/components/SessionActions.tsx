@@ -1,5 +1,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { connectSession, disconnectSession, removeSession, ClientApiError } from '@/lib/clientApi';
 import type { WhatsAppSessionStatus } from '@/lib/clientApi';
 
@@ -17,38 +27,54 @@ interface SessionActionsProps {
  * conta própria.
  *
  * `remove` é destrutivo e irreversível (apaga registro + credenciais, ver
- * `WhatsAppSessionService.removeSession()`) — exige confirmação via
- * `window.confirm` (suficiente para este painel interno de operador; não
- * há necessidade de um modal customizado para uma ação de baixa frequência
- * como esta) e, em caso de sucesso, volta para a lista (a sessão removida
- * não existe mais para se ter um detalhe).
+ * `WhatsAppSessionService.removeSession()`). Milestone 6, Bloco M6E-1:
+ * confirmação migrada de `window.confirm` para `Dialog` (Radix, no padrão
+ * visual da marca) — mesma régua de "ação destrutiva pede confirmação
+ * explícita" (PRODUCT_PRINCIPLES.md §4.3), agora consistente com o resto
+ * do produto. Em caso de sucesso, volta para a lista (a sessão removida não
+ * existe mais para se ter um detalhe).
  */
 export default function SessionActions({ sessionName, status }: SessionActionsProps): JSX.Element {
   const router = useRouter();
-  const [pendingAction, setPendingAction] = useState<'connect' | 'disconnect' | 'remove' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'connect' | 'disconnect' | 'remove' | null>(
+    null,
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  async function run(action: 'connect' | 'disconnect' | 'remove'): Promise<void> {
+  async function run(action: 'connect' | 'disconnect'): Promise<void> {
     setPendingAction(action);
     setErrorMessage(null);
     try {
       if (action === 'connect') {
         await connectSession(sessionName);
-      } else if (action === 'disconnect') {
-        await disconnectSession(sessionName);
       } else {
-        if (!window.confirm(`Remover a sessão "${sessionName}" definitivamente? Essa ação não pode ser desfeita.`)) {
-          setPendingAction(null);
-          return;
-        }
-        await removeSession(sessionName);
-        await router.push('/');
-        return;
+        await disconnectSession(sessionName);
       }
     } catch (error) {
-      const message = error instanceof ClientApiError ? 'Falha ao executar a ação. Tente novamente.' : 'Falha de rede.';
+      const message =
+        error instanceof ClientApiError
+          ? 'Falha ao executar a ação. Tente novamente.'
+          : 'Falha de rede.';
       setErrorMessage(message);
     } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function confirmRemove(): Promise<void> {
+    setPendingAction('remove');
+    setErrorMessage(null);
+    try {
+      await removeSession(sessionName);
+      setConfirmOpen(false);
+      await router.push('/');
+    } catch (error) {
+      const message =
+        error instanceof ClientApiError
+          ? 'Falha ao executar a ação. Tente novamente.'
+          : 'Falha de rede.';
+      setErrorMessage(message);
       setPendingAction(null);
     }
   }
@@ -59,35 +85,60 @@ export default function SessionActions({ sessionName, status }: SessionActionsPr
     <div className="flex flex-col gap-2">
       <div className="flex gap-2">
         {status === 'disconnected' && (
-          <button
-            type="button"
-            onClick={() => void run('connect')}
-            disabled={busy}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-          >
+          <Button type="button" size="cta" onClick={() => void run('connect')} disabled={busy}>
             {pendingAction === 'connect' ? 'Conectando…' : 'Reconectar'}
-          </button>
+          </Button>
         )}
         {status !== 'disconnected' && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="cta"
             onClick={() => void run('disconnect')}
             disabled={busy}
-            className="rounded-md bg-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pendingAction === 'disconnect' ? 'Desconectando…' : 'Desconectar'}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="button"
-          onClick={() => void run('remove')}
+          variant="ghost"
+          size="cta"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => setConfirmOpen(true)}
           disabled={busy}
-          className="rounded-md bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {pendingAction === 'remove' ? 'Removendo…' : 'Remover definitivamente'}
-        </button>
+          Remover sessão
+        </Button>
       </div>
-      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover a sessão &ldquo;{sessionName}&rdquo;?</DialogTitle>
+            <DialogDescription>
+              Essa ação apaga o registro da sessão e suas credenciais de conexão. Não pode ser
+              desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={pendingAction === 'remove'}>
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void confirmRemove()}
+              disabled={pendingAction === 'remove'}
+            >
+              {pendingAction === 'remove' ? 'Removendo…' : 'Remover definitivamente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

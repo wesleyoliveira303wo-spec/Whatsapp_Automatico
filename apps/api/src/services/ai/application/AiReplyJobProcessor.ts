@@ -1,12 +1,35 @@
+import { randomUUID } from 'crypto';
+
 import { Message } from '../../conversations/domain/entities/Message';
 import { ConversationRepository } from '../../conversations/domain/repositories/ConversationRepository';
 import { MessageRepository } from '../../conversations/domain/repositories/MessageRepository';
 import { shouldAutoRespond } from '../../conversations/domain/policies/shouldAutoRespond';
+import { shouldAiUpdateStage } from '../../conversations/domain/policies/shouldAiUpdateStage';
 import { AiReplyJobData } from '../../conversations/infrastructure/queues/AiReplyQueue';
 import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/OutboundMessageDispatcher';
 import { Logger } from '../../../shared/domain/Logger';
 import { PromptVersion } from '../domain/PromptVersion';
+import { splitReplyIntoParagraphs } from '../domain/messageSplitting';
 import { ConversationAiService } from './ConversationAiService';
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Mensagem enviada ao cliente quando a IA NÃO conseguiu gerar uma resposta
+ * enviável (resposta vazia, reprovada na validação, ou erro do provider) —
+ * antes de escalar para um humano. Substitui o silêncio anterior: em vez de a
+ * conversa sumir para a fila sem o cliente saber de nada, ele recebe um aviso
+ * educado de que está sendo encaminhado. Texto genérico de propósito (não
+ * revela o motivo técnico da falha ao cliente). Overridável pelo construtor
+ * (mesmo padrão de `DEFAULT_HISTORY_LIMIT`) — pode virar configurável por
+ * tenant no futuro (Base de Conhecimento), sem mudar esta classe.
+ */
+const DEFAULT_HUMAN_HANDOFF_MESSAGE =
+  'Desculpe, não consegui responder a sua mensagem agora. Já estou encaminhando você para um de nossos atendentes, que vai continuar o seu atendimento em instantes. 🙏';
 
 /**
  * Valor DEFAULT de quantas mensagens recentes da conversa entram no
@@ -22,6 +45,17 @@ import { ConversationAiService } from './ConversationAiService';
  * não do levantamento arquitetural (que não previu esta variável).
  */
 const DEFAULT_HISTORY_LIMIT = 20;
+
+/**
+ * Pausa entre o envio de cada parágrafo de uma resposta dividida (ver
+ * `splitReplyIntoParagraphs`) — sem ela, os balões chegariam praticamente
+ * simultâneos no WhatsApp do cliente (a fila `whatsapp-outbound` processa um
+ * job por vez, mas quase sem intervalo natural entre eles), o que não lê
+ * como alguém digitando e ainda corre o risco de parecer um disparo em
+ * massa. 900ms é uma pausa perceptível mas curta — não uma escolha validada
+ * por dado real, mesmo status de `DEFAULT_HISTORY_LIMIT` acima.
+ */
+const DEFAULT_PARAGRAPH_DELAY_MS = 900;
 
 /**
  * Orquestra o processamento de UM job da fila `ai-reply` — Milestone 3,
@@ -54,14 +88,24 @@ const DEFAULT_HISTORY_LIMIT = 20;
  * 4. Chama `ConversationAiService.generateReply()` — a MESMA instância é
  *    responsável por gravar o `AiInteraction` em toda tentativa (Bloco 3b),
  *    então esta classe não grava nada por conta própria.
- * 5. Só quando `result.status === 'success'`, despacha via
- *    `OutboundMessageDispatcher.dispatch()` (ADR #54, decisão 1) — usando
+ * 5. Só quando `result.status === 'success'`, divide `result.content` em
+ *    parágrafos (`splitReplyIntoParagraphs`, Fase 1/2026-08-07) e despacha
+ *    UM `OutboundMessageDispatcher.dispatch()` (ADR #54, decisão 1) por
+ *    parágrafo, em sequência, com uma pausa curta entre eles
+ *    (`paragraphDelayMs`) — só o primeiro comando carrega
  *    `result.aiInteractionId` (Bloco 4, ver `ConversationAiService`) como
- *    `aiInteractionId` do comando. Nos caminhos `'validation_rejected'`/
+ *    `aiInteractionId`. Nos caminhos `'validation_rejected'`/
  *    `'provider_error'`, não há nada para enviar; a auditoria já foi
  *    gravada pelo próprio `ConversationAiService`, então esta classe só
  *    loga um aviso (nível `warn`) e retorna — não lança, não repete a
  *    gravação.
+ * 6. Pipeline de CRM (Milestone 6, Bloco M6H-5, 2026-07-30): depois do
+ *    dispatch, se `result.suggestedStage` veio preenchido E a policy
+ *    `shouldAiUpdateStage(conversation, suggestedStage)` permitir (o estágio
+ *    sugerido não é uma regressão no funil — ADR #89), grava o novo `stage`
+ *    via `ConversationRepository.updateStage(..., 'ai')`. Desde a ADR #89 a
+ *    IA reclassifica SEMPRE, inclusive conversas já corrigidas à mão; o que
+ *    ela nunca faz é mover um card para trás.
  *
  * FRONTEIRA DA ADR #54 (achado crítico do levantamento pré-Bloco 4): esta
  * classe NUNCA importa, direta ou indiretamente,
@@ -94,6 +138,9 @@ export class AiReplyJobProcessor {
     private readonly promptVersion: PromptVersion,
     private readonly logger: Logger,
     private readonly historyLimit: number = DEFAULT_HISTORY_LIMIT,
+    private readonly humanHandoffMessage: string = DEFAULT_HUMAN_HANDOFF_MESSAGE,
+    private readonly paragraphDelayMs: number = DEFAULT_PARAGRAPH_DELAY_MS,
+    private readonly sleepFn: (ms: number) => Promise<void> = defaultSleep,
   ) {}
 
   async process(data: AiReplyJobData): Promise<void> {
@@ -104,10 +151,13 @@ export class AiReplyJobProcessor {
     }
 
     if (!shouldAutoRespond(conversation)) {
-      this.logger.info('Job ai-reply descartado: conversa não está mais em modo bot (re-checagem)', {
-        ...data,
-        status: conversation.status,
-      });
+      this.logger.info(
+        'Job ai-reply descartado: conversa não está mais em modo bot (re-checagem)',
+        {
+          ...data,
+          status: conversation.status,
+        },
+      );
       return;
     }
 
@@ -123,37 +173,165 @@ export class AiReplyJobProcessor {
       data.conversationId,
       chronological,
       this.promptVersion,
+      conversation.sessionName,
+      // Fase 1, Bloco F1.4 (2026-08-01): vincula o AiInteraction gerado à
+      // mensagem inbound que o originou (a pergunta do cliente).
+      data.messageId,
     );
 
     if (result.status !== 'success') {
-      this.logger.warn('Job ai-reply não gerou uma resposta enviável', {
-        ...data,
-        resultStatus: result.status,
-      });
+      // A IA não conseguiu gerar uma resposta enviável (cota do provider
+      // esgotada, erro de rede/API, ou resposta reprovada na validação).
+      //
+      // Reforma do escalonamento (2026-07-25, pedido do fundador): em vez de
+      // colocar a conversa em `status: 'human'` sem dono — o que tirava a IA
+      // do circuito e podia deixar o cliente sem NENHUMA resposta até um
+      // atendente aparecer —, apenas SINALIZAMOS que um humano precisa dar
+      // uma olhada (`flagNeedsHumanAttention`, dispara o alerta/som/contador
+      // na Dashboard). `status` continua `'bot'`: a IA segue tentando
+      // responder as PRÓXIMAS mensagens desta conversa normalmente. A
+      // auditoria da falha já foi gravada pelo `ConversationAiService` (toda
+      // tentativa gera um `AiInteraction`).
+      this.logger.warn(
+        'Job ai-reply não gerou uma resposta enviável — avisando o cliente e sinalizando para um humano',
+        {
+          ...data,
+          resultStatus: result.status,
+        },
+      );
+      // Avisa o cliente educadamente que está sendo encaminhado — nunca
+      // deixá-lo no silêncio (pedido do usuário). O envio é resiliente
+      // (try/catch dentro do método): se o WhatsApp estiver fora, o
+      // sinalizador é gravado mesmo assim.
+      await this.sendHumanHandoffNotice(data.tenantId, data.conversationId);
+      await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'falha_da_ia');
       return;
     }
 
-    await this.outboundMessageDispatcher.dispatch({
-      tenantId: data.tenantId,
-      conversationId: data.conversationId,
-      aiInteractionId: result.aiInteractionId,
-      content: result.content,
-    });
-
-    // Feature N2 (auto-escalonamento): a IA sinalizou que quer passar para um
-    // humano. Depois de enviar a mensagem de aviso (acima), coloca a conversa
-    // em atendimento humano SEM dono (`assignedToUserId: null`) — ela entra na
-    // fila de "aguardando humano" (dispara a notificação na Dashboard) e a IA
-    // PARA de responder (`shouldAutoRespond` volta false), até um atendente
-    // assumir ou devolver ao bot. Depois do dispatch de propósito: se o envio
-    // falhar e o job for retentado, não escalamos uma conversa cuja mensagem de
-    // aviso nunca saiu.
-    if (result.escalate) {
-      await this.conversationRepository.updateStatus(data.tenantId, data.conversationId, 'human', { assignedToUserId: null });
-      this.logger.info('Conversa auto-escalada para atendimento humano pela IA', {
+    // Fase 1 (pedido do fundador, 2026-08-07): a resposta é dividida em
+    // parágrafos e enviada como VÁRIAS mensagens outbound em sequência, não
+    // um balão único de texto grande — ver docstring de
+    // `splitReplyIntoParagraphs`. Cada parágrafo vira um comando outbound
+    // distinto; só o PRIMEIRO carrega `aiInteractionId` (preserva o `jobId`
+    // de idempotência original — decisão D2 — e o vínculo 1:1 gravado por
+    // `linkMessage`, ver `OutboundCommandConsumer`). Os demais usam uma
+    // `idempotencyKey` derivada e determinística (`aiInteractionId:índice`)
+    // como `jobId` próprio — nunca colide com o primeiro nem entre si.
+    const paragraphs = splitReplyIntoParagraphs(result.content);
+    for (let index = 0; index < paragraphs.length; index += 1) {
+      if (index > 0) {
+        await this.sleepFn(this.paragraphDelayMs);
+      }
+      await this.outboundMessageDispatcher.dispatch({
         tenantId: data.tenantId,
         conversationId: data.conversationId,
+        content: paragraphs[index],
+        ...(index === 0
+          ? { aiInteractionId: result.aiInteractionId }
+          : { idempotencyKey: `${result.aiInteractionId}:${index}` }),
       });
     }
+
+    // Feature N2 (auto-escalonamento), reformada em 2026-07-25: a IA
+    // sinalizou (marcador) que um humano deveria dar uma olhada. Depois de
+    // enviar sua PRÓPRIA resposta (que já inclui o aviso ao cliente — acima),
+    // apenas MARCA a conversa como precisando de atenção (`escalatedAt`),
+    // SEM mudar `status`/`assignedToUserId` — a IA continua respondendo
+    // normalmente enquanto ninguém assume; só uma ação humana explícita
+    // (`ConversationsService.escalateConversation`, "Assumir conversa") tira
+    // a IA do circuito. Depois do dispatch de propósito: se o envio falhar e
+    // o job for retentado, não sinalizamos uma conversa cuja mensagem de
+    // aviso nunca saiu.
+    if (result.escalationReason) {
+      await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'decisao_da_ia');
+    }
+
+    // Pipeline de CRM (Milestone 6, Bloco M6H-5, 2026-07-30): aplica o
+    // estágio sugerido pela IA, na MESMA condição de `shouldAutoRespond` já
+    // garantida pela re-checagem do topo de `process()` (`conversation.status
+    // === 'bot'`) — nenhuma checagem adicional de status é necessária aqui.
+    // A policy `shouldAiUpdateStage` cobre a ÚNICA condição extra: a IA só
+    // escreve se `stageSetBy` ainda for `'ai'` (nunca sobrescreve uma
+    // correção manual). Depois do dispatch, de propósito (mesmo racional do
+    // `escalate` acima): se o envio falhar e o job for retentado, melhor não
+    // ter mudado o estágio de uma resposta que nunca chegou ao cliente.
+    const podeAtualizarEstagio = result.suggestedStage
+      ? shouldAiUpdateStage(conversation, result.suggestedStage)
+      : false;
+
+    if (result.suggestedStage && podeAtualizarEstagio) {
+      await this.conversationRepository.updateStage(
+        data.tenantId,
+        data.conversationId,
+        result.suggestedStage,
+        'ai',
+      );
+    }
+  }
+
+  /**
+   * Envia ao cliente o aviso educado de encaminhamento para atendimento humano
+   * (`humanHandoffMessage`) — usado só no caminho de FALHA da IA (resposta
+   * vazia/reprovada/erro do provider), NÃO na auto-escalação por marcador
+   * (nesse caso a própria IA já escreveu uma mensagem de despedida). Usa
+   * `idempotencyKey` (não `aiInteractionId`): esta mensagem é do SISTEMA, não
+   * de uma tentativa de IA bem-sucedida — mesmo mecanismo das mensagens de
+   * operador (N2).
+   *
+   * RESILIÊNCIA (try/catch): se o envio falhar (ex.: WhatsApp momentaneamente
+   * indisponível), NÃO propaga — o escalonamento para humano precisa acontecer
+   * de qualquer forma (melhor a conversa entrar na fila de atendimento do que o
+   * job falhar e reprocessar, o que poderia reenviar o aviso). A falha do envio
+   * fica registrada no log.
+   */
+  private async sendHumanHandoffNotice(tenantId: string, conversationId: string): Promise<void> {
+    try {
+      await this.outboundMessageDispatcher.dispatch({
+        tenantId,
+        conversationId,
+        idempotencyKey: randomUUID(),
+        content: this.humanHandoffMessage,
+      });
+    } catch (error) {
+      this.logger.warn(
+        'Falha ao enviar aviso de encaminhamento para humano (escalonamento segue mesmo assim)',
+        {
+          tenantId,
+          conversationId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  /**
+   * Sinaliza que a conversa precisa de atenção humana (`Conversation.
+   * escalatedAt`), SEM tirar a IA do circuito — `status`/`assignedToUserId`
+   * não mudam aqui. Dispara o alerta/badge/som "aguardando atendente" na
+   * Dashboard (`useWaitingForHuman`); a IA continua respondendo normalmente
+   * até um atendente clicar "Assumir conversa". Sempre GRAVA um timestamp
+   * novo, mesmo numa conversa já sinalizada — é assim que uma escalada
+   * REPETIDA (outra pergunta que a IA também não soube responder) dispara um
+   * novo alerta, não só a primeira. Ponto único de escalonamento, usado por
+   * dois caminhos:
+   *   - `decisao_da_ia`: a IA emitiu o marcador de escalonamento (feature N2).
+   *   - `falha_da_ia`: a geração falhou (cota, provider, validação) e não há o
+   *     que enviar — melhor avisar um humano do que deixar o lead no vácuo.
+   * `reason` entra no log só para diagnóstico (por que a conversa escalou).
+   */
+  private async flagNeedsHumanAttention(
+    tenantId: string,
+    conversationId: string,
+    reason: 'decisao_da_ia' | 'falha_da_ia',
+  ): Promise<void> {
+    await this.conversationRepository.flagNeedsHumanAttention(tenantId, conversationId, new Date());
+    this.logger.info(
+      'Conversa sinalizada como precisando de atenção humana (IA continua respondendo)',
+      {
+        tenantId,
+        conversationId,
+        reason,
+      },
+    );
   }
 }

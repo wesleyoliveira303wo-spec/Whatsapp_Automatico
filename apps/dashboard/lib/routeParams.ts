@@ -10,7 +10,11 @@ import type { NextApiResponse } from 'next';
  * `apps/api` (Bloco 7): validar e já responder no caminho de falha, sem
  * repetir esse guard em cada rota.
  */
-export function requireStringParam(value: string | string[] | undefined, name: string, res: NextApiResponse): string | undefined {
+export function requireStringParam(
+  value: string | string[] | undefined,
+  name: string,
+  res: NextApiResponse,
+): string | undefined {
   if (typeof value !== 'string' || value.trim() === '') {
     res.status(400).json({ error: 'invalid_params', message: `${name} não pode ser vazio` });
     return undefined;

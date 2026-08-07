@@ -1,4 +1,8 @@
-import { AiProvider, AiGenerationRequest, AiGenerationResult } from '../../../../src/services/ai/domain/providers/AiProvider';
+import {
+  AiProvider,
+  AiGenerationRequest,
+  AiGenerationResult,
+} from '../../../../src/services/ai/domain/providers/AiProvider';
 import { AiProviderFactory } from '../../../../src/services/ai/domain/providers/AiProviderFactory';
 import { AiProviderName } from '../../../../src/services/ai/domain/providers/AiProviderName';
 

@@ -15,7 +15,10 @@ describe('GET /api/ai-interactions (Milestone 3, Bloco 6 - D22/D28)', () => {
   });
 
   it('repassa conversationId/limit da query (conversationId presente filtra por conversa - D13 do Bloco 5)', async () => {
-    (callAiInteractionsApi as jest.Mock).mockResolvedValue({ status: 200, body: { interactions: [] } });
+    (callAiInteractionsApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { interactions: [] },
+    });
     const req = createFakeReq({ method: 'GET', query: { conversationId: 'conv-1', limit: '20' } });
     const res = createFakeRes();
 
@@ -28,7 +31,10 @@ describe('GET /api/ai-interactions (Milestone 3, Bloco 6 - D22/D28)', () => {
   });
 
   it('funciona sem conversationId (lista o tenant inteiro - D13, conversationId opcional)', async () => {
-    (callAiInteractionsApi as jest.Mock).mockResolvedValue({ status: 200, body: { interactions: [] } });
+    (callAiInteractionsApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { interactions: [] },
+    });
     const req = createFakeReq({ method: 'GET', query: {} });
     const res = createFakeRes();
 

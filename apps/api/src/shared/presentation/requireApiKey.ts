@@ -57,7 +57,11 @@ export interface RequestWithTenant extends Request {
  * bounded context, este arquivo só conhece as portas (`ApiKeyHasher`,
  * `TenantRepository`).
  */
-export function createRequireApiKey(apiKeyHasher: ApiKeyHasher, tenantRepository: TenantRepository, logger: Logger): RequestHandler {
+export function createRequireApiKey(
+  apiKeyHasher: ApiKeyHasher,
+  tenantRepository: TenantRepository,
+  logger: Logger,
+): RequestHandler {
   return function requireApiKey(req: Request, res: Response, next: NextFunction): void {
     void (async () => {
       try {
@@ -66,7 +70,9 @@ export function createRequireApiKey(apiKeyHasher: ApiKeyHasher, tenantRepository
           logger.warn('Requisição recusada: header X-API-Key ausente', {
             headers: sanitizeHeaders(req.headers as Record<string, unknown>),
           });
-          res.status(401).json({ error: 'missing_api_key', message: 'Header X-API-Key é obrigatório.' });
+          res
+            .status(401)
+            .json({ error: 'missing_api_key', message: 'Header X-API-Key é obrigatório.' });
           return;
         }
 
@@ -81,11 +87,17 @@ export function createRequireApiKey(apiKeyHasher: ApiKeyHasher, tenantRepository
 
         const tenantIdFromPath = req.params.tenantId;
         if (tenantIdFromPath !== undefined && tenantIdFromPath !== tenant.id) {
-          logger.warn('Requisição recusada: tenant autenticado não corresponde ao tenantId da URL', {
-            authenticatedTenantId: tenant.id,
-            requestedTenantId: tenantIdFromPath,
+          logger.warn(
+            'Requisição recusada: tenant autenticado não corresponde ao tenantId da URL',
+            {
+              authenticatedTenantId: tenant.id,
+              requestedTenantId: tenantIdFromPath,
+            },
+          );
+          res.status(403).json({
+            error: 'tenant_mismatch',
+            message: 'A API key não autoriza acesso a este tenant.',
           });
-          res.status(403).json({ error: 'tenant_mismatch', message: 'A API key não autoriza acesso a este tenant.' });
           return;
         }
 

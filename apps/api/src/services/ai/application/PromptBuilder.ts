@@ -1,6 +1,53 @@
 import { Message } from '../../conversations/domain/entities/Message';
 import { PromptVersion } from '../domain/PromptVersion';
-import { AiGenerationRequest } from '../domain/providers/AiProvider';
+import { AiGenerationRequest, AiMediaContentPart } from '../domain/providers/AiProvider';
+
+/**
+ * Rótulo factual em português para cada tipo de mídia (Fase 1, Bloco F1.1,
+ * ADR #90) — usado só para o HISTÓRICO que a IA lê, nunca exibido ao
+ * cliente (a Dashboard usa seus próprios rótulos, `MessageBubble.tsx`).
+ */
+const MEDIA_CONTENT_TYPE_LABEL: Record<Exclude<Message['contentType'], 'text'>, string> = {
+  image: 'imagem',
+  audio: 'áudio',
+  video: 'vídeo',
+  document: 'documento',
+  sticker: 'figurinha',
+};
+
+/**
+ * Descreve o conteúdo de UMA mensagem para o histórico enviado à IA (Fase 1,
+ * Bloco F1.1, ADR #90). Nenhum `AiProvider` configurado neste projeto é
+ * multimodal (nem `ClaudeAiProvider` nem `GeminiAiProvider` enviam o binário
+ * da mídia ao modelo) — sem esta função, uma mensagem de mídia sem legenda
+ * viraria um turno de usuário com `content: ''`, invisível para a IA (ela
+ * nunca saberia que o cliente enviou algo).
+ *
+ * A descrição é estritamente FACTUAL ("o cliente enviou uma imagem") —
+ * NUNCA inventa o que a mídia contém (não é possível saber sem visão
+ * computacional, que este projeto não tem). Quando há legenda, ela é
+ * preservada e anexada — é a única informação real disponível sobre o
+ * conteúdo. O prompt base (`PromptVersion`) já instrui a IA a nunca inventar
+ * informação; esta função só garante que o FATO "houve um anexo" chega até
+ * o modelo, para ele reagir com honestidade (ex.: "recebi seu comprovante,
+ * mas não consigo abrir arquivos — pode descrever o que precisa?") em vez de
+ * ignorar a mensagem ou fingir que era texto vazio.
+ */
+/**
+ * Exportada (Redesign 2026-08-05, R5) para reuso por `SummaryPromptBuilder`
+ * — mesmo racional factual documentado abaixo, sem duplicar a função (regra
+ * permanente §17.2 do projeto: "Código duplicado é proibição").
+ */
+export function describeMessageContent(message: Message): string {
+  if (message.contentType === 'text' || !message.media) {
+    return message.content;
+  }
+  const label = MEDIA_CONTENT_TYPE_LABEL[message.contentType];
+  const caption = message.content.trim();
+  return caption
+    ? `[O cliente enviou um(a) ${label} com a legenda: "${caption}"]`
+    : `[O cliente enviou um(a) ${label}, sem legenda]`;
+}
 
 /**
  * Transforma o histórico de uma conversa (`Message[]`, de
@@ -32,36 +79,83 @@ import { AiGenerationRequest } from '../domain/providers/AiProvider';
  * por cima, não afrouxa as regras. Parâmetro opcional de propósito: sem perfil
  * configurado (ou perfil vazio), o comportamento é exatamente o de antes
  * (compatibilidade total), e nenhum chamador antigo precisa mudar.
+ *
+ * INTERPRETAÇÃO DE MÍDIA (Fase 1, Bloco F1.2): `build()` aceita um 4º
+ * parâmetro OPCIONAL, `mediaByMessageId` — um mapa de `Message.id` para o
+ * binário já baixado e codificado em base64 (`AiMediaContentPart`). Este
+ * componente continua sem saber COMO um binário é obtido (baixar da URL do
+ * WhatsApp, decifrar a `mediaKey` — tudo isso é responsabilidade de
+ * `ConversationAiService`/`MediaDownloader`, em `services/whatsapp`); só
+ * decide ONDE anexar o binário já pronto: na mensagem cujo `id` aparece no
+ * mapa. Deliberadamente um `Map` (não um campo em `Message`): o Domain
+ * `Message` não deveria carregar um binário de mídia — isso pertubaria toda
+ * leitura de histórico que não precisa dele (ex.: a UI, que só usa a
+ * referência). Ausência do parâmetro (ou mapa vazio) preserva 100% do
+ * comportamento anterior — nenhuma mensagem recebe `media`, e o fallback
+ * textual de `describeMessageContent` continua sendo a única informação
+ * sobre mídias sem binário anexado (mídias antigas, ou quando o download
+ * falhou).
  */
 export class PromptBuilder {
-  build(messages: Message[], promptVersion: PromptVersion, businessContext?: string): AiGenerationRequest {
+  /**
+   * F1.8 (2026-08-01): novo 5º parâmetro `offHoursContext` — texto de aviso de
+   * horário de atendimento já formatado por `getOffHoursContext()` (domain
+   * `workingHours.ts`). Quando presente, é injetado APÓS o bloco de
+   * "Informações da empresa" (se houver), em seção própria. `undefined` ou
+   * string vazia = sem aviso de horário (comportamento anterior inalterado).
+   */
+  build(
+    messages: Message[],
+    promptVersion: PromptVersion,
+    businessContext?: string,
+    mediaByMessageId?: Map<string, AiMediaContentPart>,
+    offHoursContext?: string,
+  ): AiGenerationRequest {
     return {
-      systemPrompt: this.composeSystemPrompt(promptVersion.systemPrompt, businessContext),
+      systemPrompt: this.composeSystemPrompt(
+        promptVersion.systemPrompt,
+        businessContext,
+        offHoursContext,
+      ),
       messages: messages.map((message) => ({
         role: message.direction === 'inbound' ? 'user' : 'assistant',
-        content: message.content,
+        content: describeMessageContent(message),
+        media: mediaByMessageId?.get(message.id),
       })),
     };
   }
 
   /**
-   * Anexa o contexto do negócio ao prompt base, se houver. `trim()` para
-   * ignorar um texto só de espaços em branco (que não agrega nada ao prompt e
-   * ainda gastaria tokens). O rótulo em português e a instrução curta ("baseie
-   * suas respostas nas informações abaixo") orientam o modelo a tratar o bloco
-   * como a fonte de verdade sobre a empresa, reforçando — não substituindo — a
-   * regra anti-alucinação do prompt base.
+   * Anexa contextos opcionais ao prompt base:
+   *
+   * 1. `businessContext` — texto livre do "Cérebro da IA" (pré-existente).
+   *    `trim()` para ignorar texto só com espaços. O rótulo orienta o modelo
+   *    a tratar o bloco como fonte de verdade sobre a empresa.
+   *
+   * 2. `offHoursContext` — aviso de horário de atendimento (F1.8). Injetado
+   *    depois do `businessContext` quando presente. Nunca substitui as regras
+   *    de segurança do prompt base; só adiciona contexto situacional.
    */
-  private composeSystemPrompt(basePrompt: string, businessContext?: string): string {
-    const trimmed = businessContext?.trim();
-    if (!trimmed) {
-      return basePrompt;
+  private composeSystemPrompt(
+    basePrompt: string,
+    businessContext?: string,
+    offHoursContext?: string,
+  ): string {
+    let prompt = basePrompt;
+
+    const trimmedBusiness = businessContext?.trim();
+    if (trimmedBusiness) {
+      prompt +=
+        '\n\nBaseie suas respostas nas informações da empresa abaixo. ' +
+        'Se a informação necessária não estiver nelas, não invente — siga a regra de encaminhar para um atendente humano.\n\n' +
+        `# Informações da empresa\n${trimmedBusiness}`;
     }
-    return (
-      `${basePrompt}\n\n` +
-      'Baseie suas respostas nas informações da empresa abaixo. ' +
-      'Se a informação necessária não estiver nelas, não invente — siga a regra de encaminhar para um atendente humano.\n\n' +
-      `# Informações da empresa\n${trimmed}`
-    );
+
+    const trimmedOffHours = offHoursContext?.trim();
+    if (trimmedOffHours) {
+      prompt += `\n\n${trimmedOffHours}`;
+    }
+
+    return prompt;
   }
 }

@@ -12,7 +12,10 @@ export const DEFAULT_POLL_INTERVAL_MS = 4000;
  * `refresh` deve ser estável (memoizado com `useCallback`) — todos os hooks de
  * detalhe deste projeto já expõem um `refresh` assim.
  */
-export function usePollingRefresh(refresh: () => void, intervalMs: number = DEFAULT_POLL_INTERVAL_MS): void {
+export function usePollingRefresh(
+  refresh: () => void,
+  intervalMs: number = DEFAULT_POLL_INTERVAL_MS,
+): void {
   useEffect(() => {
     if (typeof document === 'undefined') return;
 

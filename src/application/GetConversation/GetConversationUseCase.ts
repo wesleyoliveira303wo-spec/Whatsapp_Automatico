@@ -14,7 +14,9 @@ export class GetConversationUseCase {
   async execute(input: GetConversationInput): Promise<GetConversationOutput> {
     const conversation = await this.conversationRepo.findById(input.id);
     if (!conversation || conversation.tenantId !== input.tenantId) {
-      throw new ConversationNotFoundError(`Conversation ${input.id} not found for tenant ${input.tenantId}`);
+      throw new ConversationNotFoundError(
+        `Conversation ${input.id} not found for tenant ${input.tenantId}`,
+      );
     }
     return { conversation };
   }

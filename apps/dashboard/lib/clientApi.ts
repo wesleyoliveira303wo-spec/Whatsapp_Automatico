@@ -18,7 +18,8 @@
 
 export type WhatsAppSessionStatus = 'connected' | 'disconnected' | 'connecting';
 
-export type WhatsAppDisconnectReason = 'logged_out' | 'restart_required' | 'connection_lost' | 'timed_out' | 'unknown';
+export type WhatsAppDisconnectReason =
+  'logged_out' | 'restart_required' | 'connection_lost' | 'timed_out' | 'unknown';
 
 export interface WhatsAppSessionSummary {
   id: string;
@@ -95,12 +96,18 @@ export function loginWithPassword(
   email: string,
   password: string,
 ): Promise<{ tenantId: string; user: SessionUserInfo }> {
-  return request('/api/auth/login', { method: 'POST', body: JSON.stringify({ tenantId, email, password }) });
+  return request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ tenantId, email, password }),
+  });
 }
 
 /** Troca da propria senha (M5F-2). O BFF reloga sozinho — depois do 204 a sessao continua valida. */
 export function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  return request('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
+  return request('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
 }
 
 /** Quem sou eu (M5F-2): `user: null` = sessao de API key (comportamento pre-M5F). */
@@ -135,7 +142,9 @@ export interface ManagedUserPage {
   nextCursor?: string;
 }
 
-export function fetchUsers(params: { limit?: number; cursor?: string } = {}): Promise<ManagedUserPage> {
+export function fetchUsers(
+  params: { limit?: number; cursor?: string } = {},
+): Promise<ManagedUserPage> {
   const query = new URLSearchParams();
   if (params.limit !== undefined) query.set('limit', String(params.limit));
   if (params.cursor) query.set('cursor', params.cursor);
@@ -143,12 +152,25 @@ export function fetchUsers(params: { limit?: number; cursor?: string } = {}): Pr
   return request(`/api/users${suffix ? `?${suffix}` : ''}`);
 }
 
-export function createUser(email: string, role: ManagedUserRole, temporaryPassword: string): Promise<{ user: ManagedUser }> {
-  return request('/api/users', { method: 'POST', body: JSON.stringify({ email, role, temporaryPassword }) });
+export function createUser(
+  email: string,
+  role: ManagedUserRole,
+  temporaryPassword: string,
+): Promise<{ user: ManagedUser }> {
+  return request('/api/users', {
+    method: 'POST',
+    body: JSON.stringify({ email, role, temporaryPassword }),
+  });
 }
 
-export function changeUserRole(userId: string, role: ManagedUserRole): Promise<{ user: ManagedUser }> {
-  return request(`/api/users/${encodeURIComponent(userId)}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+export function changeUserRole(
+  userId: string,
+  role: ManagedUserRole,
+): Promise<{ user: ManagedUser }> {
+  return request(`/api/users/${encodeURIComponent(userId)}/role`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
 }
 
 export function suspendUser(userId: string): Promise<{ user: ManagedUser }> {
@@ -159,30 +181,248 @@ export function reactivateUser(userId: string): Promise<{ user: ManagedUser }> {
   return request(`/api/users/${encodeURIComponent(userId)}/reactivate`, { method: 'POST' });
 }
 
-export function resetUserPassword(userId: string, temporaryPassword: string): Promise<{ user: ManagedUser }> {
+export function resetUserPassword(
+  userId: string,
+  temporaryPassword: string,
+): Promise<{ user: ManagedUser }> {
   return request(`/api/users/${encodeURIComponent(userId)}/reset-password`, {
     method: 'POST',
     body: JSON.stringify({ temporaryPassword }),
   });
 }
 
-// --- Base de Conhecimento (Nível 1 — o "Cérebro da IA") ---
+// --- Painel de auditoria (Fase 1, Bloco F1.5 — o "livro da portaria") ---
 
-/** DTO do perfil de negócio como a API serializa. `null` quando nunca configurado. Data como string ISO. */
+/** DTO de um evento de auditoria como a API devolve (AuditLog serializado — `occurredAt` como string ISO). */
+export interface AuditLogEntry {
+  id: string;
+  tenantId: string;
+  actorUserId?: string;
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  metadata?: Record<string, unknown>;
+  ip?: string;
+  userAgent?: string;
+  occurredAt: string;
+}
+
+export interface AuditLogPage {
+  entries: AuditLogEntry[];
+  nextCursor?: string;
+}
+
+export function fetchAuditLogs(
+  params: { limit?: number; cursor?: string; actorUserId?: string; action?: string } = {},
+): Promise<AuditLogPage> {
+  const query = new URLSearchParams();
+  if (params.limit !== undefined) query.set('limit', String(params.limit));
+  if (params.cursor) query.set('cursor', params.cursor);
+  if (params.actorUserId) query.set('actorUserId', params.actorUserId);
+  if (params.action) query.set('action', params.action);
+  const suffix = query.toString();
+  return request(`/api/audit-logs${suffix ? `?${suffix}` : ''}`);
+}
+
+// --- Base de Conhecimento (Nível 1 — o "Cérebro da IA") ---
+// Migrada de 1:1 por tenant para 1:1 por SESSÃO (M6H-3, 2026-07-25) — cada
+// WhatsApp pode ter seu próprio contexto de negócio.
+
+/**
+ * DTO do perfil de negócio como a API serializa. `null` quando nunca configurado. Data como string ISO.
+ * F1.8 (2026-08-01): inclui campos de horário de atendimento.
+ */
 export interface AiBusinessProfile {
   tenantId: string;
+  sessionName: string;
   content: string;
+  updatedAt: string;
+  /** F1.8 — `true` quando o aviso de fora do horário está ativo. */
+  offHoursEnabled: boolean;
+  /** F1.8 — texto personalizado enviado ao cliente fora do horário. `null` usa a mensagem padrão. */
+  offHoursMessage: string | null;
+  /** F1.8 — início do horário de atendimento no formato "HH:MM". `null` = não configurado. */
+  workingHoursStart: string | null;
+  /** F1.8 — fim do horário de atendimento no formato "HH:MM". `null` = não configurado. */
+  workingHoursEnd: string | null;
+  /** F1.8 — dias de atendimento como bitmask (bit0=Dom, bit1=Seg…bit6=Sáb). Padrão 62 = Seg–Sex. */
+  workingDays: number;
+  /** F1.8 — timezone IANA (ex.: "America/Sao_Paulo"). */
+  timezone: string;
+}
+
+/** F1.8 — campos opcionais para salvar o perfil. Campos não informados preservam o valor já gravado. */
+export interface SaveAiProfileData {
+  content: string;
+  offHoursEnabled?: boolean;
+  offHoursMessage?: string | null;
+  workingHoursStart?: string | null;
+  workingHoursEnd?: string | null;
+  workingDays?: number;
+  timezone?: string;
+}
+
+/** Lê o perfil da sessão. `profile: null` = ainda não configurado (a UI mostra o textarea vazio). */
+export function fetchAiProfile(
+  sessionName: string,
+): Promise<{ profile: AiBusinessProfile | null }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-profile`);
+}
+
+/** Salva (upsert) o perfil da sessão, incluindo campos de horário de atendimento (F1.8). */
+export function saveAiProfile(
+  sessionName: string,
+  data: SaveAiProfileData,
+): Promise<{ profile: AiBusinessProfile }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-profile`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Respostas rápidas (Fase 1, Bloco F1.9) ---
+// POR SESSÃO (mesmo padrão do Cérebro da IA, ADR #82) — cada WhatsApp pode
+// ter seu próprio conjunto de frases prontas que o atendente insere com um
+// clique no `MessageComposer`. Sem categorização (YAGNI, roadmap F1.9).
+
+export interface QuickReply {
+  id: string;
+  tenantId: string;
+  sessionName: string;
+  content: string;
+  createdAt: string;
   updatedAt: string;
 }
 
-/** Lê o perfil do tenant. `profile: null` = ainda não configurado (a UI mostra o textarea vazio). */
-export function fetchAiProfile(): Promise<{ profile: AiBusinessProfile | null }> {
-  return request('/api/ai-profile');
+/** Lista as respostas rápidas da sessão, ordenadas por criação (mais antigas primeiro). */
+export function fetchQuickReplies(sessionName: string): Promise<{ quickReplies: QuickReply[] }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/quick-replies`);
 }
 
-/** Salva (upsert) o texto do perfil. `content` vazio apaga o "cérebro" (a IA volta ao comportamento genérico). */
-export function saveAiProfile(content: string): Promise<{ profile: AiBusinessProfile }> {
-  return request('/api/ai-profile', { method: 'PUT', body: JSON.stringify({ content }) });
+/** Cria uma nova resposta rápida na sessão. Exige `quick_reply:manage` (administrator/owner). */
+export function createQuickReply(
+  sessionName: string,
+  content: string,
+): Promise<{ quickReply: QuickReply }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/quick-replies`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+
+/** Atualiza o texto de uma resposta rápida existente. Exige `quick_reply:manage`. */
+export function updateQuickReply(
+  sessionName: string,
+  id: string,
+  content: string,
+): Promise<{ quickReply: QuickReply }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/quick-replies/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    },
+  );
+}
+
+/** Remove uma resposta rápida. Exige `quick_reply:manage`. */
+export function deleteQuickReply(sessionName: string, id: string): Promise<void> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/quick-replies/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+// --- Tags livres (Redesign 2026-08-05, R4) ---
+// Catálogo POR SESSÃO (mesmo padrão do Cérebro da IA/Respostas Rápidas,
+// ADR #82). Paleta fixa de 8 cores (decisão do fundador — sem escolha livre
+// de hex), mesma união usada pelo Domain (`apps/api`,
+// `services/tags/domain/entities/Tag.ts`).
+
+export const TAG_COLORS = [
+  'gray',
+  'red',
+  'orange',
+  'amber',
+  'green',
+  'teal',
+  'blue',
+  'purple',
+] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+
+export interface Tag {
+  id: string;
+  tenantId: string;
+  sessionName: string;
+  name: string;
+  color: TagColor;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Lista as tags do catálogo da sessão, ordenadas por nome. */
+export function fetchTags(sessionName: string): Promise<{ tags: Tag[] }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/tags`);
+}
+
+/** Cria uma nova tag no catálogo da sessão. Exige `tag:manage` (administrator/owner). */
+export function createTag(
+  sessionName: string,
+  name: string,
+  color: TagColor,
+): Promise<{ tag: Tag }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/tags`, {
+    method: 'POST',
+    body: JSON.stringify({ name, color }),
+  });
+}
+
+/** Atualiza nome e/ou cor de uma tag existente. Exige `tag:manage`. */
+export function updateTag(
+  sessionName: string,
+  id: string,
+  data: { name?: string; color?: TagColor },
+): Promise<{ tag: Tag }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/tags/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+/** Remove uma tag do catálogo (cascata remove as atribuições existentes). Exige `tag:manage`. */
+export function deleteTag(sessionName: string, id: string): Promise<void> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/tags/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+/** Atribui uma tag existente a uma conversa. Exige `message:send` (operator+, mesma régua de mover card no Pipeline). */
+export function assignConversationTag(conversationId: string, tagId: string): Promise<void> {
+  return request(
+    `/api/conversations/${encodeURIComponent(conversationId)}/tags/${encodeURIComponent(tagId)}`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Remove a atribuição de uma tag a uma conversa (idempotente). Exige `message:send`. */
+export function unassignConversationTag(conversationId: string, tagId: string): Promise<void> {
+  return request(
+    `/api/conversations/${encodeURIComponent(conversationId)}/tags/${encodeURIComponent(tagId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
@@ -209,9 +449,28 @@ export function fetchQrCode(sessionName: string): Promise<{ qrCode: string }> {
   return request(`/api/sessions/${encodeURIComponent(sessionName)}/qrcode`);
 }
 
-export function fetchHistory(sessionName: string, limit?: number): Promise<{ events: WhatsAppSessionEvent[] }> {
+export function fetchHistory(
+  sessionName: string,
+  limit?: number,
+): Promise<{ events: WhatsAppSessionEvent[] }> {
   const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
   return request(`/api/sessions/${encodeURIComponent(sessionName)}/history${query}`);
+}
+
+/**
+ * Milestone 6, Bloco M6H-2b — foto de perfil de um contato desta sessão,
+ * buscada ao vivo (nunca cacheada em disco/banco — ver `WhatsAppProvider.
+ * getProfilePictureUrl` em `apps/api`). `avatarUrl: undefined` é uma
+ * resposta válida ("sem foto"), não um erro — quem chama decide o fallback
+ * visual (ver `ContactAvatar.tsx`).
+ */
+export function fetchContactAvatar(
+  sessionName: string,
+  contactJid: string,
+): Promise<{ avatarUrl?: string }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/contacts/${encodeURIComponent(contactJid)}/avatar`,
+  );
 }
 
 // --- Milestone 3, Bloco 6 (D22): DTOs e funcoes de `conversations`/`ai-interactions` ---
@@ -222,16 +481,83 @@ export function fetchHistory(sessionName: string, limit?: number): Promise<{ eve
 
 export type ConversationStatus = 'bot' | 'human';
 
+/** Pipeline de CRM (Milestone 6, Bloco M6H-5) — mesmo vocabulário de `Conversation['stage']` (`apps/api`). */
+export type ConversationStage = 'new' | 'contacted' | 'negotiating' | 'closed_won' | 'closed_lost';
+
+/** Quem gravou `stage` pela última vez — controla se a IA ainda pode reclassificar (`apps/api`, `shouldAiUpdateStage`). */
+export type ConversationStageSetBy = 'ai' | 'human';
+
 export interface ConversationSummary {
   id: string;
   tenantId: string;
   sessionName: string;
   contactJid: string;
+  /** Nome de exibição do WhatsApp (`pushName`, Milestone 6, Bloco M6H-2b). Ausente = usa `formatContactJid(contactJid)` como fallback. */
+  contactName?: string;
   status: ConversationStatus;
-  /** Dono do atendimento (M5D). Ausente = ninguém assumiu. `status: 'human'` + sem dono = "aguardando humano" (feature N2). */
+  /** Dono do atendimento (M5D). Ausente = ninguém assumiu. */
   assignedToUserId?: string;
+  /**
+   * Reforma do escalonamento (2026-07-25) — presente (ISO 8601) quando a IA
+   * pediu atenção humana e ninguém assumiu ainda; `status` continua `'bot'`
+   * nesse caso (a IA segue respondendo). É ISSO que hoje significa
+   * "aguardando atendente" — não mais `status: 'human'` sem dono (ver
+   * `Conversation.escalatedAt`, `apps/api`).
+   */
+  escalatedAt?: string;
+  /**
+   * Indicador de não lidas (2026-07-25) — quantas mensagens do CONTATO
+   * chegaram desde a última vez que um operador abriu esta conversa pela
+   * Dashboard. `0` = tudo lido. Zerado via `markConversationAsRead()`.
+   */
+  unreadCount: number;
+  /** Pipeline de CRM (Milestone 6, Bloco M6H-5) — estágio no funil de vendas. Toda conversa nasce em `'new'`. */
+  stage: ConversationStage;
+  /** Quem gravou `stage` pela última vez — `'ai'` até uma correção manual, depois disso a IA nunca mais sobrescreve. */
+  stageSetBy: ConversationStageSetBy;
+  /** Quando `stage` foi gravado pela última vez (ISO 8601). */
+  stageUpdatedAt: string;
+  /**
+   * ADR #94 (2026-08-01) — `true` quando a conversa foi marcada como fora
+   * do funil comercial (amigo/família/fornecedor/funcionário no mesmo
+   * número da empresa): a IA para de responder automaticamente, some do
+   * Pipeline e do funil de Analytics, mas o histórico continua acessível.
+   * `false` por padrão.
+   */
+  excludedFromPipeline: boolean;
+  /** Fase 1, Bloco F1.7 (2026-08-01) — trecho da última mensagem (qualquer direção), para a linha da lista de Conversas. Ausente só numa conversa sem nenhuma mensagem ainda. */
+  lastMessagePreview?: string;
+  /** Acompanha `lastMessagePreview` (ISO 8601). */
+  lastMessageAt?: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Redesign 2026-08-05 (R4) — tags livres atribuídas a esta conversa.
+   * Projeção mínima (id/name/color), populada pela API via `include` direto
+   * no Postgres — ver `Conversation.tags`, `apps/api`. Sempre um array
+   * (nunca `undefined`); conversa sem tag nenhuma é `[]`.
+   */
+  tags: ConversationTagSummary[];
+  /**
+   * Redesign 2026-08-05 (R5) — resumo da conversa gerado pela IA sob
+   * demanda (nunca automático). `undefined` até a primeira geração.
+   */
+  aiSummary?: string;
+  /** Acompanha `aiSummary` (ISO 8601) — quando foi gerado pela última vez. */
+  aiSummaryUpdatedAt?: string;
+  /**
+   * Quantas mensagens a conversa tinha no momento da última geração —
+   * comparado com a contagem atual (`useMessagesTimeline`) para acender o
+   * aviso de "desatualizado" na UI. `0` até a primeira geração.
+   */
+  aiSummaryMessageCount: number;
+}
+
+/** Projeção de `Tag` exibida numa `ConversationSummary` — ver docstring do campo `tags` acima. */
+export interface ConversationTagSummary {
+  id: string;
+  name: string;
+  color: TagColor;
 }
 
 export interface ConversationPage {
@@ -241,22 +567,48 @@ export interface ConversationPage {
 
 export type MessageDirection = 'inbound' | 'outbound';
 
+/** Fase 1, Bloco F1.1 (ADR #90) — mesmo vocabulário de `MessageContentType` na API. */
+export type MessageContentType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
+
+/**
+ * Referência a um arquivo de mídia (Fase 1, Bloco F1.1, ADR #90) — nunca o
+ * binário em si. `mediaKeyEncrypted` chega até aqui só porque a API
+ * serializa a entidade `Message` inteira sem DTO (mesmo padrão que já fez
+ * `contactName` "aparecer de graça"); o Dashboard nunca a usa diretamente —
+ * só monta a URL do proxy BFF (`getMessageMediaUrl`), que resolve tudo no
+ * servidor. Nunca logar/exibir este campo.
+ */
+export interface ConversationMessageMedia {
+  mimeType: string;
+  url: string;
+  mediaKeyEncrypted: string;
+  fileName?: string;
+}
+
 export interface ConversationMessage {
   id: string;
   tenantId: string;
   conversationId: string;
   direction: MessageDirection;
   content: string;
+  /** Fase 1, Bloco F1.1 (ADR #90). Ausente em dados antigos (nunca deveria acontecer, mas trata como `'text'` por segurança — ver uso em `MessageBubble`). */
+  contentType?: MessageContentType;
+  /** Presente só quando `contentType` não é `'text'`. */
+  media?: ConversationMessageMedia;
   occurredAt: string;
 }
 
 export type AiInteractionStatus = 'success' | 'validation_rejected' | 'provider_error';
+
+/** Fase 1, Bloco F1.4 (2026-08-01) — distingue por que a IA escalou: não sabia responder vs. o cliente pediu um atendente. Ausente = a IA não escalou nessa interação. */
+export type AiEscalationReason = 'unknown_answer' | 'requested_human';
 
 /** `costUsd` permanece string (nunca number) — restricao herdada do Bloco 3b: valor decimal exato, sem arredondamento de ponto flutuante. */
 export interface AiInteractionSummary {
   id: string;
   tenantId: string;
   conversationId: string;
+  /** Fase 1, Bloco F1.4 — id da `Message` INBOUND que originou esta interação (gravado direto em `record()`, não mais via `linkMessage()` posterior). */
   messageId?: string;
   provider: string;
   model?: string;
@@ -266,6 +618,8 @@ export interface AiInteractionSummary {
   costUsd: string;
   latencyMs: number;
   status: AiInteractionStatus;
+  /** Fase 1, Bloco F1.4 — só presente quando status="success" e a IA emitiu um marcador de escalonamento. */
+  escalationReason?: AiEscalationReason;
   errorMessage?: string;
   createdAt: string;
 }
@@ -274,39 +628,167 @@ export interface FetchConversationsOptions {
   status?: ConversationStatus;
   limit?: number;
   cursor?: string;
+  /** Milestone 6, Bloco M6H-2 — filtra pela sessão de WhatsApp (`WhatsAppConversation.sessionName`). Ausente = todas as sessões do tenant (comportamento antigo). */
+  sessionName?: string;
+  /** Reforma do escalonamento (2026-07-25) — filtra só conversas com `escalatedAt` definido ("aguardando atendente"). */
+  needsHumanAttention?: boolean;
+  /** ADR #94 (2026-08-01) — `true`/`false` filtra dentro/fora do funil comercial; ausente = sem filtro. */
+  excludedFromPipeline?: boolean;
 }
 
-export function fetchConversations(options: FetchConversationsOptions = {}): Promise<ConversationPage> {
+export function fetchConversations(
+  options: FetchConversationsOptions = {},
+): Promise<ConversationPage> {
   const params = new URLSearchParams();
   if (options.status) params.set('status', options.status);
   if (options.limit) params.set('limit', String(options.limit));
   if (options.cursor) params.set('cursor', options.cursor);
+  if (options.sessionName) params.set('sessionName', options.sessionName);
+  if (options.needsHumanAttention) params.set('needsHumanAttention', 'true');
+  if (options.excludedFromPipeline !== undefined)
+    params.set('excludedFromPipeline', String(options.excludedFromPipeline));
   const query = params.toString();
   return request(`/api/conversations${query ? `?${query}` : ''}`);
 }
 
-export function fetchConversationMessages(conversationId: string, limit?: number): Promise<{ messages: ConversationMessage[] }> {
+export function fetchConversationMessages(
+  conversationId: string,
+  limit?: number,
+): Promise<{ messages: ConversationMessage[] }> {
   const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
   return request(`/api/conversations/${encodeURIComponent(conversationId)}/messages${query}`);
 }
 
+/**
+ * URL do proxy BFF de mídia (Fase 1, Bloco F1.1, ADR #90) — deliberadamente
+ * NÃO uma função `fetch`/`request()` como as demais deste arquivo: o
+ * consumidor (`MessageBubble`) usa isto direto em `src=`/`href=` de
+ * `<img>`/`<audio>`/`<video>`/`<a>`, deixando o navegador baixar o binário
+ * nativamente (streaming de verdade, nunca JSON/base64) — mesmo racional já
+ * usado para a foto de perfil (`ContactAvatar`), só que ali a API devolve
+ * uma URL pública do WhatsApp; aqui o próprio BFF É o servidor do binário.
+ */
+export function getMessageMediaUrl(conversationId: string, messageId: string): string {
+  return `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/media`;
+}
+
 export function escalateConversation(conversationId: string): Promise<ConversationSummary> {
-  return request(`/api/conversations/${encodeURIComponent(conversationId)}/escalate`, { method: 'POST' });
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/escalate`, {
+    method: 'POST',
+  });
 }
 
 /** Envia uma mensagem do OPERADOR (feature N2). A API responde 202 (enfileirado); a mensagem aparece na timeline via o tempo real. */
-export function sendConversationMessage(conversationId: string, content: string): Promise<{ status: string }> {
+export function sendConversationMessage(
+  conversationId: string,
+  content: string,
+): Promise<{ status: string }> {
   return request(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
     body: JSON.stringify({ content }),
   });
 }
 
-export function resumeConversation(conversationId: string): Promise<ConversationSummary> {
-  return request(`/api/conversations/${encodeURIComponent(conversationId)}/resume`, { method: 'POST' });
+/**
+ * Envia uma mensagem de MÍDIA do OPERADOR (Fase 1, Bloco F1.3). Deliberadamente
+ * NÃO usa a função `request()` genérica deste arquivo (que sempre serializa
+ * `body` como JSON) — o corpo é o arquivo BRUTO (`File`/`Blob`), e a
+ * categoria/legenda/nome viajam em headers `x-media-*` (mesmo contrato da
+ * rota BFF/API, ver `sendMediaHeadersSchema` no router). Síncrono/200 (não
+ * 202): diferente de `sendConversationMessage`, o operador sabe na hora se o
+ * envio deu certo.
+ */
+export async function sendConversationMedia(
+  conversationId: string,
+  file: File,
+  options: { contentType: 'image' | 'audio' | 'video' | 'document'; caption?: string },
+): Promise<ConversationMessage> {
+  const headers: Record<string, string> = {
+    'content-type': file.type || 'application/octet-stream',
+    'x-media-content-type': options.contentType,
+    'x-media-filename': file.name,
+  };
+  if (options.caption?.trim()) {
+    headers['x-media-caption'] = options.caption.trim();
+  }
+
+  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/media`, {
+    method: 'POST',
+    headers,
+    body: file,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new ClientApiError(response.status, body);
+  }
+  return body as ConversationMessage;
 }
 
-export function fetchAiInteractions(conversationId?: string, limit?: number): Promise<{ interactions: AiInteractionSummary[] }> {
+export function resumeConversation(conversationId: string): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/resume`, {
+    method: 'POST',
+  });
+}
+
+/** Indicador de não lidas (2026-07-25) — zera `unreadCount` ao abrir a conversa. */
+export function markConversationAsRead(conversationId: string): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/read`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Pipeline de CRM (Milestone 6, Bloco M6H-5) — move a conversa para um novo
+ * estágio (board Kanban, arrastar card entre colunas). Grava
+ * `stageSetBy: 'human'` do lado da API, mas isso é só o registro de quem
+ * classificou por último: desde a ADR #89, a IA continua reclassificando
+ * esta conversa nas próximas respostas — o que ela nunca faz é mover o card
+ * para TRÁS no funil, então um avanço manual nunca é desfeito.
+ */
+export function updateConversationStage(
+  conversationId: string,
+  stage: ConversationStage,
+): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/stage`, {
+    method: 'POST',
+    body: JSON.stringify({ stage }),
+  });
+}
+
+/**
+ * Gera (ou atualiza) o resumo da conversa pela IA — Redesign 2026-08-05
+ * (R5). Sempre sob demanda (botão), nunca automático; devolve a
+ * `ConversationSummary` com `aiSummary`/`aiSummaryUpdatedAt`/
+ * `aiSummaryMessageCount` já atualizados. Pode levar alguns segundos
+ * (chamada síncrona à IA) — quem chama deve mostrar um estado de
+ * carregamento.
+ */
+export function generateConversationSummary(conversationId: string): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/summary`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * ADR #94 (2026-08-01) — marca/desmarca uma conversa como fora do funil
+ * comercial. Mesmo padrão de `updateConversationStage` (POST idempotente,
+ * devolve a `ConversationSummary` atualizada).
+ */
+export function setConversationExcludedFromPipeline(
+  conversationId: string,
+  excluded: boolean,
+): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/exclude-from-pipeline`, {
+    method: 'POST',
+    body: JSON.stringify({ excluded }),
+  });
+}
+
+export function fetchAiInteractions(
+  conversationId?: string,
+  limit?: number,
+): Promise<{ interactions: AiInteractionSummary[] }> {
   const params = new URLSearchParams();
   if (conversationId) params.set('conversationId', conversationId);
   if (limit) params.set('limit', String(limit));
@@ -318,6 +800,8 @@ export function fetchAiInteractions(conversationId?: string, limit?: number): Pr
 // Tipos espelham os DTOs de `services/analytics/domain/AnalyticsMetrics.ts`
 // (apps/api). `costUsd` permanece STRING decimal exata (D46) — conversao para
 // numero so na fronteira do grafico (M4E).
+// Migrado de tenant-wide para POR SESSAO — Milestone 6, Bloco M6H-4
+// (2026-07-26): toda funcao de fetch abaixo passou a exigir `sessionName`.
 
 export interface AiUsagePoint {
   date: string;
@@ -354,6 +838,22 @@ export interface SessionStabilityPoint {
   connecting: number;
 }
 
+/** Fase 1, Bloco F1.6 (Analytics de negócio) — contagem atual de conversas por estágio do Pipeline. Chaves lowercase (mesma convenção de `ConversationStage` em `services/conversations`). */
+export interface PipelineFunnelCounts {
+  new: number;
+  contacted: number;
+  negotiating: number;
+  closed_won: number;
+  closed_lost: number;
+}
+
+/** Fase 1, Bloco F1.6 — taxa de escalonamento por dia. */
+export interface EscalationRatePoint {
+  date: string;
+  totalConversations: number;
+  escalatedConversations: number;
+}
+
 export interface AnalyticsRangeQuery {
   from: string;
   to: string;
@@ -364,20 +864,54 @@ function analyticsQuery({ from, to }: AnalyticsRangeQuery): string {
   return `?${params.toString()}`;
 }
 
-export function fetchAiUsageAnalytics(range: AnalyticsRangeQuery): Promise<{ points: AiUsagePoint[] }> {
-  return request(`/api/analytics/ai-usage${analyticsQuery(range)}`);
+export function fetchAiUsageAnalytics(
+  sessionName: string,
+  range: AnalyticsRangeQuery,
+): Promise<{ points: AiUsagePoint[] }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/analytics/ai-usage${analyticsQuery(range)}`,
+  );
 }
 
-export function fetchMessagesAnalytics(range: AnalyticsRangeQuery): Promise<{ points: MessageFlowPoint[] }> {
-  return request(`/api/analytics/messages${analyticsQuery(range)}`);
+export function fetchMessagesAnalytics(
+  sessionName: string,
+  range: AnalyticsRangeQuery,
+): Promise<{ points: MessageFlowPoint[] }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/analytics/messages${analyticsQuery(range)}`,
+  );
 }
 
 export function fetchConversationsAnalytics(
+  sessionName: string,
   range: AnalyticsRangeQuery,
 ): Promise<{ newConversations: NewConversationsPoint[]; statusCounts: ConversationStatusCounts }> {
-  return request(`/api/analytics/conversations${analyticsQuery(range)}`);
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/analytics/conversations${analyticsQuery(range)}`,
+  );
 }
 
-export function fetchSessionStabilityAnalytics(range: AnalyticsRangeQuery): Promise<{ points: SessionStabilityPoint[] }> {
-  return request(`/api/analytics/session-stability${analyticsQuery(range)}`);
+export function fetchSessionStabilityAnalytics(
+  sessionName: string,
+  range: AnalyticsRangeQuery,
+): Promise<{ points: SessionStabilityPoint[] }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/analytics/session-stability${analyticsQuery(range)}`,
+  );
+}
+
+/** Fase 1, Bloco F1.6 — retrato atual (sem faixa de tempo), mesmo racional de `fetchConversationsAnalytics.statusCounts`. */
+export function fetchPipelineFunnelAnalytics(
+  sessionName: string,
+): Promise<{ funnel: PipelineFunnelCounts }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/analytics/pipeline`);
+}
+
+export function fetchEscalationRateAnalytics(
+  sessionName: string,
+  range: AnalyticsRangeQuery,
+): Promise<{ points: EscalationRatePoint[] }> {
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/analytics/escalation-rate${analyticsQuery(range)}`,
+  );
 }

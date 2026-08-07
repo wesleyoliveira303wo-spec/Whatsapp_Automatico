@@ -19,7 +19,9 @@ describe('PrismaTenantRepository', () => {
       const result = await repo.findById('tenant-inexistente');
 
       expect(result).toBeNull();
-      expect(prisma.tenant.findUnique).toHaveBeenCalledWith({ where: { id: 'tenant-inexistente' } });
+      expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+        where: { id: 'tenant-inexistente' },
+      });
     });
 
     it('deve mapear a linha encontrada para a entidade Tenant (id, name, apiKeyHash)', async () => {
@@ -42,7 +44,11 @@ describe('PrismaTenantRepository', () => {
 
     it('deve mapear apiKeyHash null corretamente (tenant sem chave emitida)', async () => {
       const prisma = createFakePrisma();
-      prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: null });
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: 'tenant-1',
+        name: 'Empresa Teste',
+        apiKeyHash: null,
+      });
       const repo = new PrismaTenantRepository(prisma as never);
 
       const result = await repo.findById('tenant-1');
@@ -60,12 +66,18 @@ describe('PrismaTenantRepository', () => {
       const result = await repo.findByApiKeyHash('hash-desconhecido');
 
       expect(result).toBeNull();
-      expect(prisma.tenant.findUnique).toHaveBeenCalledWith({ where: { apiKeyHash: 'hash-desconhecido' } });
+      expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+        where: { apiKeyHash: 'hash-desconhecido' },
+      });
     });
 
     it('deve retornar o tenant dono do hash', async () => {
       const prisma = createFakePrisma();
-      prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: 'hash-abc' });
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: 'tenant-1',
+        name: 'Empresa Teste',
+        apiKeyHash: 'hash-abc',
+      });
       const repo = new PrismaTenantRepository(prisma as never);
 
       const result = await repo.findByApiKeyHash('hash-abc');

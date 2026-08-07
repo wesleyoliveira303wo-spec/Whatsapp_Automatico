@@ -36,9 +36,11 @@ export interface DashboardSession {
 }
 
 /** A sessao e do plano PESSOA (tokens)? Type guard usado por `requireSession`/`apiClient`. */
-export function isUserSession(
-  session: DashboardSession,
-): session is DashboardSession & { accessToken: string; refreshToken: string; user: DashboardSessionUser } {
+export function isUserSession(session: DashboardSession): session is DashboardSession & {
+  accessToken: string;
+  refreshToken: string;
+  user: DashboardSessionUser;
+} {
   return typeof session.accessToken === 'string' && typeof session.refreshToken === 'string';
 }
 
@@ -99,7 +101,9 @@ export function clearSessionCookie(res: NextApiResponse): void {
  * completo continua satisfazendo esse tipo mais estreito sem nenhuma
  * mudança de comportamento.
  */
-export function readSessionFromRequest(req: Pick<NextApiRequest, 'cookies'>): DashboardSession | null {
+export function readSessionFromRequest(
+  req: Pick<NextApiRequest, 'cookies'>,
+): DashboardSession | null {
   const raw = req.cookies[SESSION_COOKIE_NAME];
   if (!raw) {
     return null;
@@ -165,7 +169,9 @@ export function getAccessTokenExpiration(accessToken: string): number | null {
     return null;
   }
   try {
-    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as { exp?: unknown };
+    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8')) as {
+      exp?: unknown;
+    };
     return typeof payload.exp === 'number' ? payload.exp : null;
   } catch {
     return null;
@@ -192,16 +198,23 @@ function needsRefresh(session: DashboardSession & { accessToken: string }, nowMs
  * runtime), entao o import de valor abaixo nao forma ciclo real.
  */
 async function refreshUserSession(
-  session: DashboardSession & { accessToken: string; refreshToken: string; user: DashboardSessionUser },
+  session: DashboardSession & {
+    accessToken: string;
+    refreshToken: string;
+    user: DashboardSessionUser;
+  },
 ): Promise<DashboardSession | null> {
   const { getApiBaseUrl } = await import('./apiClient');
   let response: Response;
   try {
-    response = await fetch(new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/refresh`, getApiBaseUrl()), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: session.refreshToken }),
-    });
+    response = await fetch(
+      new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/refresh`, getApiBaseUrl()),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: session.refreshToken }),
+      },
+    );
   } catch {
     return null;
   }
@@ -237,7 +250,10 @@ async function refreshUserSession(
  * front manda para o login. Sessao de MAQUINA (API key) passa direto, como
  * sempre (zero mudanca de comportamento para o fluxo atual).
  */
-export async function requireSession(req: NextApiRequest, res: NextApiResponse): Promise<DashboardSession | null> {
+export async function requireSession(
+  req: NextApiRequest,
+  res: NextApiResponse,
+): Promise<DashboardSession | null> {
   const session = readSessionFromRequest(req);
   if (!session) {
     res.status(401).json({ error: 'not_authenticated' });

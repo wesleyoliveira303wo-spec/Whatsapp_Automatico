@@ -1,24 +1,43 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { AiBusinessProfile } from '../../domain/entities/AiBusinessProfile';
-import { AiBusinessProfileRepository } from '../../domain/repositories/AiBusinessProfileRepository';
+import {
+  AiBusinessProfileRepository,
+  AiProfileSaveData,
+} from '../../domain/repositories/AiBusinessProfileRepository';
 
 /**
  * Shape mínimo lido do banco — mesmo racional dos demais repositórios Prisma
  * deste projeto: só os campos que este repositório de fato mapeia de volta ao
  * Domain, não o tipo completo gerado pelo Prisma.
+ *
+ * F1.8 (2026-08-01): inclui os 6 campos de horário de atendimento.
  */
 interface AiBusinessProfileRow {
   tenantId: string;
+  sessionName: string;
   content: string;
   updatedAt: Date;
+  offHoursEnabled: boolean;
+  offHoursMessage: string | null;
+  workingHoursStart: string | null;
+  workingHoursEnd: string | null;
+  workingDays: number;
+  timezone: string;
 }
 
 function toDomain(row: AiBusinessProfileRow): AiBusinessProfile {
   return {
     tenantId: row.tenantId,
+    sessionName: row.sessionName,
     content: row.content,
     updatedAt: row.updatedAt,
+    offHoursEnabled: row.offHoursEnabled,
+    offHoursMessage: row.offHoursMessage,
+    workingHoursStart: row.workingHoursStart,
+    workingHoursEnd: row.workingHoursEnd,
+    workingDays: row.workingDays,
+    timezone: row.timezone,
   };
 }
 
@@ -31,30 +50,62 @@ function toDomain(row: AiBusinessProfileRow): AiBusinessProfile {
  * `ts-jest` erasa o import inteiro em transpilação (`isolatedModules`), sem
  * disparar `require('@prisma/client')` em runtime.
  *
- * `upsert` por `tenantId` (que é `@unique` no schema): a primeira gravação
- * cria a linha, as seguintes atualizam o `content` — a relação é 1:1 com
- * Tenant, então nunca há mais de uma linha por empresa. `create`/`update`
- * carregam o mesmo `content`; o `updatedAt` é gerenciado pelo Prisma
- * (`@updatedAt`).
+ * `upsert` por `(tenantId, sessionName)` (chave composta `@@unique` no
+ * schema desde a Milestone 6, Bloco M6H-3): a primeira gravação para aquela
+ * sessão cria a linha, as seguintes atualizam todos os campos informados —
+ * nunca há mais de uma linha por `(tenant, sessão)`. O `updatedAt` é
+ * gerenciado pelo Prisma (`@updatedAt`).
  *
- * NOTA DE VERIFICAÇÃO (mesma limitação já registrada para os demais arquivos
- * Prisma): depende de `npx prisma generate` (Client, para o tipo
- * `prisma.aiBusinessProfile` existir) e `npx prisma migrate deploy`/`dev` (a
- * tabela) terem rodado.
+ * F1.8 (2026-08-01): `upsert` agora recebe `AiProfileSaveData` (inclui
+ * campos de horário de atendimento) em vez de `content` isolado. Campos
+ * opcionais de `AiProfileSaveData` não passados usam os valores já
+ * persistidos no `update` (Prisma só atualiza os campos explicitamente
+ * informados); no `create`, os valores do schema entram como defaults.
+ *
+ * NOTA DE VERIFICAÇÃO: depende de `npx prisma generate` + `npx prisma
+ * migrate dev` após a migration
+ * `20260801150000_add_off_hours_to_ai_business_profile` ser aplicada.
  */
 export class PrismaAiBusinessProfileRepository implements AiBusinessProfileRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async findByTenant(tenantId: string): Promise<AiBusinessProfile | null> {
-    const row = await this.prisma.aiBusinessProfile.findUnique({ where: { tenantId } });
+  async findByTenantAndSession(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<AiBusinessProfile | null> {
+    const row = await this.prisma.aiBusinessProfile.findUnique({
+      where: { tenantId_sessionName: { tenantId, sessionName } },
+    });
     return row ? toDomain(row) : null;
   }
 
-  async upsert(tenantId: string, content: string): Promise<AiBusinessProfile> {
+  async upsert(
+    tenantId: string,
+    sessionName: string,
+    data: AiProfileSaveData,
+  ): Promise<AiBusinessProfile> {
     const row = await this.prisma.aiBusinessProfile.upsert({
-      where: { tenantId },
-      create: { tenantId, content },
-      update: { content },
+      where: { tenantId_sessionName: { tenantId, sessionName } },
+      create: {
+        tenantId,
+        sessionName,
+        content: data.content,
+        ...(data.offHoursEnabled !== undefined && { offHoursEnabled: data.offHoursEnabled }),
+        ...(data.offHoursMessage !== undefined && { offHoursMessage: data.offHoursMessage }),
+        ...(data.workingHoursStart !== undefined && { workingHoursStart: data.workingHoursStart }),
+        ...(data.workingHoursEnd !== undefined && { workingHoursEnd: data.workingHoursEnd }),
+        ...(data.workingDays !== undefined && { workingDays: data.workingDays }),
+        ...(data.timezone !== undefined && { timezone: data.timezone }),
+      },
+      update: {
+        content: data.content,
+        ...(data.offHoursEnabled !== undefined && { offHoursEnabled: data.offHoursEnabled }),
+        ...(data.offHoursMessage !== undefined && { offHoursMessage: data.offHoursMessage }),
+        ...(data.workingHoursStart !== undefined && { workingHoursStart: data.workingHoursStart }),
+        ...(data.workingHoursEnd !== undefined && { workingHoursEnd: data.workingHoursEnd }),
+        ...(data.workingDays !== undefined && { workingDays: data.workingDays }),
+        ...(data.timezone !== undefined && { timezone: data.timezone }),
+      },
     });
     return toDomain(row);
   }

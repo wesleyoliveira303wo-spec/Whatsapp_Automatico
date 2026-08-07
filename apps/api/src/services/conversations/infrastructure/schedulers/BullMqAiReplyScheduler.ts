@@ -36,10 +36,6 @@ export class BullMqAiReplyScheduler implements AiReplyScheduler {
 
   async schedule(tenantId: string, conversationId: string, messageId: string): Promise<void> {
     const jobId = `${tenantId}:${conversationId}:${messageId}`;
-    await this.queue.add(
-      AI_REPLY_JOB_NAME,
-      { tenantId, conversationId, messageId },
-      { jobId },
-    );
+    await this.queue.add(AI_REPLY_JOB_NAME, { tenantId, conversationId, messageId }, { jobId });
   }
 }

@@ -56,7 +56,9 @@ export class WhatsAppSessionKey {
       throw new Error(`WhatsAppSessionKey: '${fieldName}' não pode ser vazio.`);
     }
     if (value.includes(WhatsAppSessionKey.CANONICAL_SEPARATOR)) {
-      throw new Error(`WhatsAppSessionKey: '${fieldName}' contém um caractere reservado (NUL) e não é permitido.`);
+      throw new Error(
+        `WhatsAppSessionKey: '${fieldName}' contém um caractere reservado (NUL) e não é permitido.`,
+      );
     }
   }
 

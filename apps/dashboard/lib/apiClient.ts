@@ -55,10 +55,17 @@ export function createApiClient(resource: string): ApiClient {
   return async function call<T = unknown>(
     session: DashboardSession,
     path: string,
-    init: { method?: string; body?: unknown; query?: Record<string, string | number | undefined> } = {},
+    init: {
+      method?: string;
+      body?: unknown;
+      query?: Record<string, string | number | undefined>;
+    } = {},
   ): Promise<ApiResponse<T>> {
     const baseUrl = getApiBaseUrl();
-    const url = new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/${resource}${path}`, baseUrl);
+    const url = new URL(
+      `/api/tenants/${encodeURIComponent(session.tenantId)}/${resource}${path}`,
+      baseUrl,
+    );
 
     if (init.query) {
       for (const [key, value] of Object.entries(init.query)) {
@@ -110,11 +117,53 @@ export const callConversationsApi = createApiClient('conversations');
 /** Cliente do recurso `ai-interactions` (Milestone 3, Bloco 6 — D21/D22), consumido por `pages/api/ai-interactions/*`. */
 export const callAiInteractionsApi = createApiClient('ai-interactions');
 
-/** Cliente do recurso `analytics` (Milestone 4, Bloco M4D — ADR #59), consumido por `pages/api/analytics/*`. Read-only (D51). */
-export const callAnalyticsApi = createApiClient('analytics');
+/**
+ * Cliente do recurso `sessions`, usado por Analytics por sessão (M6H-4,
+ * 2026-07-26) — o path passado a `callAnalyticsApi` inclui o `sessionName`
+ * (ex.: `/minha-sessao/analytics/ai-usage`), mesmo padrão já usado por
+ * `callAiProfileApi`/`callApi` (avatar de contato). Read-only (D51).
+ * Consumido por `pages/api/sessions/[sessionName]/analytics/*`.
+ */
+export const callAnalyticsApi = createApiClient('sessions');
 
 /** Cliente do recurso `users` (Milestone 5, Bloco M5F-3 — o "RH"), consumido por `pages/api/users/*`. A API rejeita o plano maquina nessas rotas (human_required) — so sessao de PESSOA chega la. */
 export const callUsersApi = createApiClient('users');
 
-/** Cliente do recurso `ai-profile` (Base de Conhecimento, Nível 1 — o "Cérebro da IA"), consumido por `pages/api/ai-profile/*`. RBAC (ai_profile:read/update) imposto pela API. */
-export const callAiProfileApi = createApiClient('ai-profile');
+/**
+ * Cliente do recurso `audit-logs` (Fase 1, Bloco F1.5 — painel de auditoria),
+ * consumido por `pages/api/audit-logs/*`. Diferente de `callUsersApi`, a API
+ * NAO rejeita o plano maquina aqui (so leitura) — mas o BFF so e alcancado
+ * por sessao de PESSOA de qualquer forma (login via browser).
+ */
+export const callAuditLogsApi = createApiClient('audit-logs');
+
+/**
+ * Cliente do recurso `sessions` (base de `/api/tenants/:tenantId/sessions/...`),
+ * usado pelo "Cérebro da IA" por sessão (M6H-3, 2026-07-25) — o path passado a
+ * `callAiProfileApi` inclui o `sessionName` (ex.: `/minha-sessao/ai-profile`),
+ * mesmo padrão já usado por `callApi` para o avatar de contato
+ * (`/:sessionName/contacts/:contactJid/avatar`). RBAC (ai_profile:read/update)
+ * imposto pela API.
+ */
+export const callAiProfileApi = createApiClient('sessions');
+
+/**
+ * Cliente do recurso `sessions`, usado pelas Respostas Rápidas por sessão
+ * (Fase 1, Bloco F1.9) — o path passado a `callQuickRepliesApi` inclui o
+ * `sessionName` (ex.: `/minha-sessao/quick-replies`), mesmo padrão já usado
+ * por `callAiProfileApi`/`callAnalyticsApi`. RBAC (quick_reply:read/manage)
+ * imposto pela API.
+ */
+export const callQuickRepliesApi = createApiClient('sessions');
+
+/**
+ * Cliente do recurso `sessions`, usado pelo CATÁLOGO de tags por sessão
+ * (Redesign 2026-08-05, R4) — o path passado a `callTagsApi` inclui o
+ * `sessionName` (ex.: `/minha-sessao/tags`), mesmo padrão já usado por
+ * `callAiProfileApi`/`callQuickRepliesApi`. RBAC (tag:read/manage) imposto
+ * pela API. A ATRIBUIÇÃO de tag a uma conversa (`POST`/`DELETE
+ * /conversations/:id/tags/:tagId`) não tem cliente próprio — reusa
+ * `callConversationsApi` (mesmo recurso `conversations`, mesma régua de
+ * `message:send` já usada para mover card no Pipeline).
+ */
+export const callTagsApi = createApiClient('sessions');

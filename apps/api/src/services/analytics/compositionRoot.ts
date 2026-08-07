@@ -27,7 +27,10 @@ export interface AnalyticsComposition {
   analyticsErrorHandler: ErrorRequestHandler;
 }
 
-export function createAnalyticsComposition(prisma: PrismaClient, logger: Logger): AnalyticsComposition {
+export function createAnalyticsComposition(
+  prisma: PrismaClient,
+  logger: Logger,
+): AnalyticsComposition {
   const analyticsRepository = new PrismaAnalyticsRepository(prisma);
   const tenantRepository = new PrismaTenantRepository(prisma);
 

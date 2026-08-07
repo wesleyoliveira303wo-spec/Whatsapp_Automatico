@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import type { PrismaClient, WhatsAppSessionStatus as PrismaSessionStatus, WhatsAppDisconnectReason as PrismaDisconnectReason } from '@prisma/client';
+import type {
+  PrismaClient,
+  WhatsAppSessionStatus as PrismaSessionStatus,
+  WhatsAppDisconnectReason as PrismaDisconnectReason,
+} from '@prisma/client';
 
 import { WhatsAppSession } from '../../domain/entities/WhatsAppSession';
 import { WhatsAppDisconnectReason } from '../../domain/entities/WhatsAppDisconnectReason';
@@ -65,7 +69,9 @@ function toDomain(row: WhatsAppSessionRow): WhatsAppSession {
     // `row.provider` em vez de fixar o literal.
     provider: 'baileys',
     status: STATUS_TO_DOMAIN[row.status],
-    disconnectReason: row.disconnectReason ? DISCONNECT_REASON_TO_DOMAIN[row.disconnectReason] : undefined,
+    disconnectReason: row.disconnectReason
+      ? DISCONNECT_REASON_TO_DOMAIN[row.disconnectReason]
+      : undefined,
     phoneNumber: row.phoneNumber ?? undefined,
     connectedAt: row.connectedAt ?? undefined,
     lastSeen: row.lastSeen ?? undefined,
@@ -125,7 +131,9 @@ export class PrismaWhatsAppSessionRepository implements WhatsAppSessionRepositor
     // Chamadores que nunca tocam este campo (ex.: `doInit()`) simplesmente
     // não incluem a chave, e o `in` corretamente não o altera.
     if ('disconnectReason' in data) {
-      prismaData.disconnectReason = data.disconnectReason ? DISCONNECT_REASON_TO_PRISMA[data.disconnectReason] : null;
+      prismaData.disconnectReason = data.disconnectReason
+        ? DISCONNECT_REASON_TO_PRISMA[data.disconnectReason]
+        : null;
     }
     if (data.phoneNumber !== undefined) {
       prismaData.phoneNumber = data.phoneNumber;
@@ -155,7 +163,10 @@ export class PrismaWhatsAppSessionRepository implements WhatsAppSessionRepositor
     return row ? toDomain(row) : null;
   }
 
-  async findByTenantAndSessionName(tenantId: string, sessionName: string): Promise<WhatsAppSession | null> {
+  async findByTenantAndSessionName(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<WhatsAppSession | null> {
     const row = await this.prisma.whatsAppSession.findUnique({
       where: { tenantId_sessionName: { tenantId, sessionName } },
     });
@@ -208,7 +219,9 @@ export class PrismaWhatsAppSessionRepository implements WhatsAppSessionRepositor
     // Mesmo guard por presença de chave usado em `update()` — ver docstring
     // lá (Production Hardening, Bloco 8a).
     if ('disconnectReason' in update) {
-      updateData.disconnectReason = update.disconnectReason ? DISCONNECT_REASON_TO_PRISMA[update.disconnectReason] : null;
+      updateData.disconnectReason = update.disconnectReason
+        ? DISCONNECT_REASON_TO_PRISMA[update.disconnectReason]
+        : null;
     }
     if (update.phoneNumber !== undefined) {
       updateData.phoneNumber = update.phoneNumber;
@@ -231,7 +244,9 @@ export class PrismaWhatsAppSessionRepository implements WhatsAppSessionRepositor
         sessionName,
         provider: 'BAILEYS',
         status: STATUS_TO_PRISMA[create.status],
-        disconnectReason: create.disconnectReason ? DISCONNECT_REASON_TO_PRISMA[create.disconnectReason] : null,
+        disconnectReason: create.disconnectReason
+          ? DISCONNECT_REASON_TO_PRISMA[create.disconnectReason]
+          : null,
         phoneNumber: create.phoneNumber ?? null,
         connectedAt: create.connectedAt ?? null,
         lastSeen: create.lastSeen ?? null,

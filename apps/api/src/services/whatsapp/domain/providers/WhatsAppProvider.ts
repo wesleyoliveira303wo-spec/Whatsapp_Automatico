@@ -65,4 +65,87 @@ export interface WhatsAppProvider {
    * escopo; revisitar se um dia houver múltiplos consumidores).
    */
   onEvent(listener: (event: WhatsAppProviderEvent) => void): void;
+
+  /**
+   * URL da foto de perfil de `jid` (Milestone 6, Bloco M6H-2b), consultada
+   * AO VIVO no socket conectado — diferente de `contactName`/`pushName`
+   * (Domain, persistido em `WhatsAppConversation` a cada mensagem), a foto
+   * NUNCA é persistida por este projeto: é buscada sob demanda a cada
+   * chamada, porque pode mudar a qualquer momento e porque a URL que o
+   * WhatsApp devolve já é pública/temporária por natureza (mesmo racional de
+   * "não duplicar o que o próprio WhatsApp já serve").
+   *
+   * Devolve `undefined` — nunca lança — quando a foto não está disponível
+   * por QUALQUER motivo (sessão sem conexão viva, contato sem foto,
+   * privacidade do contato bloqueando, erro de rede): a ausência de avatar é
+   * um resultado normal e esperado (a maioria dos contatos pode não ter foto
+   * ou ter privacidade restrita), nunca deveria quebrar a tela de conversa.
+   * Implementações devem logar a falha em nível `debug`/`warn`, não `error`.
+   */
+  getProfilePictureUrl(jid: string): Promise<string | undefined>;
+
+  /**
+   * Baixa e descriptografa o binário de uma mídia de mensagem (Fase 1,
+   * Bloco F1.1, ADR #90) — a contrapartida de leitura de
+   * `extractMediaContent`/`WhatsAppMediaReferenceEvent` em `BaileysProvider`.
+   *
+   * Recebe a MESMA referência persistida em `Message.media`
+   * (`mimeType`/`url`/`mediaKeyEncrypted`), nunca um `messageId` — este port
+   * não conhece `services/conversations` (mesma disciplina de fronteira já
+   * documentada em `MessageReceivedHandler`/`WhatsAppProviderEvent`); quem
+   * traduz `messageId` → referência de mídia é a camada de Presentation
+   * (rota REST), não este provider.
+   *
+   * ADR #90, Alternativa B (proxy sob demanda): o binário NUNCA é persistido
+   * em disco/storage de objetos por este projeto — é buscado e
+   * descriptografado a cada chamada, exatamente como `getProfilePictureUrl`
+   * nunca persiste a foto. Devolve `undefined` — nunca lança — quando a
+   * mídia não pôde ser obtida por QUALQUER motivo (URL expirada, erro de
+   * rede, chave inválida, timeout): ausência de mídia recuperável é um
+   * resultado normal (arquivos do WhatsApp expiram), nunca deveria quebrar a
+   * tela de conversa.
+   *
+   * `contentType` (Exclude de `'text'`) decide o algoritmo de decodificação
+   * do protocolo Signal — cada tipo de mídia usa uma derivação de chave
+   * diferente internamente no Baileys; nunca inferido do `mimeType` (um
+   * `image/jpeg` sempre é `contentType: 'image'`, mas o inverso não é
+   * confiável o bastante para decidir criptografia).
+   */
+  downloadMedia(media: {
+    contentType: 'image' | 'audio' | 'video' | 'document' | 'sticker';
+    mimeType: string;
+    url: string;
+    mediaKeyEncrypted: string;
+  }): Promise<Buffer | undefined>;
+
+  /**
+   * Envia uma mensagem de MÍDIA (imagem/áudio/vídeo/documento) para `to`,
+   * pelo mesmo socket de `sendMessage` — Fase 1, Bloco F1.3 (a contrapartida
+   * de envio de `downloadMedia`, que só lê). Diferente de `sendMessage`, que
+   * hoje só existe para texto, este método recebe o BINÁRIO já em memória
+   * (`Buffer`) — quem chama (`ConversationsService.sendAgentMediaMessage`) já
+   * leu o corpo bruto da requisição HTTP antes de chegar aqui; este port não
+   * conhece upload/multipart, só bytes.
+   *
+   * `contentType: 'sticker'` deliberadamente FORA da união aceita aqui (ao
+   * contrário de `downloadMedia`): o WhatsApp exige figurinhas num formato
+   * WebP específico com metadados próprios — enviar uma imagem comum como
+   * `sticker` não funciona no protocolo. Enviar figurinhas teria que tratar
+   * essa conversão, fora do escopo de F1.3 (só paridade de imagem/áudio/
+   * vídeo/documento com o que um atendente humano faria pelo WhatsApp Web).
+   *
+   * Lança `WhatsAppNotConnectedError` nas mesmas condições de `sendMessage`
+   * (sem sessão viva) — mesma disciplina de "nunca envia melhor esforço sobre
+   * um socket ausente".
+   */
+  sendMediaMessage(
+    to: string,
+    media: {
+      contentType: 'image' | 'audio' | 'video' | 'document';
+      buffer: Buffer;
+      mimeType: string;
+      caption?: string;
+      fileName?: string;
+    },
+  ): Promise<void>;
 }

@@ -54,12 +54,18 @@ export interface ConversationsComposition {
   conversationsService: ConversationsService;
 }
 
-export function createConversationsComposition(prisma: PrismaClient, redisConnection: IORedis, logger: Logger): ConversationsComposition {
+export function createConversationsComposition(
+  prisma: PrismaClient,
+  redisConnection: IORedis,
+  logger: Logger,
+): ConversationsComposition {
   const conversationRepository = new PrismaConversationRepository(prisma);
   const messageRepository = new PrismaMessageRepository(prisma);
   const tenantRepository = new PrismaTenantRepository(prisma);
 
-  const aiReplyQueue = new Queue<AiReplyJobData>(AI_REPLY_QUEUE_NAME, { connection: redisConnection });
+  const aiReplyQueue = new Queue<AiReplyJobData>(AI_REPLY_QUEUE_NAME, {
+    connection: redisConnection,
+  });
   const aiReplyScheduler = new BullMqAiReplyScheduler(aiReplyQueue);
 
   // Feature N2 (responder pela Dashboard): produtor da fila outbound, para o
@@ -67,12 +73,18 @@ export function createConversationsComposition(prisma: PrismaClient, redisConnec
   // dentro do apps/api). Reusa a mesma `redisConnection` — dois produtores
   // (ai-reply + whatsapp-outbound) podem compartilhar a conexão; `maxRetries`
   // só importa para o Worker consumidor (D19, já tratado em index.ts).
-  const outboundQueue = new Queue<WhatsAppOutboundJobData>(WHATSAPP_OUTBOUND_QUEUE_NAME, { connection: redisConnection });
+  const outboundQueue = new Queue<WhatsAppOutboundJobData>(WHATSAPP_OUTBOUND_QUEUE_NAME, {
+    connection: redisConnection,
+  });
   const outboundMessageDispatcher = new BullMqOutboundMessageDispatcher(outboundQueue);
 
   const auditLogRepository = new PrismaAuditLogRepository(prisma);
 
-  const messageIngestionService = new MessageIngestionService(conversationRepository, messageRepository, aiReplyScheduler);
+  const messageIngestionService = new MessageIngestionService(
+    conversationRepository,
+    messageRepository,
+    aiReplyScheduler,
+  );
   const conversationsService = new ConversationsService(
     conversationRepository,
     messageRepository,
@@ -82,5 +94,10 @@ export function createConversationsComposition(prisma: PrismaClient, redisConnec
     outboundMessageDispatcher,
   );
 
-  return { conversationRepository, messageRepository, messageIngestionService, conversationsService };
+  return {
+    conversationRepository,
+    messageRepository,
+    messageIngestionService,
+    conversationsService,
+  };
 }

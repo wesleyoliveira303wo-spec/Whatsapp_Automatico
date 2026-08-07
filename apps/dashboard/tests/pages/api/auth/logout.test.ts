@@ -22,7 +22,9 @@ describe('POST /api/auth/logout', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`));
+    const match = (res._headers['Set-Cookie'] as string).match(
+      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
+    );
     return match![1];
   }
 
@@ -71,7 +73,12 @@ describe('POST /api/auth/logout', () => {
       tenantId: 'tenant-1',
       accessToken: 'acc-1',
       refreshToken: 'ref-1',
-      user: { id: 'user-1', email: 'maria@empresa.com', role: 'operator', mustChangePassword: false },
+      user: {
+        id: 'user-1',
+        email: 'maria@empresa.com',
+        role: 'operator',
+        mustChangePassword: false,
+      },
     });
     const req = createFakeReq({ method: 'POST', cookies: { [SESSION_COOKIE_NAME]: cookie } });
     const res = createFakeRes();
@@ -96,7 +103,12 @@ describe('POST /api/auth/logout', () => {
       tenantId: 'tenant-1',
       accessToken: 'acc-1',
       refreshToken: 'ref-1',
-      user: { id: 'user-1', email: 'maria@empresa.com', role: 'operator', mustChangePassword: false },
+      user: {
+        id: 'user-1',
+        email: 'maria@empresa.com',
+        role: 'operator',
+        mustChangePassword: false,
+      },
     });
     const req = createFakeReq({ method: 'POST', cookies: { [SESSION_COOKIE_NAME]: cookie } });
     const res = createFakeRes();

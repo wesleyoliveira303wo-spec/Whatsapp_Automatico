@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import {
   changeUserRole,
   createUser,
@@ -10,6 +11,21 @@ import {
   type ManagedUser,
   type ManagedUserRole,
 } from '@/lib/clientApi';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+
+/** Mesma casca visual dos outros campos do formulário — `<select>` nativo, `Select` (Radix) fica para quando um formulário exigir de fato as features dele (busca, portal). Reskin 2026-08-07: tamanho/raio igual ao resto dos campos do mockup de Configurações (h34, radius9). */
+const NATIVE_SELECT_CLASSES =
+  'h-[34px] rounded-[9px] border border-border bg-panel px-2.5 text-[13px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /** Cargos oferecidos no formulario — 'owner' fica de fora de proposito (ninguem cria owner pela UI; a API recusaria de qualquer jeito — hierarquia do M5E-2). */
 const ASSIGNABLE_ROLES: ManagedUserRole[] = ['administrator', 'manager', 'operator', 'read_only'];
@@ -23,13 +39,103 @@ const ROLE_LABELS: Record<ManagedUserRole, string> = {
 };
 
 /** Traduz os erros de negocio da API (usersErrorHandler, M5E-3) para mensagens de UI. */
+interface RowActionsMenuProps {
+  user: ManagedUser;
+  onSuspend: () => void;
+  onReactivate: () => void;
+  onResetPassword: () => void;
+}
+
+/**
+ * Menu "mais ações" por linha (reskin 2026-08-07, Design System) — o mockup
+ * mostra só um botão de kebab por linha (`⋮`), não os botões
+ * Suspender/Reativar/Resetar senha soltos que existiam antes. Dropdown
+ * local (sem Radix novo, mesmo padrão já usado em `AccountMenu`/
+ * `MessageComposer`) — nenhuma ação foi removida, só reagrupada atrás do
+ * ícone; "Resetar senha" abre o mesmo formulário inline de sempre (linha
+ * vira um campo de senha + OK/Cancelar), só que disparado pelo menu.
+ */
+function RowActionsMenu({
+  user,
+  onSuspend,
+  onReactivate,
+  onResetPassword,
+}: RowActionsMenuProps): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (event: MouseEvent): void => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={menuRef} className="relative flex justify-end">
+      <button
+        type="button"
+        title="Mais ações"
+        aria-label={`Mais ações de ${user.email}`}
+        onClick={() => setOpen((current) => !current)}
+        className="grid h-7 w-7 place-items-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <MoreHorizontal className="h-[15px] w-[15px]" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-xl border border-border bg-card p-1.5 shadow-menu">
+          {user.status === 'active' ? (
+            <button
+              type="button"
+              onClick={() => {
+                onSuspend();
+                setOpen(false);
+              }}
+              className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-destructive hover:bg-destructive/10"
+            >
+              Suspender
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onReactivate();
+                setOpen(false);
+              }}
+              className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-success hover:bg-success/10"
+            >
+              Reativar
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onResetPassword();
+              setOpen(false);
+            }}
+            className="block w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-foreground hover:bg-muted"
+          >
+            Resetar senha
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
     const code = (error.body as { error?: string } | undefined)?.error;
     if (code === 'email_already_in_use') return 'Já existe um usuário com este e-mail.';
     if (code === 'role_not_allowed') return 'Seu cargo não permite esta ação sobre este usuário.';
-    if (code === 'self_management_forbidden') return 'Você não pode executar esta ação sobre a própria conta.';
-    if (code === 'weak_temporary_password' || code === 'weak_password') return 'A senha provisória deve ter pelo menos 8 caracteres.';
+    if (code === 'self_management_forbidden')
+      return 'Você não pode executar esta ação sobre a própria conta.';
+    if (code === 'weak_temporary_password' || code === 'weak_password')
+      return 'A senha provisória deve ter pelo menos 8 caracteres.';
     if (code === 'human_required') return 'Gestão de usuários exige login de pessoa (não API key).';
     if (error.status === 403) return 'Sem permissão para esta ação.';
   }
@@ -41,6 +147,14 @@ function errorMessageFor(error: unknown): string {
  * Lista + criar + mudar cargo + suspender/reativar + resetar senha. Toda
  * regra (hierarquia, auto-gestao, e-mail unico) vive na API — este painel so
  * traduz os erros dela para mensagens; nao reimplementa nada.
+ *
+ * Reskin 2026-08-07 (Design System, tela Configurações — aba "Equipe") —
+ * `<table>`/`<select>` crus trocados pelos primitivos `ui/table`
+ * (`Table`/`TableRow`/`TableCell`...) e casca própria sem sombra, única
+ * refatoração estrutural deliberada deste bloco (os dois primitivos
+ * existiam desde o M6C-3 sem nenhum consumidor real). O mockup tem uma
+ * coluna "Nome" que `ManagedUser` não tem (só `email`) — não inventada
+ * aqui, a tabela usa e-mail como identificador, como sempre foi.
  */
 export default function UserManagementPanel(): JSX.Element {
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -127,97 +241,109 @@ export default function UserManagementPanel(): JSX.Element {
   }
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={handleCreate} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">Novo usuário</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[220px] flex-1">
-            <label htmlFor="newUserEmail" className="mb-1 block text-sm font-medium text-gray-700">
-              E-mail
-            </label>
-            <input
-              id="newUserEmail"
-              type="email"
-              value={newEmail}
-              onChange={(event) => setNewEmail(event.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="newUserRole" className="mb-1 block text-sm font-medium text-gray-700">
-              Cargo
-            </label>
-            <select
-              id="newUserRole"
-              value={newRole}
-              onChange={(event) => setNewRole(event.target.value as ManagedUserRole)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            >
-              {ASSIGNABLE_ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-[200px]">
-            <label htmlFor="newUserPassword" className="mb-1 block text-sm font-medium text-gray-700">
-              Senha provisória
-            </label>
-            <input
-              id="newUserPassword"
-              type="text"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              minLength={8}
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={creating}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-          >
-            {creating ? 'Criando…' : 'Criar usuário'}
-          </button>
-        </div>
-        {createdNotice && <p className="mt-3 rounded-md bg-green-50 p-2 text-sm text-green-800">{createdNotice}</p>}
+    <div>
+      <form
+        onSubmit={handleCreate}
+        className="mb-3.5 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-3.5"
+      >
+        <label htmlFor="newUserEmail" className="sr-only">
+          E-mail
+        </label>
+        <Input
+          id="newUserEmail"
+          type="email"
+          placeholder="E-mail"
+          value={newEmail}
+          onChange={(event) => setNewEmail(event.target.value)}
+          required
+          className="h-[34px] min-w-[200px] flex-1 rounded-[9px] border-border bg-panel text-[13px]"
+        />
+        <label htmlFor="newUserPassword" className="sr-only">
+          Senha provisória
+        </label>
+        <Input
+          id="newUserPassword"
+          type="text"
+          placeholder="Senha provisória"
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+          minLength={8}
+          required
+          className="h-[34px] min-w-[180px] rounded-[9px] border-border bg-panel text-[13px]"
+        />
+        <label htmlFor="newUserRole" className="sr-only">
+          Cargo
+        </label>
+        <select
+          id="newUserRole"
+          value={newRole}
+          onChange={(event) => setNewRole(event.target.value as ManagedUserRole)}
+          className={NATIVE_SELECT_CLASSES}
+        >
+          {ASSIGNABLE_ROLES.map((role) => (
+            <option key={role} value={role}>
+              {ROLE_LABELS[role]}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" size="cta" className="shrink-0" disabled={creating}>
+          {creating ? 'Criando…' : 'Criar usuário'}
+        </Button>
+        {createdNotice && <p className="w-full text-xs text-success">{createdNotice}</p>}
       </form>
 
-      {panelError && <p className="text-sm text-red-600">{panelError}</p>}
+      {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
 
       {loading ? (
-        <p className="text-sm text-gray-500">Carregando usuários…</p>
+        <p className="text-sm text-muted-foreground">Carregando usuários…</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-              <tr>
-                <th className="px-4 py-3">E-mail</th>
-                <th className="px-4 py-3">Cargo</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+        <div className="fx-scroll overflow-x-auto rounded-lg border border-border bg-card">
+          <Table className="min-w-[560px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-9 px-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  E-mail
+                </TableHead>
+                <TableHead className="h-9 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Cargo
+                </TableHead>
+                <TableHead className="h-9 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Status
+                </TableHead>
+                <TableHead className="h-9 w-[90px] px-4" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {users.map((user) => (
-                <tr key={user.id} data-testid={`user-row-${user.email}`}>
-                  <td className="px-4 py-3 text-gray-800">
+                <TableRow
+                  key={user.id}
+                  data-testid={`user-row-${user.email}`}
+                  className="hover:bg-transparent"
+                >
+                  <TableCell className="px-4 py-[11px] text-[13px] font-medium text-foreground">
                     {user.email}
                     {user.mustChangePassword && (
-                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">senha provisória</span>
+                      <span className="ml-2 inline-flex h-[19px] items-center rounded-[5px] bg-warning/[.13] px-1.5 text-[10.5px] font-semibold text-warning-emphasis">
+                        senha provisória
+                      </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-2 py-[11px]">
                     {user.role === 'owner' ? (
-                      <span className="font-medium text-gray-800">{ROLE_LABELS.owner}</span>
+                      <span className="text-[13px] text-foreground-secondary">
+                        {ROLE_LABELS.owner}
+                      </span>
                     ) : (
                       <select
                         value={user.role}
-                        onChange={(event) => void runRowAction(() => changeUserRole(user.id, event.target.value as ManagedUserRole))}
-                        className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                        onChange={(event) =>
+                          void runRowAction(() =>
+                            changeUserRole(user.id, event.target.value as ManagedUserRole),
+                          )
+                        }
+                        className={cn(
+                          'rounded-[7px] border border-transparent bg-transparent py-1 text-[13px] text-foreground-secondary transition-colors hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        )}
                         aria-label={`Cargo de ${user.email}`}
                       >
                         {ASSIGNABLE_ROLES.map((role) => (
@@ -227,82 +353,79 @@ export default function UserManagementPanel(): JSX.Element {
                         ))}
                       </select>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {user.status === 'active' ? (
-                      <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800">Ativo</span>
-                    ) : (
-                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">Suspenso</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {user.role !== 'owner' && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        {user.status === 'active' ? (
-                          <button
+                  </TableCell>
+                  <TableCell className="px-2 py-[11px]">
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-[5px] text-[11.5px] font-semibold',
+                        user.status === 'active'
+                          ? 'text-success-emphasis'
+                          : 'text-destructive-emphasis',
+                      )}
+                    >
+                      <span
+                        className="h-[5px] w-[5px] shrink-0 rounded-full bg-current"
+                        aria-hidden="true"
+                      />
+                      {user.status === 'active' ? 'Ativo' : 'Suspenso'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-4 py-[11px]">
+                    {user.role !== 'owner' &&
+                      (resetUserId === user.id ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="text"
+                            value={resetPassword}
+                            onChange={(event) => setResetPassword(event.target.value)}
+                            placeholder="Nova senha"
+                            className="h-7 w-32 rounded-[7px] text-xs"
+                            minLength={8}
+                          />
+                          <Button
                             type="button"
-                            onClick={() => void runRowAction(() => suspendUser(user.id))}
-                            className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => void handleResetPassword(user.id)}
                           >
-                            Suspender
-                          </button>
-                        ) : (
-                          <button
+                            OK
+                          </Button>
+                          <Button
                             type="button"
-                            onClick={() => void runRowAction(() => reactivateUser(user.id))}
-                            className="rounded-md border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setResetUserId(null);
+                              setResetPassword('');
+                            }}
                           >
-                            Reativar
-                          </button>
-                        )}
-                        {resetUserId === user.id ? (
-                          <span className="flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={resetPassword}
-                              onChange={(event) => setResetPassword(event.target.value)}
-                              placeholder="Nova senha provisória"
-                              className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none"
-                              minLength={8}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => void handleResetPassword(user.id)}
-                              className="rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                            >
-                              OK
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setResetUserId(null);
-                                setResetPassword('');
-                              }}
-                              className="px-1 text-xs text-gray-500 hover:text-gray-700"
-                            >
-                              Cancelar
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setResetUserId(user.id)}
-                            className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                          >
-                            Resetar senha
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                            Cancelar
+                          </Button>
+                        </div>
+                      ) : (
+                        <RowActionsMenu
+                          user={user}
+                          onSuspend={() => void runRowAction(() => suspendUser(user.id))}
+                          onReactivate={() => void runRowAction(() => reactivateUser(user.id))}
+                          onResetPassword={() => setResetUserId(user.id)}
+                        />
+                      ))}
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-          {users.length === 0 && <p className="p-4 text-sm text-gray-500">Nenhum usuário ainda.</p>}
+            </TableBody>
+          </Table>
+          {users.length === 0 && (
+            <p className="p-4 text-sm text-muted-foreground">Nenhum usuário ainda.</p>
+          )}
           {nextCursor && (
-            <div className="border-t border-gray-100 p-3">
-              <button type="button" onClick={() => void loadMore()} className="text-sm text-blue-600 hover:underline">
+            <div className="border-t border-border p-2.5">
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                className="h-8 w-full rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
                 Carregar mais
               </button>
             </div>

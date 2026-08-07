@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-import { AiProvider, AiGenerationRequest, AiGenerationResult } from '../domain/providers/AiProvider';
+import {
+  AiProvider,
+  AiGenerationRequest,
+  AiGenerationResult,
+} from '../domain/providers/AiProvider';
 
 /**
  * Valor DEFAULT de `maxTokens` quando o construtor não recebe um valor
@@ -55,11 +59,24 @@ export class ClaudeAiProvider implements AiProvider {
   }
 
   async generateReply(request: AiGenerationRequest): Promise<AiGenerationResult> {
+    // Fase 1, Bloco F1.2: `message.media` (binário de imagem/áudio, quando
+    // presente) é IGNORADO de propósito aqui — este adapter não implementa
+    // envio multimodal ao Claude (`GeminiAiProvider` é o único que hoje
+    // suporta). Degradação graciosa por design: `message.content` já
+    // carrega a descrição factual da mídia (`PromptBuilder.
+    // describeMessageContent`), então a IA ainda reconhece que algo foi
+    // enviado, só não "vê"/"ouve" o conteúdo quando o Claude é o provider
+    // ativo. Replicar o suporte multimodal aqui é extensão aditiva futura,
+    // não decidida nesta rodada (Claude também suporta visão nativamente,
+    // mas não áudio pela API de mensagens da Anthropic).
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: this.maxTokens,
       system: request.systemPrompt,
-      messages: request.messages.map((message) => ({ role: message.role, content: message.content })),
+      messages: request.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
     });
 
     const content = response.content

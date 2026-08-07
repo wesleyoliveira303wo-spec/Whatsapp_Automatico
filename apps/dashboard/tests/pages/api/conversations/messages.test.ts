@@ -26,7 +26,9 @@ describe('proxy /api/conversations/[id]/messages', () => {
 
   function freshAccessToken(): string {
     const header = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 900 })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 900 }),
+    ).toString('base64url');
     return `${header}.${payload}.sig`;
   }
 
@@ -38,7 +40,9 @@ describe('proxy /api/conversations/[id]/messages', () => {
       refreshToken: 'ref-1',
       user: { id: 'op-1', email: 'op@empresa.com', role: 'operator', mustChangePassword: false },
     });
-    const match = (res._headers['Set-Cookie'] as string).match(new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`));
+    const match = (res._headers['Set-Cookie'] as string).match(
+      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
+    );
     return match![1];
   }
 
@@ -69,7 +73,9 @@ describe('proxy /api/conversations/[id]/messages', () => {
     await handler(req, res);
 
     const [url, init] = (fetch as jest.Mock).mock.calls[0];
-    expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/conversations/c1/messages');
+    expect(String(url)).toBe(
+      'http://api-de-teste:4000/api/tenants/tenant-1/conversations/c1/messages',
+    );
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ content: 'Oi, posso ajudar!' }));
     expect(res.status).toHaveBeenCalledWith(202);
@@ -103,12 +109,18 @@ describe('proxy /api/conversations/[id]/messages', () => {
     await handler(req, res);
 
     const [url] = (fetch as jest.Mock).mock.calls[0];
-    expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/conversations/c1/messages?limit=50');
+    expect(String(url)).toBe(
+      'http://api-de-teste:4000/api/tenants/tenant-1/conversations/c1/messages?limit=50',
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('método não suportado: 405', async () => {
-    const req = createFakeReq({ method: 'DELETE', cookies: { [SESSION_COOKIE_NAME]: userCookie() }, query: { conversationId: 'c1' } });
+    const req = createFakeReq({
+      method: 'DELETE',
+      cookies: { [SESSION_COOKIE_NAME]: userCookie() },
+      query: { conversationId: 'c1' },
+    });
     const res = createFakeRes();
 
     await handler(req, res);

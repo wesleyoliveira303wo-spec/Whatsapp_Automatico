@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'create-service',
-  description: 'Workflow for implementing a new backend service layer component, including interface, implementation, tests, and docs.',
-  phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
+name: 'create-service',
+description: 'Workflow for implementing a new backend service layer component, including interface, implementation, tests, and docs.',
+phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
 };
 
 phase('Design');

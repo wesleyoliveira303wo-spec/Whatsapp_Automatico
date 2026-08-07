@@ -63,14 +63,25 @@ export function createAuthenticate(
         ? accessTokenService.verify(authHeader.slice(BEARER_PREFIX.length).trim())
         : null;
       if (!claims) {
-        res.status(401).json({ error: 'invalid_access_token', message: 'Crachá de acesso invalido ou expirado.' });
+        res.status(401).json({
+          error: 'invalid_access_token',
+          message: 'Crachá de acesso invalido ou expirado.',
+        });
         return;
       }
       if (!tenantMatches(req, claims.tenantId)) {
-        res.status(403).json({ error: 'tenant_mismatch', message: 'O crachá nao autoriza acesso a este tenant.' });
+        res.status(403).json({
+          error: 'tenant_mismatch',
+          message: 'O crachá nao autoriza acesso a este tenant.',
+        });
         return;
       }
-      const principal: Principal = { kind: 'user', userId: claims.userId, tenantId: claims.tenantId, role: claims.role };
+      const principal: Principal = {
+        kind: 'user',
+        userId: claims.userId,
+        tenantId: claims.tenantId,
+        role: claims.role,
+      };
       (req as RequestWithPrincipal).principal = principal;
       (req as RequestWithAuthUser).authUser = claims;
       next();
@@ -82,14 +93,23 @@ export function createAuthenticate(
     if (apiKey) {
       void (async () => {
         try {
-          const tenant: Tenant | null = await resolveTenantFromApiKey(apiKeyHasher, tenantRepository, apiKey);
+          const tenant: Tenant | null = await resolveTenantFromApiKey(
+            apiKeyHasher,
+            tenantRepository,
+            apiKey,
+          );
           if (!tenant) {
-            logger.warn('Requisicao recusada: API key invalida', { headers: sanitizeHeaders(req.headers as Record<string, unknown>) });
+            logger.warn('Requisicao recusada: API key invalida', {
+              headers: sanitizeHeaders(req.headers as Record<string, unknown>),
+            });
             res.status(401).json({ error: 'invalid_api_key', message: 'API key invalida.' });
             return;
           }
           if (!tenantMatches(req, tenant.id)) {
-            res.status(403).json({ error: 'tenant_mismatch', message: 'A API key nao autoriza acesso a este tenant.' });
+            res.status(403).json({
+              error: 'tenant_mismatch',
+              message: 'A API key nao autoriza acesso a este tenant.',
+            });
             return;
           }
           (req as RequestWithPrincipal).principal = { kind: 'machine', tenantId: tenant.id };
@@ -102,7 +122,10 @@ export function createAuthenticate(
       return;
     }
 
-    res.status(401).json({ error: 'missing_credentials', message: 'Informe um crachá (Authorization: Bearer) ou a API key (X-API-Key).' });
+    res.status(401).json({
+      error: 'missing_credentials',
+      message: 'Informe um crachá (Authorization: Bearer) ou a API key (X-API-Key).',
+    });
   };
 }
 

@@ -13,7 +13,9 @@
  */
 export class WhatsAppNotConnectedError extends Error {
   constructor(tenantId: string, sessionName: string) {
-    super(`Sessão do WhatsApp não está conectada (tenantId=${tenantId}, sessionName=${sessionName}) — não é possível enviar mensagem.`);
+    super(
+      `Sessão do WhatsApp não está conectada (tenantId=${tenantId}, sessionName=${sessionName}) — não é possível enviar mensagem.`,
+    );
     this.name = 'WhatsAppNotConnectedError';
   }
 }

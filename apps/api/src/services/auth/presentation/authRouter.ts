@@ -4,11 +4,16 @@ import { AuthService } from '../application/AuthService';
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { RequestWithAuthUser } from '../../../shared/presentation/requireUser';
 
-const tenantIdParamSchema = z.object({ tenantId: z.string().trim().min(1, 'tenantId nao pode ser vazio') });
+const tenantIdParamSchema = z.object({
+  tenantId: z.string().trim().min(1, 'tenantId nao pode ser vazio'),
+});
 const loginBodySchema = z.object({ email: z.string().trim().min(1), password: z.string().min(1) });
 const refreshBodySchema = z.object({ refreshToken: z.string().min(1) });
 const logoutBodySchema = z.object({ refreshToken: z.string().min(1) });
-const changePasswordBodySchema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(1) });
+const changePasswordBodySchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
+});
 
 /**
  * Router de autenticacao (a "portaria") — Milestone 5, Bloco M5C. Thin router
@@ -25,7 +30,11 @@ const changePasswordBodySchema = z.object({ currentPassword: z.string().min(1), 
  * forca bruta anonima. `/logout`, `/me` e `/change-password` ja exigem cracha
  * valido via `requireUser`, entao nao precisam desse freio.
  */
-export function createAuthRouter(authService: AuthService, requireUser: RequestHandler, loginRateLimiter?: RequestHandler): Router {
+export function createAuthRouter(
+  authService: AuthService,
+  requireUser: RequestHandler,
+  loginRateLimiter?: RequestHandler,
+): Router {
   const router = Router({ mergeParams: true });
 
   const preAuthGuards: RequestHandler[] = loginRateLimiter ? [loginRateLimiter] : [];
@@ -42,10 +51,16 @@ export function createAuthRouter(authService: AuthService, requireUser: RequestH
       const meta = { userAgent: req.headers['user-agent'], ip: req.ip };
       const result = await authService.login(params.tenantId, body.email, body.password, meta);
       if (!result.ok) {
-        res.status(401).json({ error: 'invalid_credentials', message: 'E-mail ou senha invalidos.' });
+        res
+          .status(401)
+          .json({ error: 'invalid_credentials', message: 'E-mail ou senha invalidos.' });
         return;
       }
-      res.status(200).json({ accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user });
+      res.status(200).json({
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      });
     }),
   );
 
@@ -58,7 +73,10 @@ export function createAuthRouter(authService: AuthService, requireUser: RequestH
 
       const result = await authService.refresh(body.refreshToken);
       if (!result.ok) {
-        res.status(401).json({ error: 'invalid_refresh_token', message: 'Sessao expirada. Faca login novamente.' });
+        res.status(401).json({
+          error: 'invalid_refresh_token',
+          message: 'Sessao expirada. Faca login novamente.',
+        });
         return;
       }
       res.status(200).json({ accessToken: result.accessToken, refreshToken: result.refreshToken });
@@ -94,13 +112,23 @@ export function createAuthRouter(authService: AuthService, requireUser: RequestH
 
       const authUser = (req as RequestWithAuthUser).authUser;
       const meta = { userAgent: req.headers['user-agent'], ip: req.ip };
-      const result = await authService.changePassword(authUser?.userId ?? '', body.currentPassword, body.newPassword, meta);
+      const result = await authService.changePassword(
+        authUser?.userId ?? '',
+        body.currentPassword,
+        body.newPassword,
+        meta,
+      );
       if (!result.ok) {
         if (result.reason === 'weak_password') {
-          res.status(422).json({ error: 'weak_password', message: 'A nova senha deve ter pelo menos 8 caracteres.' });
+          res.status(422).json({
+            error: 'weak_password',
+            message: 'A nova senha deve ter pelo menos 8 caracteres.',
+          });
           return;
         }
-        res.status(401).json({ error: 'invalid_current_password', message: 'Senha atual incorreta.' });
+        res
+          .status(401)
+          .json({ error: 'invalid_current_password', message: 'Senha atual incorreta.' });
         return;
       }
       res.status(204).end();

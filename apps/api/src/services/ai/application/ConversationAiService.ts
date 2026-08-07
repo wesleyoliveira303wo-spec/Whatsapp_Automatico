@@ -1,15 +1,30 @@
 import { Message } from '../../conversations/domain/entities/Message';
+import { MediaDownloader } from '../../whatsapp/domain/providers/MediaDownloader';
 import { AiInteraction } from '../domain/entities/AiInteraction';
 import { AiInteractionRepository } from '../domain/repositories/AiInteractionRepository';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
 import { calculateCostUsd } from '../domain/AiPricing';
 import { PromptVersion } from '../domain/PromptVersion';
-import { AiGenerationResult } from '../domain/providers/AiProvider';
+import { AiGenerationResult, AiMediaContentPart } from '../domain/providers/AiProvider';
 import { AiProviderFactory } from '../domain/providers/AiProviderFactory';
 import { AiProviderName } from '../domain/providers/AiProviderName';
 import { validateReply } from '../domain/ReplyValidator';
-import { extractEscalation } from '../domain/escalationSignal';
+import { extractEscalation, EscalationReason } from '../domain/escalationSignal';
+import { extractStage, StageSignalValue } from '../domain/stageSignal';
+import { getOffHoursContext } from '../domain/workingHours';
 import { PromptBuilder } from './PromptBuilder';
+
+/**
+ * Teto de tamanho (em bytes) de mídia enviada à IA multimodal (Fase 1,
+ * Bloco F1.2) — protege contra custo/latência desproporcionais de um
+ * arquivo grande (ex.: um vídeo ou documento de várias dezenas de MB). Acima
+ * deste limite, a mídia é tratada como "não anexável" (mesmo efeito de
+ * download falho): a IA ainda vê a descrição factual de
+ * `PromptBuilder.describeMessageContent`, só não recebe o binário. Valor
+ * conservador — a maioria de fotos/áudios de WhatsApp fica bem abaixo disso;
+ * revisar com dados reais de uso do beta se necessário.
+ */
+const MAX_MEDIA_BYTES_FOR_AI = 10 * 1024 * 1024;
 
 /**
  * Resultado devolvido por `ConversationAiService.generateReply()`. Os
@@ -48,13 +63,26 @@ export type ConversationAiResult =
       tokensOutput: number;
       aiInteractionId: string;
       /**
-       * Feature N2 (auto-escalonamento): `true` quando a IA emitiu o marcador
-       * de escalonamento (`ESCALATION_MARKER`) — o `content` já vem SEM o
-       * marcador (o cliente nunca o vê). Quem consome (`AiReplyJobProcessor`)
-       * envia a mensagem e, se `escalate`, coloca a conversa em atendimento
-       * humano.
+       * Feature N2 (auto-escalonamento), estendida na Fase 1/Bloco F1.4
+       * (2026-08-01): presente quando a IA emitiu um marcador de
+       * escalonamento — `content` já vem SEM o marcador (o cliente nunca o
+       * vê). `'unknown_answer'` = a IA não sabia responder (lacuna real de
+       * conteúdo); `'requested_human'` = o cliente pediu para falar com uma
+       * pessoa (preferência, não lacuna). `undefined` = não escalou. Quem
+       * consome (`AiReplyJobProcessor`) envia a mensagem e, se presente,
+       * sinaliza a conversa como precisando de atenção humana.
        */
-      escalate: boolean;
+      escalationReason?: EscalationReason;
+      /**
+       * Pipeline de CRM (Milestone 6, Bloco M6H-5, 2026-07-30): estágio de
+       * funil que a IA sugere para esta conversa, extraído do marcador
+       * `[[ESTAGIO:...]]` (`content` já vem SEM o marcador). `undefined`
+       * quando a IA não incluiu o marcador ou incluiu um valor não
+       * reconhecido — quem consome (`AiReplyJobProcessor`) trata isso como
+       * "sem sugestão", nunca como erro (degradação graciosa, mesmo
+       * espírito de `escalate`).
+       */
+      suggestedStage?: StageSignalValue;
     }
   | { status: 'validation_rejected'; reason: string }
   | { status: 'provider_error'; errorMessage: string };
@@ -96,12 +124,15 @@ const DEFAULT_MAX_REPLY_LENGTH = 4096;
  * é responsabilidade da infraestrutura de fila do Bloco 4, não deste
  * serviço — decisão deliberada, não uma omissão.
  *
- * `messageId` nunca é preenchido por este bloco (fica `undefined` em todo
- * `AiInteraction` gravado aqui) — este bloco não cria a `Message` outbound
- * com a resposta da IA; isso só acontece quando o envio de fato ocorre
- * (Bloco 4). `model` fica `undefined` no caminho `'provider_error'` — a
- * chamada falhou antes de qualquer resposta (e portanto de qualquer `model`
- * real) chegar.
+ * `messageId` (Fase 1, Bloco F1.4, 2026-08-01): quando o chamador informa o
+ * `id` da mensagem INBOUND que originou a chamada (5º parâmetro de
+ * `generateReply`), ele é gravado em `AiInteraction.messageId` em TODA
+ * tentativa (sucesso ou falha) — é a pergunta que a IA tentou responder,
+ * mesmo quando não conseguiu. Antes deste bloco, o campo ficava sempre
+ * `undefined` aqui (só existia preparado para uma vinculação futura via
+ * `linkMessage`, nunca chamada). `model` fica `undefined` no caminho
+ * `'provider_error'` — a chamada falhou antes de qualquer resposta (e
+ * portanto de qualquer `model` real) chegar.
  *
  * IDEMPOTÊNCIA/DEDUPLICAÇÃO — NÃO é responsabilidade deste serviço (achado
  * F1, aprovado para preparação arquitetural, sem mudança de comportamento):
@@ -132,6 +163,17 @@ export class ConversationAiService {
     private readonly aiInteractionRepository: AiInteractionRepository,
     private readonly maxReplyLength: number = DEFAULT_MAX_REPLY_LENGTH,
     private readonly aiBusinessProfileRepository?: AiBusinessProfileRepository,
+    /**
+     * Fase 1, Bloco F1.2 (interpretação de mídia pela IA). OPCIONAL, mesmo
+     * padrão de `aiBusinessProfileRepository`: sem ele configurado, o
+     * comportamento é idêntico ao de antes deste bloco (a IA só recebe a
+     * descrição factual de `PromptBuilder.describeMessageContent`, nunca o
+     * binário). Port de `services/whatsapp/domain` — mesmo papel estrutural
+     * de `MediaDownloader` já usado por `ConversationsService` (proxy de
+     * exibição na Dashboard); aqui o consumo é para dar VISÃO/AUDIÇÃO real à
+     * IA, não para servir um binário a um humano.
+     */
+    private readonly mediaDownloader?: MediaDownloader,
   ) {}
 
   async generateReply(
@@ -139,9 +181,30 @@ export class ConversationAiService {
     conversationId: string,
     messages: Message[],
     promptVersion: PromptVersion,
+    sessionName: string,
+    /**
+     * Fase 1, Bloco F1.4 (2026-08-01) — `id` da `Message` INBOUND que
+     * originou esta geração (a pergunta do cliente). Opcional por
+     * compatibilidade com os testes/chamadores existentes que não o
+     * informam; `AiReplyJobProcessor` (único chamador de produção) sempre o
+     * passa (`AiReplyJobData.messageId`). Gravado em TODA tentativa
+     * (`AiInteraction.messageId`), sucesso ou falha — é precisamente a
+     * pergunta que a IA tentou responder, mesmo quando não conseguiu.
+     */
+    messageId?: string,
   ): Promise<ConversationAiResult> {
-    const businessContext = await this.loadBusinessContext(tenantId);
-    const request = this.promptBuilder.build(messages, promptVersion, businessContext);
+    const { businessContext, offHoursContext } = await this.loadProfileContext(
+      tenantId,
+      sessionName,
+    );
+    const mediaByMessageId = await this.loadLatestInboundMedia(tenantId, sessionName, messages);
+    const request = this.promptBuilder.build(
+      messages,
+      promptVersion,
+      businessContext,
+      mediaByMessageId,
+      offHoursContext,
+    );
     const startedAt = Date.now();
 
     let generationResult: AiGenerationResult;
@@ -153,6 +216,7 @@ export class ConversationAiService {
       await this.recordInteraction({
         tenantId,
         conversationId,
+        messageId,
         promptVersionId: promptVersion.id,
         model: undefined,
         tokensInput: 0,
@@ -168,13 +232,22 @@ export class ConversationAiService {
     // Feature N2: extrai o marcador de escalonamento ANTES de validar/enviar —
     // o cliente nunca recebe o marcador, e a validação de tamanho corre sobre o
     // texto já limpo.
-    const { escalate, content: cleanedContent } = extractEscalation(generationResult.content);
+    const { escalationReason, content: contentWithoutEscalation } = extractEscalation(
+      generationResult.content,
+    );
+    // Pipeline de CRM (M6H-5): mesmo ponto do pipeline, encadeado — extrai o
+    // marcador de estágio do texto JÁ SEM o marcador de escalonamento (a
+    // ordem entre os dois marcadores na resposta da IA não importa, cada
+    // extração só procura o seu próprio marcador).
+    const { stage: suggestedStage, content: cleanedContent } =
+      extractStage(contentWithoutEscalation);
     const validation = validateReply(cleanedContent, this.maxReplyLength);
 
     if (!validation.valid) {
       await this.recordInteraction({
         tenantId,
         conversationId,
+        messageId,
         promptVersionId: promptVersion.id,
         model: generationResult.model,
         tokensInput: generationResult.tokensInput,
@@ -189,12 +262,14 @@ export class ConversationAiService {
     const aiInteractionId = await this.recordInteraction({
       tenantId,
       conversationId,
+      messageId,
       promptVersionId: promptVersion.id,
       model: generationResult.model,
       tokensInput: generationResult.tokensInput,
       tokensOutput: generationResult.tokensOutput,
       latencyMs,
       status: 'success',
+      escalationReason,
     });
 
     return {
@@ -204,15 +279,17 @@ export class ConversationAiService {
       tokensInput: generationResult.tokensInput,
       tokensOutput: generationResult.tokensOutput,
       aiInteractionId,
-      escalate,
+      escalationReason,
+      suggestedStage,
     };
   }
 
   /**
-   * Busca o texto do perfil de negócio do tenant (Base de Conhecimento, Nível
-   * 1) para injetar no prompt. Devolve `undefined` quando: não há repositório
+   * Busca o texto do perfil de negócio da SESSÃO (Base de Conhecimento, Nível
+   * 1 — migrado de 1:1 por tenant para 1:1 por sessão na M6H-3, 2026-07-25)
+   * para injetar no prompt. Devolve `undefined` quando: não há repositório
    * injetado (compatibilidade — quem constrói sem ele mantém o comportamento
-   * antigo), não há perfil configurado, ou a leitura falha.
+   * antigo), não há perfil configurado para aquela sessão, ou a leitura falha.
    *
    * DEGRADAÇÃO GRACIOSA (try/catch): o contexto do negócio é uma dependência
    * AUXILIAR, igual ao preço em `calculateCostUsd` — uma falha ao lê-lo (ex.:
@@ -222,16 +299,111 @@ export class ConversationAiService {
    * consciente já aceita para `costUsd` desconhecido (Bloco 3b); observabilidade
    * dedicada fica para quando este serviço ganhar um Logger.
    */
-  private async loadBusinessContext(tenantId: string): Promise<string | undefined> {
+  /**
+   * Carrega o perfil completo da sessão e extrai dois pedaços de contexto para
+   * o `PromptBuilder` (F1.8, 2026-08-01):
+   *
+   * - `businessContext`: o texto livre do "Cérebro da IA" (comportamento
+   *   original, pré-existente).
+   * - `offHoursContext`: aviso de horário de atendimento, presente só quando
+   *   `offHoursEnabled` é `true` E o instante atual está fora da janela
+   *   configurada — `undefined` caso contrário (comportamento inalterado, já
+   *   que o default é `offHoursEnabled: false`).
+   *
+   * DEGRADAÇÃO GRACIOSA: sem repositório configurado ou qualquer falha na
+   * leitura, devolve `{}` (ambos `undefined`) — mesmo racional do método
+   * original `loadBusinessContext`, nunca derruba a resposta da IA.
+   */
+  private async loadProfileContext(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<{ businessContext?: string; offHoursContext?: string }> {
     if (!this.aiBusinessProfileRepository) {
-      return undefined;
+      return {};
     }
     try {
-      const profile = await this.aiBusinessProfileRepository.findByTenant(tenantId);
-      return profile?.content;
+      const profile = await this.aiBusinessProfileRepository.findByTenantAndSession(
+        tenantId,
+        sessionName,
+      );
+      if (!profile) return {};
+      return {
+        businessContext: profile.content || undefined,
+        offHoursContext: getOffHoursContext(profile),
+      };
     } catch {
-      return undefined;
+      return {};
     }
+  }
+
+  /**
+   * Baixa o binário da mensagem de mídia mais RECENTE do histórico (Fase 1,
+   * Bloco F1.2) — nunca de todo o histórico. Reenviar o binário de mídias
+   * antigas a cada chamada nova multiplicaria custo/latência sem ganho real
+   * (a mesma imagem já foi processada pela IA numa resposta anterior); só a
+   * mídia mais nova ainda não teve chance de ser "vista". Varre `messages`
+   * de trás para frente (mais recente primeiro) e para na primeira
+   * mensagem de imagem/áudio encontrada — não precisa ser necessariamente a
+   * ÚLTIMA mensagem da conversa (pode haver uma mensagem de texto depois da
+   * mídia, ex.: "e aí, conseguiu ver?").
+   *
+   * DEGRADAÇÃO GRACIOSA (mesmo racional de `loadBusinessContext`): sem
+   * `mediaDownloader` configurado, mídia maior que `MAX_MEDIA_BYTES_FOR_AI`,
+   * ou qualquer falha no download (`MediaDownloader.download` nunca lança,
+   * mas devolve `undefined` em caso de erro) — devolve um mapa vazio. A IA
+   * ainda recebe a descrição factual da mídia via `PromptBuilder`; só não
+   * recebe o binário. Uma falha aqui NUNCA deveria impedir a resposta ao
+   * cliente.
+   *
+   * Restrito a `image`/`audio` (Fase 1, Bloco F1.2 — escopo aprovado):
+   * `video`/`document`/`sticker` continuam representados só pela descrição
+   * factual por ora — ampliar para os demais tipos é extensão aditiva
+   * futura (F1.2b ou similar), não decidida nesta rodada.
+   */
+  private async loadLatestInboundMedia(
+    tenantId: string,
+    sessionName: string,
+    messages: Message[],
+  ): Promise<Map<string, AiMediaContentPart>> {
+    const result = new Map<string, AiMediaContentPart>();
+    if (!this.mediaDownloader) {
+      return result;
+    }
+
+    const latestMediaMessage = [...messages].reverse().find(
+      (
+        message,
+      ): message is Message & {
+        contentType: 'image' | 'audio';
+        media: NonNullable<Message['media']>;
+      } =>
+        (message.contentType === 'image' || message.contentType === 'audio') &&
+        Boolean(message.media),
+    );
+    if (!latestMediaMessage) {
+      return result;
+    }
+
+    try {
+      const buffer = await this.mediaDownloader.download(tenantId, sessionName, {
+        contentType: latestMediaMessage.contentType,
+        mimeType: latestMediaMessage.media.mimeType,
+        url: latestMediaMessage.media.url,
+        mediaKeyEncrypted: latestMediaMessage.media.mediaKeyEncrypted,
+      });
+      if (!buffer || buffer.byteLength > MAX_MEDIA_BYTES_FOR_AI) {
+        return result;
+      }
+      result.set(latestMediaMessage.id, {
+        mimeType: latestMediaMessage.media.mimeType,
+        data: buffer.toString('base64'),
+      });
+    } catch {
+      // Silencioso de propósito, mesma política de `loadBusinessContext`: a
+      // interpretação de mídia é auxiliar, sua falha não deve impedir a
+      // resposta (a IA cai no fallback textual de `describeMessageContent`).
+    }
+    return result;
   }
 
   /**
@@ -246,6 +418,8 @@ export class ConversationAiService {
   private async recordInteraction(params: {
     tenantId: string;
     conversationId: string;
+    /** Fase 1, Bloco F1.4 (2026-08-01) — `id` da mensagem inbound que originou a tentativa. Gravado em toda tentativa, sucesso ou falha. */
+    messageId?: string;
     promptVersionId: string;
     model: string | undefined;
     tokensInput: number;
@@ -253,12 +427,20 @@ export class ConversationAiService {
     latencyMs: number;
     status: AiInteraction['status'];
     errorMessage?: string;
+    /** Fase 1, Bloco F1.4 (2026-08-01) — só relevante no caminho 'success'. */
+    escalationReason?: EscalationReason;
   }): Promise<string> {
-    const costUsd = calculateCostUsd(this.providerName, params.model, params.tokensInput, params.tokensOutput);
+    const costUsd = calculateCostUsd(
+      this.providerName,
+      params.model,
+      params.tokensInput,
+      params.tokensOutput,
+    );
 
     return this.aiInteractionRepository.record({
       tenantId: params.tenantId,
       conversationId: params.conversationId,
+      messageId: params.messageId,
       provider: this.providerName,
       model: params.model,
       promptVersion: params.promptVersionId,
@@ -268,6 +450,7 @@ export class ConversationAiService {
       latencyMs: params.latencyMs,
       status: params.status,
       errorMessage: params.errorMessage,
+      escalationReason: params.escalationReason,
     });
   }
 }

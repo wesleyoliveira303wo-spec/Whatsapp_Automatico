@@ -13,42 +13,69 @@ import { FakeAnalyticsRepository } from '../testDoubles';
  * Teste de integracao (Milestone 4, Bloco M4C) — mesma disciplina de
  * `aiInteractionsIntegration.test.ts`: requireApiKey real + router real +
  * error handler real + Service real sobre `FakeAnalyticsRepository` (sem SQL).
+ *
+ * Milestone 6, Bloco M6H-4 (2026-07-26): rota migrada de
+ * `/api/tenants/:tenantId/analytics` para
+ * `/api/tenants/:tenantId/sessions/:sessionName/analytics` — mesmo padrao ja
+ * usado pelo teste de integracao do `aiProfileRouter` (M6H-3).
  */
 function buildApp(): { app: Express; analyticsRepository: FakeAnalyticsRepository } {
   const hasher = new FakeApiKeyHasher();
   const tenantRepository = new FakeTenantRepository();
-  tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: hasher.hash('chave-tenant-1') });
-  tenantRepository.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: hasher.hash('chave-tenant-2') });
+  tenantRepository.seed({
+    id: 'tenant-1',
+    name: 'Empresa Um',
+    apiKeyHash: hasher.hash('chave-tenant-1'),
+  });
+  tenantRepository.seed({
+    id: 'tenant-2',
+    name: 'Empresa Dois',
+    apiKeyHash: hasher.hash('chave-tenant-2'),
+  });
 
   const analyticsRepository = new FakeAnalyticsRepository();
-  const analyticsService = new AnalyticsService(analyticsRepository, tenantRepository, new NoopLogger());
+  const analyticsService = new AnalyticsService(
+    analyticsRepository,
+    tenantRepository,
+    new NoopLogger(),
+  );
   const requireApiKey = createRequireApiKey(hasher, tenantRepository, new NoopLogger());
 
   const app = express();
   app.use(express.json());
-  app.use('/api/tenants/:tenantId/analytics', requireApiKey, createAnalyticsRouter(analyticsService));
-  app.use('/api/tenants/:tenantId/analytics', createAnalyticsErrorHandler(new NoopLogger()));
+  app.use(
+    '/api/tenants/:tenantId/sessions/:sessionName/analytics',
+    requireApiKey,
+    createAnalyticsRouter(analyticsService),
+  );
+  app.use(
+    '/api/tenants/:tenantId/sessions/:sessionName/analytics',
+    createAnalyticsErrorHandler(new NoopLogger()),
+  );
   return { app, analyticsRepository };
 }
 
 const OK_RANGE = 'from=2026-07-01&to=2026-07-10';
+const SESSION = 'sessao-1';
 
-describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', () => {
+describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C; por sessão desde M6H-4)', () => {
   it('sem X-API-Key, a rota nao e alcancada (401)', async () => {
     const { app } = buildApp();
-    const response = await request(app).get(`/api/tenants/tenant-1/analytics/ai-usage?${OK_RANGE}`);
+    const response = await request(app).get(
+      `/api/tenants/tenant-1/sessions/${SESSION}/analytics/ai-usage?${OK_RANGE}`,
+    );
     expect(response.status).toBe(401);
   });
 
   it('[fecha o IDOR] chave do tenant-1 nao acessa analytics do tenant-2 (403)', async () => {
     const { app } = buildApp();
     const response = await request(app)
-      .get(`/api/tenants/tenant-2/analytics/ai-usage?${OK_RANGE}`)
+      .get(`/api/tenants/tenant-2/sessions/${SESSION}/analytics/ai-usage?${OK_RANGE}`)
       .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(403);
   });
 
-  it('GET /ai-usage devolve os pontos do service (200), com costUsd string', async () => {
+  it('GET /ai-usage devolve os pontos do service (200), com costUsd string, e repassa sessionName ao service', async () => {
     const { app, analyticsRepository } = buildApp();
     analyticsRepository.seedAiUsage([
       {
@@ -64,17 +91,22 @@ describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', 
       },
     ]);
 
-    const response = await request(app).get(`/api/tenants/tenant-1/analytics/ai-usage?${OK_RANGE}`).set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get(`/api/tenants/tenant-1/sessions/${SESSION}/analytics/ai-usage?${OK_RANGE}`)
+      .set('x-api-key', 'chave-tenant-1');
 
     expect(response.status).toBe(200);
     expect(response.body.points).toHaveLength(1);
     expect(typeof response.body.points[0].costUsd).toBe('string');
+    expect(analyticsRepository.aiUsageCalls[0].sessionName).toBe(SESSION);
   });
 
   it('GET /messages devolve os pontos (200)', async () => {
     const { app, analyticsRepository } = buildApp();
     analyticsRepository.seedMessageFlow([{ date: '2026-07-05', inbound: 10, outbound: 7 }]);
-    const response = await request(app).get(`/api/tenants/tenant-1/analytics/messages?${OK_RANGE}`).set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get(`/api/tenants/tenant-1/sessions/${SESSION}/analytics/messages?${OK_RANGE}`)
+      .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(200);
     expect(response.body.points).toEqual([{ date: '2026-07-05', inbound: 10, outbound: 7 }]);
   });
@@ -83,7 +115,9 @@ describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', 
     const { app, analyticsRepository } = buildApp();
     analyticsRepository.seedNewConversations([{ date: '2026-07-05', count: 4 }]);
     analyticsRepository.seedConversationStatusCounts({ bot: 12, human: 3 });
-    const response = await request(app).get(`/api/tenants/tenant-1/analytics/conversations?${OK_RANGE}`).set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get(`/api/tenants/tenant-1/sessions/${SESSION}/analytics/conversations?${OK_RANGE}`)
+      .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(200);
     expect(response.body.newConversations).toEqual([{ date: '2026-07-05', count: 4 }]);
     expect(response.body.statusCounts).toEqual({ bot: 12, human: 3 });
@@ -91,8 +125,12 @@ describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', 
 
   it('GET /session-stability devolve os pontos (200)', async () => {
     const { app, analyticsRepository } = buildApp();
-    analyticsRepository.seedSessionStability([{ date: '2026-07-05', connected: 2, disconnected: 1, connecting: 0 }]);
-    const response = await request(app).get(`/api/tenants/tenant-1/analytics/session-stability?${OK_RANGE}`).set('x-api-key', 'chave-tenant-1');
+    analyticsRepository.seedSessionStability([
+      { date: '2026-07-05', connected: 2, disconnected: 1, connecting: 0 },
+    ]);
+    const response = await request(app)
+      .get(`/api/tenants/tenant-1/sessions/${SESSION}/analytics/session-stability?${OK_RANGE}`)
+      .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(200);
     expect(response.body.points[0].connected).toBe(2);
   });
@@ -100,7 +138,9 @@ describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', 
   it('faixa invalida (from > to) -> 400 invalid_analytics_range (via AnalyticsService + error handler)', async () => {
     const { app } = buildApp();
     const response = await request(app)
-      .get('/api/tenants/tenant-1/analytics/ai-usage?from=2026-07-10&to=2026-07-01')
+      .get(
+        `/api/tenants/tenant-1/sessions/${SESSION}/analytics/ai-usage?from=2026-07-10&to=2026-07-01`,
+      )
       .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('invalid_analytics_range');
@@ -108,7 +148,9 @@ describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', 
 
   it('from/to ausentes -> 400 invalid_params (Zod, antes do service)', async () => {
     const { app } = buildApp();
-    const response = await request(app).get('/api/tenants/tenant-1/analytics/ai-usage').set('x-api-key', 'chave-tenant-1');
+    const response = await request(app)
+      .get(`/api/tenants/tenant-1/sessions/${SESSION}/analytics/ai-usage`)
+      .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('invalid_params');
   });
@@ -116,7 +158,9 @@ describe('Integracao requireApiKey + analyticsRouter (Milestone 4, Bloco M4C)', 
   it('granularity diferente de day -> 400 invalid_params (Zod, so day no MVP - D48)', async () => {
     const { app } = buildApp();
     const response = await request(app)
-      .get(`/api/tenants/tenant-1/analytics/ai-usage?${OK_RANGE}&granularity=hour`)
+      .get(
+        `/api/tenants/tenant-1/sessions/${SESSION}/analytics/ai-usage?${OK_RANGE}&granularity=hour`,
+      )
       .set('x-api-key', 'chave-tenant-1');
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('invalid_params');

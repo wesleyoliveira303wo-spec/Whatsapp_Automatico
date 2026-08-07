@@ -34,7 +34,9 @@ export class FakeReconnectionPolicy implements ReconnectionPolicy {
   fireLastRetry(): void {
     const last = this.scheduleCalls[this.scheduleCalls.length - 1];
     if (!last) {
-      throw new Error('FakeReconnectionPolicy.fireLastRetry(): nenhuma chamada de scheduleReconnect registrada.');
+      throw new Error(
+        'FakeReconnectionPolicy.fireLastRetry(): nenhuma chamada de scheduleReconnect registrada.',
+      );
     }
     last.onRetry();
   }

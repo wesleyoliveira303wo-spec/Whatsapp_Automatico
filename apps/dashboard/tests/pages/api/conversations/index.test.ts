@@ -15,8 +15,14 @@ describe('GET /api/conversations (Milestone 3, Bloco 6 - D22)', () => {
   });
 
   it('delega a callConversationsApi(session, "") repassando status/limit/cursor da query', async () => {
-    (callConversationsApi as jest.Mock).mockResolvedValue({ status: 200, body: { conversations: [] } });
-    const req = createFakeReq({ method: 'GET', query: { status: 'human', limit: '10', cursor: 'abc' } });
+    (callConversationsApi as jest.Mock).mockResolvedValue({
+      status: 200,
+      body: { conversations: [] },
+    });
+    const req = createFakeReq({
+      method: 'GET',
+      query: { status: 'human', limit: '10', cursor: 'abc' },
+    });
     const res = createFakeRes();
 
     await handler(req, res);
@@ -28,7 +34,10 @@ describe('GET /api/conversations (Milestone 3, Bloco 6 - D22)', () => {
   });
 
   it('repassa o status HTTP de erro da API sem transformar (mesmo padrao proxy-fino das rotas de sessions)', async () => {
-    (callConversationsApi as jest.Mock).mockResolvedValue({ status: 404, body: { error: 'tenant_not_found' } });
+    (callConversationsApi as jest.Mock).mockResolvedValue({
+      status: 404,
+      body: { error: 'tenant_not_found' },
+    });
     const req = createFakeReq({ method: 'GET' });
     const res = createFakeRes();
 

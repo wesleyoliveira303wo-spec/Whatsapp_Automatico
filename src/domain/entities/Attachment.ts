@@ -18,12 +18,28 @@ export class Attachment {
     this.props = { ...props };
   }
 
-  get id(): string { return this.props.id; }
-  get messageId(): string { return this.props.messageId; }
-  get type(): MessageType { return this.props.type; }
-  get url(): string { return this.props.url; }
-  get mimeType(): string { return this.props.mimeType; }
-  get sizeBytes(): number { return this.props.sizeBytes; }
-  get metadata(): Record<string, unknown> | undefined { return this.props.metadata; }
-  get createdAt(): Date { return this.props.createdAt; }
+  get id(): string {
+    return this.props.id;
+  }
+  get messageId(): string {
+    return this.props.messageId;
+  }
+  get type(): MessageType {
+    return this.props.type;
+  }
+  get url(): string {
+    return this.props.url;
+  }
+  get mimeType(): string {
+    return this.props.mimeType;
+  }
+  get sizeBytes(): number {
+    return this.props.sizeBytes;
+  }
+  get metadata(): Record<string, unknown> | undefined {
+    return this.props.metadata;
+  }
+  get createdAt(): Date {
+    return this.props.createdAt;
+  }
 }

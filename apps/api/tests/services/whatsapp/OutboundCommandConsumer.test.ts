@@ -33,7 +33,13 @@ function buildSut(): {
     logger,
   );
 
-  return { consumer, providerFactory, conversationRepository, messageRepository, aiInteractionRepository };
+  return {
+    consumer,
+    providerFactory,
+    conversationRepository,
+    messageRepository,
+    aiInteractionRepository,
+  };
 }
 
 function buildConversation(overrides: Partial<Conversation> = {}): Conversation {
@@ -43,6 +49,12 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
     sessionName: 'default',
     contactJid: '5511999999999@s.whatsapp.net',
     status: 'bot',
+    unreadCount: 0,
+    stage: 'new',
+    stageSetBy: 'ai',
+    stageUpdatedAt: new Date('2026-07-10T12:00:00Z'),
+    excludedFromPipeline: false,
+    tags: [],
     createdAt: new Date('2026-07-10T12:00:00Z'),
     updatedAt: new Date('2026-07-10T12:00:00Z'),
     ...overrides,
@@ -90,7 +102,8 @@ describe('OutboundCommandConsumer', () => {
     });
 
     it('vincula o AiInteraction de origem à Message criada (linkMessage)', async () => {
-      const { consumer, conversationRepository, messageRepository, aiInteractionRepository } = buildSut();
+      const { consumer, conversationRepository, messageRepository, aiInteractionRepository } =
+        buildSut();
       conversationRepository.seed(buildConversation());
 
       await consumer.consume(buildCommand({ aiInteractionId: 'ai-interaction-42' }));
@@ -104,13 +117,23 @@ describe('OutboundCommandConsumer', () => {
 
   describe('consume() — mensagem do operador (N2, sem aiInteractionId)', () => {
     it('envia e cria a Message outbound, mas NÃO chama linkMessage (não há AiInteraction)', async () => {
-      const { consumer, providerFactory, conversationRepository, messageRepository, aiInteractionRepository } = buildSut();
+      const {
+        consumer,
+        providerFactory,
+        conversationRepository,
+        messageRepository,
+        aiInteractionRepository,
+      } = buildSut();
       conversationRepository.seed(buildConversation());
 
-      await consumer.consume(buildCommand({ aiInteractionId: undefined, idempotencyKey: 'agent-uuid-1' }));
+      await consumer.consume(
+        buildCommand({ aiInteractionId: undefined, idempotencyKey: 'agent-uuid-1' }),
+      );
 
       const [provider] = providerFactory.getCreatedProviders();
-      expect(provider.sendMessageCalls).toEqual([{ to: '5511999999999@s.whatsapp.net', content: 'Olá! Como posso ajudar?' }]);
+      expect(provider.sendMessageCalls).toEqual([
+        { to: '5511999999999@s.whatsapp.net', content: 'Olá! Como posso ajudar?' },
+      ]);
       expect(messageRepository.getAll()).toHaveLength(1);
       expect(messageRepository.getAll()[0].direction).toBe('outbound');
       expect(aiInteractionRepository.linkMessageCalls).toHaveLength(0);
@@ -136,7 +159,12 @@ describe('OutboundCommandConsumer', () => {
       const sessionRepo = new FakeWhatsAppSessionRepository();
       const eventRepo = new FakeWhatsAppSessionEventRepository();
       const logger = new NoopLogger();
-      const registry = new WhatsAppConnectionRegistry(providerFactory, sessionRepo, logger, eventRepo);
+      const registry = new WhatsAppConnectionRegistry(
+        providerFactory,
+        sessionRepo,
+        logger,
+        eventRepo,
+      );
       const conversationRepository = new FakeConversationRepository();
       const messageRepository = new FakeMessageRepository();
       const aiInteractionRepository = new FakeAiInteractionRepository();

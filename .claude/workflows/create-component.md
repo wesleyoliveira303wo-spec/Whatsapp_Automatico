@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'create-component',
-  description: 'Workflow to create a new UI component following the design system and React standards.',
-  phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
+name: 'create-component',
+description: 'Workflow to create a new UI component following the design system and React standards.',
+phases: [{title:'Design'},{title:'Implement'},{title:'Test'},{title:'Document'},{title:'Review'}]
 };
 
 phase('Design');

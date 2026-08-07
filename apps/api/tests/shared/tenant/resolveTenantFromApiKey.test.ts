@@ -9,7 +9,11 @@ describe('resolveTenantFromApiKey', () => {
     const apiKeyHash = hasher.hash('chave-valida-do-tenant-1');
     tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash });
 
-    const tenant = await resolveTenantFromApiKey(hasher, tenantRepository, 'chave-valida-do-tenant-1');
+    const tenant = await resolveTenantFromApiKey(
+      hasher,
+      tenantRepository,
+      'chave-valida-do-tenant-1',
+    );
 
     expect(tenant).toEqual({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash });
   });
@@ -17,7 +21,11 @@ describe('resolveTenantFromApiKey', () => {
   it('retorna null quando a API key não corresponde a nenhum tenant', async () => {
     const hasher = new FakeApiKeyHasher();
     const tenantRepository = new FakeTenantRepository();
-    tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: hasher.hash('chave-do-tenant-1') });
+    tenantRepository.seed({
+      id: 'tenant-1',
+      name: 'Empresa Teste',
+      apiKeyHash: hasher.hash('chave-do-tenant-1'),
+    });
 
     const tenant = await resolveTenantFromApiKey(hasher, tenantRepository, 'chave-errada');
 

@@ -1,5 +1,6 @@
 import { Logger } from '../../../../../shared/domain/Logger';
 import { CredentialsStore } from '../../../../../shared/security/domain/CredentialsStore';
+import { Cipher } from '../../../../../shared/security/domain/Cipher';
 import { WhatsAppProvider } from '../../../domain/providers/WhatsAppProvider';
 import { WhatsAppProviderFactory } from '../../../domain/providers/WhatsAppProviderFactory';
 import { BaileysProvider } from './BaileysProvider';
@@ -39,10 +40,30 @@ export class BaileysProviderFactory implements WhatsAppProviderFactory {
     private readonly credentialsStore: CredentialsStore,
     private readonly logger: Logger,
     private readonly reconnectionPolicyConfig: ReconnectionPolicyConfig = DEFAULT_RECONNECTION_POLICY_CONFIG,
+    /**
+     * Fase 1, Bloco F1.1 (ADR #90) — cifra a `mediaKey` de mensagens de
+     * mídia antes de persistir (nunca em texto plano, mesmo padrão de
+     * `TenantCredential.value`). OPCIONAL, no fim, para não quebrar nenhum
+     * chamador existente (`compositionRoot.test.ts` e qualquer composição
+     * anterior a este bloco); sem ele, `BaileysProvider` simplesmente não
+     * reconhece mídia (mesmo comportamento de antes do F1.1 — mensagens de
+     * mídia continuam sendo descartadas, nunca quebra por falta de cipher).
+     */
+    private readonly cipher?: Cipher,
   ) {}
 
   create(tenantId: string, sessionName: string): WhatsAppProvider {
-    const reconnectionPolicy = new WhatsAppReconnectionPolicy(this.reconnectionPolicyConfig, this.logger);
-    return new BaileysProvider(tenantId, sessionName, this.credentialsStore, this.logger, reconnectionPolicy);
+    const reconnectionPolicy = new WhatsAppReconnectionPolicy(
+      this.reconnectionPolicyConfig,
+      this.logger,
+    );
+    return new BaileysProvider(
+      tenantId,
+      sessionName,
+      this.credentialsStore,
+      this.logger,
+      reconnectionPolicy,
+      this.cipher,
+    );
   }
 }

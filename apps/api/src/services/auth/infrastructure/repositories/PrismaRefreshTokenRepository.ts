@@ -1,7 +1,10 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { RefreshToken } from '../../domain/entities/RefreshToken';
-import { NewRefreshToken, RefreshTokenRepository } from '../../domain/repositories/RefreshTokenRepository';
+import {
+  NewRefreshToken,
+  RefreshTokenRepository,
+} from '../../domain/repositories/RefreshTokenRepository';
 
 interface RefreshTokenRow {
   id: string;

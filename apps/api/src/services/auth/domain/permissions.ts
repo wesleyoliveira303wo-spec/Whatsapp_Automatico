@@ -22,6 +22,10 @@ export type Permission =
   | 'ai_interaction:read'
   | 'ai_profile:read'
   | 'ai_profile:update'
+  | 'quick_reply:read'
+  | 'quick_reply:manage'
+  | 'tag:read'
+  | 'tag:manage'
   | 'user:read'
   | 'user:create'
   | 'user:update'
@@ -36,7 +40,12 @@ export type Permission =
 // resultado e um mapa explicito cargo->permissoes, facil de auditar ("por que
 // esse cargo pode X?" = olhar a lista), sem as armadilhas de heranca encadeada
 // de RBAC. O OWNER e tratado a parte (tem tudo, inclusive permissoes futuras).
-const READ_ONLY: readonly Permission[] = ['conversation:read', 'session:read', 'analytics:read', 'ai_interaction:read'];
+const READ_ONLY: readonly Permission[] = [
+  'conversation:read',
+  'session:read',
+  'analytics:read',
+  'ai_interaction:read',
+];
 
 const OPERATOR: readonly Permission[] = [
   ...READ_ONLY,
@@ -45,6 +54,13 @@ const OPERATOR: readonly Permission[] = [
   'conversation:escalate',
   'conversation:resume_own',
   'message:send',
+  // Fase 1, Bloco F1.9 — quem ja manda mensagem ja pode listar/inserir
+  // respostas rapidas no composer (so a GESTAO delas exige administrator+).
+  'quick_reply:read',
+  // Redesign 2026-08-05 (R4) — quem ja manda mensagem ja pode ver/atribuir
+  // tags numa conversa (so o CATALOGO — criar/editar/remover tag — exige
+  // administrator+, mesmo racional de quick_reply).
+  'tag:read',
 ];
 
 const MANAGER: readonly Permission[] = [
@@ -66,6 +82,14 @@ const ADMINISTRATOR: readonly Permission[] = [
   // operacao do dia a dia. Owner herda tudo via `hasPermission`.
   'ai_profile:read',
   'ai_profile:update',
+  // Fase 1, Bloco F1.9 — CADASTRAR/editar/remover respostas rapidas e
+  // administracao da empresa, mesmo nivel de ai_profile:update. LER/inserir
+  // no composer ja esta liberado desde OPERATOR (`quick_reply:read` acima).
+  'quick_reply:manage',
+  // Redesign 2026-08-05 (R4) — CADASTRAR/editar/remover tags do catalogo e
+  // administracao da empresa. Ver/atribuir tag numa conversa ja esta
+  // liberado desde OPERATOR (`tag:read` acima).
+  'tag:manage',
 ];
 
 /**

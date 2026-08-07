@@ -1,66 +1,114 @@
 import type { GetServerSideProps } from 'next';
-import Sidebar from '@/components/Sidebar';
+import Head from 'next/head';
+import { Plus, Smartphone } from 'lucide-react';
 import Header from '@/components/Header';
-import CreateSessionForm from '@/components/CreateSessionForm';
-import SessionListItem from '@/components/SessionListItem';
+import ConnectWhatsAppDialog from '@/components/ConnectWhatsAppDialog';
+import WhatsAppAccountCard from '@/components/WhatsAppAccountCard';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import EmptyState from '@/components/states/EmptyState';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { useSessionsList } from '@/hooks/useSessionsList';
+import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
+import { pageTitle } from '@/lib/brand';
 
 interface HomeProps {
   tenantId: string;
 }
 
 /**
- * Lista de sessões do tenant (M2, Fase 4 — UI-1 + UI-3). Página protegida:
- * `getServerSideProps` exige uma sessão válida (`requirePageSession`, Fase
- * 4 sobre `readSessionFromRequest`, Fase 3) ANTES de renderizar qualquer
- * coisa — sem isso, um usuário sem cookie veria uma tela vazia em vez de
- * ser mandado para `/login` (a lista já viria vazia de qualquer rota BFF,
- * já que elas próprias exigem sessão, mas a UX correta é o redirect, não
- * um estado de erro silencioso).
+ * Workspace — nível 1 de navegação (Milestone 6, Bloco M6H-1, ADR #74).
+ * A ÚNICA função desta tela é administrar sessões do WhatsApp: nenhuma
+ * `Sidebar`, nenhum atalho de Conversas/Analytics/Cérebro da IA/Equipe — isso
+ * tudo vive dentro de CADA sessão (`SessionLayout`), acessível só depois de
+ * escolher qual WhatsApp administrar. Página protegida:
+ * `getServerSideProps` exige sessão válida antes de renderizar.
  *
- * Os dados em si (`sessions`) vêm do `useSessionsList` (client-side, via
- * SSE) — `getServerSideProps` só resolve o `tenantId` para o `Header`,
- * nunca busca as sessões no servidor: mantém uma única fonte de dados
- * "viva" (o stream), em vez de um estado inicial de servidor que ficaria
- * dessincronizado até o primeiro tick do SSE substituí-lo.
+ * Cada card mostra um indicador simples e real: conversas aguardando
+ * atendimento humano NAQUELA sessão (`useWaitingForHuman().countBySession` —
+ * dado que já chega no cliente, sem endpoint novo). "Quantidade de conversas"
+ * e "IA ativa" (pedidos originalmente) ficam de fora por ora: o primeiro
+ * exigiria um endpoint de contagem que ainda não existe, e o segundo não tem
+ * nenhum estado real por trás (não existe hoje um botão de pausar a IA por
+ * sessão) — mostrar os dois seria inventar dado, não indicador.
  */
 export const getServerSideProps: GetServerSideProps<HomeProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
   if (guard.kind === 'redirect') {
     return { redirect: guard.redirect };
   }
-  const session = guard.session;
-  return { props: { tenantId: session.tenantId } };
+  return { props: { tenantId: guard.session.tenantId } };
 };
 
 export default function Home({ tenantId }: HomeProps): JSX.Element {
   const { sessions, loading, errorMessage, connected } = useSessionsList();
+  const { countBySession } = useWaitingForHuman();
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar />
-      <div className="flex flex-col flex-1">
-        <Header tenantId={tenantId} />
-        <main className="flex-1 space-y-4 overflow-y-auto p-6">
-          <CreateSessionForm />
-
-          {!connected && <p className="text-sm text-yellow-700">Reconectando ao servidor…</p>}
-          {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
-
-          {loading ? (
-            <p className="text-sm text-gray-500">Carregando sessões…</p>
-          ) : sessions.length === 0 ? (
-            <p className="text-sm text-gray-500">Nenhuma sessão ainda. Crie uma acima.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {sessions.map((session) => (
-                <SessionListItem key={session.id} session={session} />
-              ))}
-            </div>
+    <div className="flex h-screen flex-col bg-muted/30">
+      <Head>
+        <title>{pageTitle('WhatsApps')}</title>
+      </Head>
+      <Header tenantId={tenantId} />
+      <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Seus WhatsApps
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Conecte e gerencie os números que o Francis atende.
+            </p>
+          </div>
+          {sessions.length > 0 && (
+            <ConnectWhatsAppDialog
+              trigger={
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Conectar WhatsApp
+                </Button>
+              }
+            />
           )}
-        </main>
-      </div>
+        </div>
+
+        {!connected && <p className="mb-4 text-sm text-warning">Reconectando ao servidor…</p>}
+        {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
+
+        {loading ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <EmptyState
+            icon={Smartphone}
+            title="Conecte seu primeiro WhatsApp"
+            description="Escaneie um QR Code para o Francis começar a atender seus clientes automaticamente."
+            action={
+              <ConnectWhatsAppDialog
+                trigger={
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Conectar WhatsApp
+                  </Button>
+                }
+              />
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {sessions.map((session) => (
+              <WhatsAppAccountCard
+                key={session.id}
+                session={session}
+                waitingCount={countBySession[session.sessionName] ?? 0}
+              />
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

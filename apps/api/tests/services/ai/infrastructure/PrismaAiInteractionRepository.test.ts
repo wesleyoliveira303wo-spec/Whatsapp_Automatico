@@ -1,7 +1,9 @@
 import { PrismaAiInteractionRepository } from '../../../../src/services/ai/infrastructure/repositories/PrismaAiInteractionRepository';
 import { AiInteraction } from '../../../../src/services/ai/domain/entities/AiInteraction';
 
-function createFakePrisma(): { aiInteraction: { create: jest.Mock; update: jest.Mock; findMany: jest.Mock } } {
+function createFakePrisma(): {
+  aiInteraction: { create: jest.Mock; update: jest.Mock; findMany: jest.Mock };
+} {
   return {
     aiInteraction: {
       create: jest.fn(),
@@ -28,7 +30,9 @@ const SAMPLE_ROW = {
   createdAt: new Date('2026-07-10T12:00:00Z'),
 };
 
-function buildInteraction(overrides: Partial<Omit<AiInteraction, 'id' | 'createdAt'>> = {}): Omit<AiInteraction, 'id' | 'createdAt'> {
+function buildInteraction(
+  overrides: Partial<Omit<AiInteraction, 'id' | 'createdAt'>> = {},
+): Omit<AiInteraction, 'id' | 'createdAt'> {
   return {
     tenantId: 'tenant-1',
     conversationId: 'conversation-1',
@@ -76,10 +80,17 @@ describe('PrismaAiInteractionRepository', () => {
       prisma.aiInteraction.create.mockResolvedValue({});
       const repo = new PrismaAiInteractionRepository(prisma as never);
 
-      await repo.record(buildInteraction({ status: 'validation_rejected', errorMessage: 'Resposta vazia' }));
+      await repo.record(
+        buildInteraction({ status: 'validation_rejected', errorMessage: 'Resposta vazia' }),
+      );
 
       expect(prisma.aiInteraction.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ status: 'VALIDATION_REJECTED', errorMessage: 'Resposta vazia' }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'VALIDATION_REJECTED',
+            errorMessage: 'Resposta vazia',
+          }),
+        }),
       );
     });
 
@@ -100,7 +111,13 @@ describe('PrismaAiInteractionRepository', () => {
       );
 
       expect(prisma.aiInteraction.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ status: 'PROVIDER_ERROR', model: undefined, errorMessage: 'Falha de rede' }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'PROVIDER_ERROR',
+            model: undefined,
+            errorMessage: 'Falha de rede',
+          }),
+        }),
       );
     });
 

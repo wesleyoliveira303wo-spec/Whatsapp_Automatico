@@ -1,5 +1,5 @@
-import AiInteractionStatusBadge from './AiInteractionStatusBadge';
-import { formatDateTime, formatCostUsd } from '@/lib/formatters';
+import { cn } from '@/lib/utils';
+import { formatAiInteractionCompactDetail, formatShortRelativeTime } from '@/lib/formatters';
 import type { AiInteractionSummary } from '@/lib/clientApi';
 
 interface AiInteractionRowProps {
@@ -7,38 +7,40 @@ interface AiInteractionRowProps {
 }
 
 /**
- * Uma linha de auditoria de IA (Milestone 3, Bloco 6 — D28): provider,
- * modelo, versao do prompt, tokens, custo (string decimal exata — nunca
- * number, restricao do Bloco 3b), latencia, status e timestamp. Toda
- * tentativa aparece (sucesso, rejeitada, erro) — a API grava TODAS
- * (criterio de aceite da Milestone 3), a UI nao esconde nenhuma.
+ * Uma linha de auditoria de IA (Milestone 3, Bloco 6 — D28), no painel de
+ * contexto da conversa (`ConversationContextPanel`).
+ *
+ * Reskin 2026-08-06 — linha compacta (ponto + modelo + tokens/custo/latência
+ * condensados numa linha + tempo relativo), Design System §"Últimas
+ * interações": nenhum dado deixa de existir, só troca de layout — tokens/
+ * custo/latência/status seguem todos representados via
+ * `formatAiInteractionCompactDetail` (D28 preservado: toda tentativa aparece,
+ * sucesso ou não). `promptVersion`/o texto completo do erro não cabem na
+ * linha compacta; o erro, quando houver, fica acessível via `title`
+ * (tooltip) — não é descartado, só deixa de ocupar espaço fixo.
  */
 export default function AiInteractionRow({ interaction }: AiInteractionRowProps): JSX.Element {
+  const ok = interaction.status === 'success';
   return (
-    <li className="rounded-md border border-gray-100 bg-white px-3 py-2 text-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <AiInteractionStatusBadge status={interaction.status} />
-          <span className="text-gray-700">
-            {interaction.provider}
-            {interaction.model ? ` · ${interaction.model}` : ''}
-          </span>
-        </div>
-        <span className="text-gray-400">{formatDateTime(interaction.createdAt)}</span>
-      </div>
-      <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs text-gray-500 sm:grid-cols-4">
-        <dt>Prompt</dt>
-        <dd className="text-gray-700">{interaction.promptVersion}</dd>
-        <dt>Tokens (in/out)</dt>
-        <dd className="text-gray-700">
-          {interaction.tokensInput}/{interaction.tokensOutput}
-        </dd>
-        <dt>Custo</dt>
-        <dd className="text-gray-700">{formatCostUsd(interaction.costUsd)}</dd>
-        <dt>Latencia</dt>
-        <dd className="text-gray-700">{interaction.latencyMs} ms</dd>
-      </dl>
-      {interaction.errorMessage && <p className="mt-1 text-xs text-red-600">{interaction.errorMessage}</p>}
+    <li
+      className="-mx-2 flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted"
+      title={interaction.errorMessage ?? undefined}
+    >
+      <span
+        className={cn('h-1.5 w-1.5 shrink-0 rounded-full', ok ? 'bg-success' : 'bg-warning')}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12.5px] font-medium text-foreground-secondary">
+          {interaction.model ?? interaction.provider}
+        </span>
+        <span className="mt-px block truncate text-[11.5px] tabular-nums text-muted-foreground">
+          {formatAiInteractionCompactDetail(interaction)}
+        </span>
+      </span>
+      <span className="shrink-0 whitespace-nowrap text-[11.5px] tabular-nums text-muted-foreground">
+        {formatShortRelativeTime(interaction.createdAt)}
+      </span>
     </li>
   );
 }

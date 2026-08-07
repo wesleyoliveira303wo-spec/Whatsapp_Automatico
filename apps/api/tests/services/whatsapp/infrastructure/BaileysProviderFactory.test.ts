@@ -13,14 +13,17 @@ const baileysProviderConstructorSpy = jest.fn();
  * Usar uma factory explicita (em vez de automock) evita que este teste
  * dependa, de qualquer forma, do pacote real `@whiskeysockets/baileys`.
  */
-jest.mock('../../../../src/services/whatsapp/infrastructure/providers/baileys/BaileysProvider', () => {
-  return {
-    BaileysProvider: jest.fn().mockImplementation((...args: unknown[]) => {
-      baileysProviderConstructorSpy(...args);
-      return { __isMockBaileysProviderInstance: true };
-    }),
-  };
-});
+jest.mock(
+  '../../../../src/services/whatsapp/infrastructure/providers/baileys/BaileysProvider',
+  () => {
+    return {
+      BaileysProvider: jest.fn().mockImplementation((...args: unknown[]) => {
+        baileysProviderConstructorSpy(...args);
+        return { __isMockBaileysProviderInstance: true };
+      }),
+    };
+  },
+);
 
 import { BaileysProviderFactory } from '../../../../src/services/whatsapp/infrastructure/providers/baileys/BaileysProviderFactory';
 import { WhatsAppReconnectionPolicy } from '../../../../src/services/whatsapp/infrastructure/providers/baileys/WhatsAppReconnectionPolicy';
@@ -63,6 +66,9 @@ describe('BaileysProviderFactory', () => {
       credentialsStore,
       logger,
       expect.any(WhatsAppReconnectionPolicy),
+      // Fase 1, Bloco F1.1 (ADR #90): 6º parâmetro `cipher`, opcional —
+      // `undefined` quando a factory não recebe um (comportamento pré-F1.1).
+      undefined,
     );
     expect(provider).toBeDefined();
   });
@@ -82,6 +88,7 @@ describe('BaileysProviderFactory', () => {
       credentialsStore,
       logger,
       expect.any(WhatsAppReconnectionPolicy),
+      undefined,
     );
     expect(baileysProviderConstructorSpy).toHaveBeenNthCalledWith(
       2,
@@ -90,6 +97,7 @@ describe('BaileysProviderFactory', () => {
       credentialsStore,
       logger,
       expect.any(WhatsAppReconnectionPolicy),
+      undefined,
     );
   });
 

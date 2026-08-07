@@ -12,8 +12,16 @@ export class ConversationTag {
     this.props = { ...props };
   }
 
-  get id(): string { return this.props.id; }
-  get conversationId(): string { return this.props.conversationId; }
-  get tagId(): string { return this.props.tagId; }
-  get createdAt(): Date { return this.props.createdAt; }
+  get id(): string {
+    return this.props.id;
+  }
+  get conversationId(): string {
+    return this.props.conversationId;
+  }
+  get tagId(): string {
+    return this.props.tagId;
+  }
+  get createdAt(): Date {
+    return this.props.createdAt;
+  }
 }

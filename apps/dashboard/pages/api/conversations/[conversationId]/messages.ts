@@ -19,18 +19,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === 'GET') {
     const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
-    const { status, body } = await callConversationsApi(session, `/${encodeURIComponent(conversationId)}/messages`, {
-      query: { limit },
-    });
+    const { status, body } = await callConversationsApi(
+      session,
+      `/${encodeURIComponent(conversationId)}/messages`,
+      {
+        query: { limit },
+      },
+    );
     res.status(status).json(body);
     return;
   }
 
   if (req.method === 'POST') {
-    const { status, body } = await callConversationsApi(session, `/${encodeURIComponent(conversationId)}/messages`, {
-      method: 'POST',
-      body: req.body,
-    });
+    const { status, body } = await callConversationsApi(
+      session,
+      `/${encodeURIComponent(conversationId)}/messages`,
+      {
+        method: 'POST',
+        body: req.body,
+      },
+    );
     res.status(status).json(body);
     return;
   }

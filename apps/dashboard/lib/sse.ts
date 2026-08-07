@@ -32,7 +32,12 @@ export const SSE_POLL_INTERVAL_MS = 2000;
  * PROJECT_STATUS.md — mas aqui, diferente de lá, é evitável sem custo
  * algum, então é evitado).
  */
-export function runSsePoller<T>(req: NextApiRequest, res: NextApiResponse, poll: () => Promise<T>, intervalMs: number = SSE_POLL_INTERVAL_MS): void {
+export function runSsePoller<T>(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  poll: () => Promise<T>,
+  intervalMs: number = SSE_POLL_INTERVAL_MS,
+): void {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',

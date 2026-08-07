@@ -40,7 +40,7 @@ describe('AiUsageChart (Milestone 4, Bloco M4E - jsdom)', () => {
 
   it('estado vazio: mostra o empty state', () => {
     render(<AiUsageChart points={[]} errorMessage={null} />);
-    expect(screen.getByText('Nenhuma interacao de IA no periodo.')).toBeInTheDocument();
+    expect(screen.getByText('Nenhuma interação de IA no período.')).toBeInTheDocument();
   });
 
   it('com dados: renderiza o container do grafico', () => {
@@ -51,7 +51,13 @@ describe('AiUsageChart (Milestone 4, Bloco M4E - jsdom)', () => {
 
 describe('MetricCard (Milestone 4, Bloco M4E - jsdom)', () => {
   it('exibe label e valor como string exata (D46: custo nunca convertido para number na exibicao)', () => {
-    render(<MetricCard label="Custo de IA no periodo" value="US$ 0.00123456" hint="String decimal exata" />);
+    render(
+      <MetricCard
+        label="Custo de IA no periodo"
+        value="US$ 0.00123456"
+        hint="String decimal exata"
+      />,
+    );
     expect(screen.getByText('Custo de IA no periodo')).toBeInTheDocument();
     expect(screen.getByText('US$ 0.00123456')).toBeInTheDocument();
     expect(screen.getByText('String decimal exata')).toBeInTheDocument();

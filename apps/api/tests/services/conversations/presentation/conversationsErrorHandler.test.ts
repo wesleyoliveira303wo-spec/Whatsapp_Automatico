@@ -17,17 +17,29 @@ describe('createConversationsErrorHandler (Milestone 3, Bloco 5)', () => {
     const handler = createConversationsErrorHandler(new NoopLogger());
     const res = buildRes();
 
-    handler(new ConversationNotFoundError('conversation-1'), {} as Request, res, jest.fn() as NextFunction);
+    handler(
+      new ConversationNotFoundError('conversation-1'),
+      {} as Request,
+      res,
+      jest.fn() as NextFunction,
+    );
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'conversation_not_found' }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'conversation_not_found' }),
+    );
   });
 
   it('[D14] mapeia TenantNotFoundError para 404 (já nasce corrigido, sem o gap encontrado em whatsAppErrorHandler)', () => {
     const handler = createConversationsErrorHandler(new NoopLogger());
     const res = buildRes();
 
-    handler(new TenantNotFoundError('tenant-inexistente'), {} as Request, res, jest.fn() as NextFunction);
+    handler(
+      new TenantNotFoundError('tenant-inexistente'),
+      {} as Request,
+      res,
+      jest.fn() as NextFunction,
+    );
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'tenant_not_found' }));

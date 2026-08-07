@@ -31,7 +31,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const session = await requireSession(req, res);
   if (!session) return;
   if (!isUserSession(session)) {
-    res.status(403).json({ error: 'user_session_required', message: 'Troca de senha exige login de pessoa.' });
+    res
+      .status(403)
+      .json({ error: 'user_session_required', message: 'Troca de senha exige login de pessoa.' });
     return;
   }
 
@@ -42,18 +44,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     typeof newPassword !== 'string' ||
     newPassword === ''
   ) {
-    res.status(400).json({ error: 'invalid_params', message: 'currentPassword e newPassword são obrigatórios' });
+    res
+      .status(400)
+      .json({ error: 'invalid_params', message: 'currentPassword e newPassword são obrigatórios' });
     return;
   }
 
   const apiBaseUrl = getApiBaseUrl();
   let changeResponse: Response;
   try {
-    changeResponse = await fetch(new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/change-password`, apiBaseUrl), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
+    changeResponse = await fetch(
+      new URL(
+        `/api/tenants/${encodeURIComponent(session.tenantId)}/auth/change-password`,
+        apiBaseUrl,
+      ),
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      },
+    );
   } catch (error) {
     res.status(502).json({ error: 'api_unreachable', message: (error as Error).message });
     return;
@@ -74,13 +87,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Passo 2 — relogin com a senha nova para manter ESTA sessao viva.
   try {
-    const reloginResponse = await fetch(new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/login`, apiBaseUrl), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: session.user.email, password: newPassword }),
-    });
+    const reloginResponse = await fetch(
+      new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/login`, apiBaseUrl),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: session.user.email, password: newPassword }),
+      },
+    );
     if (reloginResponse.ok) {
-      const body = (await reloginResponse.json()) as { accessToken?: unknown; refreshToken?: unknown };
+      const body = (await reloginResponse.json()) as {
+        accessToken?: unknown;
+        refreshToken?: unknown;
+      };
       if (typeof body.accessToken === 'string' && typeof body.refreshToken === 'string') {
         setSessionCookie(res, {
           ...session,
