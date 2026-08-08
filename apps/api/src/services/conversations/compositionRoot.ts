@@ -11,6 +11,7 @@ import { ConversationRepository } from './domain/repositories/ConversationReposi
 import { MessageRepository } from './domain/repositories/MessageRepository';
 import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './infrastructure/queues/AiReplyQueue';
 import { BullMqAiReplyScheduler } from './infrastructure/schedulers/BullMqAiReplyScheduler';
+import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
 import { MessageIngestionService } from './application/MessageIngestionService';
 import { ConversationsService } from './application/ConversationsService';
 import {
@@ -80,10 +81,17 @@ export function createConversationsComposition(
 
   const auditLogRepository = new PrismaAuditLogRepository(prisma);
 
+  // Fase 1 (2026-08-07) — Botão POWER: lê a MESMA tabela do Cérebro da IA
+  // (`ai_business_profiles`, `services/ai`) via uma porta estreita própria
+  // deste módulo — ver docstring de `AiAvailabilityRepository` para o porquê
+  // de não importar `AiBusinessProfileRepository` diretamente.
+  const aiAvailabilityRepository = new PrismaAiAvailabilityRepository(prisma);
+
   const messageIngestionService = new MessageIngestionService(
     conversationRepository,
     messageRepository,
     aiReplyScheduler,
+    aiAvailabilityRepository,
   );
   const conversationsService = new ConversationsService(
     conversationRepository,

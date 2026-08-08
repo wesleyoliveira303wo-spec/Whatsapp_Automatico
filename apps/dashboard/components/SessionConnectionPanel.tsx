@@ -4,6 +4,7 @@ import QRCodeCard from '@/components/QRCodeCard';
 import SessionActions from '@/components/SessionActions';
 import HistoryList from '@/components/HistoryList';
 import StatusDot from '@/components/StatusDot';
+import ContactAvatar from '@/components/ContactAvatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
@@ -25,6 +26,11 @@ interface SessionConnectionPanelProps {
  * largura inteira embaixo), igual ao mockup. `SessionActions` (Reconectar/
  * Desconectar/Remover) passa a viver DENTRO do mesmo cartão do resumo da
  * sessão (o mockup não separa isso num bloco próprio).
+ *
+ * Correção 2026-08-07 (2ª rodada, pedido do fundador): o badge com o ícone
+ * de celular vira a foto de perfil real do WhatsApp conectado
+ * (`ContactAvatar`, mesmo mecanismo usado no `SessionRail`) quando
+ * `session.phoneNumber` já é conhecido; sem ele, mantém o ícone de sempre.
  */
 export default function SessionConnectionPanel({
   sessionName,
@@ -55,9 +61,17 @@ export default function SessionConnectionPanel({
           <div className="grid grid-cols-1 gap-3.5 md:grid-cols-[1.3fr_1fr]">
             <div className="rounded-lg border border-border bg-card p-[18px]">
               <div className="mb-4 flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Smartphone className="h-[21px] w-[21px]" aria-hidden="true" />
-                </span>
+                {session.phoneNumber ? (
+                  <ContactAvatar
+                    sessionName={session.sessionName}
+                    contactJid={`${session.phoneNumber}@s.whatsapp.net`}
+                    className="h-11 w-11 text-sm"
+                  />
+                ) : (
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Smartphone className="h-[21px] w-[21px]" aria-hidden="true" />
+                  </span>
+                )}
                 <div>
                   <p className="text-[15px] font-semibold text-foreground">{session.sessionName}</p>
                   <div className="mt-0.5 flex items-center gap-[5px]">

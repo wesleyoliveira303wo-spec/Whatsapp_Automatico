@@ -245,6 +245,10 @@ describe('formatters (M2, Fase 4)', () => {
     it('devolve o número cru para um JID de grupo/formato diferente', () => {
       expect(formatPhoneNumber('123456789@g.us')).toBe('123456789');
     });
+
+    it('mostra rótulo claro (não os dígitos crus) para um contato com LID (correção 2026-08-07)', () => {
+      expect(formatPhoneNumber('225236742053984@lid')).toBe('Número privado (WhatsApp)');
+    });
   });
 
   describe('formatClientSince (Redesign 2026-08-05, R3)', () => {

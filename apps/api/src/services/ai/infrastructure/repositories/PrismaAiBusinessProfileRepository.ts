@@ -24,6 +24,7 @@ interface AiBusinessProfileRow {
   workingHoursEnd: string | null;
   workingDays: number;
   timezone: string;
+  aiEnabled: boolean;
 }
 
 function toDomain(row: AiBusinessProfileRow): AiBusinessProfile {
@@ -38,6 +39,7 @@ function toDomain(row: AiBusinessProfileRow): AiBusinessProfile {
     workingHoursEnd: row.workingHoursEnd,
     workingDays: row.workingDays,
     timezone: row.timezone,
+    aiEnabled: row.aiEnabled,
   };
 }
 
@@ -106,6 +108,19 @@ export class PrismaAiBusinessProfileRepository implements AiBusinessProfileRepos
         ...(data.workingDays !== undefined && { workingDays: data.workingDays }),
         ...(data.timezone !== undefined && { timezone: data.timezone }),
       },
+    });
+    return toDomain(row);
+  }
+
+  async setAiEnabled(
+    tenantId: string,
+    sessionName: string,
+    aiEnabled: boolean,
+  ): Promise<AiBusinessProfile> {
+    const row = await this.prisma.aiBusinessProfile.upsert({
+      where: { tenantId_sessionName: { tenantId, sessionName } },
+      create: { tenantId, sessionName, content: '', aiEnabled },
+      update: { aiEnabled },
     });
     return toDomain(row);
   }

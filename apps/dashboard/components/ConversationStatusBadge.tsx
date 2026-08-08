@@ -13,6 +13,16 @@ interface ConversationStatusBadgeProps {
    * lugar mais contextual para avisar quem está olhando que precisa agir.
    */
   escalatedAt?: string;
+  /**
+   * Fase 1 (2026-08-07, pedido do fundador) — Botão POWER da sessão. Quando
+   * `false`, sobrepõe QUALQUER combinação de `status`/`escalatedAt` por "IA
+   * desativada" em vermelho — inclusive conversas já com `status: 'human'`
+   * (decisão explícita do fundador: simplifica a leitura da tela inteira
+   * enquanto o botão estiver desligado, sem exceção por selo). Default
+   * `true` (comportamento de sempre) para não quebrar nenhum consumidor
+   * existente.
+   */
+  aiEnabled?: boolean;
 }
 
 /**
@@ -31,19 +41,23 @@ interface ConversationStatusBadgeProps {
 export default function ConversationStatusBadge({
   status,
   escalatedAt,
+  aiEnabled = true,
 }: ConversationStatusBadgeProps): JSX.Element {
   const isWaiting = Boolean(escalatedAt);
   const isHuman = status === 'human';
-  const tone = isWaiting || isHuman ? 'warning' : 'success';
-  const label = isWaiting ? 'Aguardando atendente' : formatConversationStatusLabel(status);
+  const aiOff = !aiEnabled;
+  const tone = aiOff ? 'destructive' : isWaiting || isHuman ? 'warning' : 'success';
+  const label = aiOff ? 'IA desativada' : isWaiting ? 'Aguardando atendente' : formatConversationStatusLabel(status);
 
   return (
     <span
       className={cn(
         'inline-flex h-[22px] shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-[11.5px] font-semibold',
-        tone === 'warning'
-          ? 'bg-warning/[.13] text-warning-emphasis'
-          : 'bg-success/[.12] text-success-emphasis',
+        tone === 'destructive'
+          ? 'bg-destructive/10 text-destructive'
+          : tone === 'warning'
+            ? 'bg-warning/[.13] text-warning-emphasis'
+            : 'bg-success/[.12] text-success-emphasis',
       )}
     >
       <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />

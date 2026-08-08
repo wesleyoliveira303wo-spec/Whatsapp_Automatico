@@ -9,6 +9,21 @@ function createFakePrisma(): { aiBusinessProfile: { findUnique: jest.Mock; upser
   };
 }
 
+const AI_ENABLED_ROW_DEFAULTS = {
+  id: 'profile-1',
+  tenantId: 'tenant-1',
+  sessionName: 'sessao-1',
+  content: '',
+  createdAt: new Date('2026-08-07T00:00:00Z'),
+  updatedAt: new Date('2026-08-07T00:00:00Z'),
+  offHoursEnabled: false,
+  offHoursMessage: null,
+  workingHoursStart: null,
+  workingHoursEnd: null,
+  workingDays: 62,
+  timezone: 'America/Sao_Paulo',
+};
+
 /**
  * Linha de banco completa, incluindo os campos de horário de atendimento (F1.8).
  */
@@ -25,6 +40,7 @@ const SAMPLE_ROW = {
   workingHoursEnd: null,
   workingDays: 62,
   timezone: 'America/Sao_Paulo',
+  aiEnabled: true,
 };
 
 describe('PrismaAiBusinessProfileRepository (por sessão desde M6H-3)', () => {
@@ -50,6 +66,7 @@ describe('PrismaAiBusinessProfileRepository (por sessão desde M6H-3)', () => {
         workingHoursEnd: null,
         workingDays: 62,
         timezone: 'America/Sao_Paulo',
+        aiEnabled: true,
       });
     });
 
@@ -139,6 +156,39 @@ describe('PrismaAiBusinessProfileRepository (por sessão desde M6H-3)', () => {
       expect(call.create).not.toHaveProperty('offHoursEnabled');
       expect(call.create).not.toHaveProperty('workingHoursStart');
       expect(call.update).not.toHaveProperty('offHoursEnabled');
+    });
+  });
+
+  describe('setAiEnabled() (Fase 1, Botão POWER, 2026-08-07)', () => {
+    it('faz upsert mexendo SÓ em aiEnabled — cria com content vazio quando a sessão ainda não tinha perfil', async () => {
+      const prisma = createFakePrisma();
+      prisma.aiBusinessProfile.upsert.mockResolvedValue({ ...AI_ENABLED_ROW_DEFAULTS, aiEnabled: false });
+      const repo = new PrismaAiBusinessProfileRepository(prisma as never);
+
+      const result = await repo.setAiEnabled('tenant-1', 'sessao-1', false);
+
+      expect(prisma.aiBusinessProfile.upsert).toHaveBeenCalledWith({
+        where: { tenantId_sessionName: { tenantId: 'tenant-1', sessionName: 'sessao-1' } },
+        create: { tenantId: 'tenant-1', sessionName: 'sessao-1', content: '', aiEnabled: false },
+        update: { aiEnabled: false },
+      });
+      expect(result.aiEnabled).toBe(false);
+    });
+
+    it('religar (aiEnabled: true) não mexe no content já salvo (update só toca aiEnabled)', async () => {
+      const prisma = createFakePrisma();
+      prisma.aiBusinessProfile.upsert.mockResolvedValue({
+        ...AI_ENABLED_ROW_DEFAULTS,
+        content: 'Salão da Maria.',
+        aiEnabled: true,
+      });
+      const repo = new PrismaAiBusinessProfileRepository(prisma as never);
+
+      const result = await repo.setAiEnabled('tenant-1', 'sessao-1', true);
+
+      const call = prisma.aiBusinessProfile.upsert.mock.calls[0][0];
+      expect(call.update).toEqual({ aiEnabled: true });
+      expect(result.content).toBe('Salão da Maria.');
     });
   });
 });

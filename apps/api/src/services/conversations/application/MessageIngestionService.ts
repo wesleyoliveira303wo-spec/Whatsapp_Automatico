@@ -6,6 +6,7 @@ import { Conversation } from '../domain/entities/Conversation';
 import { ConversationRepository } from '../domain/repositories/ConversationRepository';
 import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
+import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
@@ -35,11 +36,18 @@ import {
  *    um tempo é atendido de novo pela IA, em vez de ficar mudo para sempre.
  *    O silêncio é medido pelo intervalo até a última mensagem anterior (não
  *    por `Conversation.updatedAt`, que o upsert do passo 1 acabou de bumpar).
- * 4. Se a conversa está em modo `'bot'` (`shouldAutoRespond`) — de origem ou
- *    recém-reativada no passo 3 —, agenda uma resposta de IA via
- *    `AiReplyScheduler.schedule(...)` — nunca chama nenhum serviço de IA
- *    diretamente (§2.1: "`MessageIngestionService` e `ConversationAiService`
- *    NUNCA se chamam diretamente").
+ * 4. Se a conversa está em modo `'bot'` E a IA da sessão está ligada
+ *    (`shouldAutoRespond`, Fase 1/2026-08-07: Botão POWER — ver
+ *    `AiAvailabilityRepository`) — de origem ou recém-reativada no passo 3 —,
+ *    agenda uma resposta de IA via `AiReplyScheduler.schedule(...)` — nunca
+ *    chama nenhum serviço de IA diretamente (§2.1: "`MessageIngestionService`
+ *    e `ConversationAiService` NUNCA se chamam diretamente"). Com o Botão
+ *    POWER desligado, o job simplesmente NUNCA é enfileirado — a mensagem
+ *    ainda é persistida e aparece na Dashboard normalmente (passos 1-3 acima
+ *    são incondicionais), só não gera nenhum trabalho de IA. Isto é
+ *    deliberado (pedido do fundador): religar a IA depois NÃO deve fazer o
+ *    sistema "voltar" e responder mensagens antigas recebidas enquanto
+ *    estava desligada — como nada foi enfileirado, não há o que reprocessar.
  *
  * Erros de qualquer uma das etapas propagam para cima: `SessionManager`
  * (Bloco 1) já envolve a chamada a `MessageReceivedHandler.handle()` num
@@ -51,6 +59,7 @@ export class MessageIngestionService implements MessageReceivedHandler {
     private readonly conversationRepository: ConversationRepository,
     private readonly messageRepository: MessageRepository,
     private readonly aiReplyScheduler: AiReplyScheduler,
+    private readonly aiAvailabilityRepository: AiAvailabilityRepository,
     private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   ) {}
 
@@ -144,8 +153,14 @@ export class MessageIngestionService implements MessageReceivedHandler {
       }
     }
 
-    if (!isOutbound && shouldAutoRespond(effectiveConversation)) {
-      await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
+    if (!isOutbound) {
+      const sessionAiEnabled = await this.aiAvailabilityRepository.isEnabled(
+        message.tenantId,
+        message.sessionName,
+      );
+      if (shouldAutoRespond(effectiveConversation, sessionAiEnabled)) {
+        await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
+      }
     }
   }
 

@@ -57,6 +57,11 @@ const saveProfileBodySchema = z.object({
   timezone: z.string().min(1).optional(),
 });
 
+/** Corpo do `PATCH` (Fase 1, Botão POWER) — só o novo estado do toggle. */
+const setAiEnabledBodySchema = z.object({
+  aiEnabled: z.boolean(),
+});
+
 /**
  * Router REST (Presentation) da Base de Conhecimento (Nível 1) — o "Cérebro da
  * IA". Vive em `services/ai/presentation/`, ao lado de `aiInteractionsRouter`
@@ -70,7 +75,14 @@ const saveProfileBodySchema = z.object({
  * F1.8 (2026-08-01): os 6 campos de horário de atendimento são incluídos no
  * corpo do `PUT` (opcionais) e na resposta do `GET`/`PUT`.
  *
- * RBAC POR ROTA: GET exige `ai_profile:read`, PUT exige `ai_profile:update`.
+ * RBAC POR ROTA: GET exige `ai_profile:read`, PUT/PATCH exigem
+ * `ai_profile:update`.
+ *
+ * `PATCH /` (Fase 1, Botão POWER, 2026-08-07): liga/desliga SÓ `aiEnabled`
+ * — endpoint dedicado, separado do `PUT` (upsert do perfil inteiro), porque
+ * o botão precisa de um clique só, sem exigir que o formulário completo do
+ * Cérebro da IA já esteja carregado no cliente. Mesma permissão do `PUT`
+ * (reusa `ai_profile:update` — é literalmente o mesmo recurso).
  */
 export function createAiProfileRouter(aiBusinessProfileService: AiBusinessProfileService): Router {
   const router = Router({ mergeParams: true });
@@ -119,6 +131,28 @@ export function createAiProfileRouter(aiBusinessProfileService: AiBusinessProfil
           workingDays: body.workingDays,
           timezone: body.timezone,
         },
+      );
+      res.status(200).json({ profile });
+    }),
+  );
+
+  router.patch(
+    '/',
+    requirePermission('ai_profile:update'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(setAiEnabledBodySchema, req.body, res);
+      if (!body) return;
+
+      const profile = await aiBusinessProfileService.setAiEnabled(
+        params.tenantId,
+        params.sessionName,
+        body.aiEnabled,
       );
       res.status(200).json({ profile });
     }),

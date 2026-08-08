@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import SessionRail from '@/components/SessionRail';
 import SessionHeader from '@/components/SessionHeader';
+import { AiToggleProvider } from '@/contexts/AiToggleContext';
 
 interface SessionLayoutProps {
   tenantId: string;
@@ -29,15 +30,24 @@ interface SessionLayoutProps {
  * `<section>` (conteúdo). Estrutura corrigida para bater com isso: o rail
  * agora começa "um slot mais abaixo", à esquerda do conteúdo, nunca por
  * baixo do cabeçalho.
+ *
+ * Correção 2026-08-07 (Botão POWER, achado real do fundador: o selo das
+ * conversas só atualizava depois de F5) — `AiToggleProvider` montado AQUI,
+ * envolvendo cabeçalho E conteúdo: um único `useAiToggle` compartilhado por
+ * toda a sessão, em vez de cada consumidor (`AiPowerToggle` no cabeçalho,
+ * `ConversationInbox` no conteúdo) buscar/guardar sua própria cópia
+ * desincronizada. Ver `contexts/AiToggleContext.tsx`.
  */
 export default function SessionLayout({ sessionName, children }: SessionLayoutProps): JSX.Element {
   return (
-    <div className="flex h-screen flex-col bg-background">
-      <SessionHeader sessionName={sessionName} />
-      <div className="flex flex-1 overflow-hidden">
-        <SessionRail sessionName={sessionName} />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+    <AiToggleProvider sessionName={sessionName}>
+      <div className="flex h-screen flex-col bg-background">
+        <SessionHeader sessionName={sessionName} />
+        <div className="flex flex-1 overflow-hidden">
+          <SessionRail sessionName={sessionName} />
+          <main className="flex-1 overflow-y-auto">{children}</main>
+        </div>
       </div>
-    </div>
+    </AiToggleProvider>
   );
 }

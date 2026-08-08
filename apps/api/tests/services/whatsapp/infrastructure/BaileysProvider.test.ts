@@ -1173,7 +1173,7 @@ describe('BaileysProvider', () => {
       ]);
     });
 
-    it('mensagem de um LID: usa o senderPn (número real) como "from", não o @lid (fix de entrega)', async () => {
+    it('mensagem de um LID: usa o remoteJidAlt (número real) como "from", não o @lid (fix de entrega, corrigido 2026-08-07 — Baileys v7 renomeou senderPn)', async () => {
       const provider = new BaileysProvider(
         'tenant-1',
         'default',
@@ -1191,7 +1191,7 @@ describe('BaileysProvider', () => {
           {
             key: {
               remoteJid: '254352879009802@lid',
-              senderPn: '5584999998888@s.whatsapp.net',
+              remoteJidAlt: '5584999998888@s.whatsapp.net',
               fromMe: false,
             },
             message: { conversation: 'Ola' },

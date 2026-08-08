@@ -102,4 +102,35 @@ describe('AiBusinessProfileService (Base de Conhecimento — Nível 1, por sess�
       expect(await profiles.findByTenantAndSession('tenant-inexistente', SESSION)).toBeNull();
     });
   });
+
+  // Fase 1 (2026-08-07) — Botão POWER.
+  describe('setAiEnabled', () => {
+    it('desliga a IA e devolve o perfil persistido', async () => {
+      const { sut } = buildSut();
+
+      const result = await sut.setAiEnabled('tenant-1', SESSION, false);
+
+      expect(result.aiEnabled).toBe(false);
+    });
+
+    it('religa a IA sem mexer no content já salvo', async () => {
+      const { sut, profiles } = buildSut();
+      profiles.seed('tenant-1', SESSION, 'Salão da Maria.');
+      await sut.setAiEnabled('tenant-1', SESSION, false);
+
+      const result = await sut.setAiEnabled('tenant-1', SESSION, true);
+
+      expect(result.aiEnabled).toBe(true);
+      expect(result.content).toBe('Salão da Maria.');
+    });
+
+    it('lança TenantNotFoundError quando o tenant não existe (não cria perfil órfão)', async () => {
+      const { sut, profiles } = buildSut();
+
+      await expect(sut.setAiEnabled('tenant-inexistente', SESSION, false)).rejects.toThrow(
+        TenantNotFoundError,
+      );
+      expect(await profiles.findByTenantAndSession('tenant-inexistente', SESSION)).toBeNull();
+    });
+  });
 });

@@ -17,6 +17,12 @@ interface ConversationListItemProps {
   conversation: ConversationSummary;
   /** Milestone 6, Bloco M6H-2 — destaca a linha da conversa aberta no painel ao lado (padrão WhatsApp/Telegram: lista + chat lado a lado). */
   active?: boolean;
+  /**
+   * Fase 1 (2026-08-07) — Botão POWER da sessão. `false` sobrepõe o selo
+   * "Bot"/"Humano" por "IA desativada" (vermelho), em TODA linha da lista,
+   * sem exceção — decisão explícita do fundador. Default `true`.
+   */
+  aiEnabled?: boolean;
 }
 
 /**
@@ -35,6 +41,7 @@ interface ConversationListItemProps {
 export default function ConversationListItem({
   conversation,
   active = false,
+  aiEnabled = true,
 }: ConversationListItemProps): JSX.Element {
   // Reforma do escalonamento (2026-07-25): "aguardando atendente" = a IA
   // pediu atenção humana (`escalatedAt` definido) — a conversa pode continuar
@@ -74,10 +81,14 @@ export default function ConversationListItem({
           <span
             className={cn(
               'shrink-0 text-[10.5px] font-semibold',
-              conversation.status === 'human' ? 'text-warning-emphasis' : 'text-success-emphasis',
+              !aiEnabled
+                ? 'text-destructive'
+                : conversation.status === 'human'
+                  ? 'text-warning-emphasis'
+                  : 'text-success-emphasis',
             )}
           >
-            {conversation.status === 'human' ? 'Humano' : 'Bot'}
+            {!aiEnabled ? 'IA desativada' : conversation.status === 'human' ? 'Humano' : 'Bot'}
           </span>
           <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
             {formatConversationTimestamp(conversation.lastMessageAt ?? conversation.createdAt)}

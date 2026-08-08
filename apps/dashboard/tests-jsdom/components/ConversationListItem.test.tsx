@@ -184,4 +184,24 @@ describe('ConversationListItem (Milestone 6, Bloco M6H-2)', () => {
       expect(screen.getByText('Aguardando atendente')).toBeInTheDocument();
     });
   });
+
+  // Fase 1 (2026-08-07) — Botão POWER.
+  describe('aiEnabled=false (Botão POWER desligado)', () => {
+    it('sobrepõe o selo "Bot" por "IA desativada"', () => {
+      render(<ConversationListItem conversation={buildConversation({ status: 'bot' })} aiEnabled={false} />);
+      expect(screen.getByText('IA desativada')).toBeInTheDocument();
+      expect(screen.queryByText('Bot')).not.toBeInTheDocument();
+    });
+
+    it('sobrepõe o selo "Humano" também (decisão do fundador: sem exceção)', () => {
+      render(<ConversationListItem conversation={buildConversation({ status: 'human' })} aiEnabled={false} />);
+      expect(screen.getByText('IA desativada')).toBeInTheDocument();
+      expect(screen.queryByText('Humano')).not.toBeInTheDocument();
+    });
+
+    it('aiEnabled omitido (default true) preserva o comportamento de sempre', () => {
+      render(<ConversationListItem conversation={buildConversation({ status: 'bot' })} />);
+      expect(screen.getByText('Bot')).toBeInTheDocument();
+    });
+  });
 });

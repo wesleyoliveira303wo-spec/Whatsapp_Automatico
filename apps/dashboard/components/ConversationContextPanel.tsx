@@ -17,6 +17,8 @@ import {
 interface ConversationContextPanelProps {
   sessionName: string;
   conversationId: string;
+  /** Fase 1 (2026-08-07) — Botão POWER da sessão, repassado ao `ConversationStatusBadge`. Default `true`. */
+  aiEnabled?: boolean;
 }
 
 const RECENT_INTERACTIONS_LIMIT = 5;
@@ -42,6 +44,7 @@ const RECENT_INTERACTIONS_LIMIT = 5;
 export default function ConversationContextPanel({
   sessionName,
   conversationId,
+  aiEnabled = true,
 }: ConversationContextPanelProps): JSX.Element {
   const { conversation, loading, applyUpdate } = useConversationDetail(conversationId);
   const {
@@ -80,6 +83,7 @@ export default function ConversationContextPanel({
           <ConversationStatusBadge
             status={conversation.status}
             escalatedAt={conversation.escalatedAt}
+            aiEnabled={aiEnabled}
           />
           {conversation.excludedFromPipeline ? (
             <span className="inline-flex h-[22px] items-center whitespace-nowrap rounded-md border border-dashed border-muted-foreground/40 px-2 text-[11.5px] font-medium text-muted-foreground">

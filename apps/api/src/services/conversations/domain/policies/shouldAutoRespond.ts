@@ -24,7 +24,15 @@ import { Conversation } from '../entities/Conversation';
  * Checado aqui (não em `MessageIngestionService`/worker separadamente) pelo
  * mesmo motivo de sempre — uma única função pura de Domain, reusada nos
  * dois pontos que precisam da mesma decisão.
+ *
+ * Fase 1 (2026-08-07) — Botão POWER: terceira condição, `sessionAiEnabled`.
+ * Continua uma função PURA (não busca o valor sozinha) — quem chama resolve
+ * o dado (via `AiAvailabilityRepository`, ver docstring do port) e passa
+ * aqui, exatamente como já faz com `conversation`. Controla SÓ a resposta
+ * automática: não desconecta o WhatsApp, não pausa a ingestão de mensagens,
+ * não esconde nada da Dashboard, não impede o envio manual do atendente —
+ * todos esses fluxos vivem fora desta função e continuam intocados.
  */
-export function shouldAutoRespond(conversation: Conversation): boolean {
-  return conversation.status === 'bot' && !conversation.excludedFromPipeline;
+export function shouldAutoRespond(conversation: Conversation, sessionAiEnabled: boolean): boolean {
+  return conversation.status === 'bot' && !conversation.excludedFromPipeline && sessionAiEnabled;
 }

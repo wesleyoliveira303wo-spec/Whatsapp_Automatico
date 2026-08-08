@@ -59,4 +59,14 @@ describe('WhatsAppAccountCard (Milestone 6, Bloco M6G)', () => {
     render(<WhatsAppAccountCard session={buildSession({ status: 'disconnected' })} />);
     expect(screen.getByRole('status', { name: 'Desconectado' })).toBeInTheDocument();
   });
+
+  it('correção 2026-08-07 (2ª rodada): mostra a foto de perfil (ContactAvatar) quando há phoneNumber, não o ícone genérico', () => {
+    const { container } = render(<WhatsAppAccountCard session={buildSession()} />);
+    expect(container.querySelector('svg.lucide-smartphone')).not.toBeInTheDocument();
+  });
+
+  it('mantém o ícone genérico de celular quando não há phoneNumber', () => {
+    const { container } = render(<WhatsAppAccountCard session={buildSession({ phoneNumber: undefined })} />);
+    expect(container.querySelector('svg.lucide-smartphone')).toBeInTheDocument();
+  });
 });

@@ -380,8 +380,18 @@ export function formatCostUsd(costUsd: string): string {
  * (55 + DDD de 2 dígitos + linha de 8 ou 9 dígitos); fora disso devolve o
  * número cru (`formatContactJid`) — mesmo racional já documentado ali:
  * mascarar errado é pior que não mascarar.
+ *
+ * CORREÇÃO 2026-08-07: `contactJid` de um contato com privacidade de número
+ * ativada é um LID (`@lid`) — um pseudo-ID sem relação com o telefone real
+ * (ex.: `225236742053984@lid`), não uma variação de formato. Exibir os
+ * dígitos crus dessa string parece um número quebrado/aleatório para quem
+ * usa a Dashboard (achado real do fundador). Detectado ANTES de qualquer
+ * tentativa de máscara — nunca cai no regex de telefone por coincidência.
  */
 export function formatPhoneNumber(contactJid: string): string {
+  if (contactJid.endsWith('@lid')) {
+    return 'Número privado (WhatsApp)';
+  }
   const raw = formatContactJid(contactJid);
   const match = /^55(\d{2})(\d{8,9})$/.exec(raw);
   if (!match) return raw;

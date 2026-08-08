@@ -76,10 +76,11 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     expect(screen.getByTitle('3 conversa(s) aguardando atendimento humano')).toBeInTheDocument();
   });
 
-  it('exibe o link de volta ao Workspace', () => {
+  it('correção 2026-08-07 (2ª rodada): o ícone do topo NÃO é mais um link — "voltar ao Workspace" migrou para a marca do SessionHeader', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
     render(<SessionRail sessionName="vendas" />);
-    expect(screen.getByLabelText('Voltar para Todos os WhatsApps')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Voltar para Todos os WhatsApps')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /voltar/i })).not.toBeInTheDocument();
   });
 
   it('mostra a bolinha de status quando useSessionDetail já resolveu (2026-07-25)', () => {
@@ -98,6 +99,28 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     });
     render(<SessionRail sessionName="vendas" />);
     expect(screen.getByRole('status', { name: 'Desconectado' })).toBeInTheDocument();
+  });
+
+  it('correção 2026-08-07 (2ª rodada): mostra o avatar do contato quando a sessão tem phoneNumber conhecido', () => {
+    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
+    mockUseSessionDetail.mockReturnValue({
+      session: {
+        id: 's1',
+        tenantId: 't1',
+        sessionName: 'vendas',
+        provider: 'baileys',
+        status: 'connected',
+        phoneNumber: '5511999999999',
+      },
+      loading: false,
+      errorMessage: null,
+      connected: true,
+    });
+    render(<SessionRail sessionName="vendas" />);
+    // Sem foto cacheada (jsdom, sem rede), cai no fallback de iniciais — o
+    // que importa aqui é que o dado passado para o avatar é o número da
+    // SESSÃO, não a logo estática da marca (que só aparece sem phoneNumber).
+    expect(screen.queryByRole('img', { name: 'Francis' })).not.toBeInTheDocument();
   });
 
   it('não mostra a bolinha de status enquanto useSessionDetail ainda está carregando (session === null)', () => {

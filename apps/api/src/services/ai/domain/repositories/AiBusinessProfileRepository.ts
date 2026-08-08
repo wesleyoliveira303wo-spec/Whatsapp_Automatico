@@ -43,4 +43,15 @@ export interface AiBusinessProfileRepository {
     sessionName: string,
     data: AiProfileSaveData,
   ): Promise<AiBusinessProfile>;
+
+  /**
+   * Fase 1 (2026-08-07) — Botão POWER: liga/desliga SÓ `aiEnabled`, sem
+   * exigir/mexer no `content`/horário de atendimento já salvos. Operação
+   * separada de `upsert` de propósito: o botão é um clique só, não deveria
+   * depender do formulário completo do Cérebro da IA já ter sido carregado.
+   * Cria a linha com `content: ''` (mesmo default do restante do perfil)
+   * quando a sessão ainda não tinha nenhuma — desligar a IA não pode
+   * depender de o dono do negócio já ter preenchido o Cérebro da IA antes.
+   */
+  setAiEnabled(tenantId: string, sessionName: string, aiEnabled: boolean): Promise<AiBusinessProfile>;
 }

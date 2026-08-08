@@ -423,7 +423,7 @@ export default function AiProfilePanel({ sessionName }: AiProfilePanelProps): JS
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     updateOffHours('start', e.target.value)
                   }
-                  className="rounded-[7px] border border-border px-[7px] py-1 text-[12.5px] text-foreground"
+                  className="rounded-[7px] border border-border bg-card px-[7px] py-1 text-[12.5px] text-foreground [color-scheme:light] dark:[color-scheme:dark]"
                 />
                 às
                 <input
@@ -434,7 +434,7 @@ export default function AiProfilePanel({ sessionName }: AiProfilePanelProps): JS
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     updateOffHours('end', e.target.value)
                   }
-                  className="rounded-[7px] border border-border px-[7px] py-1 text-[12.5px] text-foreground"
+                  className="rounded-[7px] border border-border bg-card px-[7px] py-1 text-[12.5px] text-foreground [color-scheme:light] dark:[color-scheme:dark]"
                 />
               </span>
               <select

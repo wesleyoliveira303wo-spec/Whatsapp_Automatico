@@ -4,6 +4,7 @@ import { MessageSquare, Brain, BarChart3, Kanban } from 'lucide-react';
 import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
+import ContactAvatar from '@/components/ContactAvatar';
 import FrancisLogo from '@/components/brand/FrancisLogo';
 import StatusDot from '@/components/StatusDot';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -43,12 +44,20 @@ interface RailItem {
  * Ajuste 2026-08-07 (pedido do fundador, comparando com o HTML do Claude
  * Design): o rail tinha DOIS elementos separados no topo (seta "voltar" +
  * ícone da sessão) — o mockup (`Francis Pipeline.dc.html` linha 45) usa só
- * UM botão, que acumula as duas funções (mostra a sessão/status E volta ao
- * Workspace no clique, via `title="{sessão} · {status} — voltar a todos os
- * WhatsApps"`). Fundidos aqui no mesmo elemento. Tamanhos/raios also
- * recalibrados para os valores exatos do mockup (ícone-sessão 34px/raio 11;
- * ícones de nav/tema/conta 38px/raio 11, glifo 19px) — antes usavam os
- * derivados genéricos do Design System (36/40px, raio 8/10).
+ * UM botão. Tamanhos/raios recalibrados para os valores exatos do mockup
+ * (ícone-sessão 34px/raio 11; ícones de nav/tema/conta 38px/raio 11, glifo
+ * 19px) — antes usavam os derivados genéricos do Design System (36/40px,
+ * raio 8/10).
+ *
+ * Correção 2026-08-07 (2ª rodada, pedido do fundador): esse ícone deixou de
+ * ser um link — vira só a IDENTIDADE VISUAL do WhatsApp conectado (foto de
+ * perfil real do número, via `ContactAvatar`/`useContactAvatar`, mesmo
+ * mecanismo já usado para contatos — aqui aplicado ao PRÓPRIO número da
+ * sessão, `session.phoneNumber@s.whatsapp.net`). "Voltar a todos os
+ * WhatsApps" migrou para a marca no `SessionHeader` (ver sua docstring) —
+ * não sobra nenhum caminho de navegação perdido. Sem `phoneNumber` ainda
+ * carregado (sessão nunca conectada, ou dado ainda chegando pelo SSE), cai
+ * de volta na logo da marca — nunca um círculo vazio.
  *
  * Cada gate de papel é preservado EXATAMENTE como era (`requiresManager` =
  * administrator/owner, mesma régua de antes para IA/Analytics — ver
@@ -76,25 +85,29 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
     { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },
   ];
 
-  const sessionTitle = session
-    ? `${sessionName} · ${session.status} — voltar a todos os WhatsApps`
-    : `${sessionName} — voltar a todos os WhatsApps`;
+  const sessionTitle = session ? `${sessionName} · ${session.status}` : sessionName;
 
   return (
     <aside className="flex w-14 shrink-0 flex-col items-center border-r border-border bg-background pb-3 pt-[10px]">
-      <Link
-        href="/"
+      <div
         title={sessionTitle}
-        aria-label="Voltar para Todos os WhatsApps"
-        className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary transition-colors hover:bg-primary/[.18]"
+        className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary"
       >
-        <FrancisLogo size={16} />
+        {session?.phoneNumber ? (
+          <ContactAvatar
+            sessionName={sessionName}
+            contactJid={`${session.phoneNumber}@s.whatsapp.net`}
+            className="h-[34px] w-[34px] text-[11px]"
+          />
+        ) : (
+          <FrancisLogo size={16} />
+        )}
         {session && (
           <span className="absolute -bottom-0.5 -right-0.5">
             <StatusDot status={session.status} className="border-2 border-background" />
           </span>
         )}
-      </Link>
+      </div>
 
       <nav className="flex flex-1 flex-col items-center gap-1">
         {items.map(({ href, label, icon: Icon, requiresManager }) => {

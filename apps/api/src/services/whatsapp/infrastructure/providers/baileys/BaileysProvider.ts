@@ -1164,13 +1164,23 @@ export class BaileysProvider implements WhatsAppProvider {
 
       // Mensagem inbound (padrão histórico).
       // Endereço para RESPONDER e para chavear a conversa: quando a mensagem
-      // vem de um LID (`@lid`), `senderPn` traz o número real
+      // vem de um LID (`@lid`), `remoteJidAlt` traz o número real
       // (`@s.whatsapp.net`). Preferimos ele — responder ao `@lid` é aceito pelo
       // Baileys mas não entrega (achado do teste ponta a ponta com número novo).
       // `jidNormalizedUser` remove sufixo de device/agente do JID escolhido.
-      // Sem LID (mensagem já em `@s.whatsapp.net`), `senderPn` é ausente e cai
-      // no `remoteJid` de sempre — comportamento inalterado.
-      const from = this.baileys.jidNormalizedUser(message.key.senderPn || remoteJid);
+      // Sem LID (mensagem já em `@s.whatsapp.net`), `remoteJidAlt` é ausente e
+      // cai no `remoteJid` de sempre — comportamento inalterado.
+      //
+      // CORREÇÃO 2026-08-07 (achado real: conversas duplicadas por `@lid`,
+      // registrado em PRODUCT_BACKLOG.md §2): este campo usava `senderPn`
+      // (nome do Baileys 6.7.23) — no Baileys 7.0.0-rc13 REALMENTE instalado
+      // (`WAMessageKey` de `node_modules/@whiskeysockets/baileys/lib/Types/
+      // Message.d.ts`), esse campo não existe mais (renomeado para
+      // `remoteJidAlt`, mesmo nome já usado no caminho outbound do ADR #97,
+      // logo abaixo). `senderPn` era sempre `undefined` em tempo de execução
+      // desde o upgrade para v7 — o fallback para o `@lid` bruto acontecia
+      // SEMPRE, silenciosamente, para todo contato cujo JID canônico é um LID.
+      const from = this.baileys.jidNormalizedUser(message.key.remoteJidAlt || remoteJid);
       // Milestone 6, Bloco M6H-2b: `pushName` vem vazio como string `''` em
       // alguns eventos do Baileys (não só ausente) — `|| undefined` trata os
       // dois casos como "sem nome", em vez de propagar uma string vazia que

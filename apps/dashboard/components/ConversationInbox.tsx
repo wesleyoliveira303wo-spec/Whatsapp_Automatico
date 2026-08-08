@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
 import { useConversationsList } from '@/hooks/useConversationsList';
+import { useAiToggleContext } from '@/contexts/AiToggleContext';
 import { formatContactJid } from '@/lib/formatters';
 import type { ConversationStatus } from '@/lib/clientApi';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,14 @@ export default function ConversationInbox({
 }: ConversationInboxProps): JSX.Element {
   const [filter, setFilter] = useState<ConversationFilterValue>('all');
   const [search, setSearch] = useState('');
+
+  // Fase 1 (2026-08-07) — Botão POWER: lido do MESMO estado compartilhado do
+  // botão no cabeçalho (`AiToggleProvider`, montado por `SessionLayout`) —
+  // clicar no botão atualiza os selos aqui na mesma renderização, sem F5.
+  // `?? true` enquanto o estado inicial não chegou: nunca mostra "IA
+  // desativada" por engano antes de saber o valor real.
+  const { aiEnabled: sessionAiEnabled } = useAiToggleContext();
+  const aiEnabled = sessionAiEnabled ?? true;
 
   const statusParam: ConversationStatus | undefined =
     filter === 'bot' || filter === 'human' ? filter : undefined;
@@ -165,6 +174,7 @@ export default function ConversationInbox({
                   key={conversation.id}
                   conversation={conversation}
                   active={conversation.id === selectedConversationId}
+                  aiEnabled={aiEnabled}
                 />
               ))}
               {!search && (
@@ -184,6 +194,7 @@ export default function ConversationInbox({
             sessionName={sessionName}
             conversationId={selectedConversationId}
             onConversationUpdated={applyLocalUpdate}
+            aiEnabled={aiEnabled}
           />
         ) : (
           <div className="flex h-full items-center justify-center p-6">
@@ -201,6 +212,7 @@ export default function ConversationInbox({
         <ConversationContextPanel
           sessionName={sessionName}
           conversationId={selectedConversationId}
+          aiEnabled={aiEnabled}
         />
       )}
     </div>

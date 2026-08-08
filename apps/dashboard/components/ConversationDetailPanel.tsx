@@ -25,6 +25,8 @@ interface ConversationDetailPanelProps {
    * Optional: nenhuma outra tela usa este painel fora do inbox hoje.
    */
   onConversationUpdated?: (conversation: ConversationSummary) => void;
+  /** Fase 1 (2026-08-07) — Botão POWER da sessão, repassado ao `ConversationStatusBadge` do cabeçalho. Default `true`. */
+  aiEnabled?: boolean;
 }
 
 /**
@@ -51,6 +53,7 @@ export default function ConversationDetailPanel({
   sessionName,
   conversationId,
   onConversationUpdated,
+  aiEnabled = true,
 }: ConversationDetailPanelProps): JSX.Element {
   const { conversation, loading, errorMessage, refresh, applyUpdate } =
     useConversationDetail(conversationId);
@@ -214,6 +217,7 @@ export default function ConversationDetailPanel({
             <ConversationStatusBadge
               status={conversation.status}
               escalatedAt={conversation.escalatedAt}
+              aiEnabled={aiEnabled}
             />
           </div>
           <p className="mt-px truncate text-xs text-muted-foreground">

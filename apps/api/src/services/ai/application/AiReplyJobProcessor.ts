@@ -10,6 +10,7 @@ import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/Out
 import { Logger } from '../../../shared/domain/Logger';
 import { PromptVersion } from '../domain/PromptVersion';
 import { splitReplyIntoParagraphs } from '../domain/messageSplitting';
+import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
 import { ConversationAiService } from './ConversationAiService';
 
 function defaultSleep(ms: number): Promise<void> {
@@ -71,9 +72,12 @@ const DEFAULT_PARAGRAPH_DELAY_MS = 900;
  * 1. Busca a `Conversation` via `ConversationRepository.findById()`. Se não
  *    existir mais (ex.: dado inconsistente, exclusão concorrente), descarta
  *    o job silenciosamente (loga e retorna) — não há para quem responder.
- * 2. RE-CHECA `shouldAutoRespond(conversation)` — a MESMA função de Domain
- *    já usada por `MessageIngestionService` ao enfileirar (Bloco 2), mas
- *    chamada de novo aqui, agora com o estado ATUAL da conversa. Cobre o
+ * 2. RE-CHECA `shouldAutoRespond(conversation, sessionAiEnabled)` — a MESMA
+ *    função de Domain já usada por `MessageIngestionService` ao enfileirar
+ *    (Bloco 2), mas chamada de novo aqui, agora com o estado ATUAL da
+ *    conversa E da IA da sessão (Fase 1, 2026-08-07: Botão POWER — lido de
+ *    `AiBusinessProfileRepository`, mesma fonte usada pelo restante deste
+ *    fluxo para o Cérebro da IA). Cobre o
  *    risco explícito da Milestone (§5: "Job na fila processado depois que a
  *    conversa já foi escalonada") — um job pode ter sido enfileirado quando
  *    a conversa ainda estava em modo `'bot'` e, por qualquer atraso da fila
@@ -137,6 +141,7 @@ export class AiReplyJobProcessor {
     private readonly outboundMessageDispatcher: OutboundMessageDispatcher,
     private readonly promptVersion: PromptVersion,
     private readonly logger: Logger,
+    private readonly aiBusinessProfileRepository: AiBusinessProfileRepository,
     private readonly historyLimit: number = DEFAULT_HISTORY_LIMIT,
     private readonly humanHandoffMessage: string = DEFAULT_HUMAN_HANDOFF_MESSAGE,
     private readonly paragraphDelayMs: number = DEFAULT_PARAGRAPH_DELAY_MS,
@@ -150,12 +155,25 @@ export class AiReplyJobProcessor {
       return;
     }
 
-    if (!shouldAutoRespond(conversation)) {
+    // Fase 1 (2026-08-07) — Botão POWER: RE-CHECA aqui também, não só em
+    // `MessageIngestionService` ao enfileirar — mesmo racional já usado para
+    // `status`/`excludedFromPipeline` (§5 da Milestone 3: a fila pode
+    // demorar, e a IA pode ter sido desligada DEPOIS que este job já estava
+    // na fila). "Sem perfil ainda" = `true` (ligado), mesmo default do
+    // `AiAvailabilityRepository`.
+    const profile = await this.aiBusinessProfileRepository.findByTenantAndSession(
+      data.tenantId,
+      conversation.sessionName,
+    );
+    const sessionAiEnabled = profile?.aiEnabled ?? true;
+
+    if (!shouldAutoRespond(conversation, sessionAiEnabled)) {
       this.logger.info(
-        'Job ai-reply descartado: conversa não está mais em modo bot (re-checagem)',
+        'Job ai-reply descartado: conversa não está mais em modo bot, fora do funil, ou IA da sessão desligada (re-checagem)',
         {
           ...data,
           status: conversation.status,
+          sessionAiEnabled,
         },
       );
       return;

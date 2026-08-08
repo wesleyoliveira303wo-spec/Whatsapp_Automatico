@@ -42,4 +42,12 @@ export interface AiBusinessProfile {
   workingDays: number;
   /** Timezone IANA (ex.: "America/Sao_Paulo"). */
   timezone: string;
+  /**
+   * Fase 1 (2026-08-07) — Botão POWER: `true` = a IA processa/responde
+   * NOVAS mensagens desta sessão normalmente; `false` = a IA não gera
+   * resposta automática (WhatsApp continua conectado, mensagens continuam
+   * chegando/aparecendo na Dashboard, atendimento humano continua normal).
+   * Ver `shouldAutoRespond` (`services/conversations/domain/policies`).
+   */
+  aiEnabled: boolean;
 }

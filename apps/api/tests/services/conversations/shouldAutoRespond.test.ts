@@ -21,25 +21,41 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
 }
 
 describe('shouldAutoRespond', () => {
-  it('retorna true quando a conversa está em modo bot', () => {
-    expect(shouldAutoRespond(buildConversation({ status: 'bot' }))).toBe(true);
+  it('retorna true quando a conversa está em modo bot e a IA da sessão está ligada', () => {
+    expect(shouldAutoRespond(buildConversation({ status: 'bot' }), true)).toBe(true);
   });
 
   it('retorna false quando a conversa foi escalonada a um humano', () => {
-    expect(shouldAutoRespond(buildConversation({ status: 'human' }))).toBe(false);
+    expect(shouldAutoRespond(buildConversation({ status: 'human' }), true)).toBe(false);
   });
 
   // ADR #94 (2026-08-01) — conversa fora do funil comercial nunca recebe
   // resposta automática, mesmo em status 'bot'.
   it('retorna false quando a conversa está marcada como fora do funil comercial, mesmo em modo bot', () => {
     expect(
-      shouldAutoRespond(buildConversation({ status: 'bot', excludedFromPipeline: true })),
+      shouldAutoRespond(buildConversation({ status: 'bot', excludedFromPipeline: true }), true),
     ).toBe(false);
   });
 
   it('retorna false quando está fora do funil E escalonada a um humano', () => {
     expect(
-      shouldAutoRespond(buildConversation({ status: 'human', excludedFromPipeline: true })),
+      shouldAutoRespond(buildConversation({ status: 'human', excludedFromPipeline: true }), true),
     ).toBe(false);
+  });
+
+  // Fase 1 (2026-08-07) — Botão POWER.
+  describe('sessionAiEnabled (Botão POWER, Fase 1/2026-08-07)', () => {
+    it('retorna false quando a sessão tem a IA desligada, mesmo com a conversa em modo bot e dentro do funil', () => {
+      expect(shouldAutoRespond(buildConversation({ status: 'bot' }), false)).toBe(false);
+    });
+
+    it('retorna false quando a IA da sessão está desligada E a conversa também está escalonada/fora do funil', () => {
+      expect(
+        shouldAutoRespond(
+          buildConversation({ status: 'human', excludedFromPipeline: true }),
+          false,
+        ),
+      ).toBe(false);
+    });
   });
 });

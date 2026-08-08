@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Smartphone, ChevronRight } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import StatusDot from './StatusDot';
+import ContactAvatar from './ContactAvatar';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/formatters';
@@ -27,6 +28,11 @@ const AVATAR_TINT: Record<WhatsAppSessionSummary['status'], string> = {
  * (`/sessions/:sessionName`), onde ficam QR Code e ações. Substitui o
  * `SessionListItem` (linha) por um card de grid, mais adequado a um painel de
  * contas.
+ *
+ * Correção 2026-08-07 (2ª rodada, pedido do fundador): com `phoneNumber`
+ * conhecido, o avatar vira a foto de perfil real do WhatsApp conectado
+ * (`ContactAvatar`) em vez do ícone genérico de celular colorido por status
+ * (`AVATAR_TINT` mantido só como fallback).
  */
 export default function WhatsAppAccountCard({
   session,
@@ -37,14 +43,22 @@ export default function WhatsAppAccountCard({
       <Card className="flex h-full flex-col gap-4 p-5 transition hover:border-primary hover:shadow-md">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
-                AVATAR_TINT[session.status],
-              )}
-            >
-              <Smartphone className="h-5 w-5" aria-hidden="true" />
-            </div>
+            {session.phoneNumber ? (
+              <ContactAvatar
+                sessionName={session.sessionName}
+                contactJid={`${session.phoneNumber}@s.whatsapp.net`}
+                className="h-11 w-11 text-sm"
+              />
+            ) : (
+              <div
+                className={cn(
+                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                  AVATAR_TINT[session.status],
+                )}
+              >
+                <Smartphone className="h-5 w-5" aria-hidden="true" />
+              </div>
+            )}
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 truncate font-semibold text-foreground">
                 <StatusDot status={session.status} />

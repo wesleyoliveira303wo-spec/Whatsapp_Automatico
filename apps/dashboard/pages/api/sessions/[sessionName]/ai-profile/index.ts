@@ -5,12 +5,13 @@ import { requireStringParam } from '../../../../../lib/routeParams';
 
 /**
  * Proxy (BFF) da Base de Conhecimento (Nível 1 — o "Cérebro da IA") por
- * SESSÃO: `GET /` (ler o perfil) e `PUT /` (salvar o texto). Migrada da rota
- * flat `pages/api/ai-profile/*` para aninhada por sessão — Milestone 6,
- * Bloco M6H-3, 2026-07-25 — mesmo padrão de `.../contacts/:contactJid/avatar`.
- * Encaminha corpo/status quase sem transformação, como todos os proxies do
- * BFF — o RBAC (ai_profile:read/update) é imposto pela API, nunca
- * reimplementado aqui.
+ * SESSÃO: `GET /` (ler o perfil), `PUT /` (salvar o texto) e `PATCH /`
+ * (Fase 1, Botão POWER, 2026-08-07 — liga/desliga só `aiEnabled`). Migrada
+ * da rota flat `pages/api/ai-profile/*` para aninhada por sessão —
+ * Milestone 6, Bloco M6H-3, 2026-07-25 — mesmo padrão de
+ * `.../contacts/:contactJid/avatar`. Encaminha corpo/status quase sem
+ * transformação, como todos os proxies do BFF — o RBAC
+ * (ai_profile:read/update) é imposto pela API, nunca reimplementado aqui.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
   const session = await requireSession(req, res);
@@ -35,6 +36,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  res.setHeader('Allow', 'GET, PUT');
+  if (req.method === 'PATCH') {
+    const { status, body } = await callAiProfileApi(session, path, {
+      method: 'PATCH',
+      body: req.body,
+    });
+    res.status(status).json(body);
+    return;
+  }
+
+  res.setHeader('Allow', 'GET, PUT, PATCH');
   res.status(405).json({ error: 'method_not_allowed' });
 }

@@ -838,6 +838,16 @@ model AiBusinessProfile {
   workingDays       Int     @default(62) @map("working_days")
   timezone          String  @default("America/Sao_Paulo") @map("timezone")
 
+  /// Fase 1 (2026-08-07) — Botão POWER da IA: liga/desliga a resposta
+  /// AUTOMÁTICA da IA para NOVAS mensagens desta sessão, sem afetar a conexão
+  /// do WhatsApp, o recebimento de mensagens, o Pipeline/Analytics ou o envio
+  /// manual pelo atendente (ver `shouldAutoRespond`, Domain de
+  /// `services/conversations`). `true` por padrão — inclusive para sessões
+  /// que NUNCA configuraram o Cérebro da IA (nenhuma linha nesta tabela
+  /// ainda): a leitura em `AiAvailabilityRepository`/`ConversationAiService`
+  /// trata "sem perfil" como `aiEnabled = true`, nunca `false`.
+  aiEnabled Boolean @default(true) @map("ai_enabled")
+
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, sessionName])

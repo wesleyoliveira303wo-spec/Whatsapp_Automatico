@@ -4,6 +4,7 @@ import {
   FakeConversationRepository,
   FakeMessageRepository,
   FakeAiReplyScheduler,
+  FakeAiAvailabilityRepository,
 } from './testDoubles';
 
 function buildSut(): {
@@ -11,16 +12,19 @@ function buildSut(): {
   conversationRepository: FakeConversationRepository;
   messageRepository: FakeMessageRepository;
   aiReplyScheduler: FakeAiReplyScheduler;
+  aiAvailabilityRepository: FakeAiAvailabilityRepository;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
   const aiReplyScheduler = new FakeAiReplyScheduler();
+  const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
   const sut = new MessageIngestionService(
     conversationRepository,
     messageRepository,
     aiReplyScheduler,
+    aiAvailabilityRepository,
   );
-  return { sut, conversationRepository, messageRepository, aiReplyScheduler };
+  return { sut, conversationRepository, messageRepository, aiReplyScheduler, aiAvailabilityRepository };
 }
 
 function buildInboundMessage(
@@ -201,6 +205,62 @@ describe('MessageIngestionService', () => {
       await expect(sut.handle(buildInboundMessage())).rejects.toThrow(
         'Falha simulada no AiReplyScheduler',
       );
+    });
+
+    // Fase 1 (2026-08-07) — Botão POWER.
+    describe('Botão POWER (aiEnabled da sessão)', () => {
+      it('POWER OFF: NÃO agenda resposta de IA, mesmo com a conversa em modo bot', async () => {
+        const { sut, aiReplyScheduler, aiAvailabilityRepository } = buildSut();
+        aiAvailabilityRepository.setEnabled('tenant-1', 'default', false);
+
+        await sut.handle(buildInboundMessage());
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+      });
+
+      it('POWER OFF: a mensagem é persistida e a conversa é criada/atualizada normalmente (não é modo somente-leitura)', async () => {
+        const { sut, conversationRepository, messageRepository, aiAvailabilityRepository } =
+          buildSut();
+        aiAvailabilityRepository.setEnabled('tenant-1', 'default', false);
+
+        await sut.handle(buildInboundMessage());
+
+        expect(conversationRepository.getAll()).toHaveLength(1);
+        expect(messageRepository.getAll()).toHaveLength(1);
+      });
+
+      it('POWER OFF: mensagens não se acumulam para a IA responder depois — religar não reprocessa nada, porque nunca foi enfileirado', async () => {
+        const { sut, aiReplyScheduler, aiAvailabilityRepository } = buildSut();
+        aiAvailabilityRepository.setEnabled('tenant-1', 'default', false);
+
+        await sut.handle(buildInboundMessage({ content: 'primeira, com a IA desligada' }));
+        await sut.handle(buildInboundMessage({ content: 'segunda, ainda desligada' }));
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+
+        // Religou: só a PRÓXIMA mensagem (nova) é agendada — nada do que já
+        // chegou enquanto estava desligada é reprocessado retroativamente.
+        aiAvailabilityRepository.setEnabled('tenant-1', 'default', true);
+        await sut.handle(buildInboundMessage({ content: 'terceira, já religada' }));
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      });
+
+      it('POWER ON (default, sessão nunca configurada): agenda resposta normalmente', async () => {
+        const { sut, aiReplyScheduler } = buildSut();
+
+        await sut.handle(buildInboundMessage());
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      });
+
+      it('checa o toggle pelo (tenantId, sessionName) da MENSAGEM recebida, não de outra sessão', async () => {
+        const { sut, aiReplyScheduler, aiAvailabilityRepository } = buildSut();
+        aiAvailabilityRepository.setEnabled('tenant-1', 'outra-sessao', false);
+
+        await sut.handle(buildInboundMessage({ sessionName: 'default' }));
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      });
     });
   });
 

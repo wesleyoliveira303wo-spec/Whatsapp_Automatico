@@ -64,8 +64,36 @@ export class FakeAiBusinessProfileRepository implements AiBusinessProfileReposit
           : (existing?.workingHoursEnd ?? null),
       workingDays: data.workingDays ?? existing?.workingDays ?? 62,
       timezone: data.timezone ?? existing?.timezone ?? 'America/Sao_Paulo',
+      aiEnabled: existing?.aiEnabled ?? true,
     };
     this.profiles.set(FakeAiBusinessProfileRepository.key(tenantId, sessionName), profile);
+    return profile;
+  }
+
+  /** Fase 1 (2026-08-07) — Botão POWER, espelha `PrismaAiBusinessProfileRepository.setAiEnabled`. */
+  async setAiEnabled(
+    tenantId: string,
+    sessionName: string,
+    aiEnabled: boolean,
+  ): Promise<AiBusinessProfile> {
+    const key = FakeAiBusinessProfileRepository.key(tenantId, sessionName);
+    const existing = this.profiles.get(key);
+    const profile: AiBusinessProfile = existing
+      ? { ...existing, aiEnabled }
+      : {
+          tenantId,
+          sessionName,
+          content: '',
+          updatedAt: new Date('2026-07-22T00:00:00.000Z'),
+          offHoursEnabled: false,
+          offHoursMessage: null,
+          workingHoursStart: null,
+          workingHoursEnd: null,
+          workingDays: 62,
+          timezone: 'America/Sao_Paulo',
+          aiEnabled,
+        };
+    this.profiles.set(key, profile);
     return profile;
   }
 
@@ -94,6 +122,7 @@ export class FakeAiBusinessProfileRepository implements AiBusinessProfileReposit
       workingHoursEnd: offHoursOverrides?.workingHoursEnd ?? null,
       workingDays: offHoursOverrides?.workingDays ?? 62,
       timezone: offHoursOverrides?.timezone ?? 'America/Sao_Paulo',
+      aiEnabled: offHoursOverrides?.aiEnabled ?? true,
     });
   }
 

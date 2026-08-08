@@ -8,6 +8,7 @@ import { Message } from '../../../src/services/conversations/domain/entities/Mes
 import { FakeConversationRepository, FakeMessageRepository } from '../conversations/testDoubles';
 import { FakeAiProviderFactory } from './infrastructure/FakeAiProviderFactory';
 import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionRepository';
+import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 import { FakeOutboundMessageDispatcher } from '../whatsapp/infrastructure/FakeOutboundMessageDispatcher';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 
@@ -71,12 +72,14 @@ function buildSut(
   aiProviderFactory: FakeAiProviderFactory;
   aiInteractionRepository: FakeAiInteractionRepository;
   outboundDispatcher: FakeOutboundMessageDispatcher;
+  aiBusinessProfileRepository: FakeAiBusinessProfileRepository;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
   const aiProviderFactory = new FakeAiProviderFactory();
   const aiInteractionRepository = new FakeAiInteractionRepository();
   const outboundDispatcher = new FakeOutboundMessageDispatcher();
+  const aiBusinessProfileRepository = new FakeAiBusinessProfileRepository();
   const conversationAiService = new ConversationAiService(
     aiProviderFactory,
     'claude',
@@ -100,6 +103,7 @@ function buildSut(
           outboundDispatcher,
           PROMPT_VERSION,
           new NoopLogger(),
+          aiBusinessProfileRepository,
           undefined,
           undefined,
           undefined,
@@ -112,6 +116,7 @@ function buildSut(
           outboundDispatcher,
           PROMPT_VERSION,
           new NoopLogger(),
+          aiBusinessProfileRepository,
           historyLimit,
           undefined,
           undefined,
@@ -125,6 +130,7 @@ function buildSut(
     aiProviderFactory,
     aiInteractionRepository,
     outboundDispatcher,
+    aiBusinessProfileRepository,
   };
 }
 
@@ -431,6 +437,32 @@ describe('AiReplyJobProcessor', () => {
 
       expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
       expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
+
+    // Fase 1 (2026-08-07) — Botão POWER: defesa em profundidade, o job pode
+    // ter sido enfileirado ANTES de a IA ser desligada.
+    it('Botão POWER desligado DEPOIS do job já enfileirado: não gera resposta nem despacha na re-checagem', async () => {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher, aiBusinessProfileRepository } =
+        buildSut();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      aiBusinessProfileRepository.seed(TENANT_ID, 'default', '', { aiEnabled: false });
+
+      await processor.process(buildJobData());
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
+
+    it('Botão POWER ligado (default, sem perfil configurado): gera e despacha normalmente', async () => {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      aiProviderFactory.provider.setNextResult({ content: 'ok', model: 'claude-x', tokensInput: 1, tokensOutput: 1 });
+
+      await processor.process(buildJobData());
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(1);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
     });
   });
 

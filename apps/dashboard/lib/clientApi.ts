@@ -249,6 +249,13 @@ export interface AiBusinessProfile {
   workingDays: number;
   /** F1.8 — timezone IANA (ex.: "America/Sao_Paulo"). */
   timezone: string;
+  /**
+   * Fase 1 (2026-08-07) — Botão POWER: `true` = a IA processa/responde
+   * novas mensagens desta sessão; `false` = desligada (WhatsApp continua
+   * conectado, mensagens continuam chegando, atendimento humano continua
+   * normal — só a resposta AUTOMÁTICA para).
+   */
+  aiEnabled: boolean;
 }
 
 /** F1.8 — campos opcionais para salvar o perfil. Campos não informados preservam o valor já gravado. */
@@ -277,6 +284,21 @@ export function saveAiProfile(
   return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-profile`, {
     method: 'PUT',
     body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Fase 1 (2026-08-07) — Botão POWER: liga/desliga SÓ `aiEnabled`, sem exigir
+ * o restante do perfil (content/horário) — usado pelo botão no cabeçalho de
+ * Conversas, que não depende da tela "Cérebro da IA" estar carregada.
+ */
+export function setAiEnabled(
+  sessionName: string,
+  aiEnabled: boolean,
+): Promise<{ profile: AiBusinessProfile }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-profile`, {
+    method: 'PATCH',
+    body: JSON.stringify({ aiEnabled }),
   });
 }
 

@@ -219,6 +219,10 @@ async function main(): Promise<void> {
     outboundMessageDispatcher,
     promptVersion,
     logger,
+    // Fase 1 (2026-08-07) — Botão POWER: mesma instância já construída acima
+    // para `ConversationAiService` (Cérebro da IA) — re-checagem do estado
+    // ATUAL antes de gerar a resposta (ver docstring de `process()`).
+    aiBusinessProfileRepository,
     AI_HISTORY_LIMIT ? Number(AI_HISTORY_LIMIT) : undefined,
   );
 

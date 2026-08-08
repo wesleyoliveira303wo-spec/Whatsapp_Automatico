@@ -202,6 +202,85 @@ describe('aiProfileRouter (Base de Conhecimento — Nível 1, por sessão desde 
     });
   });
 
+  // Fase 1 (2026-08-07) — Botão POWER.
+  describe('PATCH / (ai_profile:update) — Botão POWER (aiEnabled)', () => {
+    it('administrator desliga a IA (aiEnabled: false) e recebe o profile persistido (200)', async () => {
+      const { app, profiles } = buildApp(person('administrator'));
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: false });
+
+      expect(response.status).toBe(200);
+      expect(response.body.profile.aiEnabled).toBe(false);
+      const persisted = await profiles.findByTenantAndSession('tenant-1', SESSION);
+      expect(persisted?.aiEnabled).toBe(false);
+    });
+
+    it('religa a IA (aiEnabled: true) numa sessão que já tinha content salvo, sem mexer no content', async () => {
+      const { app, profiles } = buildApp(person('administrator'));
+      profiles.seed('tenant-1', SESSION, 'Salão da Maria.');
+      await profiles.setAiEnabled('tenant-1', SESSION, false);
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body.profile.aiEnabled).toBe(true);
+      expect(response.body.profile.content).toBe('Salão da Maria.');
+    });
+
+    it('funciona numa sessão sem nenhum perfil configurado ainda (cria a linha)', async () => {
+      const { app } = buildApp(person('owner'));
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: false });
+
+      expect(response.status).toBe(200);
+      expect(response.body.profile.aiEnabled).toBe(false);
+      expect(response.body.profile.content).toBe('');
+    });
+
+    it('manager NÃO pode desligar (403 — sem ai_profile:update, mesma régua do PUT)', async () => {
+      const { app } = buildApp(person('manager'));
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: false });
+
+      expect(response.status).toBe(403);
+    });
+
+    it('operator NÃO pode desligar (403)', async () => {
+      const { app } = buildApp(person('operator'));
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: false });
+
+      expect(response.status).toBe(403);
+    });
+
+    it('plano máquina liga/desliga normalmente (200)', async () => {
+      const { app } = buildApp(MACHINE);
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: false });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('rejeita corpo sem aiEnabled ou com tipo errado (400)', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app).patch(path('tenant-1')).send({ aiEnabled: 'sim' });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('não mistura o toggle entre sessões diferentes do mesmo tenant', async () => {
+      const { app, profiles } = buildApp(person('administrator'));
+
+      await request(app).patch(path('tenant-1', SESSION)).send({ aiEnabled: false });
+
+      expect(await profiles.findByTenantAndSession('tenant-1', SESSION)).toMatchObject({
+        aiEnabled: false,
+      });
+      expect(await profiles.findByTenantAndSession('tenant-1', 'sessao-2')).toBeNull();
+    });
+  });
+
   it('tenant inexistente devolve 404 (tenant_not_found)', async () => {
     const { app } = buildApp(person('administrator'));
 

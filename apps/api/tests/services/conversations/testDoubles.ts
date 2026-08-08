@@ -8,6 +8,7 @@ import {
 import { Message } from '../../../src/services/conversations/domain/entities/Message';
 import { MessageRepository } from '../../../src/services/conversations/domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../../../src/services/conversations/domain/schedulers/AiReplyScheduler';
+import { AiAvailabilityRepository } from '../../../src/services/conversations/domain/repositories/AiAvailabilityRepository';
 
 /**
  * Fake compartilhado do `ConversationRepository` (Milestone 3, Bloco 2) — em
@@ -332,5 +333,28 @@ export class FakeAiReplyScheduler implements AiReplyScheduler {
       throw new Error('Falha simulada no AiReplyScheduler');
     }
     this.scheduleCalls.push({ tenantId, conversationId, messageId });
+  }
+}
+
+/**
+ * Fake de `AiAvailabilityRepository` (Fase 1, Botão POWER, 2026-08-07) — em
+ * memória, `true` (ligado) por padrão para qualquer `(tenantId, sessionName)`
+ * nunca configurada, mesmo comportamento do repositório real (ausência de
+ * linha ≠ desligado).
+ */
+export class FakeAiAvailabilityRepository implements AiAvailabilityRepository {
+  private readonly enabled = new Map<string, boolean>();
+
+  private static key(tenantId: string, sessionName: string): string {
+    return `${tenantId}::${sessionName}`;
+  }
+
+  async isEnabled(tenantId: string, sessionName: string): Promise<boolean> {
+    return this.enabled.get(FakeAiAvailabilityRepository.key(tenantId, sessionName)) ?? true;
+  }
+
+  /** Helper de teste: define o estado do Botão POWER para `(tenantId, sessionName)`. */
+  setEnabled(tenantId: string, sessionName: string, value: boolean): void {
+    this.enabled.set(FakeAiAvailabilityRepository.key(tenantId, sessionName), value);
   }
 }

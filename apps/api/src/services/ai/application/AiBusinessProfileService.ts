@@ -68,6 +68,21 @@ export class AiBusinessProfileService {
     return this.aiBusinessProfileRepository.upsert(tenantId, sessionName, data);
   }
 
+  /**
+   * Fase 1 (2026-08-07) — Botão POWER: liga/desliga SÓ `aiEnabled`, sem
+   * exigir o corpo inteiro do perfil (`content`/horário) — o clique no botão
+   * não deveria depender de o operador ter aberto a tela do Cérebro da IA
+   * antes. Ver docstring de `AiBusinessProfileRepository.setAiEnabled`.
+   */
+  async setAiEnabled(
+    tenantId: string,
+    sessionName: string,
+    aiEnabled: boolean,
+  ): Promise<AiBusinessProfile> {
+    await this.assertTenantExists(tenantId);
+    return this.aiBusinessProfileRepository.setAiEnabled(tenantId, sessionName, aiEnabled);
+  }
+
   private async assertTenantExists(tenantId: string): Promise<void> {
     const tenant = await this.tenantRepository.findById(tenantId);
     if (!tenant) {
