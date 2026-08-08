@@ -41,7 +41,11 @@ describe('ConversationStatusBadge (reforma do escalonamento, 2026-07-25)', () =>
 
     it('sobrepõe "Aguardando atendente" por "IA desativada" também', () => {
       render(
-        <ConversationStatusBadge status="bot" escalatedAt="2026-07-25T10:00:00.000Z" aiEnabled={false} />,
+        <ConversationStatusBadge
+          status="bot"
+          escalatedAt="2026-07-25T10:00:00.000Z"
+          aiEnabled={false}
+        />,
       );
       expect(screen.getByText('IA desativada')).toBeInTheDocument();
       expect(screen.queryByText('Aguardando atendente')).not.toBeInTheDocument();

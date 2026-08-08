@@ -21,21 +21,36 @@ const mockUseAiToggleContext = aiToggleContextModule.useAiToggleContext as jest.
 
 describe('AiPowerToggle (Fase 1, Botão POWER, 2026-08-07)', () => {
   it('mostra um Skeleton enquanto o estado inicial ainda não chegou', () => {
-    mockUseAiToggleContext.mockReturnValue({ aiEnabled: null, loading: true, errorMessage: null, toggle: jest.fn() });
+    mockUseAiToggleContext.mockReturnValue({
+      aiEnabled: null,
+      loading: true,
+      errorMessage: null,
+      toggle: jest.fn(),
+    });
     const { container } = render(<AiPowerToggle />);
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('POWER ligado: mostra o texto exato "IA aguardando novas mensagens"', () => {
-    mockUseAiToggleContext.mockReturnValue({ aiEnabled: true, loading: false, errorMessage: null, toggle: jest.fn() });
+    mockUseAiToggleContext.mockReturnValue({
+      aiEnabled: true,
+      loading: false,
+      errorMessage: null,
+      toggle: jest.fn(),
+    });
     render(<AiPowerToggle />);
     expect(screen.getByRole('button')).toHaveTextContent('IA aguardando novas mensagens');
     expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('POWER desligado: mostra o texto exato "IA desativada"', () => {
-    mockUseAiToggleContext.mockReturnValue({ aiEnabled: false, loading: false, errorMessage: null, toggle: jest.fn() });
+    mockUseAiToggleContext.mockReturnValue({
+      aiEnabled: false,
+      loading: false,
+      errorMessage: null,
+      toggle: jest.fn(),
+    });
     render(<AiPowerToggle />);
     expect(screen.getByRole('button')).toHaveTextContent('IA desativada');
     expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'false');
@@ -43,7 +58,12 @@ describe('AiPowerToggle (Fase 1, Botão POWER, 2026-08-07)', () => {
 
   it('chama toggle() ao clicar', () => {
     const toggle = jest.fn();
-    mockUseAiToggleContext.mockReturnValue({ aiEnabled: true, loading: false, errorMessage: null, toggle });
+    mockUseAiToggleContext.mockReturnValue({
+      aiEnabled: true,
+      loading: false,
+      errorMessage: null,
+      toggle,
+    });
     render(<AiPowerToggle />);
     fireEvent.click(screen.getByRole('button'));
     expect(toggle).toHaveBeenCalledTimes(1);

@@ -24,7 +24,13 @@ function buildSut(): {
     aiReplyScheduler,
     aiAvailabilityRepository,
   );
-  return { sut, conversationRepository, messageRepository, aiReplyScheduler, aiAvailabilityRepository };
+  return {
+    sut,
+    conversationRepository,
+    messageRepository,
+    aiReplyScheduler,
+    aiAvailabilityRepository,
+  };
 }
 
 function buildInboundMessage(

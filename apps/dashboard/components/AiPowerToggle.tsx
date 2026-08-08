@@ -35,7 +35,9 @@ export default function AiPowerToggle(): JSX.Element {
       type="button"
       onClick={() => void toggle()}
       aria-pressed={aiEnabled}
-      title={aiEnabled ? 'Clique para desligar a IA desta sessão' : 'Clique para ligar a IA desta sessão'}
+      title={
+        aiEnabled ? 'Clique para desligar a IA desta sessão' : 'Clique para ligar a IA desta sessão'
+      }
       className={cn(
         'flex h-[26px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-medium transition-colors',
         aiEnabled

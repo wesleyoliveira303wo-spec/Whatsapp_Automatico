@@ -442,8 +442,13 @@ describe('AiReplyJobProcessor', () => {
     // Fase 1 (2026-08-07) — Botão POWER: defesa em profundidade, o job pode
     // ter sido enfileirado ANTES de a IA ser desligada.
     it('Botão POWER desligado DEPOIS do job já enfileirado: não gera resposta nem despacha na re-checagem', async () => {
-      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher, aiBusinessProfileRepository } =
-        buildSut();
+      const {
+        processor,
+        conversationRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+        aiBusinessProfileRepository,
+      } = buildSut();
       conversationRepository.seed(buildConversation({ status: 'bot' }));
       aiBusinessProfileRepository.seed(TENANT_ID, 'default', '', { aiEnabled: false });
 
@@ -457,7 +462,12 @@ describe('AiReplyJobProcessor', () => {
       const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
         buildSut();
       conversationRepository.seed(buildConversation({ status: 'bot' }));
-      aiProviderFactory.provider.setNextResult({ content: 'ok', model: 'claude-x', tokensInput: 1, tokensOutput: 1 });
+      aiProviderFactory.provider.setNextResult({
+        content: 'ok',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
 
       await processor.process(buildJobData());
 

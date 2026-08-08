@@ -32,7 +32,9 @@ export function AiToggleProvider({ sessionName, children }: AiToggleProviderProp
 export function useAiToggleContext(): UseAiToggleResult {
   const value = useContext(AiToggleContext);
   if (!value) {
-    throw new Error('useAiToggleContext deve ser usado dentro de um AiToggleProvider (ver SessionLayout).');
+    throw new Error(
+      'useAiToggleContext deve ser usado dentro de um AiToggleProvider (ver SessionLayout).',
+    );
   }
   return value;
 }

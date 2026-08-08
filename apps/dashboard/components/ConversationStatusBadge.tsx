@@ -47,7 +47,11 @@ export default function ConversationStatusBadge({
   const isHuman = status === 'human';
   const aiOff = !aiEnabled;
   const tone = aiOff ? 'destructive' : isWaiting || isHuman ? 'warning' : 'success';
-  const label = aiOff ? 'IA desativada' : isWaiting ? 'Aguardando atendente' : formatConversationStatusLabel(status);
+  const label = aiOff
+    ? 'IA desativada'
+    : isWaiting
+      ? 'Aguardando atendente'
+      : formatConversationStatusLabel(status);
 
   return (
     <span

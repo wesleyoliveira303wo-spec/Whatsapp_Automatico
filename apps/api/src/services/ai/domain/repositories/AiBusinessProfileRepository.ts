@@ -53,5 +53,9 @@ export interface AiBusinessProfileRepository {
    * quando a sessão ainda não tinha nenhuma — desligar a IA não pode
    * depender de o dono do negócio já ter preenchido o Cérebro da IA antes.
    */
-  setAiEnabled(tenantId: string, sessionName: string, aiEnabled: boolean): Promise<AiBusinessProfile>;
+  setAiEnabled(
+    tenantId: string,
+    sessionName: string,
+    aiEnabled: boolean,
+  ): Promise<AiBusinessProfile>;
 }

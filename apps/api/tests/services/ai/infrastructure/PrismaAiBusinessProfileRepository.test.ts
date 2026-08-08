@@ -162,7 +162,10 @@ describe('PrismaAiBusinessProfileRepository (por sessão desde M6H-3)', () => {
   describe('setAiEnabled() (Fase 1, Botão POWER, 2026-08-07)', () => {
     it('faz upsert mexendo SÓ em aiEnabled — cria com content vazio quando a sessão ainda não tinha perfil', async () => {
       const prisma = createFakePrisma();
-      prisma.aiBusinessProfile.upsert.mockResolvedValue({ ...AI_ENABLED_ROW_DEFAULTS, aiEnabled: false });
+      prisma.aiBusinessProfile.upsert.mockResolvedValue({
+        ...AI_ENABLED_ROW_DEFAULTS,
+        aiEnabled: false,
+      });
       const repo = new PrismaAiBusinessProfileRepository(prisma as never);
 
       const result = await repo.setAiEnabled('tenant-1', 'sessao-1', false);

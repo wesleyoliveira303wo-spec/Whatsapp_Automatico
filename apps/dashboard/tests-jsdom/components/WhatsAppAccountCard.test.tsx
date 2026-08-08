@@ -66,7 +66,9 @@ describe('WhatsAppAccountCard (Milestone 6, Bloco M6G)', () => {
   });
 
   it('mantém o ícone genérico de celular quando não há phoneNumber', () => {
-    const { container } = render(<WhatsAppAccountCard session={buildSession({ phoneNumber: undefined })} />);
+    const { container } = render(
+      <WhatsAppAccountCard session={buildSession({ phoneNumber: undefined })} />,
+    );
     expect(container.querySelector('svg.lucide-smartphone')).toBeInTheDocument();
   });
 });

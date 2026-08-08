@@ -33,7 +33,9 @@ function ButtonConsumer(): JSX.Element {
 /** Consumidor B — como `ConversationInbox`/selos de conversa: só lê. */
 function TagConsumer(): JSX.Element {
   const { aiEnabled } = useAiToggleContext();
-  return <span>{aiEnabled === null ? 'carregando' : aiEnabled ? 'IA ligada' : 'IA desativada'}</span>;
+  return (
+    <span>{aiEnabled === null ? 'carregando' : aiEnabled ? 'IA ligada' : 'IA desativada'}</span>
+  );
 }
 
 describe('AiToggleContext (correção 2026-08-07, 2ª rodada — estado compartilhado)', () => {

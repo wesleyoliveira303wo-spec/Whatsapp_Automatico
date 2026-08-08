@@ -44,7 +44,13 @@ describe('SessionHeader (correção 2026-08-07)', () => {
 
   it('mostra nome da sessão e status quando useSessionDetail já resolveu', () => {
     mockUseSessionDetail.mockReturnValue({
-      session: { id: 's1', tenantId: 't1', sessionName: 'vendas', provider: 'baileys', status: 'connected' },
+      session: {
+        id: 's1',
+        tenantId: 't1',
+        sessionName: 'vendas',
+        provider: 'baileys',
+        status: 'connected',
+      },
       loading: false,
       errorMessage: null,
       connected: true,
@@ -56,6 +62,8 @@ describe('SessionHeader (correção 2026-08-07)', () => {
 
   it('Fase 1 (Botão POWER): renderiza o AiPowerToggle no cabeçalho', () => {
     render(<SessionHeader sessionName="vendas" />);
-    expect(screen.getByRole('button', { name: /IA aguardando novas mensagens/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /IA aguardando novas mensagens/i }),
+    ).toBeInTheDocument();
   });
 });
