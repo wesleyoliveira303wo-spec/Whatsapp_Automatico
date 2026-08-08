@@ -667,7 +667,11 @@ describe('ConversationsService', () => {
     it('[Fase 1, F1.10] documento sem assinatura reconhecida (ex.: PDF/texto): NÃO bloqueia — envia normalmente', async () => {
       const { service, conversationRepository, mediaSender } = buildService();
       conversationRepository.seed(buildConversation({ status: 'human', assignedToUserId: 'op-1' }));
-      const pdf = { ...MEDIA, contentType: 'document' as const, buffer: Buffer.from('%PDF-1.4...') };
+      const pdf = {
+        ...MEDIA,
+        contentType: 'document' as const,
+        buffer: Buffer.from('%PDF-1.4...'),
+      };
 
       await expect(
         service.sendAgentMediaMessage('tenant-1', 'conversation-1', pdf, OP),

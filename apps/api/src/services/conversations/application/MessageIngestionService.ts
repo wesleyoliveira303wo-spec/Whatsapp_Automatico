@@ -184,7 +184,11 @@ export class MessageIngestionService implements MessageReceivedHandler {
           conversation.id,
         );
         if (withinRateLimit) {
-          await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
+          await this.aiReplyScheduler.schedule(
+            message.tenantId,
+            conversation.id,
+            createdMessage.id,
+          );
         } else {
           try {
             await this.conversationRepository.flagNeedsHumanAttention(

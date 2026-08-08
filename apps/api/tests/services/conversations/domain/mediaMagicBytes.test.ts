@@ -6,9 +6,9 @@ import {
 describe('sniffMediaCategory (Fase 1, Bloco F1.10)', () => {
   it('reconhece JPEG, PNG, GIF, WEBP e BMP como image', () => {
     expect(sniffMediaCategory(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe('image'); // JPEG
-    expect(
-      sniffMediaCategory(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-    ).toBe('image'); // PNG
+    expect(sniffMediaCategory(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe(
+      'image',
+    ); // PNG
     expect(sniffMediaCategory(Buffer.from('GIF89a...'))).toBe('image');
     expect(sniffMediaCategory(Buffer.from([0x42, 0x4d, 0x00, 0x00]))).toBe('image'); // BMP
     const webp = Buffer.concat([
@@ -59,11 +59,9 @@ describe('isDeclaredMediaCategoryImplausible (Fase 1, Bloco F1.10)', () => {
   });
 
   it('false quando a categoria é desconhecida (documento real, texto, PDF) — nunca bloqueia por falta de reconhecimento', () => {
-    expect(isDeclaredMediaCategoryImplausible('document', Buffer.from('%PDF-1.4...'))).toBe(
+    expect(isDeclaredMediaCategoryImplausible('document', Buffer.from('%PDF-1.4...'))).toBe(false);
+    expect(isDeclaredMediaCategoryImplausible('document', Buffer.from('conteudo qualquer'))).toBe(
       false,
     );
-    expect(
-      isDeclaredMediaCategoryImplausible('document', Buffer.from('conteudo qualquer')),
-    ).toBe(false);
   });
 });

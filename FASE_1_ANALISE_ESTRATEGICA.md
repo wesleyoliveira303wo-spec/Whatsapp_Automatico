@@ -333,7 +333,7 @@ Formato idêntico ao já usado nas milestones anteriores do projeto. Numeração
 
 ---
 
-### F1.8 — Horário de atendimento / disponibilidade configurável
+### F1.8 — Horário de atendimento / disponibilidade configurável — ✅ implementado (2026-08-01)
 
 **Objetivo:** permitir configurar, por sessão, se a IA deve avisar sobre horário de atendimento fora do expediente, com um texto customizável.
 
@@ -355,9 +355,11 @@ Formato idêntico ao já usado nas milestones anteriores do projeto. Numeração
 
 **ADR necessária:** pequena — decide onde essa configuração vive no schema.
 
+**Status real:** entregue como campos aditivos em `AiBusinessProfile` (`offHoursEnabled`/`offHoursMessage`/`workingHoursStart`/`workingHoursEnd`/`workingDays`/`timezone`), consumidos por `PromptBuilder`. Ver DECISIONS.md ADR #98, CLAUDE.md §18 ("F1.8").
+
 ---
 
-### F1.9 — Respostas rápidas (templates) para o atendente humano
+### F1.9 — Respostas rápidas (templates) para o atendente humano — ✅ implementado (2026-08-05)
 
 **Objetivo:** uma lista simples e configurável de textos prontos que o atendente pode inserir com um clique no `MessageComposer`.
 
@@ -379,33 +381,41 @@ Formato idêntico ao já usado nas milestones anteriores do projeto. Numeração
 
 **ADR necessária:** não.
 
+**Status real:** entregue como bounded context `services/quickReplies`. Ver PROJECT_STATUS.md §40, CLAUDE.md §18 ("F1.9").
+
 ---
 
-### F1.10 — Decisões arquiteturais registradas, sem implementação completa nesta fase
+### F1.10 — Decisões arquiteturais registradas, sem implementação completa nesta fase — ⚠️ REESCOPADO em 2026-08-08 (virou bloco de implementação real, não só decisões)
 
-Bloco especial: não é uma entrega de funcionalidade, é a formalização das decisões da seção 6 que precisam ser **decididas e documentadas em ADR agora**, mesmo que a implementação plena fique para depois:
+Escopo ORIGINAL deste bloco (mantido abaixo, riscado o que não avançou): não era uma entrega de funcionalidade, e sim a formalização de decisões da seção 6 em ADR, mesmo sem implementação plena:
 
-- Rate limiting de consumo de IA por tenant/sessão (decisão de onde vive — mínimo viável: um contador simples em Redis com teto configurável, mesmo que grosseiro).
-- Estratégia de retenção/exclusão de dados (LGPD) — desenho, não implementação completa.
-- Direção sobre customização futura de `stage` por tenant (decidir se e quando sai do "fixo em código").
-- Estratégia de idempotência definitiva do envio outbound (fechar a lacuna "at-least-once" registrada desde a ADR #54/#55).
+- ~~Rate limiting de consumo de IA por tenant/sessão~~ → **implementado de verdade** (não só decidido) — ver abaixo.
+- Estratégia de retenção/exclusão de dados (LGPD) — **ainda não endereçada**, segue como decisão pendente.
+- Direção sobre customização futura de `stage` por tenant — **ainda não endereçada**, segue fixo em código (YAGNI mantido).
+- Estratégia de idempotência definitiva do envio outbound (fechar a lacuna "at-least-once" da ADR #54/#55) — **ainda não endereçada**, risco residual conhecido, sem mudança nesta rodada.
 
-**Ordem recomendada:** discussão e ADRs podem (e devem) acontecer em paralelo aos blocos de código acima — não é sequencial, é uma frente contínua de "enquanto codificamos F1.1–F1.9, essas decisões precisam existir em documento antes do Beta Fechado começar".
+**O que realmente aconteceu (2026-08-08)**: antes de abrir o beta fechado, o fundador pediu uma auditoria técnica completa da plataforma. Ela encontrou 3 riscos P0 concretos (não hipóteses de design) — worker de IA sem concorrência configurada, ausência real de rate limiting (não só "decisão pendente"), e `useConversationDetail` varrendo até 1000 conversas por poll — mais um pedido de produto antigo nunca fechado (pop-up de handoff humano) e itens de estabilidade menores (índice de banco, isolamento por tenant do cache de mídia, teto de upload, validação de Content-Type, teste de regressão de LID, teste flaky). Todos os 3 P0 + o pop-up + os itens menores foram **implementados, testados (incluindo 2 testes de integração real contra Postgres/Redis) e documentados** na mesma rodada — não ficaram só como ADR de intenção. Ver DECISIONS.md ADR #102 e CLAUDE.md §18 ("Fase 1, Bloco F1.10") para o detalhe completo.
+
+**Pendências que continuam em aberto** (não fechadas por F1.10, registradas para não serem perdidas): retenção/exclusão de dados (LGPD), customização de `stage` por tenant, idempotência definitiva do outbound. Nenhuma delas bloqueia o beta fechado inicial (baixo volume, poucos tenants) — ficam como candidatas a um F1.11 ou item de Fase 2, a critério do fundador.
 
 ---
 
 ## 10. Ordem de execução recomendada (visão consolidada)
 
-1. **F1.1** — Suporte a mídia (recebimento). Bloqueia tudo relacionado a mídia.
-2. **F1.4** — Vínculo AiInteraction↔Message + distinção de escalonamento (paralelo ao item 1, times/sessões diferentes se houver).
-3. **F1.2** — Interpretação de mídia pela IA.
-4. **F1.3** — Envio de mídia pelo operador.
-5. **F1.5** — Painel de auditoria (bloco de respiro, curto).
-6. **F1.6** — Analytics de negócio.
-7. **F1.7** — Vitórias rápidas de UI funcional (pode intercalar a qualquer momento a partir daqui).
-8. **F1.8** — Horário de atendimento.
-9. **F1.9** — Respostas rápidas.
-10. **F1.10** — Decisões arquiteturais (contínuo, em paralelo a tudo).
+1. **F1.1** — Suporte a mídia (recebimento). Bloqueia tudo relacionado a mídia. ✅ implementado.
+2. **F1.4** — Vínculo AiInteraction↔Message + distinção de escalonamento (paralelo ao item 1, times/sessões diferentes se houver). ✅ implementado.
+3. **F1.2** — Interpretação de mídia pela IA. ✅ implementado.
+4. **F1.3** — Envio de mídia pelo operador. ✅ implementado.
+5. **F1.5** — Painel de auditoria (bloco de respiro, curto). ✅ implementado.
+6. **F1.6** — Analytics de negócio. ✅ implementado.
+7. **F1.7** — Vitórias rápidas de UI funcional (pode intercalar a qualquer momento a partir daqui). ✅ implementado.
+8. **F1.8** — Horário de atendimento. ✅ implementado.
+9. **F1.9** — Respostas rápidas. ✅ implementado.
+10. **F1.10** — Reescopado (ver seção acima): fechou os P0 da auditoria pré-beta + pop-up de handoff + estabilidade menor. ✅ implementado (2026-08-08); LGPD/customização de `stage`/idempotência do outbound seguem em aberto.
+
+**Trabalho ad-hoc, fora desta sequência numerada** (pedidos diretos do fundador, implementados entre F1.9 e F1.10, retroativamente documentados em 2026-08-08 — ver `DECISIONS.md` ADRs #99–#101): Botão POWER da IA por sessão, catálogo de tags por sessão + atribuição a conversas, resumo de conversa gerado por IA sob demanda, fix crítico de LID (Baileys v7, `senderPn`→`remoteJidAlt`). Todos ✅ implementados e testados.
+
+**A Fase 1 (F1.1–F1.10 + trabalho ad-hoc) está, portanto, CONCLUÍDA em 2026-08-08.** O próximo passo lógico é a Fase 2 (Beta Fechado) — ver `CLAUDE.md` §18 para o estado mais recente e qualquer decisão nova do fundador antes de iniciá-la.
 
 ---
 

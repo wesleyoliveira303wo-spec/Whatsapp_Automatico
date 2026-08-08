@@ -54,6 +54,13 @@ export interface ConversationsComposition {
    */
   messageIngestionService: MessageIngestionService;
   conversationsService: ConversationsService;
+  /**
+   * Fase 1, Bloco F1.10 (observabilidade mínima) — exposta para o endpoint
+   * `/health/ready` (`index.ts`) conseguir reportar profundidade da fila
+   * (`getJobCounts`), sem precisar reconstruir uma segunda `Queue` sobre a
+   * mesma conexão só para isso.
+   */
+  aiReplyQueue: Queue<AiReplyJobData>;
 }
 
 export function createConversationsComposition(
@@ -114,5 +121,6 @@ export function createConversationsComposition(
     messageRepository,
     messageIngestionService,
     conversationsService,
+    aiReplyQueue,
   };
 }

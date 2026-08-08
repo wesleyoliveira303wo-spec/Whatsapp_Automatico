@@ -1144,4 +1144,39 @@ Bounded context `services/auth` completo: usuários com senha scrypt, access tok
 
 ---
 
+## 41. Documentação retroativa (2026-08-08) — Tags por sessão (R4) e Resumo de conversa por IA (R5) — ✅ implementado, documentação corrigida
+
+**Contexto**: as migrations `20260806120000_add_tags`/`20260806130000_add_conversation_ai_summary` entraram no repositório em 2026-08-06 sem nenhuma entrada aqui nem ADR — só um comentário no `schema.prisma`. A auditoria técnica pré-beta (2026-08-08) confirmou, lendo o código, que as duas features estão completas e testadas (não é código morto), e fechou o gap de documentação. Ver DECISIONS.md ADRs #100/#101 para o detalhe técnico completo.
+
+**Tags**: catálogo por sessão (`WhatsAppTag`, 8 cores fixas) + atribuição N:N a conversas (`WhatsAppConversationTag`). Bounded context `services/tags/`, RBAC (`tag:read`/`tag:manage`), UI reaproveitada em 3 lugares (conversa, lista, Pipeline).
+
+**Resumo de conversa**: gerado sob demanda (nunca automático), `ConversationSummaryService`/`SummaryPromptBuilder` dedicados, campos `aiSummary`/`aiSummaryUpdatedAt`/`aiSummaryMessageCount`. Endpoint `POST .../conversations/:id/summary`.
+
+**Achado**: resumo e "Assumir conversa" existiam desacoplados — o pop-up único (pedido antigo do fundador) nunca foi implementado. Fechado no item seguinte (§42).
+
+---
+
+## 42. Fase 1, Bloco F1.10 — Estabilidade e preparação para o beta fechado — ✅ implementado
+
+**Contexto**: auditoria técnica pré-beta (2026-08-08) identificou riscos P0 (concorrência do worker, ausência de rate limit de IA, `useConversationDetail` varrendo até 1000 conversas por poll) e um pedido de produto nunca fechado (pop-up de handoff), além de itens de estabilidade menores. Corrigidos numa única rodada disciplinada. Ver DECISIONS.md ADR #102 para o detalhe técnico completo de cada item.
+
+**Implementado**:
+- Worker `ai-reply`: `concurrency: 5` + `KeyedMutex` (serializa só dentro da mesma conversa).
+- `AiRateLimiter`/`InMemorySlidingWindowAiRateLimiter`: 6 tentativas/60s por conversa, 30/60s por sessão; estourar sinaliza atenção humana (mesmo mecanismo já existente), nunca gera mensagem técnica ao cliente.
+- `GET /conversations/:id` (API + BFF) — elimina a varredura de listagem que `useConversationDetail` fazia.
+- `ConversationHandoffPopup` — pop-up de handoff humano (resumo + "Assumir atendimento"), reusa componentes/endpoints já existentes.
+- Índice `(tenantId, sessionName, lastMessageAt)` (migration `20260808120000_add_conversation_last_message_index`).
+- `AgentMediaCache` isolado por tenant (era teto global de 500, agora 200 por tenant).
+- Upload de mídia no BFF com teto de 16MB aplicado durante o streaming.
+- Validação de Content-Type por assinatura binária (`mediaMagicBytes.ts`).
+- Teste de regressão LID sem `remoteJidAlt`; teste flaky `formatElapsedDays` corrigido.
+- Dois testes de integração real (Postgres + Redis/BullMQ) — únicos da suíte a usar infraestrutura real, não Fakes.
+- `GET /health/ready` — Postgres/Redis/profundidade da fila de IA.
+
+**Testes**: 201/201 suítes, 1722/1722 testes verdes (monorepo completo). `tsc --noEmit`/`eslint` limpos em `apps/api` e `apps/dashboard`. Migration aplicada e validada contra Postgres real na mesma sessão (`npx prisma migrate deploy`).
+
+**Pendências registradas**: valores do rate limit são ponto de partida (calibrar com uso real do beta); `KeyedMutex`/rate limiter em memória protegem só um processo — escalonamento horizontal do worker/API exigiria versão distribuída (Redis). Análise do prompt consultivo do Cérebro da IA (Fase H) é item separado, ainda não implementado nesta rodada — só analisado/proposto.
+
+---
+
 _Este documento deve ser atualizado ao final de cada item aprovado._

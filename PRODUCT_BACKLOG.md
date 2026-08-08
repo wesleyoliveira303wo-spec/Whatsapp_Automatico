@@ -79,9 +79,16 @@ redescoberta):
 **Origem:** achado colateral do mesmo HOTFIX (ADR #93), ao ler o fonte do pacote
 instalado.
 
-**Status:** 🟡 **Dívida técnica conhecida, sem urgência.**
+**Status:** ✅ **Resolvida em 2026-08-07** (documentação corrigida em 2026-08-08 — este item
+estava desatualizado, dizendo "sem urgência" quando já tinha sido corrigido). O fundador
+reportou o sintoma exatamente como previsto abaixo (contato conhecido gerando conversa
+nova) — `BaileysProvider.handleMessagesUpsert` corrigido para ler `message.key.remoteJidAlt`
+em vez de `senderPn`. Conversas já fragmentadas do mesmo contato foram mescladas
+manualmente no banco (operação pontual). Teste de regressão para "LID presente,
+`remoteJidAlt` ausente" adicionado no Bloco F1.10 (2026-08-08) — é o padrão que causou
+este bug duas vezes. Ver `CLAUDE.md` §18 ("Bug crítico pós-upgrade do Baileys v7").
 
-**O problema:** desde a Milestone 6 (Bloco M6H-2b), `BaileysProvider` resolve o
+**Descrição original do problema (registro histórico, mantido como estava):** desde a Milestone 6 (Bloco M6H-2b), `BaileysProvider` resolve o
 número real por trás de um endereço `@lid` (formato de privacidade do WhatsApp,
 comum em números novos) usando `message.key.senderPn`. Mas `grep -rn "senderPn"`
 no pacote `@whiskeysockets/baileys@7.0.0-rc13` **não retorna nada** — a v7 passou
@@ -95,7 +102,8 @@ motivou o fix original, foi de fato resolvida pelo upgrade que corrigiu o erro
 463, não por esse campo. Corrigir exige validar contra um contato real em `@lid`,
 o que precisa de teste funcional com número novo.
 
-**Quando isso vira problema:** se voltarem a aparecer conversas chaveadas por um
-JID `@lid` em vez do número real (sintoma: contato sem nome/foto e mensagens que
-não entregam), a troca de `senderPn` por `remoteJidAlt` é o primeiro lugar a
-olhar.
+**Quando isso vira problema (histórico — já resolvido, ver Status acima):** se voltarem a
+aparecer conversas chaveadas por um JID `@lid` em vez do número real (sintoma: contato sem
+nome/foto e mensagens que não entregam), o primeiro lugar a olhar não é mais `senderPn` (já
+corrigido) — é conferir se o Baileys renomeou `remoteJidAlt` de novo, e revisitar o teste de
+regressão do Bloco F1.10 (`BaileysProvider.test.ts`, caso "LID sem remoteJidAlt").

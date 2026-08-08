@@ -342,9 +342,7 @@ describe('ConversationDetailPanel — pop-up de handoff humano (Fase 1, Bloco F1
       buildConversation({ status: 'bot', escalatedAt: '2026-08-08T10:00:00.000Z' }),
     );
 
-    render(
-      <ConversationDetailPanel sessionName="vendas" conversationId="c1" aiEnabled={false} />,
-    );
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" aiEnabled={false} />);
     await flushMicrotasks();
 
     // O pop-up continua abrindo pela mesma condição (status+escalatedAt) —

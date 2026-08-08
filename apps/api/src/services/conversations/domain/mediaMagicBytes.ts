@@ -49,7 +49,11 @@ export function sniffMediaCategory(buffer: Buffer): SniffableMediaCategory | nul
 
   // --- Áudio ---
   if (asciiAt(buffer, 'OggS')) return 'audio'; // OGG/OPUS (mensagem de voz do WhatsApp)
-  if (asciiAt(buffer, 'ID3') || startsWith(buffer, [0xff, 0xfb]) || startsWith(buffer, [0xff, 0xf3]))
+  if (
+    asciiAt(buffer, 'ID3') ||
+    startsWith(buffer, [0xff, 0xfb]) ||
+    startsWith(buffer, [0xff, 0xf3])
+  )
     return 'audio'; // MP3
   if (asciiAt(buffer, 'RIFF') && asciiAt(buffer, 'WAVE', 8)) return 'audio'; // WAV
   if (asciiAt(buffer, '#!AMR')) return 'audio'; // AMR

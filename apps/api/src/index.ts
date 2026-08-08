@@ -326,6 +326,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       messageRepository,
       messageIngestionService,
       conversationsService,
+      aiReplyQueue,
     } = createConversationsComposition(prisma, aiReplyProducerConnection, logger);
 
     const { sessionService, registry, mediaDownloader, mediaSender } =
@@ -525,6 +526,48 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       createConversationSummaryRouter(conversationSummaryService),
     );
     app.use('/api/tenants/:tenantId/conversations', createConversationSummaryErrorHandler(logger));
+
+    // Fase 1, Bloco F1.10 (observabilidade mínima para o beta) — `/health`
+    // (topo deste arquivo) é uma checagem de LIVENESS deliberadamente burra
+    // (sempre 200, sem tocar dependência nenhuma — correto para um probe de
+    // "o processo está de pé"). Faltava uma checagem de READINESS: "o
+    // sistema está FUNCIONANDO de verdade" — Postgres respondendo, Redis
+    // respondendo, e quantos jobs de IA estão parados na fila (sinal direto
+    // de "a IA está atrasada/travada" antes que um operador precise notar
+    // pela demora nas respostas). Sem métricas/dashboard novo — só um
+    // endpoint JSON simples, do jeito mais barato de responder "o sistema
+    // está funcionando?" pedido explicitamente pelo fundador.
+    app.get('/health/ready', async (_req: Request, res: Response) => {
+      const checks: {
+        database: 'ok' | 'down';
+        redis: 'ok' | 'down';
+        aiQueue?: { waiting: number; active: number; failed: number; delayed: number };
+      } = { database: 'down', redis: 'down' };
+
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        checks.database = 'ok';
+      } catch {
+        // fica 'down' — não deixa a checagem inteira derrubar a resposta.
+      }
+
+      try {
+        const counts = await aiReplyQueue.getJobCounts('waiting', 'active', 'failed', 'delayed');
+        checks.redis = 'ok';
+        checks.aiQueue = {
+          waiting: counts.waiting ?? 0,
+          active: counts.active ?? 0,
+          failed: counts.failed ?? 0,
+          delayed: counts.delayed ?? 0,
+        };
+      } catch {
+        // fica 'down'/`aiQueue` ausente — Redis inacessível ou fila não
+        // respondeu; não deixa a checagem inteira derrubar a resposta.
+      }
+
+      const healthy = checks.database === 'ok' && checks.redis === 'ok';
+      res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', checks });
+    });
 
     shutdownHandles = { prisma, outboundWorker, aiReplyProducerConnection };
   } catch (error) {
