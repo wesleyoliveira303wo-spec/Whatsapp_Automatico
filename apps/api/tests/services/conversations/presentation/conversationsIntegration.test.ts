@@ -428,6 +428,89 @@ describe('Integração authenticate + RBAC + conversationsRouter (M3 Bloco 5 / M
     expect(response.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c-dentro']);
   });
 
+  // --- GET .../conversations/:conversationId (Fase 1, Bloco F1.10) ---
+
+  describe('GET .../conversations/:conversationId', () => {
+    it('conversa existente do próprio tenant: 200 com a conversa completa', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ id: 'c-1' }));
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/conversations/c-1')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ id: 'c-1', tenantId: 'tenant-1', status: 'bot' });
+    });
+
+    it('conversa inexistente: 404', async () => {
+      const { app } = buildApp();
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/conversations/nunca-existiu')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('[IDOR] conversa de OUTRO tenant não vaza: 404, nunca 200 com dado alheio', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ id: 'c-1', tenantId: 'tenant-2' }));
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/conversations/c-1')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('sem credencial: 401, rota nunca alcançada', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(buildConversation({ id: 'c-1' }));
+
+      const response = await request(app).get('/api/tenants/tenant-1/conversations/c-1');
+
+      expect(response.status).toBe(401);
+    });
+
+    it('crachá de Read Only (qualquer papel autenticado): 200 — é rota de leitura, sem RBAC de posse', async () => {
+      const { app, conversationRepository, access } = buildApp();
+      conversationRepository.seed(buildConversation({ id: 'c-1' }));
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/conversations/c-1')
+        .set('Authorization', bearer(access, 'user-1', 'read_only'));
+
+      expect(response.status).toBe(200);
+      expect(response.body.id).toBe('c-1');
+    });
+
+    it('resposta traz os campos que a tela de detalhe da Dashboard usa hoje (status, stage, escalatedAt, unreadCount, tags)', async () => {
+      const { app, conversationRepository } = buildApp();
+      conversationRepository.seed(
+        buildConversation({
+          id: 'c-1',
+          status: 'human',
+          stage: 'negotiating',
+          escalatedAt: new Date('2026-08-01T10:00:00Z'),
+          unreadCount: 3,
+        }),
+      );
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/conversations/c-1')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        status: 'human',
+        stage: 'negotiating',
+        unreadCount: 3,
+      });
+      expect(response.body.escalatedAt).toBeTruthy();
+    });
+  });
+
   // --- POST .../media (Fase 1, Bloco F1.3 — envio de mídia pelo operador) ---
 
   describe('POST .../media', () => {

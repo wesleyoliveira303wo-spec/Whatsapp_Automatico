@@ -21,11 +21,18 @@ import type { ConversationMessage, ConversationSummary } from '../../lib/clientA
 
 jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
-  fetchConversations: jest.fn(),
+  // Fase 1, Bloco F1.10: `useConversationDetail` passou a usar
+  // `fetchConversation` (singular, `GET /conversations/:id`) em vez de
+  // varrer `fetchConversations` (listagem paginada).
+  fetchConversation: jest.fn(),
   fetchConversationMessages: jest.fn(),
   fetchAiInteractions: jest.fn(),
   fetchContactAvatar: jest.fn(),
   markConversationAsRead: jest.fn(),
+  // Fase 1, Bloco F1.10 — pop-up de handoff: reusa as MESMAS funções já
+  // usadas por `ConversationActions`/`ConversationSummarySection`.
+  escalateConversation: jest.fn(),
+  generateConversationSummary: jest.fn(),
 }));
 
 function buildConversation(overrides: Partial<ConversationSummary> = {}): ConversationSummary {
@@ -89,10 +96,7 @@ function stubScrollMetrics(
 
 beforeEach(() => {
   jest.useFakeTimers();
-  (clientApi.fetchConversations as jest.Mock).mockResolvedValue({
-    conversations: [buildConversation()],
-    nextCursor: undefined,
-  });
+  (clientApi.fetchConversation as jest.Mock).mockResolvedValue(buildConversation());
   (clientApi.fetchAiInteractions as jest.Mock).mockResolvedValue({ interactions: [] });
   (clientApi.fetchContactAvatar as jest.Mock).mockResolvedValue({ avatarUrl: undefined });
   (clientApi.markConversationAsRead as jest.Mock).mockResolvedValue(buildConversation());
@@ -222,5 +226,129 @@ describe('ConversationDetailPanel — scroll', () => {
     await waitFor(() => expect(screen.getByText('nova mensagem enquanto lia')).toBeInTheDocument());
     expect(container.scrollTop).toBe(100);
     expect(screen.getByText('Ir para mensagens recentes')).toBeInTheDocument();
+  });
+});
+
+describe('ConversationDetailPanel — pop-up de handoff humano (Fase 1, Bloco F1.10)', () => {
+  beforeEach(() => {
+    (clientApi.fetchConversationMessages as jest.Mock).mockResolvedValue({ messages: [] });
+  });
+
+  it('(a) conversa escalada COM resumo já existente: pop-up abre mostrando o resumo pronto, sem chamar a IA', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({
+        status: 'bot',
+        escalatedAt: '2026-08-08T10:00:00.000Z',
+        aiSummary: 'Cliente perguntou sobre parcelamento em 12x.',
+        aiSummaryUpdatedAt: '2026-08-08T10:00:00.000Z',
+      }),
+    );
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+
+    expect(screen.getByText('A IA pediu atendimento humano')).toBeInTheDocument();
+    expect(screen.getByText('Cliente perguntou sobre parcelamento em 12x.')).toBeInTheDocument();
+    expect(clientApi.generateConversationSummary).not.toHaveBeenCalled();
+  });
+
+  it('(b) conversa escalada SEM resumo ainda: pop-up abre com "Nenhum resumo gerado ainda" + botão para gerar', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'bot', escalatedAt: '2026-08-08T10:00:00.000Z' }),
+    );
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+
+    expect(screen.getByText('A IA pediu atendimento humano')).toBeInTheDocument();
+    expect(screen.getByText('Nenhum resumo gerado ainda.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Gerar resumo' })).toBeInTheDocument();
+  });
+
+  it('(c) conversa normal, não escalada: pop-up nunca abre', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'bot', escalatedAt: undefined }),
+    );
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+
+    expect(screen.queryByText('A IA pediu atendimento humano')).not.toBeInTheDocument();
+  });
+
+  it('conversa já assumida por um humano (status="human"): pop-up nunca abre, mesmo com escalatedAt antigo no dado', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'human', assignedToUserId: 'op-1', escalatedAt: undefined }),
+    );
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+
+    expect(screen.queryByText('A IA pediu atendimento humano')).not.toBeInTheDocument();
+  });
+
+  it('(d) operador clica "Assumir atendimento": chama escalateConversation, fecha o pop-up e reflete o novo status', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'bot', escalatedAt: '2026-08-08T10:00:00.000Z' }),
+    );
+    (clientApi.escalateConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'human', assignedToUserId: 'op-1', escalatedAt: undefined }),
+    );
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+
+    expect(screen.getByText('A IA pediu atendimento humano')).toBeInTheDocument();
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Assumir atendimento' }).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(clientApi.escalateConversation).toHaveBeenCalledWith('c1');
+    expect(screen.queryByText('A IA pediu atendimento humano')).not.toBeInTheDocument();
+  });
+
+  it('fechar sem assumir ("Fechar") não reabre o pop-up sozinho no próximo poll da mesma conversa', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'bot', escalatedAt: '2026-08-08T10:00:00.000Z' }),
+    );
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+    expect(screen.getByText('A IA pediu atendimento humano')).toBeInTheDocument();
+
+    // Duas coisas se chamam "Fechar" aqui (o X do Dialog, com texto
+    // sr-only, e o botão de texto do rodapé) — pega o último (o do rodapé).
+    const closeButtons = screen.getAllByRole('button', { name: 'Fechar' });
+    await act(async () => {
+      closeButtons[closeButtons.length - 1].click();
+    });
+    expect(screen.queryByText('A IA pediu atendimento humano')).not.toBeInTheDocument();
+
+    // Poll de 4s — mesmos dados (ainda escalada, ninguém assumiu ainda).
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('A IA pediu atendimento humano')).not.toBeInTheDocument();
+  });
+
+  it('(e) Botão POWER desligado (aiEnabled=false) não interfere na condição de abertura do pop-up', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'bot', escalatedAt: '2026-08-08T10:00:00.000Z' }),
+    );
+
+    render(
+      <ConversationDetailPanel sessionName="vendas" conversationId="c1" aiEnabled={false} />,
+    );
+    await flushMicrotasks();
+
+    // O pop-up continua abrindo pela mesma condição (status+escalatedAt) —
+    // o Botão POWER só afeta o badge de status, nunca esta decisão.
+    expect(screen.getByText('A IA pediu atendimento humano')).toBeInTheDocument();
   });
 });

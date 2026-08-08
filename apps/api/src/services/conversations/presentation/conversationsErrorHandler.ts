@@ -6,6 +6,7 @@ import { ConversationOwnershipError } from '../domain/errors/ConversationOwnersh
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
 import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
 import { AgentMediaTooLargeError } from '../domain/errors/AgentMediaTooLargeError';
+import { AgentMediaTypeMismatchError } from '../domain/errors/AgentMediaTypeMismatchError';
 import { WhatsAppNotConnectedError } from '../../whatsapp/domain/errors/WhatsAppNotConnectedError';
 
 /**
@@ -57,6 +58,17 @@ export function createConversationsErrorHandler(logger: Logger): ErrorRequestHan
     // Fase 1, Bloco F1.3.
     if (error instanceof AgentMediaTooLargeError) {
       res.status(413).json({ error: 'agent_media_too_large', message: error.message });
+      return;
+    }
+    // Fase 1, Bloco F1.10 — Content-Type declarado não bate com a assinatura
+    // binária real do arquivo.
+    if (error instanceof AgentMediaTypeMismatchError) {
+      res.status(400).json({
+        error: 'agent_media_type_mismatch',
+        message: error.message,
+        declaredCategory: error.declaredCategory,
+        detectedCategory: error.detectedCategory,
+      });
       return;
     }
     // Fase 1, Bloco F1.3: `sendAgentMediaMessage` chama `MediaSender.send()`

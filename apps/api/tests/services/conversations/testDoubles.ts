@@ -9,6 +9,7 @@ import { Message } from '../../../src/services/conversations/domain/entities/Mes
 import { MessageRepository } from '../../../src/services/conversations/domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../../../src/services/conversations/domain/schedulers/AiReplyScheduler';
 import { AiAvailabilityRepository } from '../../../src/services/conversations/domain/repositories/AiAvailabilityRepository';
+import { AiRateLimiter } from '../../../src/services/conversations/domain/repositories/AiRateLimiter';
 
 /**
  * Fake compartilhado do `ConversationRepository` (Milestone 3, Bloco 2) — em
@@ -356,5 +357,27 @@ export class FakeAiAvailabilityRepository implements AiAvailabilityRepository {
   /** Helper de teste: define o estado do Botão POWER para `(tenantId, sessionName)`. */
   setEnabled(tenantId: string, sessionName: string, value: boolean): void {
     this.enabled.set(FakeAiAvailabilityRepository.key(tenantId, sessionName), value);
+  }
+}
+
+/**
+ * Fake de `AiRateLimiter` (Fase 1, Bloco F1.10) — por padrão sempre permite
+ * (`consume` devolve `true`), mesmo espírito de `FakeAiAvailabilityRepository`
+ * default "ligado": os testes existentes de `MessageIngestionService` não
+ * precisam saber que o rate limiter existe, a menos que testem ele
+ * explicitamente. `setBlocked(true)` simula o limite estourado.
+ */
+export class FakeAiRateLimiter implements AiRateLimiter {
+  private blocked = false;
+  readonly calls: Array<{ tenantId: string; sessionName: string; conversationId: string }> = [];
+
+  consume(tenantId: string, sessionName: string, conversationId: string): boolean {
+    this.calls.push({ tenantId, sessionName, conversationId });
+    return !this.blocked;
+  }
+
+  /** Helper de teste: faz a PRÓXIMA (e todas as seguintes) chamada devolver `false`. */
+  setBlocked(value: boolean): void {
+    this.blocked = value;
   }
 }

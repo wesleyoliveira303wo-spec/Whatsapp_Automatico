@@ -13,6 +13,7 @@ import { FakeMediaDownloader } from '../whatsapp/infrastructure/FakeMediaDownloa
 import { FakeMediaSender } from '../whatsapp/infrastructure/FakeMediaSender';
 import { MessageMediaNotFoundError } from '../../../src/services/conversations/domain/errors/MessageMediaNotFoundError';
 import { AgentMediaTooLargeError } from '../../../src/services/conversations/domain/errors/AgentMediaTooLargeError';
+import { AgentMediaTypeMismatchError } from '../../../src/services/conversations/domain/errors/AgentMediaTypeMismatchError';
 import { Message } from '../../../src/services/conversations/domain/entities/Message';
 
 function buildConversation(overrides: Partial<Conversation> = {}): Conversation {
@@ -88,6 +89,43 @@ function buildService(): {
 }
 
 describe('ConversationsService', () => {
+  describe('getConversation() (Fase 1, Bloco F1.10)', () => {
+    it('devolve a conversa quando ela existe e pertence ao tenant', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(buildConversation({ id: 'c-1', tenantId: 'tenant-1' }));
+
+      const result = await service.getConversation('tenant-1', 'c-1');
+
+      expect(result.id).toBe('c-1');
+      expect(result.tenantId).toBe('tenant-1');
+    });
+
+    it('lança ConversationNotFoundError quando a conversa não existe', async () => {
+      const { service } = buildService();
+
+      await expect(service.getConversation('tenant-1', 'inexistente')).rejects.toBeInstanceOf(
+        ConversationNotFoundError,
+      );
+    });
+
+    it('lança ConversationNotFoundError (nunca vaza dado) quando a conversa é de OUTRO tenant', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(buildConversation({ id: 'c-1', tenantId: 'tenant-2' }));
+
+      await expect(service.getConversation('tenant-1', 'c-1')).rejects.toBeInstanceOf(
+        ConversationNotFoundError,
+      );
+    });
+
+    it('lança TenantNotFoundError quando o tenant informado não existe', async () => {
+      const { service } = buildService();
+
+      await expect(service.getConversation('tenant-inexistente', 'c-1')).rejects.toBeInstanceOf(
+        TenantNotFoundError,
+      );
+    });
+  });
+
   describe('escalateConversation() / resumeConversation() (D10)', () => {
     it('escalateConversation() muda o status para "human" e devolve a conversa atualizada', async () => {
       const { service, conversationRepository } = buildService();
@@ -608,6 +646,33 @@ describe('ConversationsService', () => {
         service.sendAgentMediaMessage('tenant-1', 'conversation-1', tooLarge, OP),
       ).rejects.toThrow(AgentMediaTooLargeError);
       expect(mediaSender.sendCalls).toHaveLength(0);
+    });
+
+    it('[Fase 1, F1.10] Content-Type declarado não bate com a assinatura binária real: lança AgentMediaTypeMismatchError e NÃO envia', async () => {
+      const { service, conversationRepository, mediaSender } = buildService();
+      conversationRepository.seed(buildConversation({ status: 'human', assignedToUserId: 'op-1' }));
+      // Declara "document", mas o binário começa com a assinatura de um JPEG.
+      const mislabeled = {
+        ...MEDIA,
+        contentType: 'document' as const,
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      };
+
+      await expect(
+        service.sendAgentMediaMessage('tenant-1', 'conversation-1', mislabeled, OP),
+      ).rejects.toThrow(AgentMediaTypeMismatchError);
+      expect(mediaSender.sendCalls).toHaveLength(0);
+    });
+
+    it('[Fase 1, F1.10] documento sem assinatura reconhecida (ex.: PDF/texto): NÃO bloqueia — envia normalmente', async () => {
+      const { service, conversationRepository, mediaSender } = buildService();
+      conversationRepository.seed(buildConversation({ status: 'human', assignedToUserId: 'op-1' }));
+      const pdf = { ...MEDIA, contentType: 'document' as const, buffer: Buffer.from('%PDF-1.4...') };
+
+      await expect(
+        service.sendAgentMediaMessage('tenant-1', 'conversation-1', pdf, OP),
+      ).resolves.toBeDefined();
+      expect(mediaSender.sendCalls).toHaveLength(1);
     });
 
     it('MediaSender lança (ex.: WhatsAppNotConnectedError): propaga, NÃO persiste Message nem audita', async () => {

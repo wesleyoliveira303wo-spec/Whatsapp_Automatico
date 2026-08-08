@@ -17,11 +17,42 @@ export const config = {
   },
 };
 
-/** Lê o corpo bruto da requisição Next.js num único `Buffer` — necessário com `bodyParser: false`. */
-function readRawBody(req: NextApiRequest): Promise<Buffer> {
+/**
+ * Espelha `MAX_AGENT_MEDIA_UPLOAD_BYTES`
+ * (`apps/api/src/services/conversations/application/ConversationsService.ts`)
+ * — Fase 1, Bloco F1.10 (estabilidade para beta). Duplicado de propósito (o
+ * Dashboard não importa código de `apps/api`, workspaces separados, mesmo
+ * padrão já aceito neste projeto para outras constantes espelhadas entre
+ * bounded contexts): sem isso, `bodyParser: false` deixava esta rota
+ * bufferizar QUALQUER tamanho de corpo em memória, no processo do Next.js,
+ * antes de o backend (que já tinha o teto certo) ter a chance de rejeitar —
+ * vetor de exaustão de memória. Se o teto do backend mudar, este valor
+ * precisa mudar junto.
+ */
+const MAX_AGENT_MEDIA_UPLOAD_BYTES = 16 * 1024 * 1024;
+
+class PayloadTooLargeError extends Error {}
+
+/**
+ * Lê o corpo bruto da requisição Next.js num único `Buffer` — necessário com
+ * `bodyParser: false`. Aborta a leitura (`req.destroy()`) assim que o
+ * acumulado ultrapassa `maxBytes`, em vez de continuar bufferizando um corpo
+ * arbitrariamente grande só para descartá-lo depois — o teto é aplicado
+ * ENQUANTO os chunks chegam, não só no final.
+ */
+function readRawBody(req: NextApiRequest, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let totalBytes = 0;
+    req.on('data', (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        req.destroy();
+        reject(new PayloadTooLargeError());
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
@@ -82,7 +113,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const fileName = req.headers['x-media-filename'];
   if (typeof fileName === 'string') forwardedHeaders['x-media-filename'] = fileName;
 
-  const body = await readRawBody(req);
+  let body: Buffer;
+  try {
+    body = await readRawBody(req, MAX_AGENT_MEDIA_UPLOAD_BYTES);
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      res.status(413).json({
+        error: 'payload_too_large',
+        message: `Arquivo maior que o limite permitido (${MAX_AGENT_MEDIA_UPLOAD_BYTES} bytes).`,
+      });
+      return;
+    }
+    throw error;
+  }
 
   // `fetch` (lib.dom.ts) tipa `body` como `BodyInit`, que não inclui `Buffer`
   // (tipo do Node) diretamente — `Uint8Array` é aceito e `Buffer` já É um

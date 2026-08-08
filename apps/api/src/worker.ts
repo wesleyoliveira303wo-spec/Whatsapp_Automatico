@@ -25,6 +25,7 @@ import {
 import { BullMqOutboundMessageDispatcher } from './services/whatsapp/infrastructure/dispatchers/BullMqOutboundMessageDispatcher';
 import { HttpMediaDownloader } from './services/whatsapp/infrastructure/HttpMediaDownloader';
 import { ConsoleLogger } from './shared/infrastructure/logging/ConsoleLogger';
+import { KeyedMutex } from './shared/infrastructure/concurrency/KeyedMutex';
 
 // Mesmo racional de `index.ts`: caminho absoluto calculado a partir de
 // `__dirname`, não de `process.cwd()` — necessário porque `npm run dev:worker
@@ -226,12 +227,40 @@ async function main(): Promise<void> {
     AI_HISTORY_LIMIT ? Number(AI_HISTORY_LIMIT) : undefined,
   );
 
+  // Fase 1, Bloco F1.10 (estabilidade para beta) — a auditoria pré-beta
+  // encontrou o worker rodando com concorrência PADRÃO do BullMQ (= 1),
+  // processando o `ai-reply` de TODOS os tenants em série: um tenant com
+  // burst de mensagens atrasava a IA de todos os outros.
+  //
+  // `concurrency: 5` libera até 5 jobs em voo ao mesmo tempo DENTRO deste
+  // processo. Isso é seguro entre CONVERSAS diferentes (cada uma só toca a
+  // própria linha em `WhatsAppConversation`/`WhatsAppMessage`), mas não é
+  // seguro dentro da MESMA conversa: duas mensagens inbound próximas geram
+  // dois jobs distintos (o `jobId` de idempotência do BullMQ é por
+  // `messageId`, não por `conversationId` — ver `BullMqAiReplyScheduler`),
+  // e processá-los ao mesmo tempo faria duas chamadas concorrentes a
+  // `ConversationAiService.generateReply()` lerem o MESMO histórico (a
+  // resposta da primeira ainda não persistida) — duas respostas
+  // conflitantes, dois `updateStage` correndo por cima um do outro.
+  //
+  // `conversationMutex` (ver `KeyedMutex`) resolve exatamente isso:
+  // serializa jobs da MESMA `tenantId:conversationId` (a chave inclui o
+  // tenant para nunca colidir entre tenants diferentes por acidente),
+  // enquanto libera paralelismo total entre conversas/tenants diferentes —
+  // "paralelo entre conversas, serial dentro da mesma conversa", como
+  // pedido. `shouldAutoRespond()`/Botão POWER continuam sendo re-checados
+  // DENTRO de `processor.process()` a cada execução, agora com a garantia
+  // adicional de que essa checagem nunca lê um estado sendo escrito por
+  // outro job da mesma conversa ao mesmo tempo.
+  const conversationMutex = new KeyedMutex();
+
   const worker = new Worker<AiReplyJobData>(
     AI_REPLY_QUEUE_NAME,
     async (job) => {
-      await processor.process(job.data);
+      const conversationKey = `${job.data.tenantId}:${job.data.conversationId}`;
+      await conversationMutex.run(conversationKey, () => processor.process(job.data));
     },
-    { connection: workerConnection },
+    { connection: workerConnection, concurrency: 5 },
   );
 
   worker.on('completed', (job) => {

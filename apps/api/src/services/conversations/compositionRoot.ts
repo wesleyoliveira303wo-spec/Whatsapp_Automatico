@@ -12,6 +12,7 @@ import { MessageRepository } from './domain/repositories/MessageRepository';
 import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './infrastructure/queues/AiReplyQueue';
 import { BullMqAiReplyScheduler } from './infrastructure/schedulers/BullMqAiReplyScheduler';
 import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
+import { InMemorySlidingWindowAiRateLimiter } from './infrastructure/repositories/InMemorySlidingWindowAiRateLimiter';
 import { MessageIngestionService } from './application/MessageIngestionService';
 import { ConversationsService } from './application/ConversationsService';
 import {
@@ -87,11 +88,17 @@ export function createConversationsComposition(
   // de não importar `AiBusinessProfileRepository` diretamente.
   const aiAvailabilityRepository = new PrismaAiAvailabilityRepository(prisma);
 
+  // Fase 1, Bloco F1.10 — instância única por processo: a janela deslizante
+  // vive em memória (ver docstring da classe), então precisa ser a MESMA
+  // instância a cada mensagem, nunca recriada por request.
+  const aiRateLimiter = new InMemorySlidingWindowAiRateLimiter();
+
   const messageIngestionService = new MessageIngestionService(
     conversationRepository,
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
+    aiRateLimiter,
   );
   const conversationsService = new ConversationsService(
     conversationRepository,

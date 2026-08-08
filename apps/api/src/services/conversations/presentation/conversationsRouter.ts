@@ -171,6 +171,32 @@ export function createConversationsRouter(conversationsService: ConversationsSer
     }),
   );
 
+  /**
+   * `GET .../conversations/:conversationId` — Fase 1, Bloco F1.10 (estabilidade
+   * para beta). Sem `requirePermission` explícito — mesma régua já aplicada a
+   * `GET /` e `GET /:conversationId/messages` (leitura, não posse/escrita).
+   * `ConversationsService.getConversation` já valida tenant ownership antes
+   * de devolver; `ConversationNotFoundError` vira 404 via
+   * `conversationsErrorHandler` (mesmo tratamento dos demais métodos).
+   */
+  router.get(
+    '/:conversationId',
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(conversationIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const conversation = await conversationsService.getConversation(
+        params.tenantId,
+        params.conversationId,
+      );
+      res.status(200).json(conversation);
+    }),
+  );
+
   router.get(
     '/:conversationId/messages',
     asyncHandler(async (req, res) => {

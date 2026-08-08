@@ -176,30 +176,48 @@ describe('formatters (M2, Fase 4)', () => {
   });
 
   describe('formatElapsedDays (Fase 1, Bloco F1.7)', () => {
+    // Fase 1, Bloco F1.10 (estabilidade para beta): "agora" precisa ser
+    // FIXO via fake timers — antes este bloco usava `Date.now()`/`new Date()`
+    // reais, e o caso "há 1 dia" (montado às 9h de ontem) virava flaky
+    // dependendo da hora real de execução (ex.: rodando às 2h da manhã, a
+    // diferença real é de 17h, não um dia de calendário completo).
+    // "Agora" fixo em 2026-08-05T15:00:00Z (meio da tarde, não uma borda de
+    // dia) elimina a dependência do relógio da máquina.
+    const NOW = new Date('2026-08-05T15:00:00.000Z');
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('devolve "—" para entrada ausente ou inválida', () => {
       expect(formatElapsedDays(undefined)).toBe('—');
       expect(formatElapsedDays('data-invalida')).toBe('—');
     });
 
     it('"agora há pouco" para menos de 1h atrás', () => {
-      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const thirtyMinAgo = new Date(NOW.getTime() - 30 * 60 * 1000).toISOString();
       expect(formatElapsedDays(thirtyMinAgo)).toBe('agora há pouco');
     });
 
     it('"há Xh" para o mesmo dia, 1h ou mais atrás', () => {
-      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const threeHoursAgo = new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString();
       expect(formatElapsedDays(threeHoursAgo)).toBe('há 3h');
     });
 
     it('"há 1 dia" para ontem (calendário, não múltiplo de 24h)', () => {
-      const yesterday = new Date();
+      const yesterday = new Date(NOW);
       yesterday.setDate(yesterday.getDate() - 1);
       yesterday.setHours(9, 0, 0, 0);
       expect(formatElapsedDays(yesterday.toISOString())).toBe('há 1 dia');
     });
 
     it('"há N dias" para vários dias atrás', () => {
-      const fiveDaysAgo = new Date();
+      const fiveDaysAgo = new Date(NOW);
       fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
       fiveDaysAgo.setHours(9, 0, 0, 0);
       expect(formatElapsedDays(fiveDaysAgo.toISOString())).toBe('há 5 dias');

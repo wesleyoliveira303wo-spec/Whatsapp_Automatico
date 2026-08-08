@@ -7,6 +7,7 @@ import { ConversationRepository } from '../domain/repositories/ConversationRepos
 import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
 import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
+import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
@@ -60,6 +61,12 @@ export class MessageIngestionService implements MessageReceivedHandler {
     private readonly messageRepository: MessageRepository,
     private readonly aiReplyScheduler: AiReplyScheduler,
     private readonly aiAvailabilityRepository: AiAvailabilityRepository,
+    // Fase 1, Bloco F1.10 (estabilidade para beta) — contém rajadas de
+    // mensagens ANTES de virarem custo de IA (ver docstring de
+    // `AiRateLimiter`). Porta própria, mesmo racional de
+    // `AiAvailabilityRepository`: `MessageIngestionService` só precisa saber
+    // "posso agendar ou não", não como o limite é calculado.
+    private readonly aiRateLimiter: AiRateLimiter,
     private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   ) {}
 
@@ -159,7 +166,37 @@ export class MessageIngestionService implements MessageReceivedHandler {
         message.sessionName,
       );
       if (shouldAutoRespond(effectiveConversation, sessionAiEnabled)) {
-        await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
+        // Fase 1, Bloco F1.10 — segundo portão, IMEDIATAMENTE antes de gerar
+        // custo de IA: `shouldAutoRespond` já decidiu que a IA DEVERIA
+        // responder; `aiRateLimiter` decide se isso não excede o ritmo
+        // seguro desta conversa/sessão agora. Estourou o limite: não
+        // enfileira (nenhum custo de IA gerado), a mensagem já foi
+        // persistida normalmente (visível na Dashboard), e sinalizamos
+        // atenção humana com o MESMO mecanismo já usado quando a IA falha
+        // em gerar uma resposta (`flagNeedsHumanAttention` — dispara o
+        // alerta/som/contador já existentes, sem inventar nenhuma UX nova).
+        // A janela é deslizante: a PRÓXIMA mensagem, depois que a rajada
+        // esfriar, volta a ser respondida normalmente — nenhuma ação manual
+        // necessária para "destravar".
+        const withinRateLimit = this.aiRateLimiter.consume(
+          message.tenantId,
+          message.sessionName,
+          conversation.id,
+        );
+        if (withinRateLimit) {
+          await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
+        } else {
+          try {
+            await this.conversationRepository.flagNeedsHumanAttention(
+              message.tenantId,
+              conversation.id,
+              message.receivedAt,
+            );
+          } catch {
+            // Mesmo espírito do `incrementUnreadCount` acima: sinalização é
+            // auxiliar, sua falha não deve derrubar a ingestão da mensagem.
+          }
+        }
       }
     }
   }

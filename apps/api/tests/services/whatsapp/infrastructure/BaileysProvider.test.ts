@@ -1208,6 +1208,47 @@ describe('BaileysProvider', () => {
       ]);
     });
 
+    it('[REGRESSÃO — Fase 1, F1.10] mensagem de um LID SEM remoteJidAlt: cai no @lid bruto (comportamento de fallback documentado, não um bug novo) — protege contra o padrão que já fragmentou conversas duas vezes (senderPn→remoteJidAlt)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'notify',
+        messages: [
+          {
+            key: {
+              remoteJid: '254352879009802@lid',
+              // remoteJidAlt AUSENTE de propósito — cenário real documentado
+              // (Baileys não entrega esse campo em toda mensagem de um LID).
+              fromMe: false,
+            },
+            message: { conversation: 'Ola de novo' },
+          },
+        ],
+      });
+
+      // Comportamento ATUAL e ESPERADO do fallback: sem remoteJidAlt, "from"
+      // cai no @lid bruto. Este teste não afirma que isso é o ideal — só
+      // trava o comportamento conhecido, para que uma mudança futura na
+      // extração do JID (ex.: mapear LID→PN via signalRepository) seja uma
+      // decisão CONSCIENTE, nunca uma regressão silenciosa não notada.
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'message_received',
+          from: '254352879009802@lid',
+          content: 'Ola de novo',
+        }),
+      ]);
+    });
+
     it('remove sufixo de device do JID escolhido (jidNormalizedUser)', async () => {
       const provider = new BaileysProvider(
         'tenant-1',

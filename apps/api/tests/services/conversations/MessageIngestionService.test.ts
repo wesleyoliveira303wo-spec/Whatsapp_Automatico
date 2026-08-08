@@ -5,6 +5,7 @@ import {
   FakeMessageRepository,
   FakeAiReplyScheduler,
   FakeAiAvailabilityRepository,
+  FakeAiRateLimiter,
 } from './testDoubles';
 
 function buildSut(): {
@@ -13,16 +14,19 @@ function buildSut(): {
   messageRepository: FakeMessageRepository;
   aiReplyScheduler: FakeAiReplyScheduler;
   aiAvailabilityRepository: FakeAiAvailabilityRepository;
+  aiRateLimiter: FakeAiRateLimiter;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
   const aiReplyScheduler = new FakeAiReplyScheduler();
   const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
+  const aiRateLimiter = new FakeAiRateLimiter();
   const sut = new MessageIngestionService(
     conversationRepository,
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
+    aiRateLimiter,
   );
   return {
     sut,
@@ -30,6 +34,7 @@ function buildSut(): {
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
+    aiRateLimiter,
   };
 }
 
@@ -460,6 +465,57 @@ describe('MessageIngestionService', () => {
 
       expect(messageRepository.getAll()[0].direction).toBe('inbound');
       expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+    });
+  });
+
+  describe('rate limit de IA (Fase 1, Bloco F1.10)', () => {
+    it('dentro do limite: agenda a resposta de IA normalmente', async () => {
+      const { sut, aiReplyScheduler, aiRateLimiter } = buildSut();
+
+      await sut.handle(buildInboundMessage());
+
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      expect(aiRateLimiter.calls).toEqual([
+        { tenantId: 'tenant-1', sessionName: 'default', conversationId: expect.any(String) },
+      ]);
+    });
+
+    it('limite estourado: NÃO agenda resposta de IA e sinaliza atenção humana (mesmo mecanismo de falha de IA)', async () => {
+      const { sut, aiReplyScheduler, aiRateLimiter, conversationRepository } = buildSut();
+      aiRateLimiter.setBlocked(true);
+
+      await sut.handle(buildInboundMessage());
+
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+      const conversation = conversationRepository.getAll()[0];
+      expect(conversation.escalatedAt).toBeInstanceOf(Date);
+    });
+
+    it('limite estourado: a mensagem ainda é persistida normalmente (fica visível na Dashboard)', async () => {
+      const { sut, messageRepository, aiRateLimiter } = buildSut();
+      aiRateLimiter.setBlocked(true);
+
+      await sut.handle(buildInboundMessage({ content: 'mensagem numa rajada' }));
+
+      expect(messageRepository.getAll()).toHaveLength(1);
+      expect(messageRepository.getAll()[0].content).toBe('mensagem numa rajada');
+    });
+
+    it('mensagem outbound (operador de outro dispositivo) nunca consulta o rate limiter', async () => {
+      const { sut, aiRateLimiter } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
+
+      expect(aiRateLimiter.calls).toHaveLength(0);
+    });
+
+    it('Botão POWER desligado: nem chega a consultar o rate limiter (shouldAutoRespond já bloqueou antes)', async () => {
+      const { sut, aiAvailabilityRepository, aiRateLimiter } = buildSut();
+      aiAvailabilityRepository.setEnabled('tenant-1', 'default', false);
+
+      await sut.handle(buildInboundMessage());
+
+      expect(aiRateLimiter.calls).toHaveLength(0);
     });
   });
 });

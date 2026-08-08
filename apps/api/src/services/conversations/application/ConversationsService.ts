@@ -19,6 +19,8 @@ import { ConversationOwnershipError } from '../domain/errors/ConversationOwnersh
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
 import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
 import { AgentMediaTooLargeError } from '../domain/errors/AgentMediaTooLargeError';
+import { AgentMediaTypeMismatchError } from '../domain/errors/AgentMediaTypeMismatchError';
+import { isDeclaredMediaCategoryImplausible, sniffMediaCategory } from '../domain/mediaMagicBytes';
 import { AgentMediaCache } from '../infrastructure/AgentMediaCache';
 
 /**
@@ -241,6 +243,15 @@ export class ConversationsService {
     if (media.buffer.byteLength > MAX_AGENT_MEDIA_UPLOAD_BYTES) {
       throw new AgentMediaTooLargeError(media.buffer.byteLength, MAX_AGENT_MEDIA_UPLOAD_BYTES);
     }
+    // Fase 1, Bloco F1.10 — checagem leve de sanidade do Content-Type
+    // declarado (ver docstring de `mediaMagicBytes.ts` para os limites
+    // deliberados: só rejeita quando o binário tem uma assinatura FORTE de
+    // outra categoria; nunca bloqueia por falta de reconhecimento, o que
+    // quebraria uploads legítimos de documento).
+    if (isDeclaredMediaCategoryImplausible(media.contentType, media.buffer)) {
+      const detected = sniffMediaCategory(media.buffer) ?? 'desconhecida';
+      throw new AgentMediaTypeMismatchError(media.contentType, detected);
+    }
 
     const existing = await this.conversationRepository.findById(conversationId);
     if (!existing || existing.tenantId !== tenantId) {
@@ -273,7 +284,7 @@ export class ConversationsService {
       media: { mimeType: media.mimeType, url: '', mediaKeyEncrypted: '', fileName: media.fileName },
       occurredAt: new Date(),
     });
-    this.agentMediaCache.set(message.id, {
+    this.agentMediaCache.set(tenantId, message.id, {
       mimeType: media.mimeType,
       fileName: media.fileName,
       data: media.buffer,
@@ -391,6 +402,35 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * `GET .../conversations/:conversationId` — Fase 1, Bloco F1.10.
+   *
+   * CONTEXTO: até este bloco não existia um jeito direto de buscar UMA
+   * conversa por id — a tela de detalhe (`useConversationDetail`, Dashboard)
+   * contornava isso varrendo `listConversations` página a página até achar o
+   * id procurado (até 5 páginas de 200 = 1000 linhas, e em DOBRO, porque
+   * dois componentes montavam o mesmo hook). Este método é o "achar 1 direto
+   * pela chave primária" que faltava.
+   *
+   * Mesmo padrão de isolamento de tenant já usado por `sendAgentMessage`/
+   * `escalateConversation`/etc. nesta classe: `findById` (porta) não filtra
+   * por tenant (é uma busca por chave primária pura), então a checagem
+   * `existing.tenantId !== tenantId` é OBRIGATÓRIA aqui — sem ela, um
+   * usuário autenticado de um tenant poderia ler a conversa de outro só
+   * adivinhando/testando um `conversationId` alheio. `ConversationNotFoundError`
+   * (→ 404) para os dois casos (não existe / é de outro tenant), nunca 403 —
+   * mesmo racional já documentado nos demais métodos: não revela ao
+   * cliente HTTP se o id "existe mas não é seu" ou "nunca existiu".
+   */
+  async getConversation(tenantId: string, conversationId: string): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    const existing = await this.conversationRepository.findById(conversationId);
+    if (!existing || existing.tenantId !== tenantId) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    return existing;
+  }
+
   /** `GET .../conversations` — lista paginada por cursor (D11). */
   async listConversations(
     tenantId: string,
@@ -470,7 +510,7 @@ export class ConversationsService {
       throw new MessageMediaNotFoundError(messageId);
     }
 
-    const cached = this.agentMediaCache.get(messageId);
+    const cached = this.agentMediaCache.get(tenantId, messageId);
     if (cached) {
       return cached;
     }

@@ -673,6 +673,17 @@ export function fetchConversations(
   return request(`/api/conversations${query ? `?${query}` : ''}`);
 }
 
+/**
+ * Fase 1, Bloco F1.10 (estabilidade para beta) — busca UMA conversa direto
+ * pelo id (`GET /api/conversations/:id`), sem varrer a listagem paginada.
+ * Lança `ClientApiError` (404) se a conversa não existir/não for do tenant —
+ * `useConversationDetail` trata isso como "conversa não encontrada", mesmo
+ * comportamento que já existia para o resultado de uma varredura sem match.
+ */
+export function fetchConversation(conversationId: string): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}`);
+}
+
 export function fetchConversationMessages(
   conversationId: string,
   limit?: number,

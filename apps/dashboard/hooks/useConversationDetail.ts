@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchConversations } from '../lib/clientApi';
-import { findConversationById } from '../lib/conversationsView';
+import { ClientApiError, fetchConversation } from '../lib/clientApi';
 import { usePollingRefresh } from './usePollingRefresh';
 import type { ConversationSummary } from '../lib/clientApi';
-
-/** Teto de paginas varridas ao procurar a conversa por id (limite da API por pagina: 200 — ver MAX_LIST_LIMIT, Bloco 5). 5 paginas = ate 1000 conversas mais recentes. */
-const MAX_LOOKUP_PAGES = 5;
 
 export interface UseConversationDetailResult {
   conversation: ConversationSummary | null;
@@ -18,18 +14,22 @@ export interface UseConversationDetailResult {
 }
 
 /**
- * Detalhe de uma conversa (Milestone 3, Bloco 6). LIMITACAO CONHECIDA E
- * DOCUMENTADA: o backend do Bloco 5 nao expoe `GET /conversations/:id`
- * (decisao de escopo do proprio Bloco 5 — nenhum contrato foi alterado
- * neste bloco, conforme restricao aprovada). A conversa e localizada
- * varrendo a listagem paginada (`GET /conversations?limit=200`, seguindo
- * cursores ate `MAX_LOOKUP_PAGES`); conversas alem das ~1000 mais recentes
- * nao sao localizaveis por URL direta — registrado como melhoria de backend
- * a propor (endpoint de detalhe), ver documentacao do Bloco 6.
+ * Detalhe de uma conversa (Milestone 3, Bloco 6; endpoint dedicado desde a
+ * Fase 1, Bloco F1.10 — estabilidade para beta).
+ *
+ * ATÉ O BLOCO F1.10: o backend não expunha `GET /conversations/:id`, então
+ * este hook varria `GET /conversations?limit=200` página a página (até 5
+ * páginas = 1000 conversas) só para achar UMA por id — rodando a cada poll
+ * de 4s, em dobro (painel central + painel de contexto montam o hook cada
+ * um). A auditoria pré-beta identificou isso como o gargalo mais concreto
+ * de performance do produto. `fetchConversation(id)` busca direto pela
+ * chave primária (`ConversationsService.getConversation`, com isolamento de
+ * tenant garantido no backend) — sem varredura, sem teto de "1000 conversas
+ * mais recentes".
  *
  * Sem SSE aqui (D23: SSE so na lista): o status exibido e atualizado (a)
  * pelas respostas das proprias acoes escalate/resume (`applyUpdate`) e (b)
- * por `refresh()` manual.
+ * por `refresh()` manual/polling.
  */
 export function useConversationDetail(conversationId: string | null): UseConversationDetailResult {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
@@ -48,35 +48,20 @@ export function useConversationDetail(conversationId: string | null): UseConvers
       if (!initialLoadDoneRef.current) setLoading(true);
       setErrorMessage(null);
       try {
-        let cursor: string | undefined;
-        for (let page = 0; page < MAX_LOOKUP_PAGES; page += 1) {
-          const result = await fetchConversations({ limit: 200, cursor });
-          if (cancelled) return;
-          const found = findConversationById(result.conversations, conversationId);
-          if (found) {
-            setConversation(found);
-            setErrorMessage(null);
-            setLoading(false);
-            initialLoadDoneRef.current = true;
-            return;
-          }
-          if (!result.nextCursor) break;
-          cursor = result.nextCursor;
-        }
-        // Não encontrada: só zera a tela na 1ª carga. Num refresh de polling,
-        // mantém o que já estava exibido (evita "sumir" a conversa por uma
-        // varredura transitória que não a alcançou).
-        if (!initialLoadDoneRef.current) {
-          setConversation(null);
-          setErrorMessage('Conversa nao encontrada.');
-          setLoading(false);
-          initialLoadDoneRef.current = true;
-        }
-      } catch {
+        const found = await fetchConversation(conversationId);
         if (cancelled) return;
-        // Mesmo racional: erro num poll não derruba a conversa já carregada.
+        setConversation(found);
+        setErrorMessage(null);
+        setLoading(false);
+        initialLoadDoneRef.current = true;
+      } catch (error) {
+        if (cancelled) return;
+        // Mesmo racional de antes: erro num poll não derruba a conversa já
+        // carregada — só reflete na tela (não encontrada/falha) na 1ª carga.
         if (!initialLoadDoneRef.current) {
-          setErrorMessage('Falha ao carregar a conversa.');
+          const notFound = error instanceof ClientApiError && error.status === 404;
+          setConversation(null);
+          setErrorMessage(notFound ? 'Conversa nao encontrada.' : 'Falha ao carregar a conversa.');
           setLoading(false);
           initialLoadDoneRef.current = true;
         }

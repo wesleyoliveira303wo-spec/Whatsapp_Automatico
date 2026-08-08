@@ -604,6 +604,18 @@ model WhatsAppConversation {
   /// sessão, agrupadas por estágio — mesmo racional de índice composto já
   /// usado em `WhatsAppSessionEvent(tenantId, sessionName, occurredAt)`.
   @@index([tenantId, sessionName, stage])
+  /// Fase 1, Bloco F1.10 (estabilidade para beta) — cobre o padrão real da
+  /// query mais executada do produto: `findAllByTenant` filtra por
+  /// `tenantId`+`sessionName` (a Dashboard sempre lista Conversas dentro de
+  /// UMA sessão) e ordena por `lastMessageAt` (ver comentário em
+  /// `PrismaConversationRepository.findAllByTenant`) — chamada a cada poll de
+  /// SSE (~2s) de toda aba de operador aberta. Sem este índice a ordenação
+  /// cai em sort em memória a partir de um certo volume de conversas por
+  /// sessão. Ordem ascendente padrão (sem `sort: Desc`, feature de índice não
+  /// habilitada neste schema): o Postgres varre um B-tree ascendente "de trás
+  /// para frente" com o mesmo custo para servir `ORDER BY ... DESC`, então a
+  /// direção declarada aqui não importa para este propósito.
+  @@index([tenantId, sessionName, lastMessageAt])
   @@map("whatsapp_conversations")
 }
 

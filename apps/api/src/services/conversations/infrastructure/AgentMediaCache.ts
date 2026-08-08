@@ -12,48 +12,74 @@
  * "proxy sob demanda, nunca persistido" do ADR #90: o objetivo aqui é só
  * cobrir a janela entre o operador enviar e a timeline atualizar/o operador
  * dar reload — não virar um repositório de mídia de verdade. TTL curto
- * (default 1h) e um limite de entradas (evita crescimento sem fim se a
- * limpeza por tempo não rodar a tempo em um processo de vida muito longa)
- * garantem que isso nunca vira armazenamento permanente disfarçado.
+ * (default 1h) e um limite de entradas garantem que isso nunca vira
+ * armazenamento permanente disfarçado.
  *
- * Efeito colateral aceito: se o processo reiniciar, ou o TTL expirar, uma
- * mídia enviada pelo operador deixa de ter preview na timeline — mas ela JÁ
- * foi entregue no WhatsApp de verdade (o cliente final sempre viu, isso não
- * depende deste cache); é só a Dashboard que perde a prévia visual depois de
- * um tempo, e isso é aceitável para o escopo desta rodada.
+ * ISOLAMENTO POR TENANT (Fase 1, Bloco F1.10 — a auditoria pré-beta encontrou
+ * o teto de entradas GLOBAL, compartilhado por todos os tenants: um tenant
+ * com volume alto de envio de mídia podia expulsar (FIFO) a mídia recém-
+ * enviada de OUTRO tenant, muito antes da 1h de TTL — sem nenhum vazamento de
+ * dado entre tenants (a chave já incluía o `messageId`, um UUID, nunca
+ * adivinhável), mas com um efeito colateral real e injusto: a Dashboard de um
+ * tenant perdendo preview de mídia por causa do volume de outro). Corrigido
+ * SEM lib de LRU (YAGNI, mesmo espírito de antes): cada tenant tem sua
+ * própria fila de inserção (`orderByTenant`) e seu próprio teto
+ * (`maxEntriesPerTenant`) — a fila de um tenant nunca expulsa a de outro.
+ *
+ * Efeito colateral aceito (inalterado desde a versão original): se o
+ * processo reiniciar, ou o TTL expirar, uma mídia enviada pelo operador
+ * deixa de ter preview na timeline — mas ela JÁ foi entregue no WhatsApp de
+ * verdade; é só a Dashboard que perde a prévia visual depois de um tempo.
  */
 export class AgentMediaCache {
   private readonly entries = new Map<
     string,
     { mimeType: string; fileName?: string; data: Buffer; expiresAt: number }
   >();
+  /** Ordem de inserção por tenant (mais antiga primeiro) — usada só para decidir quem expulsar quando o teto DESTE tenant estoura. */
+  private readonly orderByTenant = new Map<string, string[]>();
 
   constructor(
     private readonly ttlMs: number = 60 * 60 * 1000,
-    private readonly maxEntries: number = 500,
+    private readonly maxEntriesPerTenant: number = 200,
   ) {}
 
-  set(messageId: string, media: { mimeType: string; fileName?: string; data: Buffer }): void {
-    if (this.entries.size >= this.maxEntries) {
-      // Descarta a entrada mais antiga (primeira inserida) — Map preserva
-      // ordem de inserção em JS, então a primeira chave é sempre a mais
-      // antiga. Suficiente para um teto simples sem LRU de verdade (YAGNI:
-      // este cache não é crítico o bastante para justificar uma lib de LRU).
-      const oldestKey = this.entries.keys().next().value;
-      if (oldestKey !== undefined) {
-        this.entries.delete(oldestKey);
-      }
-    }
-    this.entries.set(messageId, { ...media, expiresAt: Date.now() + this.ttlMs });
+  private static key(tenantId: string, messageId: string): string {
+    return `${tenantId}::${messageId}`;
   }
 
-  get(messageId: string): { mimeType: string; fileName?: string; data: Buffer } | undefined {
-    const entry = this.entries.get(messageId);
+  set(
+    tenantId: string,
+    messageId: string,
+    media: { mimeType: string; fileName?: string; data: Buffer },
+  ): void {
+    const order = this.orderByTenant.get(tenantId) ?? [];
+    if (order.length >= this.maxEntriesPerTenant) {
+      // Expulsa a entrada mais antiga DESTE tenant — nunca a de outro.
+      const oldestMessageId = order.shift();
+      if (oldestMessageId !== undefined) {
+        this.entries.delete(AgentMediaCache.key(tenantId, oldestMessageId));
+      }
+    }
+    order.push(messageId);
+    this.orderByTenant.set(tenantId, order);
+    this.entries.set(AgentMediaCache.key(tenantId, messageId), {
+      ...media,
+      expiresAt: Date.now() + this.ttlMs,
+    });
+  }
+
+  get(
+    tenantId: string,
+    messageId: string,
+  ): { mimeType: string; fileName?: string; data: Buffer } | undefined {
+    const key = AgentMediaCache.key(tenantId, messageId);
+    const entry = this.entries.get(key);
     if (!entry) {
       return undefined;
     }
     if (Date.now() >= entry.expiresAt) {
-      this.entries.delete(messageId);
+      this.entries.delete(key);
       return undefined;
     }
     return { mimeType: entry.mimeType, fileName: entry.fileName, data: entry.data };
