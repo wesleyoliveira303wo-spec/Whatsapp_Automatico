@@ -1,0 +1,33 @@
+# Contexto de build do Docker = raiz do monorepo (ver docker-compose.yml).
+# Sem este arquivo, o daemon recebe node_modules/.git/.next inteiros a cada
+# build — dezenas de segundos desperdicados e risco de copiar artefatos de
+# uma arquitetura diferente (ex.: binarios nativos de Windows indo parar numa
+# imagem Linux).
+
+node_modules
+**/node_modules
+
+.git
+.gitignore
+
+# Artefatos de build — sempre regerados dentro da imagem
+dist
+**/dist
+.next
+**/.next
+coverage
+**/coverage
+
+# Segredos: o .env de producao e injetado via env_file do compose no host da
+# VPS, NUNCA embutido numa camada da imagem (uma imagem com segredo dentro
+# vaza em qualquer `docker history`).
+.env
+.env.*
+!.env.example
+
+# Ruido de desenvolvimento
+*.log
+qr.png
+.vscode
+.idea
+.claude

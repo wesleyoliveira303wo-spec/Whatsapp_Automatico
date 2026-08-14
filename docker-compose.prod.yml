@@ -1,0 +1,174 @@
+# Compose de PRODUÇÃO (VPS) — deliberadamente separado do docker-compose.yml,
+# que continua sendo o ambiente de desenvolvimento local e não deve mudar.
+#
+# Uso na VPS:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Três diferenças essenciais em relação ao compose de desenvolvimento:
+#
+# 1. Postgres e Redis NÃO publicam porta nenhuma no host. Em dev, `5432:5432`
+#    é conveniente (dá para abrir o banco no DBeaver da sua máquina). Numa VPS
+#    com IP público, publicar essas portas as expõe à internet inteira — é a
+#    forma mais comum de um banco de produção ser invadido. Aqui os dois só
+#    existem dentro da rede interna do Compose, alcançáveis pelos hostnames
+#    `postgres`/`redis` a partir dos outros containers, e por mais ninguém.
+#
+# 2. API e Dashboard publicam em 127.0.0.1 (loopback), não em 0.0.0.0. Quem
+#    fala com a internet é o Nginx do host, que faz proxy reverso e termina o
+#    TLS. Sem o prefixo `127.0.0.1:`, o Docker abre a porta em todas as
+#    interfaces e o mundo consegue acessar a aplicação em HTTP puro na :3000,
+#    contornando o HTTPS — inclusive furando regras de UFW (o Docker escreve
+#    direto no iptables, à frente do UFW).
+#
+# 3. `restart: unless-stopped` em todos os serviços. É isto que cumpre o
+#    requisito de 24/7: container que morre volta sozinho, e depois de um
+#    reboot da VPS o systemd sobe o Docker, que sobe estes containers de novo.
+#    "unless-stopped" (e não "always") respeita um `docker compose stop`
+#    intencional seu: se você parou de propósito, um reboot não ressuscita.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # Loopback APENAS. Não é o mesmo que a exposição `0.0.0.0:5432` do compose
+    # de desenvolvimento (que deixa o banco alcançável por qualquer aparelho
+    # da rede Wi-Fi): `127.0.0.1` só responde à própria máquina. Isso mantém a
+    # superfície fechada e ainda permite rodar a suíte de testes a partir do
+    # host e abrir o banco num cliente gráfico. Numa VPS o efeito é o mesmo —
+    # só alcançável por quem já tem SSH, via túnel.
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # `appendonly yes` liga a persistência AOF: se o Redis reiniciar, os jobs
+    # que estavam na fila BullMQ sobrevivem em vez de sumirem. Sem isto, um
+    # restart no meio de um pico descarta silenciosamente respostas de IA que
+    # ainda não tinham sido processadas.
+    command: ['redis-server', '--appendonly', 'yes']
+    # Loopback apenas — mesmo racional do postgres acima.
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Serviço de uso único: aplica as migrations do Prisma e sai. `api` e
+  # `worker` só sobem depois que ele terminar com sucesso, então nunca existe
+  # o cenário de a aplicação subir contra um banco com schema defasado.
+  #
+  # Por que um serviço dedicado, e não um ENTRYPOINT na imagem: `api` e
+  # `worker` compartilham a MESMA imagem, então um entrypoint faria os dois
+  # migrarem em paralelo a cada subida — duas execuções concorrentes de
+  # `migrate deploy` disputando o mesmo lock do Prisma, sem necessidade
+  # nenhuma. Aqui a migration roda exatamente uma vez por `up`.
+  #
+  # `restart: "no"` é obrigatório: este container SAI com código 0 por
+  # design. Com qualquer política de restart, o Docker o reiniciaria em
+  # laço para sempre.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: whatsapp-automatico-api:latest
+    restart: 'no'
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public'
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: whatsapp-automatico-api:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:4000:4000'
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public'
+      REDIS_URL: 'redis://redis:6379'
+
+  # Worker de IA — MESMA imagem da `api` (o Compose builda uma vez só, os dois
+  # serviços reaproveitam), só muda o `command`. Não depende da `api`: pela
+  # ADR #54 os dois nunca falam HTTP entre si, toda comunicação passa pelas
+  # filas BullMQ no Redis.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: whatsapp-automatico-api:latest
+    restart: unless-stopped
+    command: ['node', 'apps/api/dist/worker.js']
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public'
+      REDIS_URL: 'redis://redis:6379'
+      # O worker baixa mídia chamando a rota interna da API (F1.2). Dentro da
+      # rede do Compose o hostname é o nome do serviço, nunca localhost —
+      # `localhost` dentro do container do worker é o próprio worker.
+      INTERNAL_API_BASE_URL: 'http://api:4000'
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - api
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      API_BASE_URL: 'http://api:4000'
+      # OBRIGATÓRIO. O `.env` carregado acima define `PORT=4000` para a API, e
+      # o `next start` também obedece a `PORT` — sem esta linha o Dashboard
+      # sobe escutando na 4000 dentro do container, enquanto o mapeamento de
+      # porta aponta para a 3000, e nada responde. Como `environment` tem
+      # precedência sobre `env_file`, declarar aqui resolve sem alterar o
+      # `.env` (que é compartilhado pelos dois serviços).
+      PORT: '3000'
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

@@ -40,6 +40,97 @@ interface ShutdownHandles {
 let shutdownHandles: ShutdownHandles | undefined;
 
 /**
+ * Serviço de sessões guardado para a restauração automática no boot (ver
+ * `restoreConnectedSessions()`). Mesmo padrão de `shutdownHandles` acima:
+ * populado por `mountWhatsAppSessionsRoutes()`, consumido só depois de
+ * `require.main === module`.
+ *
+ * Fica `undefined` no modo degradado (sem `REDIS_URL`) DE PROPÓSITO: sem o
+ * pipeline de conversas montado, uma sessão reconectada receberia mensagens
+ * e as descartaria silenciosamente. Reconectar ali seria pior que não
+ * reconectar — o operador veria "Conectado" e acharia que está atendendo.
+ */
+interface SessionRestoreHandles {
+  prisma: {
+    whatsAppSession: {
+      findMany: (args: {
+        where: { status: 'CONNECTED' };
+        select: { tenantId: true; sessionName: true };
+      }) => Promise<{ tenantId: string; sessionName: string }[]>;
+    };
+  };
+  logger: {
+    info: (message: string, meta?: Record<string, unknown>) => void;
+    warn: (message: string, meta?: Record<string, unknown>) => void;
+  };
+  sessionService: { initSession: (tenantId: string, sessionName: string) => Promise<unknown> };
+}
+
+let sessionRestoreHandles: SessionRestoreHandles | undefined;
+
+/**
+ * Reconecta, na subida do processo, as sessões que estavam CONECTADAS quando
+ * a API foi encerrada.
+ *
+ * Por que isto é necessário: as credenciais do Baileys são persistidas em
+ * `tenant_credentials` (cifradas), então reconectar NÃO exige QR Code novo —
+ * mas nada no processo disparava essa reconexão. Até aqui, um restart da API
+ * deixava o WhatsApp fora do ar até alguém abrir a tela da sessão no
+ * Dashboard (que chama `getSessionStatus` → `registry.getOrCreate`). Numa
+ * operação desatendida (a máquina liga, o Docker sobe, ninguém abre o
+ * navegador) as mensagens que chegassem nesse intervalo seriam perdidas.
+ *
+ * Reutiliza `initSession()` — o MESMO caminho do botão "Conectar" do
+ * Dashboard, já testado — em vez de introduzir uma rota de conexão nova.
+ *
+ * Só restaura sessões com status CONNECTED: uma sessão que o operador
+ * desconectou de propósito deve continuar desconectada depois do reboot.
+ *
+ * Nunca lança: qualquer falha vira `warn` e as demais sessões seguem sendo
+ * tentadas. Uma sessão que não reconecta não pode impedir a API de servir.
+ */
+async function restoreConnectedSessions(): Promise<void> {
+  const handles = sessionRestoreHandles;
+  if (!handles) {
+    return;
+  }
+  const { prisma, logger, sessionService } = handles;
+
+  if (process.env.WHATSAPP_AUTO_RESTORE === 'false') {
+    logger.info('Restauração automática de sessões desabilitada por WHATSAPP_AUTO_RESTORE=false');
+    return;
+  }
+
+  let sessions: { tenantId: string; sessionName: string }[];
+  try {
+    sessions = await prisma.whatsAppSession.findMany({
+      where: { status: 'CONNECTED' },
+      select: { tenantId: true, sessionName: true },
+    });
+  } catch (error) {
+    logger.warn('Não foi possível listar sessões para restaurar', { error });
+    return;
+  }
+
+  if (sessions.length === 0) {
+    return;
+  }
+
+  logger.info('Restaurando sessões de WhatsApp conectadas', { total: sessions.length });
+  // Sequencial de propósito: cada `init()` abre um socket e faz handshake com
+  // o WhatsApp; disparar todos de uma vez em paralelo só aumentaria a chance
+  // de throttling do lado deles, sem ganho real (são poucas sessões).
+  for (const { tenantId, sessionName } of sessions) {
+    try {
+      await sessionService.initSession(tenantId, sessionName);
+      logger.info('Sessão restaurada', { tenantId, sessionName });
+    } catch (error) {
+      logger.warn('Falha ao restaurar sessão', { tenantId, sessionName, error });
+    }
+  }
+}
+
+/**
  * Monta as rotas do módulo WhatsApp (Item 5, Bloco 8) e, a partir da
  * Milestone 3 Bloco 5, também o pipeline de conversas/IA — SOMENTE se as
  * variáveis de ambiente necessárias estiverem presentes.
@@ -343,6 +434,10 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     conversationsService.setMediaDownloader(mediaDownloader);
     // Fase 1, Bloco F1.3 — mesmo motivo/mesmo lugar de `setMediaDownloader`.
     conversationsService.setMediaSender(mediaSender);
+    // Guarda o serviço para a restauração automática de sessões no boot (ver
+    // `restoreConnectedSessions()`). Só neste ramo — no degradado, sem
+    // pipeline de conversas, reconectar seria enganoso.
+    sessionRestoreHandles = { prisma, logger, sessionService };
 
     const outboundWorker = createOutboundCommandConsumerWorker(
       registry,
@@ -610,6 +705,14 @@ if (require.main === module) {
     const port = process.env.PORT || 4000;
     const server = app.listen(port, () => {
       console.log(`API listening on http://localhost:${port}`);
+      // Deliberadamente DEPOIS de `listen` e sem `await`: reconectar sockets
+      // do WhatsApp pode levar vários segundos, e a API precisa já estar
+      // respondendo (inclusive `/health`) enquanto isso acontece.
+      // `restoreConnectedSessions` nunca rejeita, mas o `.catch` fica como
+      // rede de segurança contra unhandled rejection.
+      restoreConnectedSessions().catch((error) => {
+        console.warn('Restauração de sessões falhou', error);
+      });
     });
 
     // Milestone 3, Bloco 5 (D7) — primeiro handler de `SIGTERM`/`SIGINT`

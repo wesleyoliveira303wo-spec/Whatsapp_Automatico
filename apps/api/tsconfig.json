@@ -5,6 +5,12 @@
     "target": "ES2022",
     "outDir": "dist",
     "rootDir": "src",
+    // OBRIGATÓRIO: tsconfig.base.json define `noEmit: true` (correto para o
+    // dashboard, cujo build quem faz é o Next.js). Sem sobrescrever aqui, o
+    // `tsc` deste workspace apenas CHECA os tipos e não escreve nada em
+    // dist/ — `npm run build -w apps/api` fica verde, mas `node
+    // apps/api/dist/index.js` (produção e imagem Docker) não tem o que rodar.
+    "noEmit": false,
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true
