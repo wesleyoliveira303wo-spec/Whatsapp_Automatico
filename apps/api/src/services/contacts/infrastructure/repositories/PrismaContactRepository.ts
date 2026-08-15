@@ -1,10 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { Contact, ContactSource } from '../../domain/entities/Contact';
-import {
-  ContactRepository,
-  CreateContactData,
-} from '../../domain/repositories/ContactRepository';
+import { ContactRepository, CreateContactData } from '../../domain/repositories/ContactRepository';
 
 /** Shape mínimo lido do banco — mesmo racional dos demais repositórios Prisma deste projeto. */
 interface ContactRow {
