@@ -692,7 +692,9 @@ describe('AiReplyJobProcessor', () => {
     it('mesmo suprimindo o aviso, continua sinalizando para humano (o alerta da Dashboard não pode sumir)', async () => {
       const { processor, conversationRepository, aiProviderFactory } = buildSut();
       const escaladaAnterior = new Date('2026-08-14T19:00:00Z');
-      conversationRepository.seed(buildConversation({ status: 'bot', escalatedAt: escaladaAnterior }));
+      conversationRepository.seed(
+        buildConversation({ status: 'bot', escalatedAt: escaladaAnterior }),
+      );
       aiProviderFactory.provider.setNextError(
         new Error('Gemini API respondeu 429: RESOURCE_EXHAUSTED'),
       );
