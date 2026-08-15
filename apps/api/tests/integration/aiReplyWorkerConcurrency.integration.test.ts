@@ -68,71 +68,64 @@ describe('Integração real — worker de ai-reply com concurrency real (Fase 1,
     await connection.quit();
   });
 
-  it(
-    'mesma conversa serializa, conversas diferentes rodam em paralelo — com Redis/BullMQ reais',
-    async () => {
-      if (!redisAvailable) {
-        console.warn('Redis indisponível — pulando teste de integração real.');
-        return;
-      }
+  it('mesma conversa serializa, conversas diferentes rodam em paralelo — com Redis/BullMQ reais', async () => {
+    if (!redisAvailable) {
+      console.warn('Redis indisponível — pulando teste de integração real.');
+      return;
+    }
 
-      const events: ExecutionRecord[] = [];
-      const mutex = new KeyedMutex();
-      const WORK_DURATION_MS = 200;
+    const events: ExecutionRecord[] = [];
+    const mutex = new KeyedMutex();
+    const WORK_DURATION_MS = 200;
 
-      worker = new Worker<TestJobData>(
-        queueName,
-        async (job: Job<TestJobData>) => {
-          await mutex.run(job.data.conversationId, async () => {
-            const start = Date.now();
-            await sleep(WORK_DURATION_MS);
-            const end = Date.now();
-            events.push({ conversationId: job.data.conversationId, start, end });
-          });
-        },
-        // MESMA configuração de `worker.ts` real — concurrency 5.
-        { connection, concurrency: 5 },
-      );
-      await worker.waitUntilReady();
-
-      const completed = new Promise<void>((resolve, reject) => {
-        let count = 0;
-        const TOTAL_JOBS = 4;
-        worker?.on('completed', () => {
-          count += 1;
-          if (count === TOTAL_JOBS) resolve();
+    worker = new Worker<TestJobData>(
+      queueName,
+      async (job: Job<TestJobData>) => {
+        await mutex.run(job.data.conversationId, async () => {
+          const start = Date.now();
+          await sleep(WORK_DURATION_MS);
+          const end = Date.now();
+          events.push({ conversationId: job.data.conversationId, start, end });
         });
-        worker?.on('failed', (_job, error) => reject(error));
+      },
+      // MESMA configuração de `worker.ts` real — concurrency 5.
+      { connection, concurrency: 5 },
+    );
+    await worker.waitUntilReady();
+
+    const completed = new Promise<void>((resolve, reject) => {
+      let count = 0;
+      const TOTAL_JOBS = 4;
+      worker?.on('completed', () => {
+        count += 1;
+        if (count === TOTAL_JOBS) resolve();
       });
+      worker?.on('failed', (_job, error) => reject(error));
+    });
 
-      // 2 jobs da MESMA conversa (A) + 2 jobs de conversas DIFERENTES (B, C).
-      await queue.add('job', { conversationId: 'conv-A' });
-      await queue.add('job', { conversationId: 'conv-A' });
-      await queue.add('job', { conversationId: 'conv-B' });
-      await queue.add('job', { conversationId: 'conv-C' });
+    // 2 jobs da MESMA conversa (A) + 2 jobs de conversas DIFERENTES (B, C).
+    await queue.add('job', { conversationId: 'conv-A' });
+    await queue.add('job', { conversationId: 'conv-A' });
+    await queue.add('job', { conversationId: 'conv-B' });
+    await queue.add('job', { conversationId: 'conv-C' });
 
-      await completed;
+    await completed;
 
-      const eventsForA = events.filter((e) => e.conversationId === 'conv-A');
-      expect(eventsForA).toHaveLength(2);
-      // Serialização real: a 2ª execução de A só começa depois que a 1ª terminou.
-      const [firstA, secondA] = eventsForA.sort((a, b) => a.start - b.start);
-      expect(secondA.start).toBeGreaterThanOrEqual(firstA.end);
+    const eventsForA = events.filter((e) => e.conversationId === 'conv-A');
+    expect(eventsForA).toHaveLength(2);
+    // Serialização real: a 2ª execução de A só começa depois que a 1ª terminou.
+    const [firstA, secondA] = eventsForA.sort((a, b) => a.start - b.start);
+    expect(secondA.start).toBeGreaterThanOrEqual(firstA.end);
 
-      // Paralelismo real: A/B/C não são todos sequenciais — pelo menos um
-      // par de execuções de CONVERSAS DIFERENTES se sobrepõe no tempo.
-      // (Se o worker rodasse tudo em série, os 4 eventos ocupariam ~4x
-      // WORK_DURATION_MS sem nenhuma sobreposição.)
-      const overlapsAcrossConversations = events.some((a) =>
-        events.some(
-          (b) =>
-            a.conversationId !== b.conversationId &&
-            a.start < b.end &&
-            b.start < a.end,
-        ),
-      );
-      expect(overlapsAcrossConversations).toBe(true);
-    },
-    15000,
-  );
+    // Paralelismo real: A/B/C não são todos sequenciais — pelo menos um
+    // par de execuções de CONVERSAS DIFERENTES se sobrepõe no tempo.
+    // (Se o worker rodasse tudo em série, os 4 eventos ocupariam ~4x
+    // WORK_DURATION_MS sem nenhuma sobreposição.)
+    const overlapsAcrossConversations = events.some((a) =>
+      events.some(
+        (b) => a.conversationId !== b.conversationId && a.start < b.end && b.start < a.end,
+      ),
+    );
+    expect(overlapsAcrossConversations).toBe(true);
+  }, 15000);
 });

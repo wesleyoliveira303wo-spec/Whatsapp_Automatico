@@ -476,6 +476,143 @@ describe('AiReplyJobProcessor', () => {
     });
   });
 
+  // Agrupamento de rajada (2026-08-14). O mecanismo tem duas metades: o
+  // `delay` no enfileiramento (BullMqAiReplyScheduler) e a policy
+  // `shouldGenerateReply` aplicada aqui. Estes testes cobrem a segunda.
+  describe('process() — agrupamento de mensagens em rajada', () => {
+    /**
+     * `FakeMessageRepository.create()` atribui o `id` (espelhando o
+     * repositório real, cuja assinatura é `Omit<Message, 'id'>`) — então o
+     * `id` passado em `buildMessage` é descartado. Por isso os ids REAIS são
+     * devolvidos aqui: é deles que o `messageId` do job precisa sair, senão a
+     * policy cai no caminho de degradação segura ("mensagem fora da janela")
+     * e o teste passaria por engano.
+     */
+    async function seedBurst(
+      messageRepository: FakeMessageRepository,
+    ): Promise<{ first: string; last: string }> {
+      const first = await messageRepository.create(
+        buildMessage({
+          id: 'ignorado',
+          content: 'Oi',
+          occurredAt: new Date('2026-07-10T12:00:00Z'),
+        }),
+      );
+      await messageRepository.create(
+        buildMessage({
+          id: 'ignorado',
+          content: 'queria saber uma coisa',
+          occurredAt: new Date('2026-07-10T12:00:03Z'),
+        }),
+      );
+      const last = await messageRepository.create(
+        buildMessage({
+          id: 'ignorado',
+          content: 'vocês parcelam?',
+          occurredAt: new Date('2026-07-10T12:00:06Z'),
+        }),
+      );
+
+      return { first: first.id, last: last.id };
+    }
+
+    it('job de um fragmento ANTERIOR da rajada encerra sem chamar o provider nem despachar', async () => {
+      const {
+        processor,
+        conversationRepository,
+        messageRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+      } = buildSut();
+      conversationRepository.seed(buildConversation());
+      const { first } = await seedBurst(messageRepository);
+
+      await processor.process(buildJobData({ messageId: first }));
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
+
+    it('job da mensagem MAIS RECENTE responde uma única vez, com a rajada inteira no histórico', async () => {
+      const {
+        processor,
+        conversationRepository,
+        messageRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+      } = buildSut();
+      conversationRepository.seed(buildConversation());
+      const { last } = await seedBurst(messageRepository);
+      aiProviderFactory.provider.setNextResult({
+        content: 'Sim, parcelamos em até 3x.',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData({ messageId: last }));
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(1);
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages).toEqual([
+        { role: 'user', content: 'Oi' },
+        { role: 'user', content: 'queria saber uma coisa' },
+        { role: 'user', content: 'vocês parcelam?' },
+      ]);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+    });
+
+    // Este é o caso que o desenho anterior (dedup por `jobId` de conversa)
+    // PERDIA em silêncio: a mensagem chegava enquanto o job estava `active`,
+    // o `add()` era descartado, e ela nunca recebia resposta.
+    it('mensagem que chega DEPOIS de a rajada ter sido respondida é atendida normalmente', async () => {
+      const {
+        processor,
+        conversationRepository,
+        messageRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+      } = buildSut();
+      conversationRepository.seed(buildConversation());
+      const { last } = await seedBurst(messageRepository);
+      aiProviderFactory.provider.setNextResult({
+        content: 'Sim, parcelamos em até 3x.',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+      await processor.process(buildJobData({ messageId: last }));
+
+      // A resposta da IA é persistida pelo consumidor da fila outbound; aqui
+      // o efeito equivalente é registrá-la no histórico antes da pergunta nova.
+      await messageRepository.create(
+        buildMessage({
+          id: 'ignorado',
+          direction: 'outbound',
+          content: 'Sim, parcelamos em até 3x.',
+          occurredAt: new Date('2026-07-10T12:00:09Z'),
+        }),
+      );
+      const novaPergunta = await messageRepository.create(
+        buildMessage({
+          id: 'ignorado',
+          content: 'e no cartão?',
+          occurredAt: new Date('2026-07-10T12:00:12Z'),
+        }),
+      );
+      aiProviderFactory.provider.setNextResult({
+        content: 'No cartão também.',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData({ messageId: novaPergunta.id }));
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(2);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(2);
+    });
+  });
+
   describe('process() — resultado não enviável avisa o cliente e sinaliza para humano (sem tirar a IA do circuito)', () => {
     it('validation_rejected (resposta vazia): envia aviso educado ao cliente, grava o AiInteraction e sinaliza escalatedAt, sem mudar status', async () => {
       const {
@@ -533,6 +670,38 @@ describe('AiReplyJobProcessor', () => {
       expect(updated?.status).toBe('bot');
       expect(updated?.assignedToUserId).toBeUndefined();
       expect(updated?.escalatedAt).toBeInstanceOf(Date);
+    });
+
+    it('NÃO repete o aviso ao cliente quando a conversa já está escalada (bug real: mesma desculpa várias vezes seguidas)', async () => {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut();
+      // Conversa que JÁ pediu ajuda humana e ninguém assumiu — `escalatedAt`
+      // preenchido é exatamente o registro de "o cliente já foi avisado".
+      conversationRepository.seed(
+        buildConversation({ status: 'bot', escalatedAt: new Date('2026-08-14T19:00:00Z') }),
+      );
+      aiProviderFactory.provider.setNextError(
+        new Error('Gemini API respondeu 429: RESOURCE_EXHAUSTED'),
+      );
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
+
+    it('mesmo suprimindo o aviso, continua sinalizando para humano (o alerta da Dashboard não pode sumir)', async () => {
+      const { processor, conversationRepository, aiProviderFactory } = buildSut();
+      const escaladaAnterior = new Date('2026-08-14T19:00:00Z');
+      conversationRepository.seed(buildConversation({ status: 'bot', escalatedAt: escaladaAnterior }));
+      aiProviderFactory.provider.setNextError(
+        new Error('Gemini API respondeu 429: RESOURCE_EXHAUSTED'),
+      );
+
+      await processor.process(buildJobData());
+
+      const updated = await conversationRepository.findById(CONVERSATION_ID);
+      expect(updated?.escalatedAt).toBeInstanceOf(Date);
+      expect(updated?.escalatedAt?.getTime()).toBeGreaterThan(escaladaAnterior.getTime());
     });
 
     it('se o envio do aviso falhar, ainda sinaliza para humano (não bloqueia)', async () => {

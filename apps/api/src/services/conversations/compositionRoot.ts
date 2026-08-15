@@ -74,6 +74,25 @@ export function createConversationsComposition(
 
   const aiReplyQueue = new Queue<AiReplyJobData>(AI_REPLY_QUEUE_NAME, {
     connection: redisConnection,
+    // Higiene de fila (2026-08-14): jobs concluídos não precisam ficar
+    // acumulando em Redis. Falhas ficam retidas (limite alto, não infinito) —
+    // são justamente o que se quer inspecionar depois, e `/health/ready`
+    // reporta a contagem.
+    //
+    // NOTA IMPORTANTE, para quem for mexer no `jobId`: estas opções são
+    // higiene, NÃO uma dependência de correção — e só continuam sendo higiene
+    // porque o `jobId` é por MENSAGEM (`tenant:conversa:mensagem`), portanto
+    // descartável. Se um dia o `jobId` voltar a ser por CONVERSA, ele vira uma
+    // trava viva: o BullMQ recusa silenciosamente um `add()` cuja chave ainda
+    // exista em Redis — inclusive nos estados `active` e `failed` —, então um
+    // job retido em `failed` pararia a IA daquela conversa permanentemente, e
+    // mensagens chegadas durante o processamento sumiriam sem deixar rastro.
+    // O agrupamento de rajada é resolvido por estado, na policy
+    // `shouldGenerateReply`, exatamente para não depender desta mecânica.
+    defaultJobOptions: {
+      removeOnComplete: true,
+      removeOnFail: 500,
+    },
   });
   const aiReplyScheduler = new BullMqAiReplyScheduler(aiReplyQueue);
 

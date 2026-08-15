@@ -5,6 +5,7 @@ import { ConversationRepository } from '../../conversations/domain/repositories/
 import { MessageRepository } from '../../conversations/domain/repositories/MessageRepository';
 import { shouldAutoRespond } from '../../conversations/domain/policies/shouldAutoRespond';
 import { shouldAiUpdateStage } from '../../conversations/domain/policies/shouldAiUpdateStage';
+import { shouldGenerateReply } from '../../conversations/domain/policies/shouldGenerateReply';
 import { AiReplyJobData } from '../../conversations/infrastructure/queues/AiReplyQueue';
 import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/OutboundMessageDispatcher';
 import { Logger } from '../../../shared/domain/Logger';
@@ -186,6 +187,23 @@ export class AiReplyJobProcessor {
     );
     const chronological: Message[] = [...recent].reverse();
 
+    // AGRUPAMENTO DE RAJADA (2026-08-14) — segundo portão, depois de
+    // `shouldAutoRespond` e antes de qualquer custo de IA. `shouldAutoRespond`
+    // responde "esta conversa aceita resposta automática?"; esta policy
+    // responde "este job é o que deve gerá-la?". Numa rajada de fragmentos,
+    // só o job da mensagem mais recente segue adiante — os demais encerram
+    // aqui, sem chamar o provider. Ver `shouldGenerateReply` (Domain) para o
+    // porquê de a decisão ser de ESTADO e não de deduplicação de fila.
+    //
+    // Reusa o histórico já lido acima: nenhuma consulta nova.
+    if (!shouldGenerateReply(chronological, data.messageId)) {
+      this.logger.info(
+        'Job ai-reply encerrado: chegou mensagem mais recente nesta conversa (agrupamento de rajada)',
+        { ...data },
+      );
+      return;
+    }
+
     const result = await this.conversationAiService.generateReply(
       data.tenantId,
       data.conversationId,
@@ -221,7 +239,35 @@ export class AiReplyJobProcessor {
       // deixá-lo no silêncio (pedido do usuário). O envio é resiliente
       // (try/catch dentro do método): se o WhatsApp estiver fora, o
       // sinalizador é gravado mesmo assim.
-      await this.sendHumanHandoffNotice(data.tenantId, data.conversationId);
+      //
+      // MAS só na PRIMEIRA falha desta rodada de escalonamento (2026-08-14,
+      // bug real observado em produção): como a reforma de 2026-07-25 mantém
+      // a IA no circuito depois de escalar, uma sequência de falhas (ex.:
+      // cliente manda 5 mensagens seguidas e a cota do provider estoura)
+      // fazia o MESMO texto de desculpa ser enviado uma vez por falha — o
+      // cliente recebia o mesmo pedido de desculpas três, quatro vezes
+      // seguidas, o que parece defeito e não atendimento.
+      //
+      // `escalatedAt` já é exatamente o registro de "a IA pediu ajuda e
+      // ninguém assumiu ainda": é gravado por `flagNeedsHumanAttention` e só
+      // é LIMPO quando um humano de fato age (assumir/devolver ao bot, via
+      // `ConversationsService`). Então: preenchido = o cliente já foi
+      // avisado, não repetir.
+      //
+      // O alerta INTERNO (`flagNeedsHumanAttention`) continua disparando em
+      // toda falha, de propósito — ele atualiza o timestamp e mantém o
+      // contador/som da Dashboard vivo (requisito da ADR #79: "escalada
+      // repetida dispara um novo alerta"). O que foi silenciado é só a
+      // repetição VOLTADA AO CLIENTE.
+      const clienteJaAvisado = conversation.escalatedAt != null;
+      if (clienteJaAvisado) {
+        this.logger.info(
+          'Aviso de encaminhamento suprimido: cliente já foi avisado nesta escalada',
+          { ...data, escalatedAt: conversation.escalatedAt },
+        );
+      } else {
+        await this.sendHumanHandoffNotice(data.tenantId, data.conversationId);
+      }
       await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'falha_da_ia');
       return;
     }

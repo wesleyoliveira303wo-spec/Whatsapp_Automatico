@@ -1161,6 +1161,7 @@ Bounded context `services/auth` completo: usuários com senha scrypt, access tok
 **Contexto**: auditoria técnica pré-beta (2026-08-08) identificou riscos P0 (concorrência do worker, ausência de rate limit de IA, `useConversationDetail` varrendo até 1000 conversas por poll) e um pedido de produto nunca fechado (pop-up de handoff), além de itens de estabilidade menores. Corrigidos numa única rodada disciplinada. Ver DECISIONS.md ADR #102 para o detalhe técnico completo de cada item.
 
 **Implementado**:
+
 - Worker `ai-reply`: `concurrency: 5` + `KeyedMutex` (serializa só dentro da mesma conversa).
 - `AiRateLimiter`/`InMemorySlidingWindowAiRateLimiter`: 6 tentativas/60s por conversa, 30/60s por sessão; estourar sinaliza atenção humana (mesmo mecanismo já existente), nunca gera mensagem técnica ao cliente.
 - `GET /conversations/:id` (API + BFF) — elimina a varredura de listagem que `useConversationDetail` fazia.

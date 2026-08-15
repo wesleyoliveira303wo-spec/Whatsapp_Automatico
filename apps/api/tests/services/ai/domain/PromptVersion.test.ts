@@ -54,8 +54,7 @@ describe('v2 (Fase 1, Fase H — prompt consultivo, 2026-08-08)', () => {
   });
 
   it('preserva a instrução de mídia IDÊNTICA a v1', () => {
-    const mediaSentence =
-      'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
     expect(PROMPT_VERSIONS.v1.systemPrompt).toContain(mediaSentence);
     expect(PROMPT_VERSIONS.v2.systemPrompt).toContain(mediaSentence);
   });
