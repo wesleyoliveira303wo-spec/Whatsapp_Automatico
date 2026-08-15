@@ -46,7 +46,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onDragEnd={jest.fn()}
       />,
     );
-    expect(screen.getByText('5511999999999')).toBeInTheDocument();
+    expect(screen.getByText('+55 11 99999-9999')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ver conversa' })).toHaveAttribute(
       'href',
       '/sessions/vendas/conversations/c1',

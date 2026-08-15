@@ -6,6 +6,7 @@ import {
   formatConversationTimestamp,
   formatContactDisplayName,
   formatContactInitials,
+  PRIVATE_CONTACT_LABEL,
   formatConversationStageLabel,
   CONVERSATION_STAGE_ORDER,
   formatElapsedDays,
@@ -87,19 +88,62 @@ describe('formatters (M2, Fase 4)', () => {
     });
   });
 
-  describe('formatContactDisplayName (Milestone 6, Bloco M6H-2b)', () => {
+  describe('formatContactDisplayName (padronização 2026-08-15)', () => {
     it('usa contactName quando presente', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Maria Silva')).toBe(
         'Maria Silva',
       );
     });
 
-    it('cai para o número formatado quando contactName está ausente', () => {
-      expect(formatContactDisplayName('5511999999999@s.whatsapp.net')).toBe('5511999999999');
+    // O bug relatado: sem nome, a lista exibia os dígitos crus ("5511999999999"),
+    // e não o telefone formatado — em 67% da base real.
+    it('cai para o telefone FORMATADO quando contactName está ausente, nunca os dígitos crus', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net')).toBe('+55 11 99999-9999');
     });
 
-    it('cai para o número formatado quando contactName é só espaços', () => {
-      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '   ')).toBe('5511999999999');
+    it('cai para o telefone formatado quando contactName é só espaços', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '   ')).toBe(
+        '+55 11 99999-9999',
+      );
+    });
+
+    it('formata também o celular sem o 9º dígito (12 dígitos), sem inventar um dígito', () => {
+      expect(formatContactDisplayName('556588887777@s.whatsapp.net')).toBe('+55 65 8888-7777');
+    });
+
+    it('usa um rótulo curto para LID, nunca o número gigante de privacidade', () => {
+      expect(formatContactDisplayName('225236742053984@lid')).toBe(PRIVATE_CONTACT_LABEL);
+    });
+
+    it('prefere o nome do WhatsApp mesmo num contato LID', () => {
+      expect(formatContactDisplayName('225236742053984@lid', 'Wesley')).toBe('Wesley');
+    });
+
+    it('ignora um "nome" sem letra nem dígito (só emoji/pontuação) e usa o telefone', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '❤️')).toBe(
+        '+55 11 99999-9999',
+      );
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '.')).toBe(
+        '+55 11 99999-9999',
+      );
+    });
+
+    it('aceita nome em qualquer alfabeto (não só A-Z)', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Ана')).toBe('Ана');
+    });
+
+    it('colapsa espaços internos para toda linha da lista ter a mesma cara', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Maria   da    Silva')).toBe(
+        'Maria da Silva',
+      );
+    });
+
+    it('trunca um nome gigante em vez de deixar a linha quebrar', () => {
+      const gigante = 'A'.repeat(80);
+      const resultado = formatContactDisplayName('5511999999999@s.whatsapp.net', gigante);
+
+      expect(resultado.length).toBeLessThanOrEqual(40);
+      expect(resultado.endsWith('…')).toBe(true);
     });
   });
 
@@ -114,6 +158,18 @@ describe('formatters (M2, Fase 4)', () => {
 
     it('cai para os últimos 2 dígitos do número quando não há contactName', () => {
       expect(formatContactInitials('5511999999999@s.whatsapp.net')).toBe('99');
+    });
+
+    // Bug do avatar "bugado": um emoji ocupa dois índices em JavaScript, então
+    // `nome[0]` devolvia meio caractere e o círculo exibia um glifo inválido.
+    it('não corta emoji ao meio quando o nome começa com um', () => {
+      const iniciais = formatContactInitials('5511999999999@s.whatsapp.net', '🌟 Estrela');
+
+      expect(iniciais).toBe('🌟E');
+    });
+
+    it('cai para o número quando o nome não tem letra nem dígito', () => {
+      expect(formatContactInitials('5511999999999@s.whatsapp.net', '❤️')).toBe('99');
     });
   });
 

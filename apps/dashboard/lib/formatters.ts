@@ -318,14 +318,63 @@ export function formatContactJid(contactJid: string): string {
   return atIndex > 0 ? contactJid.slice(0, atIndex) : contactJid;
 }
 
+/** Rótulo de um contato cujo endereço é um LID (formato de privacidade do WhatsApp, sem telefone). */
+export const PRIVATE_CONTACT_LABEL = 'Contato privado';
+
+/** Acima disso o nome é cortado com reticências — evita que um "nome" gigante quebre a linha da lista. */
+const MAX_DISPLAY_NAME_LENGTH = 40;
+
 /**
- * Nome de exibição do contato para a UI (Milestone 6, Bloco M6H-2b):
- * `contactName` (pushName do WhatsApp), se presente; senão o número
- * (`formatContactJid`) como sempre foi antes deste bloco — nunca deixa a UI
- * em branco.
+ * Um nome só serve para identificar um lead se tiver ao menos uma letra ou
+ * um dígito. O `pushName` do WhatsApp é texto livre escolhido pelo contato e
+ * às vezes é só pontuação ou emoji (".", "❤️") — nesses casos o número
+ * formatado identifica melhor do que o "nome".
+ *
+ * `\p{L}`/`\p{N}` com a flag `u` cobrem qualquer alfabeto (acentos, cirílico,
+ * etc.), não só A-Z — um nome em japonês é perfeitamente identificável.
+ */
+function hasIdentifiableCharacter(value: string): boolean {
+  return /[\p{L}\p{N}]/u.test(value);
+}
+
+/**
+ * Nome de exibição do contato — a ÚNICA fonte de rótulo de contato da UI,
+ * usada pela lista de Conversas, pelo card do Pipeline, pelo cabeçalho da
+ * conversa e pelo painel de contexto. É por isso que padronizar aqui
+ * padroniza o produto inteiro.
+ *
+ * CORREÇÃO 2026-08-15 (pedido do fundador: "umas com nickname, outras com
+ * número incompleto, outras com um número gigantesco — nada padronizado").
+ * A causa era o fallback: quando não havia `contactName`, esta função caía em
+ * `formatContactJid`, que devolve os DÍGITOS CRUS (`5521988887777`, ou o LID
+ * `225236742053984`). Numa base real, 34 de 51 conversas (67%) exibiam esse
+ * valor cru — daí a impressão de bagunça.
+ *
+ * Ordem de preferência, do mais para o menos identificável:
+ * 1. `contactName` (pushName do WhatsApp), quando de fato identifica alguém;
+ * 2. o telefone FORMATADO (`+55 21 98888-7777`), nunca os dígitos crus;
+ * 3. `PRIVATE_CONTACT_LABEL`, para LID — não existe telefone a mostrar.
+ *
+ * Espaços internos são colapsados e o nome é truncado, para que toda linha da
+ * lista tenha a mesma altura independente do que o contato escolheu como nome.
  */
 export function formatContactDisplayName(contactJid: string, contactName?: string): string {
-  return contactName && contactName.trim() ? contactName.trim() : formatContactJid(contactJid);
+  const normalized = contactName?.trim().replace(/\s+/g, ' ');
+
+  if (normalized && hasIdentifiableCharacter(normalized)) {
+    return normalized.length > MAX_DISPLAY_NAME_LENGTH
+      ? `${normalized.slice(0, MAX_DISPLAY_NAME_LENGTH - 1).trimEnd()}…`
+      : normalized;
+  }
+
+  // Sem nome utilizável: o número formatado identifica melhor que o cru.
+  // `formatPhoneNumber` já trata o LID, mas devolve um rótulo pensado para um
+  // campo de NÚMERO ("Número privado (WhatsApp)"); como NOME, o rótulo curto
+  // abaixo lê melhor numa lista.
+  if (contactJid.endsWith('@lid')) {
+    return PRIVATE_CONTACT_LABEL;
+  }
+  return formatPhoneNumber(contactJid);
 }
 
 /**
@@ -334,16 +383,28 @@ export function formatContactDisplayName(contactJid: string, contactName?: strin
  * houver (ex.: "Maria Silva" → "MS", "Loja" → "L"); senão os últimos 2
  * dígitos do número — mesmo fallback usado antes deste bloco, preservado
  * para contatos sem nome capturado.
+ *
+ * CORREÇÃO 2026-08-15: `word[0]` quebrava nomes que começam com emoji ou
+ * qualquer caractere fora do plano básico (um emoji ocupa DOIS índices em
+ * JavaScript, então `[0]` devolvia meio caractere e o avatar exibia um glifo
+ * inválido — o "bugado" relatado pelo fundador). `Array.from` itera por
+ * PONTO DE CÓDIGO, devolvendo o caractere inteiro.
+ *
+ * Usa o mesmo teste de `formatContactDisplayName`: um nome sem letra nem
+ * dígito não vira inicial — cai no número, para o avatar nunca ficar com um
+ * símbolo solto sem significado.
  */
 export function formatContactInitials(contactJid: string, contactName?: string): string {
   const trimmed = contactName?.trim();
-  if (!trimmed) return formatContactJid(contactJid).slice(-2);
+  if (!trimmed || !hasIdentifiableCharacter(trimmed)) {
+    return formatContactJid(contactJid).slice(-2);
+  }
   const words = trimmed.split(/\s+/).filter(Boolean);
   const initials = words
     .slice(0, 2)
-    .map((word) => word[0])
+    .map((word) => Array.from(word)[0] ?? '')
     .join('');
-  return (initials || trimmed.slice(0, 2)).toUpperCase();
+  return (initials || Array.from(trimmed).slice(0, 2).join('')).toUpperCase();
 }
 
 /**

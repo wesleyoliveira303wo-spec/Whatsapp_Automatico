@@ -45,7 +45,7 @@ function buildConversation(overrides: Partial<ConversationSummary> = {}): Conver
 describe('ConversationListItem (Milestone 6, Bloco M6H-2)', () => {
   it('renderiza o contato e o status, sem destaque quando não está aguardando humano', () => {
     render(<ConversationListItem conversation={buildConversation()} />);
-    expect(screen.getByText('5511999999999')).toBeInTheDocument();
+    expect(screen.getByText('+55 11 99999-9999')).toBeInTheDocument();
     expect(screen.getByText('Bot respondendo')).toBeInTheDocument();
     expect(screen.queryByText('Aguardando atendente')).not.toBeInTheDocument();
   });
@@ -84,12 +84,12 @@ describe('ConversationListItem (Milestone 6, Bloco M6H-2)', () => {
       <ConversationListItem conversation={buildConversation({ contactName: 'Maria Silva' })} />,
     );
     expect(screen.getByText('Maria Silva')).toBeInTheDocument();
-    expect(screen.queryByText('5511999999999')).not.toBeInTheDocument();
+    expect(screen.queryByText('+55 11 99999-9999')).not.toBeInTheDocument();
   });
 
   it('cai para o número formatado quando não há contactName', () => {
     render(<ConversationListItem conversation={buildConversation()} />);
-    expect(screen.getByText('5511999999999')).toBeInTheDocument();
+    expect(screen.getByText('+55 11 99999-9999')).toBeInTheDocument();
   });
 
   it('mostra o círculo com a contagem quando unreadCount > 0 (indicador de não lidas, 2026-07-25)', () => {
