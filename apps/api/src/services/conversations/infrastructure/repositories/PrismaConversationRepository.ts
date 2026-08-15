@@ -61,6 +61,8 @@ interface WhatsAppConversationRow {
   sessionName: string;
   contactJid: string;
   contactName: string | null;
+  /** Fase L, Bloco L1 — identidade durável da pessoa; `null` para `@lid` e afins. */
+  contactId: string | null;
   status: PrismaConversationStatus;
   assignedToUserId: string | null;
   escalatedAt: Date | null;
@@ -105,6 +107,7 @@ function toDomain(row: WhatsAppConversationRow): Conversation {
     sessionName: row.sessionName,
     contactJid: row.contactJid,
     contactName: row.contactName ?? undefined,
+    contactId: row.contactId ?? undefined,
     status: STATUS_TO_DOMAIN[row.status],
     assignedToUserId: row.assignedToUserId ?? undefined,
     escalatedAt: row.escalatedAt ?? undefined,
@@ -350,6 +353,28 @@ export class PrismaConversationRepository implements ConversationRepository {
     await this.prisma.whatsAppConversation.updateMany({
       where: { id: conversationId, tenantId },
       data: { unreadCount: { increment: 1 } },
+    });
+  }
+
+  /**
+   * Vínculo com a identidade do contato (Fase L, Bloco L1) — ver docstring do
+   * port.
+   *
+   * `contactId: null` FAZ PARTE do critério de busca, não é detalhe: é ele que
+   * transforma esta operação em "preencher se vazio" em vez de "sobrescrever".
+   * Uma conversa já vinculada simplesmente não casa com o `where`
+   * (`count === 0`, sem erro), então a chamada pode rodar a cada mensagem sem
+   * risco de desfazer uma reconciliação de identidade feita depois.
+   *
+   * `updateMany` (não `update`) pelo mesmo motivo dos demais métodos deste
+   * repositório: escopar por `tenantId` junto com o `id` é defesa em
+   * profundidade contra IDOR, e a ausência de linha vira `count === 0` em vez
+   * de exceção.
+   */
+  async linkContact(tenantId: string, conversationId: string, contactId: string): Promise<void> {
+    await this.prisma.whatsAppConversation.updateMany({
+      where: { id: conversationId, tenantId, contactId: null },
+      data: { contactId },
     });
   }
 

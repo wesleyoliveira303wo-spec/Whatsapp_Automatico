@@ -6,6 +6,7 @@ import {
   FakeAiReplyScheduler,
   FakeAiAvailabilityRepository,
   FakeAiRateLimiter,
+  FakeContactResolver,
 } from './testDoubles';
 
 function buildSut(): {
@@ -15,18 +16,21 @@ function buildSut(): {
   aiReplyScheduler: FakeAiReplyScheduler;
   aiAvailabilityRepository: FakeAiAvailabilityRepository;
   aiRateLimiter: FakeAiRateLimiter;
+  contactResolver: FakeContactResolver;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
   const aiReplyScheduler = new FakeAiReplyScheduler();
   const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
   const aiRateLimiter = new FakeAiRateLimiter();
+  const contactResolver = new FakeContactResolver();
   const sut = new MessageIngestionService(
     conversationRepository,
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
     aiRateLimiter,
+    contactResolver,
   );
   return {
     sut,
@@ -35,6 +39,7 @@ function buildSut(): {
     aiReplyScheduler,
     aiAvailabilityRepository,
     aiRateLimiter,
+    contactResolver,
   };
 }
 
@@ -516,6 +521,67 @@ describe('MessageIngestionService', () => {
       await sut.handle(buildInboundMessage());
 
       expect(aiRateLimiter.calls).toHaveLength(0);
+    });
+  });
+
+  // Fase L, Bloco L1 — identidade durável da pessoa por trás da conversa.
+  describe('identidade de contato', () => {
+    it('resolve e vincula o contato na primeira mensagem de uma conversa nova', async () => {
+      const { sut, conversationRepository, contactResolver } = buildSut();
+      contactResolver.setContactId('contato-abc');
+
+      await sut.handle(buildInboundMessage());
+
+      const [conversation] = conversationRepository.getAll();
+      expect(conversation.contactId).toBe('contato-abc');
+      expect(contactResolver.calls).toEqual([
+        { tenantId: 'tenant-1', contactJid: '5511999999999@s.whatsapp.net' },
+      ]);
+    });
+
+    it('não reconsulta o resolver quando a conversa já está vinculada', async () => {
+      const { sut, contactResolver } = buildSut();
+
+      await sut.handle(buildInboundMessage());
+      await sut.handle(buildInboundMessage({ content: 'segunda mensagem' }));
+
+      expect(contactResolver.calls).toHaveLength(1);
+    });
+
+    // Um LID não contém telefone algum: 13 de 51 conversas da base real.
+    // A conversa precisa funcionar normalmente, só sem contato associado.
+    it('segue sem vínculo quando o endereço não tem identidade resolvível', async () => {
+      const { sut, conversationRepository, messageRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ from: '225236742053984@lid' }));
+
+      const [conversation] = conversationRepository.getAll();
+      expect(conversation.contactId).toBeUndefined();
+      // O que importa: a mensagem foi recebida do mesmo jeito.
+      expect(messageRepository.getAll()).toHaveLength(1);
+    });
+
+    it('vincula também a partir de mensagem outbound (o operador escreveu primeiro pelo celular)', async () => {
+      const { sut, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
+
+      const [conversation] = conversationRepository.getAll();
+      expect(conversation.contactId).toBe('contact-1');
+    });
+
+    // O vínculo é auxiliar: jamais pode impedir uma mensagem de cliente de
+    // ser recebida, nem a IA de responder.
+    it('uma falha ao vincular não interrompe a ingestão nem o agendamento da IA', async () => {
+      const { sut, conversationRepository, messageRepository, aiReplyScheduler } = buildSut();
+      jest
+        .spyOn(conversationRepository, 'linkContact')
+        .mockRejectedValue(new Error('falha simulada de banco'));
+
+      await expect(sut.handle(buildInboundMessage())).resolves.toBeUndefined();
+
+      expect(messageRepository.getAll()).toHaveLength(1);
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
     });
   });
 });

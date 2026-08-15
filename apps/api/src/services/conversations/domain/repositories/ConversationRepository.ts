@@ -217,6 +217,24 @@ export interface ConversationRepository {
   incrementUnreadCount(tenantId: string, conversationId: string): Promise<void>;
 
   /**
+   * Liga a conversa a uma identidade de contato (Fase L, Bloco L1) — chamado
+   * por `MessageIngestionService` depois de resolver o telefone do `contactJid`.
+   *
+   * SÓ PREENCHE, NUNCA SOBRESCREVE: implementações devem incluir
+   * `contactId: null` no critério de busca, de modo que uma conversa já
+   * vinculada permaneça intocada. Isso torna a chamada idempotente (roda a
+   * cada mensagem sem custo depois da primeira) e, mais importante, impede
+   * que uma reconciliação futura de identidade seja desfeita silenciosamente
+   * por uma mensagem nova.
+   *
+   * Silenciosamente não-op (não lança) se a conversa não existir, não
+   * pertencer ao tenant, ou já estiver vinculada — mesmo espírito de
+   * `incrementUnreadCount`, e pelo mesmo motivo: quem chama trata o vínculo
+   * como auxiliar, jamais como pré-condição para a mensagem ser recebida.
+   */
+  linkContact(tenantId: string, conversationId: string, contactId: string): Promise<void>;
+
+  /**
    * Zera `unreadCount` (indicador de não lidas, 2026-07-25) — chamado por
    * `ConversationsService.markAsRead()` quando um operador abre a conversa
    * pela Dashboard (`POST .../conversations/:id/read`). Idempotente: marcar

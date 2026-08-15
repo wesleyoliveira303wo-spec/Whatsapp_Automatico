@@ -45,11 +45,23 @@ describe('Integração real — Postgres (Fase 1, Bloco F1.10)', () => {
       console.warn('Postgres indisponível — pulando teste de integração real.');
       return;
     }
-    const indexes = await prisma.$queryRawUnsafe<Array<{ indexname: string }>>(
-      `SELECT indexname FROM pg_indexes WHERE tablename = 'whatsapp_conversations'`,
+    // Verifica as COLUNAS cobertas, não o NOME do índice. O nome já mudou uma
+    // vez (a migration `20260815141141_add_whatsapp_contact` renomeou o índice
+    // de `..._tenantId_sessionName_lastMessageAt_idx` para a convenção
+    // snake_case do Prisma) e um teste preso ao nome quebra a cada renomeação
+    // sem que nada de fato tenha regredido. O que precisa continuar verdadeiro
+    // é que a query mais executada do produto — listar conversas por
+    // (tenant, sessão) ordenando por última mensagem — tem índice.
+    const indexes = await prisma.$queryRawUnsafe<Array<{ indexdef: string }>>(
+      `SELECT indexdef FROM pg_indexes WHERE tablename = 'whatsapp_conversations'`,
     );
-    const names = indexes.map((row) => row.indexname);
-    expect(names.some((name) => name.includes('tenantId_sessionName_lastMessageAt'))).toBe(true);
+    const cobreAConsultaDeConversas = indexes.some(
+      (row) =>
+        row.indexdef.includes('tenant_id') &&
+        row.indexdef.includes('session_name') &&
+        row.indexdef.includes('last_message_at'),
+    );
+    expect(cobreAConsultaDeConversas).toBe(true);
   });
 
   it('round-trip real: cria Tenant + WhatsAppConversation + WhatsAppMessage e lê de volta ordenado por lastMessageAt (não updatedAt)', async () => {

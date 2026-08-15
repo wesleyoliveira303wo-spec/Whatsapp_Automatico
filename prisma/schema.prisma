@@ -345,8 +345,79 @@ model Tenant {
   quickReplies          QuickReply[]
   // Redesign 2026-08-05 (R4) — catálogo de tags livres por sessão.
   tags                  WhatsAppTag[]
+  // Fase L, Bloco L1 (2026-08-15) — identidade durável de contato, por TENANT
+  // (não por sessão): a mesma pessoa falando com dois WhatsApps da empresa é
+  // uma pessoa só. Ver `WhatsAppContact`.
+  contacts              WhatsAppContact[]
 
   @@map("tenants")
+}
+
+/// Identidade durável de uma pessoa, por tenant — Fase L, Bloco L1
+/// (2026-08-15). O Francis nunca teve conceito de PESSOA: até aqui a
+/// identidade de um contato era o `contactJid` dentro de
+/// `WhatsAppConversation`, chaveado por `(tenantId, sessionName, contactJid)`.
+/// Isso significa que a mesma pessoa falando com duas sessões da empresa eram
+/// duas entidades sem nenhuma ligação, e que não havia onde guardar nome
+/// próprio, origem ou consentimento. O incidente de LID já cobrou esse preço
+/// uma vez: um contato conhecido virou duas conversas e a correção exigiu
+/// mesclar linhas manualmente no Postgres.
+///
+/// POR TENANT, não por sessão — diferente de `AiBusinessProfile`/`QuickReply`/
+/// `WhatsAppTag`, que são configuração de cada número atendido. Uma pessoa não
+/// muda de identidade porque escreveu para outro número da mesma empresa; é
+/// justamente cruzar as sessões que dá valor ("este lead da campanha já era
+/// cliente no outro WhatsApp").
+///
+/// `phoneE164` é a IDENTIDADE, não o endereço de envio. Guarda a forma
+/// canônica calculada por `normalizePhoneToE164` (Domain), que unifica o 9º
+/// dígito dos celulares brasileiros — decisão do fundador, para que o mesmo
+/// aparelho digitado numa planilha caia no contato que já existe. Para ENVIAR,
+/// use sempre o `contactJid` da conversa: ele pode estar na forma de 12
+/// dígitos, e mandar para a forma canônica entregaria a outro número.
+///
+/// Conversas em `@lid` (endereço de privacidade do WhatsApp — 13 de 51 na base
+/// real) NÃO têm contato: não existe telefone a extrair de um LID. Ficam com
+/// `contactId` nulo até a pessoa escrever de um endereço com número real.
+model WhatsAppContact {
+  id        String        @id @default(uuid())
+  tenantId  String        @map("tenant_id")
+  phoneE164 String        @map("phone_e164")
+  /// Nome próprio do lead, definido por quem opera (importação ou edição) —
+  /// deliberadamente SEPARADO de `WhatsAppConversation.contactName`, que é o
+  /// `pushName` escolhido pelo próprio contato no WhatsApp dele e muda sem
+  /// aviso. `null` para contatos criados automaticamente a partir de uma
+  /// conversa: nesse momento não há nome que o operador tenha escolhido.
+  name      String?
+  /// COMO o contato entrou no sistema. Enum, não string livre — mesmo racional
+  /// do achado F6/ADR #15. Não confundir com a origem COMERCIAL do lead
+  /// ("feira", "site", "indicação"), que é texto livre e entra junto com a
+  /// importação de planilha, onde de fato existe alguém para informá-la.
+  source    ContactSource @default(WHATSAPP)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations WhatsAppConversation[]
+
+  /// A garantia de deduplicação, no nível do banco: um telefone canônico
+  /// existe no máximo uma vez por tenant. É isto que faz a importação de uma
+  /// planilha com repetidos ser idempotente sem nenhuma lógica extra.
+  @@unique([tenantId, phoneE164])
+  @@index([tenantId])
+  @@map("whatsapp_contacts")
+}
+
+/// Como um `WhatsAppContact` entrou no sistema — Fase L, Bloco L1.
+enum ContactSource {
+  /// Criado automaticamente quando a pessoa mandou mensagem.
+  WHATSAPP
+  /// Veio de uma planilha importada (Bloco L1b, ainda não implementado).
+  IMPORT
+  /// Cadastrado à mão pelo operador.
+  MANUAL
+
+  @@map("contact_source")
 }
 
 /// Espelha apps/api/src/services/whatsapp/domain/entities/WhatsAppSession.ts
@@ -584,10 +655,20 @@ model WhatsAppConversation {
   /// "desatualizado" (ver docstring de `aiSummaryUpdatedAt`). `0` até a
   /// primeira geração (nunca `null` — sempre comparável).
   aiSummaryMessageCount Int @default(0) @map("ai_summary_message_count")
+  /// Fase L, Bloco L1 (2026-08-15) — liga esta conversa à identidade durável
+  /// da pessoa (ver `WhatsAppContact`). Aditivo e NULLABLE de propósito, por
+  /// dois motivos permanentes (não é um estado transitório de migração):
+  /// conversas em `@lid` não têm telefone do qual derivar um contato, e o
+  /// vínculo nunca pode ser pré-condição para receber uma mensagem — a
+  /// ingestão continua funcionando igual se a resolução do contato falhar.
+  /// `onDelete: SetNull` (não Cascade): apagar um contato jamais pode apagar o
+  /// histórico de conversa, que é o dado mais caro do produto.
+  contactId   String?                    @map("contact_id")
   createdAt   DateTime                   @default(now()) @map("created_at")
   updatedAt   DateTime                   @updatedAt @map("updated_at")
 
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact  WhatsAppContact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages WhatsAppMessage[]
   /// Redesign 2026-08-05 (R4) — tags livres atribuídas a esta conversa
   /// (N:N via `WhatsAppConversationTag`). Ver `WhatsAppTag` para o catálogo.
@@ -616,6 +697,9 @@ model WhatsAppConversation {
   /// para frente" com o mesmo custo para servir `ORDER BY ... DESC`, então a
   /// direção declarada aqui não importa para este propósito.
   @@index([tenantId, sessionName, lastMessageAt])
+  /// Fase L, Bloco L1 — suporta "todas as conversas desta pessoa", que é o
+  /// ganho central da identidade: cruzar as sessões de um mesmo tenant.
+  @@index([contactId])
   @@map("whatsapp_conversations")
 }
 

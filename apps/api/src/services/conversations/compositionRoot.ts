@@ -14,6 +14,8 @@ import { BullMqAiReplyScheduler } from './infrastructure/schedulers/BullMqAiRepl
 import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
 import { InMemorySlidingWindowAiRateLimiter } from './infrastructure/repositories/InMemorySlidingWindowAiRateLimiter';
 import { MessageIngestionService } from './application/MessageIngestionService';
+import { PrismaContactRepository } from '../contacts/infrastructure/repositories/PrismaContactRepository';
+import { WhatsAppJidContactResolver } from '../contacts/infrastructure/WhatsAppJidContactResolver';
 import { ConversationsService } from './application/ConversationsService';
 import {
   WHATSAPP_OUTBOUND_QUEUE_NAME,
@@ -119,12 +121,21 @@ export function createConversationsComposition(
   // instância a cada mensagem, nunca recriada por request.
   const aiRateLimiter = new InMemorySlidingWindowAiRateLimiter();
 
+  // Fase L, Bloco L1 — identidade durável de contato. O adaptador vive em
+  // `services/contacts` (contexto dono da identidade) e implementa a porta
+  // estreita declarada aqui em `conversations/domain` — ver `ContactResolver`.
+  const contactResolver = new WhatsAppJidContactResolver(
+    new PrismaContactRepository(prisma),
+    logger,
+  );
+
   const messageIngestionService = new MessageIngestionService(
     conversationRepository,
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
     aiRateLimiter,
+    contactResolver,
   );
   const conversationsService = new ConversationsService(
     conversationRepository,

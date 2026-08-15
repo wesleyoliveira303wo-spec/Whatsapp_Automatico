@@ -32,6 +32,19 @@ export interface Conversation {
    * atualiza (o contato pode mudar o nome de exibição no WhatsApp).
    */
   contactName?: string;
+  /**
+   * Identidade durável da PESSOA por trás desta conversa (Fase L, Bloco L1) —
+   * o `id` de um `WhatsAppContact`. Enquanto `contactJid`/`contactName` são o
+   * endereço e o apelido daquele canal, `contactId` é quem a pessoa é: é ele
+   * que permite reconhecer o mesmo lead falando com duas sessões do tenant.
+   *
+   * `undefined` em dois casos permanentes (não é estado transitório de
+   * migração): conversas em `@lid`, cujo endereço de privacidade não contém
+   * telefone algum de onde derivar identidade; e qualquer conversa cuja
+   * resolução de contato tenha falhado — deliberadamente tolerado, porque o
+   * vínculo nunca pode ser pré-condição para receber uma mensagem.
+   */
+  contactId?: string;
   status: 'bot' | 'human';
   /**
    * Dono atual do atendimento (Milestone 5, Bloco M5D — ownership, D57): o

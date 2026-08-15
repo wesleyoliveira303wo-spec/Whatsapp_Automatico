@@ -10,6 +10,7 @@ import { MessageRepository } from '../../../src/services/conversations/domain/re
 import { AiReplyScheduler } from '../../../src/services/conversations/domain/schedulers/AiReplyScheduler';
 import { AiAvailabilityRepository } from '../../../src/services/conversations/domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../../../src/services/conversations/domain/repositories/AiRateLimiter';
+import { ContactResolver } from '../../../src/services/conversations/domain/repositories/ContactResolver';
 
 /**
  * Fake compartilhado do `ConversationRepository` (Milestone 3, Bloco 2) — em
@@ -118,6 +119,19 @@ export class FakeConversationRepository implements ConversationRepository {
       return;
     }
     this.conversations.set(conversationId, { ...existing, unreadCount: existing.unreadCount + 1 });
+  }
+
+  /**
+   * Fase L, Bloco L1 — espelha o `where: { id, tenantId, contactId: null }` do
+   * repositório real: SÓ preenche quando ainda está vazio, nunca sobrescreve.
+   * É essa condição que torna a chamada idempotente a cada mensagem.
+   */
+  async linkContact(tenantId: string, conversationId: string, contactId: string): Promise<void> {
+    const existing = this.conversations.get(conversationId);
+    if (!existing || existing.tenantId !== tenantId || existing.contactId) {
+      return;
+    }
+    this.conversations.set(conversationId, { ...existing, contactId });
   }
 
   /**
@@ -379,5 +393,33 @@ export class FakeAiRateLimiter implements AiRateLimiter {
   /** Helper de teste: faz a PRÓXIMA (e todas as seguintes) chamada devolver `false`. */
   setBlocked(value: boolean): void {
     this.blocked = value;
+  }
+}
+
+/**
+ * Fase L, Bloco L1 — dublê de `ContactResolver`. Reproduz o contrato real nos
+ * dois pontos que importam: devolve `undefined` para endereços sem telefone
+ * (`@lid`, grupo, canal) e NUNCA lança, nem quando configurado para falhar.
+ */
+export class FakeContactResolver implements ContactResolver {
+  readonly calls: Array<{ tenantId: string; contactJid: string }> = [];
+  private contactId: string | undefined = 'contact-1';
+
+  async resolveByWhatsAppJid(tenantId: string, contactJid: string): Promise<string | undefined> {
+    this.calls.push({ tenantId, contactJid });
+    if (!contactJid.endsWith('@s.whatsapp.net')) {
+      return undefined;
+    }
+    return this.contactId;
+  }
+
+  /** Helper de teste: simula um endereço sem identidade resolvível. */
+  setUnresolvable(): void {
+    this.contactId = undefined;
+  }
+
+  /** Helper de teste: fixa o id devolvido, para asserções de vínculo. */
+  setContactId(contactId: string): void {
+    this.contactId = contactId;
   }
 }

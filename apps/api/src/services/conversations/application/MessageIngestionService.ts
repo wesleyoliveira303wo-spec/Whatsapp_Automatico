@@ -8,6 +8,7 @@ import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
 import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
+import { ContactResolver } from '../domain/repositories/ContactResolver';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
@@ -67,6 +68,10 @@ export class MessageIngestionService implements MessageReceivedHandler {
     // `AiAvailabilityRepository`: `MessageIngestionService` só precisa saber
     // "posso agendar ou não", não como o limite é calculado.
     private readonly aiRateLimiter: AiRateLimiter,
+    // Fase L, Bloco L1 — identidade durável de contato. Porta estreita (ver
+    // `ContactResolver`), mesmo racional de `AiAvailabilityRepository`: este
+    // Service só precisa saber "quem é a pessoa deste endereço".
+    private readonly contactResolver: ContactResolver,
     private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   ) {}
 
@@ -157,6 +162,35 @@ export class MessageIngestionService implements MessageReceivedHandler {
       } catch {
         // Silencioso de propósito: o indicador de não lidas é auxiliar, sua
         // falha não deve derrubar a ingestão da mensagem em si.
+      }
+    }
+
+    // Fase L, Bloco L1 — identidade durável da pessoa. Auxiliar por desenho:
+    // um try/catch envolve tudo (mesmo padrão de `incrementUnreadCount` acima),
+    // porque o vínculo com o contato jamais pode impedir uma mensagem de
+    // cliente de ser recebida. Roda também para mensagens outbound: se o
+    // operador escreveu primeiro pelo celular, a pessoa existe do mesmo jeito.
+    //
+    // `linkContact` só preenche quando ainda está vazio, então a partir da
+    // segunda mensagem esta chamada é uma escrita que não casa com nada —
+    // barata e idempotente, sem precisar checar antes.
+    if (!conversation.contactId) {
+      try {
+        const contactId = await this.contactResolver.resolveByWhatsAppJid(
+          message.tenantId,
+          message.from,
+        );
+        if (contactId) {
+          await this.conversationRepository.linkContact(
+            message.tenantId,
+            conversation.id,
+            contactId,
+          );
+        }
+      } catch {
+        // Silencioso de propósito: o resolver já não lança e já loga; este
+        // catch cobre apenas uma falha do `linkContact`. Identidade é dado
+        // auxiliar — a mensagem já foi persistida e o atendimento continua.
       }
     }
 
