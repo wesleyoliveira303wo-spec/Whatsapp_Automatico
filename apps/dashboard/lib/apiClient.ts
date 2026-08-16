@@ -169,7 +169,7 @@ export const callQuickRepliesApi = createApiClient('sessions');
 export const callTagsApi = createApiClient('sessions');
 
 /**
- * Cliente do recurso `contacts` (Fase L, Bloco L1b — importação de leads),
+ * Cliente do recurso `contacts` (Fase L, Bloco L1b — importação de contatos),
  * consumido por `pages/api/contacts/*`. TENANT-WIDE (diferente de
  * `callTagsApi`/`callAiProfileApi`, cujo path inclui `sessionName`) —
  * `WhatsAppContact` não pertence a uma sessão, ver docstring do model no

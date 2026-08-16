@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
 import ErrorState from '@/components/states/ErrorState';
 
-interface LeadsPanelProps {
+interface ContactsPanelProps {
   /** Só administrator/owner veem o botão de importar — a barreira real é `contact:manage` na API. */
   canImport: boolean;
 }
@@ -25,7 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
-    if (error.status === 403) return 'Seu cargo não permite importar leads.';
+    if (error.status === 403) return 'Seu cargo não permite importar contatos.';
     if (error.status === 401) return 'Sessão expirada — faça login novamente.';
     if (error.status === 413) {
       const message = (error.body as { message?: string } | undefined)?.message;
@@ -46,14 +46,15 @@ function summarize(report: ContactImportReport): string {
 }
 
 /**
- * Painel de leads (Fase L, Bloco L1b) — lista a base de contatos do tenant
- * (`WhatsAppContact`, tenant-wide) e, para quem gerencia, permite importar
- * uma planilha `.csv` (cabeçalho com colunas de nome/telefone). Vive na aba
- * "Leads" de Configurações, mesma casca de `TagsPanel.tsx`
+ * Painel de Contatos (Fase L, Bloco L1b; movido para item próprio do rail a
+ * pedido do fundador em 2026-08-15 — antes vivia como aba "Leads" dentro de
+ * Configurações) — lista a base de contatos do tenant (`WhatsAppContact`,
+ * tenant-wide) e, para quem gerencia, permite importar uma planilha `.csv`
+ * (cabeçalho com colunas de nome/telefone). Mesma casca de `TagsPanel.tsx`
  * (busca + lista + Card), sem os controles de edição inline (contatos ainda
  * não têm tela de edição manual — fica para um bloco futuro).
  */
-export default function LeadsPanel({ canImport }: LeadsPanelProps): JSX.Element {
+export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.Element {
   const {
     contacts,
     loading,
@@ -155,7 +156,7 @@ export default function LeadsPanel({ canImport }: LeadsPanelProps): JSX.Element 
       ) : contacts.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={search ? 'Nenhum lead encontrado' : 'Nenhum lead ainda'}
+          title={search ? 'Nenhum contato encontrado' : 'Nenhum contato ainda'}
           description={
             search
               ? 'Tente buscar por outro nome ou telefone.'

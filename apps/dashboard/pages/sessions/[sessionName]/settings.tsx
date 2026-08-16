@@ -6,13 +6,12 @@ import SessionConnectionPanel from '@/components/SessionConnectionPanel';
 import UserManagementPanel from '@/components/UserManagementPanel';
 import AuditLogPanel from '@/components/AuditLogPanel';
 import TagsPanel from '@/components/TagsPanel';
-import LeadsPanel from '@/components/LeadsPanel';
 import { TabList, TabTrigger } from '@/components/ui/tabs-nav';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 import type { ManagedUserRole } from '@/lib/clientApi';
 
-type SettingsTab = 'connection' | 'team' | 'audit' | 'tags' | 'leads';
+type SettingsTab = 'connection' | 'team' | 'audit' | 'tags';
 
 interface SettingsPageProps {
   tenantId: string;
@@ -22,13 +21,7 @@ interface SettingsPageProps {
 }
 
 function isSettingsTab(value: unknown): value is SettingsTab {
-  return (
-    value === 'connection' ||
-    value === 'team' ||
-    value === 'audit' ||
-    value === 'tags' ||
-    value === 'leads'
-  );
+  return value === 'connection' || value === 'team' || value === 'audit' || value === 'tags';
 }
 
 function canSeeTeam(role: ManagedUserRole | null): boolean {
@@ -41,16 +34,6 @@ function canSeeAudit(role: ManagedUserRole | null): boolean {
 
 /** Redesign 2026-08-05 (R4) — gestão do catálogo de tags exige `tag:manage` (administrator/owner), mesma régua de Equipe. */
 function canSeeTags(role: ManagedUserRole | null): boolean {
-  return role === 'administrator' || role === 'owner';
-}
-
-/** Fase L, Bloco L1b — LER a base de leads é liberado desde operator (mesma régua de `contact:read`); só quem gerencia importa em lote. */
-function canSeeLeads(role: ManagedUserRole | null): boolean {
-  return role === 'operator' || role === 'manager' || role === 'administrator' || role === 'owner';
-}
-
-/** Fase L, Bloco L1b — importar planilha exige `contact:manage` (administrator/owner), mesma régua de Equipe/Tags. */
-function canImportLeads(role: ManagedUserRole | null): boolean {
   return role === 'administrator' || role === 'owner';
 }
 
@@ -69,6 +52,12 @@ function canImportLeads(role: ManagedUserRole | null): boolean {
  *
  * Rotas antigas `/sessions/:s` (Configurações), `/users` e `/audit-logs`
  * (arquivos preservados, viraram redirect) apontam para cá.
+ *
+ * 2026-08-15 (pedido do fundador): "Leads" (Fase L, Bloco L1b) SAIU daqui —
+ * virou item próprio do rail principal (`ContactsPanel`, ver
+ * `pages/sessions/[sessionName]/contacts.tsx`/`SessionRail.tsx`), renomeado
+ * para "Contatos". Não é mais uma aba administrativa: é destino de trabalho
+ * do dia a dia, no mesmo nível de Conversas/Pipeline.
  */
 export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
@@ -86,7 +75,6 @@ export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (
   if (initialTab === 'team' && !canSeeTeam(role)) initialTab = 'connection';
   if (initialTab === 'audit' && !canSeeAudit(role)) initialTab = 'connection';
   if (initialTab === 'tags' && !canSeeTags(role)) initialTab = 'connection';
-  if (initialTab === 'leads' && !canSeeLeads(role)) initialTab = 'connection';
   return { props: { tenantId: session.tenantId, sessionName, role, initialTab } };
 };
 
@@ -100,8 +88,6 @@ export default function SettingsPage({
   const showTeam = canSeeTeam(role);
   const showAudit = canSeeAudit(role);
   const showTags = canSeeTags(role);
-  const showLeads = canSeeLeads(role);
-  const canImport = canImportLeads(role);
 
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
@@ -153,15 +139,6 @@ export default function SettingsPage({
                   Tags
                 </TabTrigger>
               )}
-              {showLeads && (
-                <TabTrigger
-                  active={tab === 'leads'}
-                  variant="underline"
-                  onClick={() => setTab('leads')}
-                >
-                  Leads
-                </TabTrigger>
-              )}
             </TabList>
           </div>
 
@@ -169,7 +146,6 @@ export default function SettingsPage({
           {tab === 'team' && showTeam && <UserManagementPanel />}
           {tab === 'audit' && showAudit && <AuditLogPanel />}
           {tab === 'tags' && showTags && <TagsPanel sessionName={sessionName} />}
-          {tab === 'leads' && showLeads && <LeadsPanel canImport={canImport} />}
         </div>
       </div>
     </SessionLayout>

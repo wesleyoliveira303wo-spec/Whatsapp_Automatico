@@ -18,10 +18,10 @@ export interface UseContactsResult {
 const PAGE_SIZE = 20;
 
 /**
- * Base de leads (Fase L, Bloco L1b) — tela "Leads". Paginação por cursor
- * (mesmo padrão de `useConversationsList`), com busca por nome/telefone
- * refazendo a listagem do zero (não é filtro client-side sobre o já
- * carregado — a base pode ter mais leads do que uma página).
+ * Base de contatos (Fase L, Bloco L1b) — tela "Contatos". Paginação por
+ * cursor (mesmo padrão de `useConversationsList`), com busca por
+ * nome/telefone refazendo a listagem do zero (não é filtro client-side
+ * sobre o já carregado — a base pode ter mais contatos do que uma página).
  */
 export function useContacts(): UseContactsResult {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -45,7 +45,7 @@ export function useContacts(): UseContactsResult {
         setHasMore(Boolean(page.nextCursor));
       })
       .catch(() => {
-        if (!cancelled) setErrorMessage('Falha ao carregar os leads.');
+        if (!cancelled) setErrorMessage('Falha ao carregar os contatos.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,7 +64,7 @@ export function useContacts(): UseContactsResult {
         setCursor(page.nextCursor);
         setHasMore(Boolean(page.nextCursor));
       })
-      .catch(() => setErrorMessage('Falha ao carregar mais leads.'))
+      .catch(() => setErrorMessage('Falha ao carregar mais contatos.'))
       .finally(() => setLoadingMore(false));
   }, [cursor, loadingMore, search]);
 
@@ -73,7 +73,7 @@ export function useContacts(): UseContactsResult {
   const importCsv = useCallback(
     async (csvText: string): Promise<ContactImportReport> => {
       const report = await importContacts(csvText);
-      // Reimportar pode ter criado/enriquecido leads — a lista precisa
+      // Reimportar pode ter criado/enriquecido contatos — a lista precisa
       // refletir isso, sempre da primeira página (cursor pode ter mudado).
       refresh();
       return report;

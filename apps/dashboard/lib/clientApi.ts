@@ -447,7 +447,7 @@ export function unassignConversationTag(conversationId: string, tagId: string): 
   );
 }
 
-// --- Contatos / Leads (Fase L, Blocos L1/L1b) ---
+// --- Contatos (Fase L, Blocos L1/L1b) ---
 // Identidade durável de PESSOA, por TENANT (não por sessão): a mesma pessoa
 // falando com dois WhatsApps da empresa é um contato só. Ver docstring de
 // `WhatsAppContact` no `schema.prisma`.
@@ -501,7 +501,7 @@ export interface ContactImportReport {
 }
 
 /**
- * Envia o TEXTO CRU de um arquivo `.csv` para importação de leads. Exige
+ * Envia o TEXTO CRU de um arquivo `.csv` para importação de contatos. Exige
  * `contact:manage` (administrator/owner) — uma importação em lote afeta a
  * base do tenant inteiro de uma vez.
  *

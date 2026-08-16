@@ -1,10 +1,10 @@
 /**
- * Fase L, Bloco L1b — teste do `LeadsPanel`: lista de leads (busca +
+ * Fase L, Bloco L1b — teste do `ContactsPanel`: lista de contatos (busca +
  * paginação) e, para quem gerencia, importação de planilha `.csv`.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import LeadsPanel from '../../components/LeadsPanel';
+import ContactsPanel from '../../components/ContactsPanel';
 import * as clientApi from '../../lib/clientApi';
 import { toast } from '../../components/ui/use-toast';
 
@@ -31,47 +31,47 @@ function contact(over: Partial<clientApi.Contact> = {}): clientApi.Contact {
   };
 }
 
-describe('LeadsPanel (Fase L, Bloco L1b)', () => {
+describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('carrega e lista os leads ao montar', async () => {
+  it('carrega e lista os contatos ao montar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-    render(<LeadsPanel canImport={false} />);
+    render(<ContactsPanel canImport={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('Maria')).toBeInTheDocument();
     });
   });
 
-  it('mostra o telefone formatado quando o lead não tem nome', async () => {
+  it('mostra o telefone formatado quando o contato não tem nome', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({
       contacts: [contact({ name: undefined })],
     });
 
-    render(<LeadsPanel canImport={false} />);
+    render(<ContactsPanel canImport={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('+55 21 98888-7777')).toBeInTheDocument();
     });
   });
 
-  it('mostra estado vazio quando não há leads', async () => {
+  it('mostra estado vazio quando não há contatos', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<LeadsPanel canImport={false} />);
+    render(<ContactsPanel canImport={false} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Nenhum lead ainda')).toBeInTheDocument();
+      expect(screen.getByText('Nenhum contato ainda')).toBeInTheDocument();
     });
   });
 
   it('sem permissão de gerenciar (canImport=false): não mostra o botão de importar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-    render(<LeadsPanel canImport={false} />);
+    render(<ContactsPanel canImport={false} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     expect(screen.queryByRole('button', { name: /Importar planilha/ })).not.toBeInTheDocument();
@@ -80,7 +80,7 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
   it('com permissão (canImport=true): mostra o botão de importar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<LeadsPanel canImport={true} />);
+    render(<ContactsPanel canImport={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     expect(screen.getByRole('button', { name: /Importar planilha/ })).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
   it('busca refaz a listagem com o termo digitado', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<LeadsPanel canImport={false} />);
+    render(<ContactsPanel canImport={false} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalledTimes(1));
 
     fireEvent.change(screen.getByPlaceholderText('Buscar por nome ou telefone'), {
@@ -108,7 +108,7 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
       .mockResolvedValueOnce({ contacts: [contact()], nextCursor: 'contact-1' })
       .mockResolvedValueOnce({ contacts: [contact({ id: 'contact-2', name: 'João' })] });
 
-    render(<LeadsPanel canImport={false} />);
+    render(<ContactsPanel canImport={false} />);
     await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }));
@@ -131,10 +131,10 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
       invalid: [],
     });
 
-    render(<LeadsPanel canImport={true} />);
+    render(<ContactsPanel canImport={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
-    const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'leads.csv', {
+    const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'contatos.csv', {
       type: 'text/csv',
     });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -160,10 +160,10 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
       new ClientApiError(403, { error: 'forbidden' }),
     );
 
-    render(<LeadsPanel canImport={true} />);
+    render(<ContactsPanel canImport={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
-    const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'leads.csv', {
+    const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'contatos.csv', {
       type: 'text/csv',
     });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -173,7 +173,7 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
       expect(toast).toHaveBeenCalledWith(
         expect.objectContaining({
           variant: 'destructive',
-          description: 'Seu cargo não permite importar leads.',
+          description: 'Seu cargo não permite importar contatos.',
         }),
       );
     });

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { MessageSquare, Brain, BarChart3, Kanban } from 'lucide-react';
+import { MessageSquare, Brain, BarChart3, Kanban, Contact } from 'lucide-react';
 import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
@@ -32,6 +32,11 @@ interface RailItem {
  *   Respostas Rápidas, agora abas de `/sessions/:s/ai`)
  * - **Configurações** no rodapé (agrupa Conexão/QR + Equipe + Auditoria,
  *   agora abas de `/sessions/:s/settings`)
+ *
+ * Fase L (pedido do fundador, 2026-08-15) — 5º destino: **Contatos**, entre
+ * Conversas e Pipeline. Nasceu como aba "Leads" de Configurações (Bloco
+ * L1b) e migrou para cá: é consulta/importação do dia a dia, não
+ * administração da empresa.
  *
  * Reskin 2026-08-06 (Design System §5/§7): `ThemeToggle` migra para AQUI
  * (antes vivia isolado no `Header` genérico, que não é mais renderizado
@@ -80,6 +85,12 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
   const base = `/sessions/${encodeURIComponent(sessionName)}`;
   const items: RailItem[] = [
     { href: `${base}/conversations`, label: 'Conversas', icon: MessageSquare },
+    // Fase L (pedido do fundador, 2026-08-15): item próprio do rail, entre
+    // Conversas e Pipeline — antes vivia como aba "Leads" dentro de
+    // Configurações. Sem `requiresManager`: a base de contatos é consulta do
+    // dia a dia (permissão `contact:read` já libera desde OPERATOR); só a
+    // IMPORTAÇÃO em lote, dentro da própria tela, exige administrator/owner.
+    { href: `${base}/contacts`, label: 'Contatos', icon: Contact },
     { href: `${base}/pipeline`, label: 'Pipeline', icon: Kanban },
     { href: `${base}/analytics`, label: 'Analytics', icon: BarChart3, requiresManager: true },
     { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },
