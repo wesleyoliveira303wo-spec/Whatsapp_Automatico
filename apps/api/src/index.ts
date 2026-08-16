@@ -178,6 +178,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createAnalyticsComposition },
       { createQuickRepliesComposition },
       { createTagsComposition },
+      { createContactsComposition },
       { createAuthComposition },
       { createAuthenticate },
       { requirePermission },
@@ -196,6 +197,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       import('./services/quickReplies/compositionRoot'),
       // Redesign 2026-08-05 (R4) — tags, mesmo racional (CRUD sem Redis).
       import('./services/tags/compositionRoot'),
+      // Fase L, Bloco L1b — contatos, mesmo racional (CRUD sem Redis).
+      import('./services/contacts/compositionRoot'),
       import('./services/auth/compositionRoot'),
       import('./shared/presentation/authenticate'),
       import('./shared/presentation/requirePermission'),
@@ -359,6 +362,13 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         '/api/tenants/:tenantId/conversations/:conversationId/tags',
         degradedTags.tagErrorHandler,
       );
+
+      // Fase L, Bloco L1b — contatos: CRUD autocontido sobre Postgres, sem
+      // fila, mesmo racional de Tags/Respostas Rápidas acima. TENANT-WIDE
+      // (não por sessão) — ver docstring de `WhatsAppContact`.
+      const degradedContacts = createContactsComposition(prisma, logger);
+      app.use('/api/tenants/:tenantId/contacts', authenticate, degradedContacts.contactsRouter);
+      app.use('/api/tenants/:tenantId/contacts', degradedContacts.contactsErrorHandler);
 
       shutdownHandles = { prisma };
       return;
@@ -560,6 +570,13 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       tags.conversationTagRouter,
     );
     app.use('/api/tenants/:tenantId/conversations/:conversationId/tags', tags.tagErrorHandler);
+
+    // Fase L, Bloco L1b — contatos: TENANT-WIDE (não por sessão), mesmo
+    // racional de Tags acima. RBAC POR ROTA dentro do router
+    // (contact:read na listagem, contact:manage na importação).
+    const contacts = createContactsComposition(prisma, logger);
+    app.use('/api/tenants/:tenantId/contacts', authenticate, contacts.contactsRouter);
+    app.use('/api/tenants/:tenantId/contacts', contacts.contactsErrorHandler);
 
     // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
     // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)

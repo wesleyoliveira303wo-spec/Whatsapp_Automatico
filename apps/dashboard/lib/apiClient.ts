@@ -167,3 +167,12 @@ export const callQuickRepliesApi = createApiClient('sessions');
  * `message:send` já usada para mover card no Pipeline).
  */
 export const callTagsApi = createApiClient('sessions');
+
+/**
+ * Cliente do recurso `contacts` (Fase L, Bloco L1b — importação de leads),
+ * consumido por `pages/api/contacts/*`. TENANT-WIDE (diferente de
+ * `callTagsApi`/`callAiProfileApi`, cujo path inclui `sessionName`) —
+ * `WhatsAppContact` não pertence a uma sessão, ver docstring do model no
+ * `schema.prisma`. RBAC (contact:read/manage) imposto pela API.
+ */
+export const callContactsApi = createApiClient('contacts');

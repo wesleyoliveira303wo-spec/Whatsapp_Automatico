@@ -1,0 +1,180 @@
+import express from 'express';
+import request from 'supertest';
+
+import { createContactsRouter } from '../../../../src/services/contacts/presentation/contactsRouter';
+import { createContactsErrorHandler } from '../../../../src/services/contacts/presentation/contactsErrorHandler';
+import { ContactImportService } from '../../../../src/services/contacts/application/ContactImportService';
+import { Principal, RequestWithPrincipal } from '../../../../src/shared/presentation/authenticate';
+import { UserRole } from '../../../../src/services/auth/domain/entities/User';
+import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
+import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
+import { FakeContactRepository } from '../infrastructure/FakeContactRepository';
+
+/**
+ * Testes do contactsRouter (Fase L, Bloco L1b): RBAC por rota
+ * (GET->contact:read, POST /import->contact:manage) + IDOR entre tenants +
+ * a rota de importação (corpo CRU, não JSON). Principal injetado por
+ * middleware, mesma técnica de `tagRouter.test.ts`.
+ *
+ * Mount TENANT-WIDE (não por sessão): `/api/tenants/:tenantId/contacts`.
+ */
+function buildApp(principal?: Principal): {
+  app: express.Express;
+  contacts: FakeContactRepository;
+} {
+  const tenantRepository = new FakeTenantRepository();
+  tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
+  const contacts = new FakeContactRepository();
+  const importService = new ContactImportService(contacts, tenantRepository, new NoopLogger());
+
+  const app = express();
+  app.use(express.json());
+  app.use(
+    '/api/tenants/:tenantId/contacts',
+    (req, _res, next) => {
+      if (principal) (req as RequestWithPrincipal).principal = principal;
+      next();
+    },
+    createContactsRouter(contacts, importService),
+  );
+  app.use('/api/tenants/:tenantId/contacts', createContactsErrorHandler(new NoopLogger()));
+  return { app, contacts };
+}
+
+function person(role: UserRole): Principal {
+  return { kind: 'user', userId: 'user-1', tenantId: 'tenant-1', role };
+}
+const MACHINE: Principal = { kind: 'machine', tenantId: 'tenant-1' };
+
+function basePath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/contacts`;
+}
+
+describe('contactsRouter (Fase L, Bloco L1b)', () => {
+  describe('GET / (contact:read)', () => {
+    it('operator lê: lista vazia quando o tenant não tem nenhum contato (200)', async () => {
+      const { app } = buildApp(person('operator'));
+
+      const response = await request(app).get(basePath('tenant-1'));
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ contacts: [] });
+    });
+
+    it('devolve os contatos cadastrados', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777', name: 'Maria' });
+
+      const response = await request(app).get(basePath('tenant-1'));
+
+      expect(response.status).toBe(200);
+      expect(response.body.contacts).toHaveLength(1);
+      expect(response.body.contacts[0]).toMatchObject({ name: 'Maria' });
+    });
+
+    it('não mistura contatos de tenants diferentes (IDOR)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777', name: 'Tenant Um' });
+      contacts.seed({ tenantId: 'tenant-2', phoneE164: '5521977776666', name: 'Tenant Dois' });
+
+      const response = await request(app).get(basePath('tenant-1'));
+
+      expect(response.body.contacts).toHaveLength(1);
+      expect(response.body.contacts[0].name).toBe('Tenant Um');
+    });
+
+    it('read_only NÃO pode ler (403 — sem contact:read)', async () => {
+      const { app } = buildApp(person('read_only'));
+
+      const response = await request(app).get(basePath('tenant-1'));
+
+      expect(response.status).toBe(403);
+    });
+
+    it('plano máquina (chave da empresa) lê normalmente (200)', async () => {
+      const { app } = buildApp(MACHINE);
+
+      const response = await request(app).get(basePath('tenant-1'));
+
+      expect(response.status).toBe(200);
+    });
+
+    it('respeita o parâmetro search (filtra por nome/telefone)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777', name: 'Maria' });
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521977776666', name: 'João' });
+
+      const response = await request(app).get(`${basePath('tenant-1')}?search=maria`);
+
+      expect(response.body.contacts).toHaveLength(1);
+      expect(response.body.contacts[0].name).toBe('Maria');
+    });
+  });
+
+  describe('POST /import (contact:manage)', () => {
+    it('administrator importa um CSV e recebe o relatório (200)', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const csv = 'Nome,Telefone\nMaria,5521988887777';
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/import`)
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ totalRows: 1, created: 1 });
+      expect(await contacts.findByPhone('tenant-1', '5521988887777')).toMatchObject({
+        name: 'Maria',
+      });
+    });
+
+    it('operator NÃO pode importar (403 — sem contact:manage)', async () => {
+      const { app } = buildApp(person('operator'));
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/import`)
+        .set('Content-Type', 'text/csv')
+        .send('Nome,Telefone\nMaria,5521988887777');
+
+      expect(response.status).toBe(403);
+    });
+
+    it('rejeita corpo vazio (400)', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/import`)
+        .set('Content-Type', 'text/csv')
+        .send('');
+
+      expect(response.status).toBe(400);
+    });
+
+    it('devolve 404 quando o tenant não existe', async () => {
+      const { app } = buildApp({
+        kind: 'user',
+        userId: 'user-1',
+        tenantId: 'tenant-fantasma',
+        role: 'administrator',
+      });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-fantasma')}/import`)
+        .set('Content-Type', 'text/csv')
+        .send('Nome,Telefone\nMaria,5521988887777');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('não vaza dado ao importar num tenant e listar no outro (IDOR)', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+
+      await request(app)
+        .post(`${basePath('tenant-1')}/import`)
+        .set('Content-Type', 'text/csv')
+        .send('Nome,Telefone\nMaria,5521988887777');
+
+      expect(await contacts.findByPhone('tenant-2', '5521988887777')).toBeUndefined();
+    });
+  });
+});

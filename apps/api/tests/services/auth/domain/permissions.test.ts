@@ -75,6 +75,18 @@ describe('permissions / hasPermission (Milestone 5, Bloco M5D)', () => {
     expect(hasPermission('operator', 'tag:manage')).toBe(false);
     expect(hasPermission('read_only', 'tag:read')).toBe(false);
   });
+
+  it('Contatos (Fase L, Bloco L1b): qualquer papel a partir de OPERATOR lê a base; só administrator/owner importam em lote', () => {
+    expect(hasPermission('owner', 'contact:read')).toBe(true);
+    expect(hasPermission('owner', 'contact:manage')).toBe(true);
+    expect(hasPermission('administrator', 'contact:read')).toBe(true);
+    expect(hasPermission('administrator', 'contact:manage')).toBe(true);
+    expect(hasPermission('manager', 'contact:read')).toBe(true);
+    expect(hasPermission('manager', 'contact:manage')).toBe(false);
+    expect(hasPermission('operator', 'contact:read')).toBe(true);
+    expect(hasPermission('operator', 'contact:manage')).toBe(false);
+    expect(hasPermission('read_only', 'contact:read')).toBe(false);
+  });
 });
 
 describe('permissions / outranks (Milestone 5, Bloco M5E)', () => {

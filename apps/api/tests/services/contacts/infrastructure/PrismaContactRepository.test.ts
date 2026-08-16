@@ -1,0 +1,206 @@
+import { PrismaContactRepository } from '../../../../src/services/contacts/infrastructure/repositories/PrismaContactRepository';
+
+function createFakePrisma(): {
+  whatsAppContact: {
+    upsert: jest.Mock;
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    updateMany: jest.Mock;
+    findMany: jest.Mock;
+  };
+} {
+  return {
+    whatsAppContact: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      updateMany: jest.fn(),
+      findMany: jest.fn(),
+    },
+  };
+}
+
+const SAMPLE_ROW = {
+  id: 'contact-1',
+  tenantId: 'tenant-1',
+  phoneE164: '5521988887777',
+  name: null as string | null,
+  source: 'WHATSAPP',
+  createdAt: new Date('2026-08-15T00:00:00Z'),
+  updatedAt: new Date('2026-08-15T00:00:00Z'),
+};
+
+describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
+  describe('findOrCreateByPhone()', () => {
+    it('faz upsert pela chave única (tenantId, phoneE164), com update vazio (nunca sobrescreve)', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.upsert.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.findOrCreateByPhone({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        name: 'Maria',
+        source: 'import',
+      });
+
+      expect(prisma.whatsAppContact.upsert).toHaveBeenCalledWith({
+        where: {
+          tenantId_phoneE164: { tenantId: 'tenant-1', phoneE164: '5521988887777' },
+        },
+        update: {},
+        create: {
+          tenantId: 'tenant-1',
+          phoneE164: '5521988887777',
+          name: 'Maria',
+          source: 'IMPORT',
+        },
+      });
+    });
+
+    it('mapeia source enum (Domain <-> Prisma) nos dois sentidos', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.upsert.mockResolvedValue({ ...SAMPLE_ROW, source: 'MANUAL' });
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.findOrCreateByPhone({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        source: 'manual',
+      });
+
+      expect(result.source).toBe('manual');
+    });
+
+    it('converte name null do banco para undefined no Domain', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.upsert.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.findOrCreateByPhone({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        source: 'whatsapp',
+      });
+
+      expect(result.name).toBeUndefined();
+    });
+  });
+
+  describe('findByPhone()', () => {
+    it('busca por (tenantId, phoneE164) via findUnique', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findUnique.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.findByPhone('tenant-1', '5521988887777');
+
+      expect(prisma.whatsAppContact.findUnique).toHaveBeenCalledWith({
+        where: { tenantId_phoneE164: { tenantId: 'tenant-1', phoneE164: '5521988887777' } },
+      });
+      expect(result?.id).toBe('contact-1');
+    });
+
+    it('devolve undefined quando não existe', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findUnique.mockResolvedValue(null);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      expect(await repo.findByPhone('tenant-1', '5521900000000')).toBeUndefined();
+    });
+  });
+
+  describe('findById()', () => {
+    it('busca escopado por (id, tenantId) via findFirst — nunca devolve contato de outro tenant', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findFirst.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.findById('tenant-1', 'contact-1');
+
+      expect(prisma.whatsAppContact.findFirst).toHaveBeenCalledWith({
+        where: { id: 'contact-1', tenantId: 'tenant-1' },
+      });
+    });
+  });
+
+  describe('setNameIfMissing()', () => {
+    it('atualiza via updateMany com name: null no where — só preenche, nunca sobrescreve', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.updateMany.mockResolvedValue({ count: 1 });
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.setNameIfMissing('tenant-1', 'contact-1', 'Maria da Padaria');
+
+      expect(prisma.whatsAppContact.updateMany).toHaveBeenCalledWith({
+        where: { id: 'contact-1', tenantId: 'tenant-1', name: null },
+        data: { name: 'Maria da Padaria' },
+      });
+    });
+  });
+
+  describe('listByTenant()', () => {
+    it('lista por tenantId, ordenado por createdAt+id desc, sem filtro de busca', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([SAMPLE_ROW]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.listByTenant('tenant-1', { limit: 20 });
+
+      expect(prisma.whatsAppContact.findMany).toHaveBeenCalledWith({
+        where: { tenantId: 'tenant-1' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 21,
+      });
+      expect(result.contacts).toHaveLength(1);
+      expect(result.nextCursor).toBeUndefined();
+    });
+
+    it('aplica cursor com skip: 1 quando informado', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.listByTenant('tenant-1', { limit: 20, cursor: 'contact-1' });
+
+      expect(prisma.whatsAppContact.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ cursor: { id: 'contact-1' }, skip: 1 }),
+      );
+    });
+
+    it('filtra por nome OU telefone (case-insensitive no nome) quando search é informado', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.listByTenant('tenant-1', { limit: 20, search: 'maria' });
+
+      expect(prisma.whatsAppContact.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            tenantId: 'tenant-1',
+            OR: [
+              { name: { contains: 'maria', mode: 'insensitive' } },
+              { phoneE164: { contains: 'maria' } },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('devolve nextCursor quando há mais uma página (busca limit+1 e corta)', async () => {
+      const prisma = createFakePrisma();
+      const rows = Array.from({ length: 3 }, (_, i) => ({
+        ...SAMPLE_ROW,
+        id: `contact-${i + 1}`,
+      }));
+      prisma.whatsAppContact.findMany.mockResolvedValue(rows);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.listByTenant('tenant-1', { limit: 2 });
+
+      expect(result.contacts).toHaveLength(2);
+      expect(result.nextCursor).toBe('contact-2');
+    });
+  });
+});

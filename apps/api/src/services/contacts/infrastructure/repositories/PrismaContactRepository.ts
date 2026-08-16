@@ -1,7 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { Contact, ContactSource } from '../../domain/entities/Contact';
-import { ContactRepository, CreateContactData } from '../../domain/repositories/ContactRepository';
+import {
+  ContactPage,
+  ContactRepository,
+  CreateContactData,
+  ListContactsOptions,
+} from '../../domain/repositories/ContactRepository';
 
 /** Shape mínimo lido do banco — mesmo racional dos demais repositórios Prisma deste projeto. */
 interface ContactRow {
@@ -95,5 +100,45 @@ export class PrismaContactRepository implements ContactRepository {
       where: { id: contactId, tenantId },
     });
     return row ? toDomain(row) : undefined;
+  }
+
+  /**
+   * `name: null` FAZ PARTE do critério — ver docstring do port. Uma linha que
+   * já tem nome simplesmente não casa com o `where` (`count === 0`, sem
+   * erro), então a chamada é segura de repetir a cada reimportação.
+   */
+  async setNameIfMissing(tenantId: string, contactId: string, name: string): Promise<void> {
+    await this.prisma.whatsAppContact.updateMany({
+      where: { id: contactId, tenantId, name: null },
+      data: { name },
+    });
+  }
+
+  /** Paginação por cursor — mesmo padrão de `PrismaAuditLogRepository.listByTenant`. */
+  async listByTenant(tenantId: string, options: ListContactsOptions): Promise<ContactPage> {
+    const search = options.search?.trim();
+    const rows = await this.prisma.whatsAppContact.findMany({
+      where: {
+        tenantId,
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { phoneE164: { contains: search } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: options.limit + 1,
+      ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+    });
+
+    const hasMore = rows.length > options.limit;
+    const page = hasMore ? rows.slice(0, options.limit) : rows;
+    const contacts = page.map(toDomain);
+    const nextCursor = hasMore ? page[page.length - 1].id : undefined;
+
+    return { contacts, nextCursor };
   }
 }

@@ -447,6 +447,83 @@ export function unassignConversationTag(conversationId: string, tagId: string): 
   );
 }
 
+// --- Contatos / Leads (Fase L, Blocos L1/L1b) ---
+// Identidade durável de PESSOA, por TENANT (não por sessão): a mesma pessoa
+// falando com dois WhatsApps da empresa é um contato só. Ver docstring de
+// `WhatsAppContact` no `schema.prisma`.
+
+export interface Contact {
+  id: string;
+  tenantId: string;
+  phoneE164: string;
+  name?: string;
+  source: 'whatsapp' | 'import' | 'manual';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactPage {
+  contacts: Contact[];
+  nextCursor?: string;
+}
+
+/** Lista os contatos do tenant, paginado por cursor. Exige `contact:read` (operator+). */
+export function fetchContacts(
+  options: {
+    limit?: number;
+    cursor?: string;
+    search?: string;
+  } = {},
+): Promise<ContactPage> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  if (options.cursor) params.set('cursor', options.cursor);
+  if (options.search) params.set('search', options.search);
+  const query = params.toString();
+  return request(`/api/contacts${query ? `?${query}` : ''}`);
+}
+
+/** Motivo pelo qual uma linha da planilha foi rejeitada — espelha `InvalidImportRowReason` (`apps/api`). */
+export type ContactImportRowReason = 'missing_phone' | 'invalid_phone' | 'duplicate_in_file';
+
+export interface ContactImportInvalidRow {
+  rowNumber: number;
+  reason: ContactImportRowReason;
+  rawPhone?: string;
+}
+
+export interface ContactImportReport {
+  totalRows: number;
+  created: number;
+  enriched: number;
+  unchanged: number;
+  invalid: ContactImportInvalidRow[];
+}
+
+/**
+ * Envia o TEXTO CRU de um arquivo `.csv` para importação de leads. Exige
+ * `contact:manage` (administrator/owner) — uma importação em lote afeta a
+ * base do tenant inteiro de uma vez.
+ *
+ * Corpo NÃO é JSON (diferente de todo outro método deste arquivo) — por
+ * isso não usa `request()`, que sempre serializa `body` como JSON e sempre
+ * espera resposta JSON (esta rota também devolve JSON, então o parse de
+ * resposta é reaproveitado; só o corpo ENVIADO foge do padrão).
+ */
+export async function importContacts(csvText: string): Promise<ContactImportReport> {
+  const response = await fetch('/api/contacts/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/csv' },
+    body: csvText,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new ClientApiError(response.status, body);
+  }
+  return body as ContactImportReport;
+}
+
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
   return request('/api/sessions');
 }

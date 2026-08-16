@@ -8,14 +8,26 @@ export interface CreateContactData {
   source: ContactSource;
 }
 
+/** Opções de listagem paginada — mesmo formato de `ListAuditLogsOptions` (cursor por id, limit obrigatório). */
+export interface ListContactsOptions {
+  limit: number;
+  cursor?: string;
+  /** Filtro por texto livre (nome OU telefone) — Bloco L1b, tela "Leads". */
+  search?: string;
+}
+
+/** Página de resultado — `nextCursor` ausente indica fim, mesmo contrato de `AuditLogPage`. */
+export interface ContactPage {
+  contacts: Contact[];
+  nextCursor?: string;
+}
+
 /**
- * Porta (port) de persistência de contatos — Fase L, Bloco L1.
+ * Porta (port) de persistência de contatos — Fase L, Blocos L1/L1b.
  *
- * Deliberadamente pequena: só o que o Bloco L1 precisa. Listagem paginada,
- * busca por nome e edição entram junto com as telas que as consumirem
- * (importação de planilha e cadastro), não antes — mesma disciplina de YAGNI
- * já aplicada a `AiInteractionRepository` (que nasceu só com `record`/
- * `linkMessage`) e a `AiBusinessProfileRepository`.
+ * `listByTenant`/`setNameIfMissing` nasceram no L1b (importação de planilha),
+ * não no L1 — mesma disciplina de YAGNI já registrada aqui: só o que o bloco
+ * em execução precisa.
  */
 export interface ContactRepository {
   /**
@@ -42,4 +54,30 @@ export interface ContactRepository {
 
   /** Busca por id, escopada ao tenant (nunca devolve contato de outro tenant). */
   findById(tenantId: string, contactId: string): Promise<Contact | undefined>;
+
+  /**
+   * Preenche `name` de um contato que AINDA NÃO TEM nome — usado pela
+   * importação de planilha para dar nome a contatos criados automaticamente
+   * pelo WhatsApp (a esmagadora maioria dos contatos hoje: eles nascem sem
+   * nome, porque quem os cria é uma mensagem recebida, não uma pessoa).
+   *
+   * SÓ PREENCHE, NUNCA SOBRESCREVE (mesmo padrão de `linkContact` em
+   * `ConversationRepository`): implementações devem incluir `name: null` no
+   * critério de busca. Reimportar a mesma planilha, ou importar uma segunda
+   * lista que cita a mesma pessoa com um nome diferente, nunca apaga um nome
+   * já definido — seja ele de uma importação anterior ou de uma edição manual
+   * futura. `source` original NUNCA muda aqui: representa como o contato
+   * ENTROU no sistema pela primeira vez, não a última operação sobre ele.
+   *
+   * Não-op silencioso se o contato não existir/não pertencer ao tenant/já
+   * tiver nome — mesmo espírito de `incrementUnreadCount`.
+   */
+  setNameIfMissing(tenantId: string, contactId: string, name: string): Promise<void>;
+
+  /**
+   * Lista contatos do tenant, paginado por cursor (ver `ListContactsOptions`).
+   * Ordenado por `createdAt` decrescente (mais recentes primeiro) — mesma
+   * convenção de listagens recentes deste projeto.
+   */
+  listByTenant(tenantId: string, options: ListContactsOptions): Promise<ContactPage>;
 }

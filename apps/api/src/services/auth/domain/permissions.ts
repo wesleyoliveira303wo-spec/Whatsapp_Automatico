@@ -26,6 +26,8 @@ export type Permission =
   | 'quick_reply:manage'
   | 'tag:read'
   | 'tag:manage'
+  | 'contact:read'
+  | 'contact:manage'
   | 'user:read'
   | 'user:create'
   | 'user:update'
@@ -61,6 +63,11 @@ const OPERATOR: readonly Permission[] = [
   // tags numa conversa (so o CATALOGO — criar/editar/remover tag — exige
   // administrator+, mesmo racional de quick_reply).
   'tag:read',
+  // Fase L, Bloco L1b — quem ja atende ja pode consultar a base de leads
+  // (nome/telefone/origem) enquanto trabalha. So a IMPORTACAO em lote exige
+  // administrator+ (`contact:manage`), mesmo racional de quick_reply/tag:
+  // uma importacao errada polui a base do tenant inteiro de uma vez.
+  'contact:read',
 ];
 
 const MANAGER: readonly Permission[] = [
@@ -90,6 +97,11 @@ const ADMINISTRATOR: readonly Permission[] = [
   // administracao da empresa. Ver/atribuir tag numa conversa ja esta
   // liberado desde OPERATOR (`tag:read` acima).
   'tag:manage',
+  // Fase L, Bloco L1b — importar uma planilha de leads e administracao da
+  // empresa (afeta o tenant inteiro de uma vez), mesmo nivel de
+  // ai_profile:update/quick_reply:manage. LER a base ja esta liberado desde
+  // OPERATOR (`contact:read` acima).
+  'contact:manage',
 ];
 
 /**
