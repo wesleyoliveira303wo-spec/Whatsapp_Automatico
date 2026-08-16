@@ -141,9 +141,7 @@ describe('LeadsPanel (Fase L, Bloco L1b)', () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(clientApi.importContacts).toHaveBeenCalledWith(
-        'Nome,Telefone\nMaria,5521988887777',
-      );
+      expect(clientApi.importContacts).toHaveBeenCalledWith('Nome,Telefone\nMaria,5521988887777');
     });
     await waitFor(() => {
       expect(toast).toHaveBeenCalledWith(

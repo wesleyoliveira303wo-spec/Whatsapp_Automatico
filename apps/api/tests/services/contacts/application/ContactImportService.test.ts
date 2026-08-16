@@ -107,14 +107,17 @@ describe('ContactImportService', () => {
   it('lança TenantNotFoundError para tenant inexistente', async () => {
     const { service } = buildSut();
 
-    await expect(service.importCsv('tenant-fantasma', 'Nome,Telefone\nX,5521988887777')).rejects.toThrow(
-      TenantNotFoundError,
-    );
+    await expect(
+      service.importCsv('tenant-fantasma', 'Nome,Telefone\nX,5521988887777'),
+    ).rejects.toThrow(TenantNotFoundError);
   });
 
   it('lança TooManyImportRowsError acima do teto de linhas', async () => {
     const { service } = buildSut();
-    const rows = Array.from({ length: 5_001 }, (_, i) => `Lead ${i},552199999${String(i).padStart(4, '0')}`);
+    const rows = Array.from(
+      { length: 5_001 },
+      (_, i) => `Lead ${i},552199999${String(i).padStart(4, '0')}`,
+    );
     const csv = `Nome,Telefone\n${rows.join('\n')}`;
 
     await expect(service.importCsv('tenant-1', csv)).rejects.toThrow(TooManyImportRowsError);

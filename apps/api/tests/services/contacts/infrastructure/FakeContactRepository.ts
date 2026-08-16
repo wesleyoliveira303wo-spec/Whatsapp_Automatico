@@ -67,14 +67,11 @@ export class FakeContactRepository implements ContactRepository {
 
     if (search) {
       all = all.filter(
-        (row) =>
-          row.name?.toLowerCase().includes(search) || row.phoneE164.includes(search),
+        (row) => row.name?.toLowerCase().includes(search) || row.phoneE164.includes(search),
       );
     }
 
-    const startIndex = options.cursor
-      ? all.findIndex((row) => row.id === options.cursor) + 1
-      : 0;
+    const startIndex = options.cursor ? all.findIndex((row) => row.id === options.cursor) + 1 : 0;
     const page = all.slice(startIndex, startIndex + options.limit);
     const nextCursor =
       startIndex + options.limit < all.length ? page[page.length - 1]?.id : undefined;

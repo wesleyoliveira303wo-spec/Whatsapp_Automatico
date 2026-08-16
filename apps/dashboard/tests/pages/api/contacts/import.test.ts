@@ -47,7 +47,8 @@ describe('POST /api/contacts/import (Fase L, Bloco L1b)', () => {
   it('corpo dentro do limite: repassa o CSV cru à API (Content-Type text/csv) e devolve o relatório', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       status: 200,
-      text: async () => JSON.stringify({ totalRows: 1, created: 1, enriched: 0, unchanged: 0, invalid: [] }),
+      text: async () =>
+        JSON.stringify({ totalRows: 1, created: 1, enriched: 0, unchanged: 0, invalid: [] }),
     }) as unknown as typeof fetch;
 
     const req = createFakeStreamReq({});

@@ -84,9 +84,7 @@ describe('mapImportRows', () => {
       ['Maria Silva', '5565988887777'], // com o 9 — mesmo aparelho
     ]);
 
-    expect(result.valid).toEqual([
-      { rowNumber: 1, phoneE164: '5565988887777', name: 'Maria' },
-    ]);
+    expect(result.valid).toEqual([{ rowNumber: 1, phoneE164: '5565988887777', name: 'Maria' }]);
     expect(result.invalid).toEqual([
       { rowNumber: 2, reason: 'duplicate_in_file', rawPhone: '5565988887777' },
     ]);
