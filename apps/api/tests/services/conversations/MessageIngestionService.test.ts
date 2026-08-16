@@ -7,6 +7,7 @@ import {
   FakeAiAvailabilityRepository,
   FakeAiRateLimiter,
   FakeContactResolver,
+  FakeOptOutDetector,
 } from './testDoubles';
 
 function buildSut(): {
@@ -17,6 +18,7 @@ function buildSut(): {
   aiAvailabilityRepository: FakeAiAvailabilityRepository;
   aiRateLimiter: FakeAiRateLimiter;
   contactResolver: FakeContactResolver;
+  optOutDetector: FakeOptOutDetector;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
@@ -24,6 +26,7 @@ function buildSut(): {
   const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
   const aiRateLimiter = new FakeAiRateLimiter();
   const contactResolver = new FakeContactResolver();
+  const optOutDetector = new FakeOptOutDetector();
   const sut = new MessageIngestionService(
     conversationRepository,
     messageRepository,
@@ -31,6 +34,7 @@ function buildSut(): {
     aiAvailabilityRepository,
     aiRateLimiter,
     contactResolver,
+    optOutDetector,
   );
   return {
     sut,
@@ -40,6 +44,7 @@ function buildSut(): {
     aiAvailabilityRepository,
     aiRateLimiter,
     contactResolver,
+    optOutDetector,
   };
 }
 
@@ -579,6 +584,56 @@ describe('MessageIngestionService', () => {
         .mockRejectedValue(new Error('falha simulada de banco'));
 
       await expect(sut.handle(buildInboundMessage())).resolves.toBeUndefined();
+
+      expect(messageRepository.getAll()).toHaveLength(1);
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+    });
+  });
+
+  // Fase L, Bloco L2 — opt-out automático por palavra-chave.
+  describe('opt-out automático', () => {
+    it('aciona o detector com o contactId resolvido e o conteúdo da mensagem', async () => {
+      const { sut, optOutDetector } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'PARAR' }));
+
+      expect(optOutDetector.calls).toEqual([
+        { tenantId: 'tenant-1', contactId: 'contact-1', content: 'PARAR' },
+      ]);
+    });
+
+    it('aciona o detector mesmo quando o contato já estava vinculado (não só na primeira mensagem)', async () => {
+      const { sut, optOutDetector } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'Olá' }));
+      await sut.handle(buildInboundMessage({ content: 'PARAR' }));
+
+      expect(optOutDetector.calls).toHaveLength(2);
+    });
+
+    it('NÃO aciona o detector para mensagem outbound (operador de outro dispositivo)', async () => {
+      const { sut, optOutDetector } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'PARAR', direction: 'outbound' }));
+
+      expect(optOutDetector.calls).toHaveLength(0);
+    });
+
+    it('NÃO aciona o detector quando não há identidade resolvível (ex.: LID)', async () => {
+      const { sut, optOutDetector, contactResolver } = buildSut();
+      contactResolver.setUnresolvable();
+
+      await sut.handle(buildInboundMessage({ content: 'PARAR', from: '225236742053984@lid' }));
+
+      expect(optOutDetector.calls).toHaveLength(0);
+    });
+
+    // O detector nunca lança (mesmo contrato de ContactResolver), então este
+    // teste só confirma que a ingestão não precisa de try/catch ao redor dele.
+    it('a chamada ao detector não interrompe o restante da ingestão', async () => {
+      const { sut, messageRepository, aiReplyScheduler } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'PARAR' }));
 
       expect(messageRepository.getAll()).toHaveLength(1);
       expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);

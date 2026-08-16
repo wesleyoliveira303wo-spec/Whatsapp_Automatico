@@ -92,4 +92,18 @@ export interface ContactRepository {
    * convenção de listagens recentes deste projeto.
    */
   listByTenant(tenantId: string, options: ListContactsOptions): Promise<ContactPage>;
+
+  /**
+   * Grava (ou limpa, com `at: null`) `optOutAt` — Fase L, Bloco L2.
+   * Incondicional (não "só preenche"): diferente de `setNameIfMissing`, um
+   * opt-out precisa poder ser revertido por um opt-in manual, e um novo
+   * opt-out precisa atualizar a data mesmo que já houvesse uma anterior
+   * (sustenta reconstruir a linha do tempo via `ConsentEvent`, que é o
+   * registro append-only — este campo é só o estado ATUAL).
+   *
+   * Devolve o `Contact` atualizado, ou `undefined` (não lança) se não
+   * existir/não pertencer ao tenant — mesmo padrão de `markAsRead` em
+   * `ConversationRepository`.
+   */
+  setOptOutAt(tenantId: string, contactId: string, at: Date | null): Promise<Contact | undefined>;
 }

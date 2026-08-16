@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 
 import { PrismaContactRepository } from '../../src/services/contacts/infrastructure/repositories/PrismaContactRepository';
+import { PrismaConsentEventRepository } from '../../src/services/contacts/infrastructure/repositories/PrismaConsentEventRepository';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
@@ -22,6 +23,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 describe('Integração real — identidade de contato (Fase L, Bloco L1)', () => {
   let prisma: PrismaClient;
   let repository: PrismaContactRepository;
+  let consentEventRepository: PrismaConsentEventRepository;
   let databaseAvailable = true;
   const tenantId = `test-tenant-contacts-${Date.now()}`;
 
@@ -34,6 +36,7 @@ describe('Integração real — identidade de contato (Fase L, Bloco L1)', () =>
       databaseAvailable = false;
     }
     repository = new PrismaContactRepository(prisma);
+    consentEventRepository = new PrismaConsentEventRepository(prisma);
   });
 
   afterAll(async () => {
@@ -152,5 +155,40 @@ describe('Integração real — identidade de contato (Fase L, Bloco L1)', () =>
     expect(sobreviveu).not.toBeNull();
     // `onDelete: SetNull` — a conversa perde o vínculo, nunca a existência.
     expect(sobreviveu?.contactId).toBeNull();
+  });
+
+  // Fase L, Bloco L2 — o log de consentimento precisa sobreviver à exclusão
+  // do contato que descreve (mesma garantia de AuditLog/WhatsAppSessionEvent).
+  // Um Fake nunca provaria isso: é a AUSÊNCIA de FK para WhatsAppContact no
+  // schema real que sustenta a garantia, não lógica de aplicação.
+  it('opt-out grava optOutAt no contato e o ConsentEvent SOBREVIVE à exclusão do contato', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const contato = await repository.findOrCreateByPhone({
+      tenantId,
+      phoneE164: '5521944445555',
+      source: 'whatsapp',
+    });
+
+    const atualizado = await repository.setOptOutAt(tenantId, contato.id, new Date());
+    expect(atualizado?.optOutAt).toBeInstanceOf(Date);
+
+    const evento = await consentEventRepository.record({
+      tenantId,
+      contactId: contato.id,
+      type: 'opt_out',
+      reason: 'teste de integração',
+    });
+
+    await prisma.whatsAppContact.delete({ where: { id: contato.id } });
+
+    const eventoSobreviveu = await prisma.contactConsentEvent.findUnique({
+      where: { id: evento.id },
+    });
+    expect(eventoSobreviveu).not.toBeNull();
+    expect(eventoSobreviveu?.contactId).toBe(contato.id);
   });
 });

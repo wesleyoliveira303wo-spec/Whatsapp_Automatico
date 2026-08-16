@@ -16,6 +16,9 @@ import { InMemorySlidingWindowAiRateLimiter } from './infrastructure/repositorie
 import { MessageIngestionService } from './application/MessageIngestionService';
 import { PrismaContactRepository } from '../contacts/infrastructure/repositories/PrismaContactRepository';
 import { WhatsAppJidContactResolver } from '../contacts/infrastructure/WhatsAppJidContactResolver';
+import { PrismaConsentEventRepository } from '../contacts/infrastructure/repositories/PrismaConsentEventRepository';
+import { ContactConsentService } from '../contacts/application/ContactConsentService';
+import { KeywordOptOutDetector } from '../contacts/infrastructure/KeywordOptOutDetector';
 import { ConversationsService } from './application/ConversationsService';
 import {
   WHATSAPP_OUTBOUND_QUEUE_NAME,
@@ -124,10 +127,21 @@ export function createConversationsComposition(
   // Fase L, Bloco L1 — identidade durável de contato. O adaptador vive em
   // `services/contacts` (contexto dono da identidade) e implementa a porta
   // estreita declarada aqui em `conversations/domain` — ver `ContactResolver`.
-  const contactResolver = new WhatsAppJidContactResolver(
-    new PrismaContactRepository(prisma),
+  const contactRepository = new PrismaContactRepository(prisma);
+  const contactResolver = new WhatsAppJidContactResolver(contactRepository, logger);
+
+  // Fase L, Bloco L2 — opt-out automático por palavra-chave. Mesma
+  // disposição: adaptador em `services/contacts`, porta estreita aqui.
+  // Reusa `contactRepository`/`tenantRepository` já instanciados acima —
+  // nenhuma conexão nova, mesma instância de `prisma`.
+  const consentEventRepository = new PrismaConsentEventRepository(prisma);
+  const contactConsentService = new ContactConsentService(
+    contactRepository,
+    consentEventRepository,
+    tenantRepository,
     logger,
   );
+  const optOutDetector = new KeywordOptOutDetector(contactConsentService, logger);
 
   const messageIngestionService = new MessageIngestionService(
     conversationRepository,
@@ -136,6 +150,7 @@ export function createConversationsComposition(
     aiAvailabilityRepository,
     aiRateLimiter,
     contactResolver,
+    optOutDetector,
   );
   const conversationsService = new ConversationsService(
     conversationRepository,

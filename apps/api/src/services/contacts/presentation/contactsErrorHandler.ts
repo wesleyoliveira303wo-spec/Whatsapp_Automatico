@@ -2,14 +2,16 @@ import { ErrorRequestHandler } from 'express';
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { TooManyImportRowsError } from '../domain/errors/TooManyImportRowsError';
+import { ContactNotFoundError } from '../domain/errors/ContactNotFoundError';
 
 /**
  * Middleware de erro (Express, 4 parâmetros) para `createContactsRouter` —
- * Fase L, Blocos L1/L1b. Mapeia `TenantNotFoundError` (404) e
- * `TooManyImportRowsError` (413, mesmo código de "arquivo grande demais" já
- * usado para mídia). Erros de forma do input (query inválida, corpo vazio)
- * já são resolvidos por `validateOrRespond`/checagem manual dentro do router
- * (400).
+ * Fase L, Blocos L1/L1b/L2. Mapeia `TenantNotFoundError` (404),
+ * `ContactNotFoundError` (404, Bloco L2 — opt-out/opt-in de um `id`
+ * inexistente/de outro tenant) e `TooManyImportRowsError` (413, mesmo código
+ * de "arquivo grande demais" já usado para mídia). Erros de forma do input
+ * (query inválida, corpo vazio) já são resolvidos por
+ * `validateOrRespond`/checagem manual dentro do router (400).
  *
  * Montado ESCOPADO ao path do router (D17), nunca globalmente — ver `index.ts`.
  */
@@ -21,6 +23,10 @@ export function createContactsErrorHandler(logger: Logger): ErrorRequestHandler 
     }
     if (error instanceof TenantNotFoundError) {
       res.status(404).json({ error: 'tenant_not_found', message: error.message });
+      return;
+    }
+    if (error instanceof ContactNotFoundError) {
+      res.status(404).json({ error: 'contact_not_found', message: error.message });
       return;
     }
     if (error instanceof TooManyImportRowsError) {

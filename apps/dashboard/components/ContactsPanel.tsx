@@ -2,19 +2,26 @@ import { useRef, useState } from 'react';
 import { Upload, Users } from 'lucide-react';
 
 import { useContacts } from '@/hooks/useContacts';
-import { ClientApiError, type ContactImportReport } from '@/lib/clientApi';
+import { ClientApiError, type Contact, type ContactImportReport } from '@/lib/clientApi';
 import { formatPhoneNumber, formatDateTime } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
 import ErrorState from '@/components/states/ErrorState';
 
 interface ContactsPanelProps {
-  /** Só administrator/owner veem o botão de importar — a barreira real é `contact:manage` na API. */
-  canImport: boolean;
+  /**
+   * Só administrator/owner veem o botão de importar E o botão de
+   * opt-out/opt-in por linha — as duas ações exigem `contact:manage` na API
+   * (mesmo nível de risco: afetam a base do tenant inteiro/o consentimento
+   * de uma pessoa, não são atendimento do dia a dia). A barreira real é
+   * sempre a API; isto é só cortesia de UX.
+   */
+  canManage: boolean;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -33,6 +40,16 @@ function errorMessageFor(error: unknown): string {
     }
   }
   return 'Não foi possível concluir a importação. Tente novamente.';
+}
+
+/** Fase L, Bloco L2 — mesma tradução de erro, para as ações de opt-out/opt-in. */
+function consentErrorMessageFor(error: unknown): string {
+  if (error instanceof ClientApiError) {
+    if (error.status === 403) return 'Seu cargo não permite alterar o consentimento deste contato.';
+    if (error.status === 401) return 'Sessão expirada — faça login novamente.';
+    if (error.status === 404) return 'Este contato não existe mais.';
+  }
+  return 'Não foi possível concluir a ação. Tente novamente.';
 }
 
 /** Resumo em uma frase do relatório de importação — para o toast de sucesso. */
@@ -54,7 +71,7 @@ function summarize(report: ContactImportReport): string {
  * (busca + lista + Card), sem os controles de edição inline (contatos ainda
  * não têm tela de edição manual — fica para um bloco futuro).
  */
-export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.Element {
+export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.Element {
   const {
     contacts,
     loading,
@@ -66,10 +83,44 @@ export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.El
     setSearch,
     refresh,
     importCsv,
+    optOut,
+    optIn,
   } = useContacts();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  // Fase L, Bloco L2 — id do contato com uma ação de opt-out/opt-in EM VOO,
+  // para desabilitar só o botão daquela linha (não a lista inteira).
+  const [togglingContactId, setTogglingContactId] = useState<string | null>(null);
+
+  async function handleToggleConsent(contact: Contact): Promise<void> {
+    setTogglingContactId(contact.id);
+    try {
+      if (contact.optOutAt) {
+        await optIn(contact.id);
+        toast({
+          variant: 'success',
+          title: 'Consentimento revertido',
+          description: 'Este contato voltou a poder receber campanhas.',
+        });
+      } else {
+        await optOut(contact.id);
+        toast({
+          variant: 'success',
+          title: 'Opt-out registrado',
+          description: 'Este contato não entrará mais em nenhuma campanha.',
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Não foi possível concluir',
+        description: consentErrorMessageFor(error),
+      });
+    } finally {
+      setTogglingContactId(null);
+    }
+  }
 
   /**
    * `FileReader`, não `File.prototype.text()` — deliberado: é o método de
@@ -122,7 +173,7 @@ export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.El
           placeholder="Buscar por nome ou telefone"
           className="h-[34px] flex-1 rounded-[9px] border-border bg-panel text-[13px]"
         />
-        {canImport && (
+        {canManage && (
           <>
             <input
               ref={fileInputRef}
@@ -160,7 +211,7 @@ export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.El
           description={
             search
               ? 'Tente buscar por outro nome ou telefone.'
-              : canImport
+              : canManage
                 ? 'Contatos aparecem aqui automaticamente quando alguém escreve no WhatsApp, ou importe uma planilha.'
                 : 'Contatos aparecem aqui automaticamente quando alguém escreve no WhatsApp.'
           }
@@ -177,9 +228,16 @@ export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.El
               data-testid={`contact-row-${contact.id}`}
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium text-foreground">
-                  {contact.name ?? formatPhoneNumber(contact.phoneE164)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-[13px] font-medium text-foreground">
+                    {contact.name ?? formatPhoneNumber(contact.phoneE164)}
+                  </p>
+                  {contact.optOutAt && (
+                    <Badge variant="warning" className="shrink-0">
+                      Opt-out
+                    </Badge>
+                  )}
+                </div>
                 {contact.name && (
                   <p className="truncate text-[12px] text-muted-foreground">
                     {formatPhoneNumber(contact.phoneE164)}
@@ -192,6 +250,22 @@ export default function ContactsPanel({ canImport }: ContactsPanelProps): JSX.El
               <span className="shrink-0 text-[12px] text-muted-foreground">
                 {formatDateTime(contact.createdAt)}
               </span>
+              {canManage && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={togglingContactId === contact.id}
+                  onClick={() => void handleToggleConsent(contact)}
+                >
+                  {togglingContactId === contact.id
+                    ? '…'
+                    : contact.optOutAt
+                      ? 'Reverter opt-out'
+                      : 'Marcar opt-out'}
+                </Button>
+              )}
             </div>
           ))}
         </div>

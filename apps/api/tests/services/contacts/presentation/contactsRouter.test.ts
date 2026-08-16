@@ -4,28 +4,38 @@ import request from 'supertest';
 import { createContactsRouter } from '../../../../src/services/contacts/presentation/contactsRouter';
 import { createContactsErrorHandler } from '../../../../src/services/contacts/presentation/contactsErrorHandler';
 import { ContactImportService } from '../../../../src/services/contacts/application/ContactImportService';
+import { ContactConsentService } from '../../../../src/services/contacts/application/ContactConsentService';
 import { Principal, RequestWithPrincipal } from '../../../../src/shared/presentation/authenticate';
 import { UserRole } from '../../../../src/services/auth/domain/entities/User';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeContactRepository } from '../infrastructure/FakeContactRepository';
+import { FakeConsentEventRepository } from '../infrastructure/FakeConsentEventRepository';
 
 /**
- * Testes do contactsRouter (Fase L, Bloco L1b): RBAC por rota
- * (GET->contact:read, POST /import->contact:manage) + IDOR entre tenants +
- * a rota de importação (corpo CRU, não JSON). Principal injetado por
- * middleware, mesma técnica de `tagRouter.test.ts`.
+ * Testes do contactsRouter (Fase L, Blocos L1b/L2): RBAC por rota
+ * (GET->contact:read, POST /import|opt-out|opt-in->contact:manage) + IDOR
+ * entre tenants + a rota de importação (corpo CRU, não JSON). Principal
+ * injetado por middleware, mesma técnica de `tagRouter.test.ts`.
  *
  * Mount TENANT-WIDE (não por sessão): `/api/tenants/:tenantId/contacts`.
  */
 function buildApp(principal?: Principal): {
   app: express.Express;
   contacts: FakeContactRepository;
+  events: FakeConsentEventRepository;
 } {
   const tenantRepository = new FakeTenantRepository();
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
   const contacts = new FakeContactRepository();
+  const events = new FakeConsentEventRepository();
   const importService = new ContactImportService(contacts, tenantRepository, new NoopLogger());
+  const consentService = new ContactConsentService(
+    contacts,
+    events,
+    tenantRepository,
+    new NoopLogger(),
+  );
 
   const app = express();
   app.use(express.json());
@@ -35,10 +45,10 @@ function buildApp(principal?: Principal): {
       if (principal) (req as RequestWithPrincipal).principal = principal;
       next();
     },
-    createContactsRouter(contacts, importService),
+    createContactsRouter(contacts, importService, consentService),
   );
   app.use('/api/tenants/:tenantId/contacts', createContactsErrorHandler(new NoopLogger()));
-  return { app, contacts };
+  return { app, contacts, events };
 }
 
 function person(role: UserRole): Principal {
@@ -175,6 +185,98 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
         .send('Nome,Telefone\nMaria,5521988887777');
 
       expect(await contacts.findByPhone('tenant-2', '5521988887777')).toBeUndefined();
+    });
+  });
+
+  describe('POST /:contactId/opt-out (contact:manage)', () => {
+    it('administrator marca opt-out e recebe o contato atualizado (200)', async () => {
+      const { app, contacts, events } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${id}/opt-out`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.contact.optOutAt).toBeTruthy();
+      expect(events.getAll()).toEqual([
+        expect.objectContaining({ contactId: id, type: 'opt_out', reason: 'manual' }),
+      ]);
+    });
+
+    it('registra o administrator autenticado como ator do evento', async () => {
+      const { app, contacts, events } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777' });
+
+      await request(app).post(`${basePath('tenant-1')}/${id}/opt-out`);
+
+      expect(events.getAll()[0].actorUserId).toBe('user-1');
+    });
+
+    it('operator NÃO pode marcar opt-out (403 — sem contact:manage)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${id}/opt-out`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('devolve 404 para um contactId inexistente', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app).post(
+        `${basePath('tenant-1')}/contact-fantasma/opt-out`,
+      );
+
+      expect(response.status).toBe(404);
+    });
+
+    it('devolve 404 (não vaza dado) para contato de OUTRO tenant', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'tenant-2', phoneE164: '5521988887777' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${id}/opt-out`);
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe('POST /:contactId/opt-in (contact:manage)', () => {
+    it('administrator reverte o opt-out e recebe o contato atualizado (200)', async () => {
+      const { app, contacts, events } = buildApp(person('administrator'));
+      const id = contacts.seed({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        optOutAt: new Date(),
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${id}/opt-in`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.contact.optOutAt).toBeFalsy();
+      expect(events.getAll()).toEqual([
+        expect.objectContaining({ contactId: id, type: 'opt_in' }),
+      ]);
+    });
+
+    it('operator NÃO pode reverter opt-out (403 — sem contact:manage)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      const id = contacts.seed({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        optOutAt: new Date(),
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${id}/opt-in`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('devolve 404 para um contactId inexistente', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app).post(`${basePath('tenant-1')}/contact-fantasma/opt-in`);
+
+      expect(response.status).toBe(404);
     });
   });
 });

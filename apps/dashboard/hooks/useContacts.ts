@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchContacts, importContacts } from '../lib/clientApi';
+import { fetchContacts, importContacts, optOutContact, optInContact } from '../lib/clientApi';
 import type { Contact, ContactImportReport } from '../lib/clientApi';
 
 export interface UseContactsResult {
@@ -13,6 +13,9 @@ export interface UseContactsResult {
   setSearch: (value: string) => void;
   refresh: () => void;
   importCsv: (csvText: string) => Promise<ContactImportReport>;
+  /** Fase L, Bloco L2 — atualiza a linha LOCALMENTE com o contato devolvido pela API, sem refazer a listagem inteira. */
+  optOut: (contactId: string) => Promise<void>;
+  optIn: (contactId: string) => Promise<void>;
 }
 
 const PAGE_SIZE = 20;
@@ -81,6 +84,16 @@ export function useContacts(): UseContactsResult {
     [refresh],
   );
 
+  const optOut = useCallback(async (contactId: string): Promise<void> => {
+    const { contact } = await optOutContact(contactId);
+    setContacts((current) => current.map((item) => (item.id === contact.id ? contact : item)));
+  }, []);
+
+  const optIn = useCallback(async (contactId: string): Promise<void> => {
+    const { contact } = await optInContact(contactId);
+    setContacts((current) => current.map((item) => (item.id === contact.id ? contact : item)));
+  }, []);
+
   return {
     contacts,
     loading,
@@ -92,5 +105,7 @@ export function useContacts(): UseContactsResult {
     setSearch,
     refresh,
     importCsv,
+    optOut,
+    optIn,
   };
 }

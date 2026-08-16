@@ -11,6 +11,7 @@ import { AiReplyScheduler } from '../../../src/services/conversations/domain/sch
 import { AiAvailabilityRepository } from '../../../src/services/conversations/domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../../../src/services/conversations/domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../../../src/services/conversations/domain/repositories/ContactResolver';
+import { OptOutDetector } from '../../../src/services/conversations/domain/repositories/OptOutDetector';
 
 /**
  * Fake compartilhado do `ConversationRepository` (Milestone 3, Bloco 2) — em
@@ -421,5 +422,17 @@ export class FakeContactResolver implements ContactResolver {
   /** Helper de teste: fixa o id devolvido, para asserções de vínculo. */
   setContactId(contactId: string): void {
     this.contactId = contactId;
+  }
+}
+
+/**
+ * Fase L, Bloco L2 — dublê de `OptOutDetector`. Reproduz o contrato real:
+ * NUNCA lança (mesmo que configurado para simular falha interna).
+ */
+export class FakeOptOutDetector implements OptOutDetector {
+  readonly calls: Array<{ tenantId: string; contactId: string; content: string }> = [];
+
+  async detectAndRecord(tenantId: string, contactId: string, content: string): Promise<void> {
+    this.calls.push({ tenantId, contactId, content });
   }
 }

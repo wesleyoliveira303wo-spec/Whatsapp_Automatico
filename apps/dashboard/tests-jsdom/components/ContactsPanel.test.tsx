@@ -12,6 +12,8 @@ jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   fetchContacts: jest.fn(),
   importContacts: jest.fn(),
+  optOutContact: jest.fn(),
+  optInContact: jest.fn(),
 }));
 
 jest.mock('../../components/ui/use-toast', () => ({
@@ -39,7 +41,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('carrega e lista os contatos ao montar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-    render(<ContactsPanel canImport={false} />);
+    render(<ContactsPanel canManage={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('Maria')).toBeInTheDocument();
@@ -51,7 +53,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       contacts: [contact({ name: undefined })],
     });
 
-    render(<ContactsPanel canImport={false} />);
+    render(<ContactsPanel canManage={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('+55 21 98888-7777')).toBeInTheDocument();
@@ -61,26 +63,26 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('mostra estado vazio quando não há contatos', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<ContactsPanel canImport={false} />);
+    render(<ContactsPanel canManage={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('Nenhum contato ainda')).toBeInTheDocument();
     });
   });
 
-  it('sem permissão de gerenciar (canImport=false): não mostra o botão de importar', async () => {
+  it('sem permissão de gerenciar (canManage=false): não mostra o botão de importar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-    render(<ContactsPanel canImport={false} />);
+    render(<ContactsPanel canManage={false} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     expect(screen.queryByRole('button', { name: /Importar planilha/ })).not.toBeInTheDocument();
   });
 
-  it('com permissão (canImport=true): mostra o botão de importar', async () => {
+  it('com permissão (canManage=true): mostra o botão de importar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<ContactsPanel canImport={true} />);
+    render(<ContactsPanel canManage={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     expect(screen.getByRole('button', { name: /Importar planilha/ })).toBeInTheDocument();
@@ -89,7 +91,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('busca refaz a listagem com o termo digitado', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<ContactsPanel canImport={false} />);
+    render(<ContactsPanel canManage={false} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalledTimes(1));
 
     fireEvent.change(screen.getByPlaceholderText('Buscar por nome ou telefone'), {
@@ -108,7 +110,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       .mockResolvedValueOnce({ contacts: [contact()], nextCursor: 'contact-1' })
       .mockResolvedValueOnce({ contacts: [contact({ id: 'contact-2', name: 'João' })] });
 
-    render(<ContactsPanel canImport={false} />);
+    render(<ContactsPanel canManage={false} />);
     await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }));
@@ -131,7 +133,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       invalid: [],
     });
 
-    render(<ContactsPanel canImport={true} />);
+    render(<ContactsPanel canManage={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'contatos.csv', {
@@ -160,7 +162,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       new ClientApiError(403, { error: 'forbidden' }),
     );
 
-    render(<ContactsPanel canImport={true} />);
+    render(<ContactsPanel canManage={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'contatos.csv', {
@@ -176,6 +178,94 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
           description: 'Seu cargo não permite importar contatos.',
         }),
       );
+    });
+  });
+
+  // Fase L, Bloco L2 — opt-out/opt-in manual.
+  describe('consentimento (opt-out/opt-in)', () => {
+    it('mostra a badge "Opt-out" quando o contato já está opt-out', async () => {
+      (clientApi.fetchContacts as jest.Mock).mockResolvedValue({
+        contacts: [contact({ optOutAt: '2026-08-16T00:00:00.000Z' })],
+      });
+
+      render(<ContactsPanel canManage={false} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Opt-out')).toBeInTheDocument();
+      });
+    });
+
+    it('sem permissão (canManage=false): não mostra o botão de opt-out/opt-in', async () => {
+      (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
+
+      render(<ContactsPanel canManage={false} />);
+      await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
+
+      expect(screen.queryByRole('button', { name: /opt-out/i })).not.toBeInTheDocument();
+    });
+
+    it('clicar em "Marcar opt-out" chama a API e mostra toast de sucesso', async () => {
+      (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
+      (clientApi.optOutContact as jest.Mock).mockResolvedValue({
+        contact: contact({ optOutAt: '2026-08-16T00:00:00.000Z' }),
+      });
+
+      render(<ContactsPanel canManage={true} />);
+      await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Marcar opt-out' }));
+
+      await waitFor(() => {
+        expect(clientApi.optOutContact).toHaveBeenCalledWith('contact-1');
+      });
+      await waitFor(() => {
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'success' }));
+      });
+      // A linha atualiza sozinha, sem precisar recarregar a lista inteira.
+      expect(await screen.findByText('Opt-out')).toBeInTheDocument();
+    });
+
+    it('para um contato já opt-out, o botão vira "Reverter opt-out" e chama optInContact', async () => {
+      (clientApi.fetchContacts as jest.Mock).mockResolvedValue({
+        contacts: [contact({ optOutAt: '2026-08-16T00:00:00.000Z' })],
+      });
+      (clientApi.optInContact as jest.Mock).mockResolvedValue({ contact: contact() });
+
+      render(<ContactsPanel canManage={true} />);
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Reverter opt-out' })).toBeInTheDocument(),
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reverter opt-out' }));
+
+      await waitFor(() => {
+        expect(clientApi.optInContact).toHaveBeenCalledWith('contact-1');
+      });
+      await waitFor(() => {
+        expect(screen.queryByText('Opt-out')).not.toBeInTheDocument();
+      });
+    });
+
+    it('mostra toast de erro (destructive) quando a ação falha', async () => {
+      const { ClientApiError } = jest.requireActual('../../lib/clientApi');
+      (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
+      (clientApi.optOutContact as jest.Mock).mockRejectedValue(
+        new ClientApiError(403, { error: 'forbidden' }),
+      );
+
+      render(<ContactsPanel canManage={true} />);
+      await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Marcar opt-out' }));
+
+      await waitFor(() => {
+        expect(toast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            variant: 'destructive',
+            description: 'Seu cargo não permite alterar o consentimento deste contato.',
+          }),
+        );
+      });
     });
   });
 });

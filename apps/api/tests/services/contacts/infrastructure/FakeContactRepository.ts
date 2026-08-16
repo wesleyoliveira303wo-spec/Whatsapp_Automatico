@@ -59,6 +59,20 @@ export class FakeContactRepository implements ContactRepository {
     this.rows.set(contactId, { ...row, name, updatedAt: FIXED_NOW });
   }
 
+  async setOptOutAt(
+    tenantId: string,
+    contactId: string,
+    at: Date | null,
+  ): Promise<Contact | undefined> {
+    const row = this.rows.get(contactId);
+    if (!row || row.tenantId !== tenantId) {
+      return undefined;
+    }
+    const updated: Contact = { ...row, optOutAt: at ?? undefined, updatedAt: FIXED_NOW };
+    this.rows.set(contactId, updated);
+    return updated;
+  }
+
   async listByTenant(tenantId: string, options: ListContactsOptions): Promise<ContactPage> {
     const search = options.search?.trim().toLowerCase();
     let all = [...this.rows.values()]
@@ -80,7 +94,9 @@ export class FakeContactRepository implements ContactRepository {
   }
 
   /** Helper de teste: pré-carrega um contato, devolvendo o `id` gerado. */
-  seed(data: Omit<CreateContactData, 'source'> & { source?: Contact['source'] }): string {
+  seed(
+    data: Omit<CreateContactData, 'source'> & { source?: Contact['source']; optOutAt?: Date },
+  ): string {
     const id = `contact-${this.nextId++}`;
     this.rows.set(id, {
       id,
@@ -88,6 +104,7 @@ export class FakeContactRepository implements ContactRepository {
       phoneE164: data.phoneE164,
       name: data.name,
       source: data.source ?? 'whatsapp',
+      optOutAt: data.optOutAt,
       createdAt: FIXED_NOW,
       updatedAt: FIXED_NOW,
     });

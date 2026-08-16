@@ -26,6 +26,7 @@ const SAMPLE_ROW = {
   phoneE164: '5521988887777',
   name: null as string | null,
   source: 'WHATSAPP',
+  optOutAt: null as Date | null,
   createdAt: new Date('2026-08-15T00:00:00Z'),
   updatedAt: new Date('2026-08-15T00:00:00Z'),
 };
@@ -171,6 +172,49 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
         where: { id: 'contact-1', tenantId: 'tenant-1', name: null },
         data: { name: 'Maria da Padaria' },
       });
+    });
+  });
+
+  describe('setOptOutAt()', () => {
+    it('atualiza via updateMany escopado por (id, tenantId) e devolve o contato atualizado', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.updateMany.mockResolvedValue({ count: 1 });
+      const at = new Date('2026-08-16T12:00:00Z');
+      prisma.whatsAppContact.findFirst.mockResolvedValue({ ...SAMPLE_ROW, optOutAt: at });
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.setOptOutAt('tenant-1', 'contact-1', at);
+
+      expect(prisma.whatsAppContact.updateMany).toHaveBeenCalledWith({
+        where: { id: 'contact-1', tenantId: 'tenant-1' },
+        data: { optOutAt: at },
+      });
+      expect(result?.optOutAt).toBe(at);
+    });
+
+    it('aceita at: null para limpar (opt-in)', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.updateMany.mockResolvedValue({ count: 1 });
+      prisma.whatsAppContact.findFirst.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.setOptOutAt('tenant-1', 'contact-1', null);
+
+      expect(prisma.whatsAppContact.updateMany).toHaveBeenCalledWith({
+        where: { id: 'contact-1', tenantId: 'tenant-1' },
+        data: { optOutAt: null },
+      });
+    });
+
+    it('devolve undefined (IDOR-safe) quando updateMany não afeta nenhuma linha', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.updateMany.mockResolvedValue({ count: 0 });
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const result = await repo.setOptOutAt('tenant-1', 'contact-de-outro-tenant', new Date());
+
+      expect(result).toBeUndefined();
+      expect(prisma.whatsAppContact.findFirst).not.toHaveBeenCalled();
     });
   });
 

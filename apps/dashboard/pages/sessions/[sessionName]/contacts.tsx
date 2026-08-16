@@ -9,7 +9,7 @@ import type { ManagedUserRole } from '@/lib/clientApi';
 interface ContactsPageProps {
   tenantId: string;
   sessionName: string;
-  canImport: boolean;
+  canManage: boolean;
 }
 
 /**
@@ -20,7 +20,7 @@ interface ContactsPageProps {
  * administrativa — mesmo raciocínio que já separa Conversas/Pipeline de
  * Configurações.
  *
- * `canImport` (administrator/owner) é resolvido no SERVIDOR — mesmo padrão
+ * `canManage` (administrator/owner) é resolvido no SERVIDOR — mesmo padrão
  * de `settings.tsx` — para a UI já nascer correta, sem um flash em que o
  * botão de importar aparece e some.
  */
@@ -35,14 +35,14 @@ export const getServerSideProps: GetServerSideProps<ContactsPageProps> = async (
     return { notFound: true };
   }
   const role = (session.user?.role as ManagedUserRole | undefined) ?? null;
-  const canImport = role === 'administrator' || role === 'owner';
-  return { props: { tenantId: session.tenantId, sessionName, canImport } };
+  const canManage = role === 'administrator' || role === 'owner';
+  return { props: { tenantId: session.tenantId, sessionName, canManage } };
 };
 
 export default function ContactsPage({
   tenantId,
   sessionName,
-  canImport,
+  canManage,
 }: ContactsPageProps): JSX.Element {
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
@@ -57,7 +57,7 @@ export default function ContactsPage({
             ou importada de uma planilha.
           </p>
 
-          <ContactsPanel canImport={canImport} />
+          <ContactsPanel canManage={canManage} />
         </div>
       </div>
     </SessionLayout>

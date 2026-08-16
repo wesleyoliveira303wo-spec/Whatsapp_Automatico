@@ -458,6 +458,12 @@ export interface Contact {
   phoneE164: string;
   name?: string;
   source: 'whatsapp' | 'import' | 'manual';
+  /**
+   * Fase L, Bloco L2 — quando este contato pediu para não receber mais
+   * campanhas. `undefined` = nunca pediu. Efeito restrito a campanhas: NUNCA
+   * desliga o atendimento normal (a pessoa continua conversando igual).
+   */
+  optOutAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -522,6 +528,16 @@ export async function importContacts(csvText: string): Promise<ContactImportRepo
     throw new ClientApiError(response.status, body);
   }
   return body as ContactImportReport;
+}
+
+/** Marca um contato como opt-out (não recebe mais campanhas). Exige `contact:manage`. */
+export function optOutContact(contactId: string): Promise<{ contact: Contact }> {
+  return request(`/api/contacts/${encodeURIComponent(contactId)}/opt-out`, { method: 'POST' });
+}
+
+/** Reverte um opt-out. Exige `contact:manage`. */
+export function optInContact(contactId: string): Promise<{ contact: Contact }> {
+  return request(`/api/contacts/${encodeURIComponent(contactId)}/opt-in`, { method: 'POST' });
 }
 
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {

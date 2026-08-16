@@ -15,6 +15,7 @@ interface ContactRow {
   phoneE164: string;
   name: string | null;
   source: string;
+  optOutAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +42,7 @@ function toDomain(row: ContactRow): Contact {
     // para `contactName`/`lastMessagePreview` em `PrismaConversationRepository`.
     name: row.name ?? undefined,
     source: SOURCE_FROM_PRISMA[row.source] ?? 'whatsapp',
+    optOutAt: row.optOutAt ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -143,5 +145,27 @@ export class PrismaContactRepository implements ContactRepository {
     const nextCursor = hasMore ? page[page.length - 1].id : undefined;
 
     return { contacts, nextCursor };
+  }
+
+  /**
+   * `updateMany` escopado por `(id, tenantId)` — mesma defesa em profundidade
+   * contra IDOR já usada em todo repositório deste projeto. Incondicional de
+   * propósito (sem `optOutAt: null`/`{not: null}` no `where`): ver docstring
+   * do port — precisa aceitar tanto "gravar de novo" (reforça a data de um
+   * opt-out repetido) quanto "limpar" (`at: null`, um opt-in manual).
+   */
+  async setOptOutAt(
+    tenantId: string,
+    contactId: string,
+    at: Date | null,
+  ): Promise<Contact | undefined> {
+    const { count } = await this.prisma.whatsAppContact.updateMany({
+      where: { id: contactId, tenantId },
+      data: { optOutAt: at },
+    });
+    if (count === 0) {
+      return undefined;
+    }
+    return this.findById(tenantId, contactId);
   }
 }

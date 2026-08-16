@@ -9,6 +9,7 @@ import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
 import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
+import { OptOutDetector } from '../domain/repositories/OptOutDetector';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
@@ -72,6 +73,9 @@ export class MessageIngestionService implements MessageReceivedHandler {
     // `ContactResolver`), mesmo racional de `AiAvailabilityRepository`: este
     // Service só precisa saber "quem é a pessoa deste endereço".
     private readonly contactResolver: ContactResolver,
+    // Fase L, Bloco L2 — opt-out automático por palavra-chave. Porta estreita
+    // (ver `OptOutDetector`), mesmo racional de `ContactResolver`.
+    private readonly optOutDetector: OptOutDetector,
     private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   ) {}
 
@@ -174,24 +178,35 @@ export class MessageIngestionService implements MessageReceivedHandler {
     // `linkContact` só preenche quando ainda está vazio, então a partir da
     // segunda mensagem esta chamada é uma escrita que não casa com nada —
     // barata e idempotente, sem precisar checar antes.
-    if (!conversation.contactId) {
+    let contactId = conversation.contactId;
+    if (!contactId) {
       try {
-        const contactId = await this.contactResolver.resolveByWhatsAppJid(
+        const resolvedContactId = await this.contactResolver.resolveByWhatsAppJid(
           message.tenantId,
           message.from,
         );
-        if (contactId) {
+        if (resolvedContactId) {
           await this.conversationRepository.linkContact(
             message.tenantId,
             conversation.id,
-            contactId,
+            resolvedContactId,
           );
+          contactId = resolvedContactId;
         }
       } catch {
         // Silencioso de propósito: o resolver já não lança e já loga; este
         // catch cobre apenas uma falha do `linkContact`. Identidade é dado
         // auxiliar — a mensagem já foi persistida e o atendimento continua.
       }
+    }
+
+    // Fase L, Bloco L2 — opt-out automático por palavra-chave. Só para
+    // INBOUND (um comando "PARAR" digitado pelo OPERADOR não é um pedido do
+    // cliente) e só quando há identidade resolvida (sem contato, não há o
+    // que marcar). `detectAndRecord` nunca lança — auxiliar, mesmo padrão do
+    // bloco de resolução de contato acima.
+    if (!isOutbound && contactId) {
+      await this.optOutDetector.detectAndRecord(message.tenantId, contactId, message.content);
     }
 
     if (!isOutbound) {

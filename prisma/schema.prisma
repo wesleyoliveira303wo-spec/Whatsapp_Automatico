@@ -349,6 +349,8 @@ model Tenant {
   // (não por sessão): a mesma pessoa falando com dois WhatsApps da empresa é
   // uma pessoa só. Ver `WhatsAppContact`.
   contacts              WhatsAppContact[]
+  // Fase L, Bloco L2 (2026-08-15) — log de consentimento (opt-in/opt-out).
+  contactConsentEvents  ContactConsentEvent[]
 
   @@map("tenants")
 }
@@ -394,6 +396,18 @@ model WhatsAppContact {
   /// ("feira", "site", "indicação"), que é texto livre e entra junto com a
   /// importação de planilha, onde de fato existe alguém para informá-la.
   source    ContactSource @default(WHATSAPP)
+  /// Fase L, Bloco L2 (2026-08-15) — quando este contato pediu para NÃO
+  /// receber mais campanhas, ou `null` se nunca pediu (ou se já foi revertido
+  /// por um opt-in manual). Preenchido automaticamente quando a pessoa
+  /// responde uma palavra-chave de saída (ver `optOutKeywords.ts`), ou
+  /// manualmente por quem administra a base.
+  ///
+  /// Efeito é DELIBERADAMENTE restrito a campanhas — decisão de produto
+  /// registrada em `FASE_L_MOTOR_DE_LEADS.md` §8: opt-out desliga só o envio
+  /// em lote (ainda inexistente nesta rodada), NUNCA o atendimento normal. A
+  /// pessoa continua conversando com a IA/operador normalmente; só não entra
+  /// mais em nenhuma campanha futura.
+  optOutAt  DateTime?     @map("opt_out_at")
   createdAt DateTime      @default(now()) @map("created_at")
   updatedAt DateTime      @updatedAt @map("updated_at")
 
@@ -405,7 +419,49 @@ model WhatsAppContact {
   /// planilha com repetidos ser idempotente sem nenhuma lógica extra.
   @@unique([tenantId, phoneE164])
   @@index([tenantId])
+  /// Suporta a futura supressão de opt-out na materialização de campanha
+  /// (`WHERE opt_out_at IS NULL`) — índice parcial seria ainda mais preciso,
+  /// mas o Prisma não expressa índice parcial nativamente; este já evita
+  /// varredura completa da tabela.
+  @@index([tenantId, optOutAt])
   @@map("whatsapp_contacts")
+}
+
+/// Tipo de evento de consentimento — Fase L, Bloco L2. Enum, não string
+/// livre, mesmo racional do achado F6/ADR #15.
+enum ConsentEventType {
+  OPT_IN
+  OPT_OUT
+
+  @@map("consent_event_type")
+}
+
+/// Log de consentimento, append-only — Fase L, Bloco L2. Uma linha por
+/// mudança de status (opt-out automático por palavra-chave, opt-out manual,
+/// ou reversão/opt-in manual). É o registro que se apresenta se a ANPD
+/// perguntar "quando e por que esta pessoa parou de receber campanhas".
+///
+/// SEM FK para `WhatsAppContact` — mesmo padrão e mesma justificativa de
+/// `AuditLog`/`WhatsAppSessionEvent`: a prova de consentimento precisa
+/// SOBREVIVER à exclusão do contato que descreve. `contactId` fica gravado
+/// para sempre, mesmo que o contato seja apagado.
+model ContactConsentEvent {
+  id          String           @id @default(uuid())
+  tenantId    String           @map("tenant_id")
+  contactId   String           @map("contact_id")
+  type        ConsentEventType
+  /// Texto curto do motivo — "palavra-chave: parar", "manual", "importação".
+  /// Livre de propósito (não enum): motivos novos não devem exigir migration.
+  reason      String?
+  /// Quem executou a ação, quando foi manual (um operador clicando no botão).
+  /// `null` no opt-out automático por palavra-chave — não há ator humano.
+  actorUserId String?          @map("actor_user_id")
+  occurredAt  DateTime         @default(now()) @map("occurred_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, contactId, occurredAt])
+  @@map("contact_consent_events")
 }
 
 /// Como um `WhatsAppContact` entrou no sistema — Fase L, Bloco L1.

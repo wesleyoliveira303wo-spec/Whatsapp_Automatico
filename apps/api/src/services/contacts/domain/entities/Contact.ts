@@ -28,6 +28,31 @@ export interface Contact {
   phoneE164: string;
   name?: string;
   source: ContactSource;
+  /**
+   * Fase L, Bloco L2 — quando esta pessoa pediu para não receber mais
+   * campanhas. `undefined` = nunca pediu (ou um opt-in manual reverteu).
+   * Efeito restrito a campanhas: nunca desliga o atendimento normal (ver
+   * docstring do campo no `schema.prisma`).
+   */
+  optOutAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Um evento de consentimento — Fase L, Bloco L2. Espelha `ConsentEventType` do Prisma. */
+export type ConsentEventType = 'opt_in' | 'opt_out';
+
+/**
+ * Log append-only de mudanças de consentimento — a prova de "quando e por
+ * que esta pessoa parou/voltou a poder receber campanhas". Ver docstring do
+ * model `ContactConsentEvent` no `schema.prisma`.
+ */
+export interface ConsentEvent {
+  id: string;
+  tenantId: string;
+  contactId: string;
+  type: ConsentEventType;
+  reason?: string;
+  actorUserId?: string;
+  occurredAt: Date;
 }
