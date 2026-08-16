@@ -79,9 +79,9 @@ describe('ContactConsentService', () => {
     it('lança TenantNotFoundError para tenant inexistente', async () => {
       const { service } = buildSut();
 
-      await expect(
-        service.recordOptOut('tenant-fantasma', 'contact-1', 'manual'),
-      ).rejects.toThrow(TenantNotFoundError);
+      await expect(service.recordOptOut('tenant-fantasma', 'contact-1', 'manual')).rejects.toThrow(
+        TenantNotFoundError,
+      );
     });
   });
 

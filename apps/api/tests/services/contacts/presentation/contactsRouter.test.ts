@@ -223,9 +223,7 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
     it('devolve 404 para um contactId inexistente', async () => {
       const { app } = buildApp(person('administrator'));
 
-      const response = await request(app).post(
-        `${basePath('tenant-1')}/contact-fantasma/opt-out`,
-      );
+      const response = await request(app).post(`${basePath('tenant-1')}/contact-fantasma/opt-out`);
 
       expect(response.status).toBe(404);
     });
@@ -253,9 +251,7 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.contact.optOutAt).toBeFalsy();
-      expect(events.getAll()).toEqual([
-        expect.objectContaining({ contactId: id, type: 'opt_in' }),
-      ]);
+      expect(events.getAll()).toEqual([expect.objectContaining({ contactId: id, type: 'opt_in' })]);
     });
 
     it('operator NÃO pode reverter opt-out (403 — sem contact:manage)', async () => {

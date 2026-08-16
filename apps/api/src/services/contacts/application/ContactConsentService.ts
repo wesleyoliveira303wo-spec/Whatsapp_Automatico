@@ -71,11 +71,7 @@ export class ContactConsentService {
    * do tenant) também pode chamar esta ação, só fica sem ator humano
    * identificado no log.
    */
-  async recordOptIn(
-    tenantId: string,
-    contactId: string,
-    actorUserId?: string,
-  ): Promise<Contact> {
+  async recordOptIn(tenantId: string, contactId: string, actorUserId?: string): Promise<Contact> {
     await this.assertTenantExists(tenantId);
     const contact = await this.contactRepository.setOptOutAt(tenantId, contactId, null);
     if (!contact) {
