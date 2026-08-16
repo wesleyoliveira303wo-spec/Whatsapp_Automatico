@@ -33,7 +33,7 @@ export class FakeContactRepository implements ContactRepository {
       phoneE164: data.phoneE164,
       name: data.name,
       source: data.source,
-      createdAt: FIXED_NOW,
+      createdAt: data.createdAt ?? FIXED_NOW,
       updatedAt: FIXED_NOW,
     };
     this.rows.set(id, contact);

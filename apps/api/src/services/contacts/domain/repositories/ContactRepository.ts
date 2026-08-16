@@ -1,11 +1,23 @@
 import { Contact, ContactSource } from '../entities/Contact';
 
-/** Dados de criação de um contato. `id`/`createdAt`/`updatedAt` são do repositório. */
+/** Dados de criação de um contato. `id`/`updatedAt` são do repositório. */
 export interface CreateContactData {
   tenantId: string;
   phoneE164: string;
   name?: string;
   source: ContactSource;
+  /**
+   * Quando esta pessoa entrou na base. Omitido no fluxo normal (o banco usa
+   * `now()`), porque quem cria é a mensagem que acabou de chegar.
+   *
+   * Existe para o BACKFILL do histórico (`scripts/backfillContacts.ts`): lá o
+   * contato nasce a partir de uma conversa que já existia, e a data que
+   * interessa é a da PRIMEIRA conversa daquela pessoa — não o instante em que
+   * o script rodou. Sem isso, toda a base histórica fica com a mesma data e
+   * hora (o momento da migração), o que é visivelmente inútil na tela de
+   * Contatos.
+   */
+  createdAt?: Date;
 }
 
 /** Opções de listagem paginada — mesmo formato de `ListAuditLogsOptions` (cursor por id, limit obrigatório). */

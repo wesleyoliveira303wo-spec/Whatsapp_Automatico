@@ -83,6 +83,9 @@ export class PrismaContactRepository implements ContactRepository {
         phoneE164: data.phoneE164,
         name: data.name ?? null,
         source: SOURCE_TO_PRISMA[data.source],
+        // Só o backfill do histórico informa isso; no fluxo normal o default
+        // do banco (`now()`) é o correto. Ver docstring de `CreateContactData`.
+        ...(data.createdAt ? { createdAt: data.createdAt } : {}),
       },
     });
     return toDomain(row);

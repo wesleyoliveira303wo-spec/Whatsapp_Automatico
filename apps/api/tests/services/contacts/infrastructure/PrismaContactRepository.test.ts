@@ -72,6 +72,41 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
       expect(result.source).toBe('manual');
     });
 
+    // Fluxo normal (mensagem chegando): o banco decide a data com `now()`.
+    it('NÃO envia createdAt quando não informado — deixa o default do banco valer', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.upsert.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.findOrCreateByPhone({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        source: 'whatsapp',
+      });
+
+      const { create } = prisma.whatsAppContact.upsert.mock.calls[0][0];
+      expect(create).not.toHaveProperty('createdAt');
+    });
+
+    // Backfill do histórico: a data que importa é a da primeira conversa da
+    // pessoa, não o instante em que o script rodou.
+    it('envia createdAt quando informado (backfill do histórico)', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.upsert.mockResolvedValue(SAMPLE_ROW);
+      const repo = new PrismaContactRepository(prisma as never);
+      const primeiraConversa = new Date('2026-08-07T20:04:17.064Z');
+
+      await repo.findOrCreateByPhone({
+        tenantId: 'tenant-1',
+        phoneE164: '5521988887777',
+        source: 'whatsapp',
+        createdAt: primeiraConversa,
+      });
+
+      const { create } = prisma.whatsAppContact.upsert.mock.calls[0][0];
+      expect(create.createdAt).toBe(primeiraConversa);
+    });
+
     it('converte name null do banco para undefined no Domain', async () => {
       const prisma = createFakePrisma();
       prisma.whatsAppContact.upsert.mockResolvedValue(SAMPLE_ROW);

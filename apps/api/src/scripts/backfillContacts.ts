@@ -13,9 +13,19 @@
  *   docker compose -f docker-compose.prod.yml run --rm api node apps/api/dist/scripts/backfillContacts.js
  *   docker compose -f docker-compose.prod.yml run --rm api node apps/api/dist/scripts/backfillContacts.js --apply
  *
- * IDEMPOTENTE: conversas já vinculadas são ignoradas, e o contato é criado via
- * `findOrCreateByPhone` (apoiado na chave única do banco). Rodar duas vezes não
- * duplica nada.
+ * IDEMPOTENTE E AUTO-CORRETIVO: conversas já vinculadas são ignoradas, o
+ * contato é criado via `findOrCreateByPhone` (apoiado na chave única do
+ * banco), e a data de criação é reconciliada a cada execução (ver abaixo).
+ * Rodar duas vezes não duplica nada.
+ *
+ * DATA DE CRIAÇÃO (correção de 2026-08-15): a primeira versão deste script
+ * deixava o banco gravar `now()` — resultado: os 38 contatos do histórico
+ * ficaram todos com a MESMA data e hora (o instante em que o script rodou),
+ * visivelmente inútil na tela de Contatos. O correto é a data da PRIMEIRA
+ * conversa daquela pessoa: é quando ela de fato entrou na base. O script
+ * agora informa essa data na criação E corrige contatos já existentes cuja
+ * data seja posterior à primeira conversa deles — então basta reexecutar
+ * para reparar uma base afetada pela versão anterior.
  *
  * Conversas em `@lid` são deliberadamente PULADAS: não há telefone a extrair de
  * um endereço de privacidade. Elas ganham contato naturalmente se a pessoa
@@ -41,7 +51,13 @@ async function main(): Promise<void> {
 
   const conversations = await prisma.whatsAppConversation.findMany({
     where: { contactId: null },
-    select: { id: true, tenantId: true, sessionName: true, contactJid: true },
+    select: {
+      id: true,
+      tenantId: true,
+      sessionName: true,
+      contactJid: true,
+      createdAt: true,
+    },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -75,6 +91,10 @@ async function main(): Promise<void> {
       tenantId: conversation.tenantId,
       phoneE164,
       source: 'whatsapp',
+      // A pessoa entrou na base quando a conversa dela começou — não agora.
+      // As conversas vêm ordenadas por `createdAt` asc, então a PRIMEIRA que
+      // alcança um dado telefone é a mais antiga dele.
+      createdAt: conversation.createdAt,
     });
 
     // Mesmo critério do repositório real: só preenche quando ainda está vazio.
@@ -86,6 +106,36 @@ async function main(): Promise<void> {
     if (count > 0) {
       vinculadas += 1;
       console.log(`  [ok] ${conversation.contactJid} → ${phoneE164}`);
+    }
+  }
+
+  // Reconciliação da data de criação — repara bases afetadas pela primeira
+  // versão deste script (ver docstring). Roda SEMPRE, inclusive quando não há
+  // nenhuma conversa nova para vincular, porque o dano a reparar está nos
+  // contatos JÁ criados. Só ANTECIPA a data (nunca atrasa): um contato cuja
+  // data já é a mais antiga não é tocado.
+  const desatualizados = await prisma.$queryRaw<Array<{ id: string; primeira: Date }>>`
+    SELECT ct.id, MIN(cv.created_at) AS primeira
+    FROM whatsapp_contacts ct
+    JOIN whatsapp_conversations cv ON cv.contact_id = ct.id
+    GROUP BY ct.id, ct.created_at
+    HAVING MIN(cv.created_at) < ct.created_at
+  `;
+
+  if (desatualizados.length > 0) {
+    console.log('');
+    console.log(
+      `${desatualizados.length} contato(s) com data de criação posterior à primeira conversa.` +
+        (apply ? ' Corrigindo...' : ' (seriam corrigidos com --apply)'),
+    );
+    if (apply) {
+      for (const linha of desatualizados) {
+        await prisma.whatsAppContact.update({
+          where: { id: linha.id },
+          data: { createdAt: linha.primeira },
+        });
+      }
+      console.log(`Datas corrigidas: ${desatualizados.length}`);
     }
   }
 
