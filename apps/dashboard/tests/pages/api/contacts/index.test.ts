@@ -28,12 +28,10 @@ describe('proxy /api/contacts (Fase L, Bloco L1b)', () => {
   });
 
   function mockApi(status: number, body: unknown): void {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue({
-        status,
-        text: async () => JSON.stringify(body),
-      }) as unknown as typeof fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      status,
+      text: async () => JSON.stringify(body),
+    }) as unknown as typeof fetch;
   }
 
   it('sem sessão: não chama a API (requireSession já responde)', async () => {
