@@ -27,12 +27,10 @@ describe('proxies /api/contacts/[contactId]/opt-out|opt-in (Fase L, Bloco L2)', 
   });
 
   function mockApi(status: number, body: unknown): void {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue({
-        status,
-        text: async () => JSON.stringify(body),
-      }) as unknown as typeof fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      status,
+      text: async () => JSON.stringify(body),
+    }) as unknown as typeof fetch;
   }
 
   describe('opt-out', () => {
