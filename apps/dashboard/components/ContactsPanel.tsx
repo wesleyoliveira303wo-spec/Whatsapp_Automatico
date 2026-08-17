@@ -319,9 +319,11 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                 className="h-3.5 w-3.5 shrink-0 accent-primary"
               />
               <span className="min-w-0 flex-1">Contato</span>
-              <span className="hidden w-[110px] shrink-0 sm:block">Fonte</span>
-              <span className="hidden w-[150px] shrink-0 md:block">Último contato</span>
-              <span className="w-[150px] shrink-0 text-right">Ações</span>
+              <span className="hidden w-[100px] shrink-0 sm:block">Fonte</span>
+              <span className="hidden w-[165px] shrink-0 md:block">Último contato</span>
+              <span className={cn('shrink-0 text-right', canManage ? 'w-[280px]' : 'w-[150px]')}>
+                Ações
+              </span>
             </div>
 
             {contacts.map((contact, index) => (
@@ -359,18 +361,31 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                   )}
                 </div>
 
-                <span className="hidden w-[110px] shrink-0 text-[12px] text-muted-foreground sm:block">
+                {/* `truncate` é obrigatório nas colunas de largura fixa: sem
+                    ele, um texto mais largo que a coluna (ex.: uma data
+                    completa em 150px) VAZA por cima da coluna seguinte em vez
+                    de ser cortado — foi exatamente o bug relatado. */}
+                <span className="hidden w-[100px] shrink-0 truncate text-[12px] text-muted-foreground sm:block">
                   {SOURCE_LABELS[contact.source] ?? contact.source}
                 </span>
-                <span className="hidden w-[150px] shrink-0 text-[12px] text-muted-foreground md:block">
+                <span className="hidden w-[165px] shrink-0 truncate text-[12px] text-muted-foreground md:block">
                   {formatDateTime(contact.lastActivityAt ?? contact.createdAt)}
                 </span>
 
-                <div className="flex w-[150px] shrink-0 items-center justify-end gap-1.5">
+                {/* Largura casa com a do cabeçalho "Ações" acima, senão as
+                    colunas desalinham. `whitespace-nowrap` impede os rótulos
+                    de quebrarem em duas linhas e esticarem a altura da linha. */}
+                <div
+                  className={cn(
+                    'flex shrink-0 items-center justify-end gap-1.5',
+                    canManage ? 'w-[280px]' : 'w-[150px]',
+                  )}
+                >
                   {contact.lastConversationId && contact.lastConversationSessionName && (
-                    <Button asChild variant="ghost" size="sm">
+                    <Button asChild variant="ghost" size="sm" className="shrink-0">
                       <Link
                         href={`/sessions/${encodeURIComponent(contact.lastConversationSessionName)}/conversations/${encodeURIComponent(contact.lastConversationId)}`}
+                        className="whitespace-nowrap"
                       >
                         <MessageSquare className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
                         Abrir conversa
@@ -382,7 +397,7 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="shrink-0"
+                      className="shrink-0 whitespace-nowrap"
                       disabled={togglingContactId === contact.id}
                       onClick={() => void handleToggleConsent(contact)}
                     >
