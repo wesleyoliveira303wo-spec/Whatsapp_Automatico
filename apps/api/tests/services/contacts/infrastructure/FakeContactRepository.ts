@@ -2,6 +2,7 @@ import { Contact } from '../../../../src/services/contacts/domain/entities/Conta
 import {
   ContactPage,
   ContactRepository,
+  ContactStats,
   CreateContactData,
   ListContactsOptions,
 } from '../../../../src/services/contacts/domain/repositories/ContactRepository';
@@ -17,6 +18,11 @@ const FIXED_NOW = new Date('2026-08-15T00:00:00.000Z');
  */
 export class FakeContactRepository implements ContactRepository {
   private readonly rows = new Map<string, Contact>();
+  /** Conversas por contactId — só o suficiente para `listByTenant`/`countStats` (retrofit 2026-08-16). */
+  private readonly conversations = new Map<
+    string,
+    { id: string; sessionName: string; lastMessageAt?: Date }
+  >();
   private nextId = 1;
 
   async findOrCreateByPhone(data: CreateContactData): Promise<Contact> {
@@ -90,7 +96,36 @@ export class FakeContactRepository implements ContactRepository {
     const nextCursor =
       startIndex + options.limit < all.length ? page[page.length - 1]?.id : undefined;
 
-    return { contacts: page, nextCursor };
+    return {
+      contacts: page.map((contact) => {
+        const conversation = this.conversations.get(contact.id);
+        return {
+          ...contact,
+          lastConversationId: conversation?.id,
+          lastConversationSessionName: conversation?.sessionName,
+          lastActivityAt: conversation?.lastMessageAt,
+        };
+      }),
+      nextCursor,
+    };
+  }
+
+  async countStats(tenantId: string): Promise<ContactStats> {
+    const all = [...this.rows.values()].filter((row) => row.tenantId === tenantId);
+    const withConversation = all.filter((row) => this.conversations.has(row.id)).length;
+    return {
+      total: all.length,
+      withConversation,
+      withoutConversation: all.length - withConversation,
+    };
+  }
+
+  /** Helper de teste: associa uma conversa a um contato (para `listByTenant`/`countStats`). */
+  seedConversation(
+    contactId: string,
+    conversation: { id: string; sessionName: string; lastMessageAt?: Date },
+  ): void {
+    this.conversations.set(contactId, conversation);
   }
 
   /** Helper de teste: pré-carrega um contato, devolvendo o `id` gerado. */

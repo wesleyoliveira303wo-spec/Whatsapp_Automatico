@@ -7,6 +7,7 @@ function createFakePrisma(): {
     findFirst: jest.Mock;
     updateMany: jest.Mock;
     findMany: jest.Mock;
+    count: jest.Mock;
   };
 } {
   return {
@@ -16,6 +17,7 @@ function createFakePrisma(): {
       findFirst: jest.fn(),
       updateMany: jest.fn(),
       findMany: jest.fn(),
+      count: jest.fn(),
     },
   };
 }
@@ -219,20 +221,72 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
   });
 
   describe('listByTenant()', () => {
+    /** Linha como o Prisma devolve COM o `include` da conversa mais recente. */
+    const ROW_WITH_CONVERSATIONS = { ...SAMPLE_ROW, conversations: [] as unknown[] };
+
     it('lista por tenantId, ordenado por createdAt+id desc, sem filtro de busca', async () => {
       const prisma = createFakePrisma();
-      prisma.whatsAppContact.findMany.mockResolvedValue([SAMPLE_ROW]);
+      prisma.whatsAppContact.findMany.mockResolvedValue([ROW_WITH_CONVERSATIONS]);
       const repo = new PrismaContactRepository(prisma as never);
 
       const result = await repo.listByTenant('tenant-1', { limit: 20 });
 
-      expect(prisma.whatsAppContact.findMany).toHaveBeenCalledWith({
-        where: { tenantId: 'tenant-1' },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: 21,
-      });
+      expect(prisma.whatsAppContact.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: 'tenant-1' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 21,
+        }),
+      );
       expect(result.contacts).toHaveLength(1);
       expect(result.nextCursor).toBeUndefined();
+    });
+
+    // Um join lateral (take: 1) em vez de uma consulta por linha — é o que
+    // evita N+1 na coluna "Último contato"/botão "Abrir conversa".
+    it('inclui a conversa MAIS RECENTE de cada contato numa única consulta', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([ROW_WITH_CONVERSATIONS]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.listByTenant('tenant-1', { limit: 20 });
+
+      const [args] = prisma.whatsAppContact.findMany.mock.calls[0];
+      expect(args.include.conversations).toMatchObject({
+        orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+        take: 1,
+      });
+    });
+
+    it('mapeia a conversa incluída para os campos de atividade do read model', async () => {
+      const prisma = createFakePrisma();
+      const lastMessageAt = new Date('2026-08-14T10:00:00Z');
+      prisma.whatsAppContact.findMany.mockResolvedValue([
+        {
+          ...SAMPLE_ROW,
+          conversations: [{ id: 'conv-1', sessionName: 'vendas', lastMessageAt }],
+        },
+      ]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const { contacts } = await repo.listByTenant('tenant-1', { limit: 20 });
+
+      expect(contacts[0]).toMatchObject({
+        lastConversationId: 'conv-1',
+        lastConversationSessionName: 'vendas',
+        lastActivityAt: lastMessageAt,
+      });
+    });
+
+    it('deixa os campos de atividade indefinidos para contato sem conversa', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([ROW_WITH_CONVERSATIONS]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const { contacts } = await repo.listByTenant('tenant-1', { limit: 20 });
+
+      expect(contacts[0].lastConversationId).toBeUndefined();
+      expect(contacts[0].lastActivityAt).toBeUndefined();
     });
 
     it('aplica cursor com skip: 1 quando informado', async () => {
@@ -272,6 +326,7 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
       const rows = Array.from({ length: 3 }, (_, i) => ({
         ...SAMPLE_ROW,
         id: `contact-${i + 1}`,
+        conversations: [],
       }));
       prisma.whatsAppContact.findMany.mockResolvedValue(rows);
       const repo = new PrismaContactRepository(prisma as never);
@@ -280,6 +335,34 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
 
       expect(result.contacts).toHaveLength(2);
       expect(result.nextCursor).toBe('contact-2');
+    });
+  });
+
+  describe('countStats()', () => {
+    it('conta total e com-conversa, derivando sem-conversa por subtração', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.count.mockResolvedValueOnce(23).mockResolvedValueOnce(18);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const stats = await repo.countStats('tenant-1');
+
+      expect(stats).toEqual({ total: 23, withConversation: 18, withoutConversation: 5 });
+      // A segunda contagem filtra por "tem ao menos uma conversa".
+      expect(prisma.whatsAppContact.count).toHaveBeenNthCalledWith(2, {
+        where: { tenantId: 'tenant-1', conversations: { some: {} } },
+      });
+    });
+
+    it('escopa as duas contagens pelo tenant', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.count.mockResolvedValue(0);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.countStats('tenant-1');
+
+      expect(prisma.whatsAppContact.count).toHaveBeenNthCalledWith(1, {
+        where: { tenantId: 'tenant-1' },
+      });
     });
   });
 });

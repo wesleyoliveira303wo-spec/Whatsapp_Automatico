@@ -121,6 +121,49 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
     });
   });
 
+  describe('GET /stats (contact:read)', () => {
+    it('devolve as contagens da base do tenant (200)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      const comConversa = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777' });
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521977776666' });
+      contacts.seedConversation(comConversa, { id: 'conv-1', sessionName: 'vendas' });
+
+      const response = await request(app).get(`${basePath('tenant-1')}/stats`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ total: 2, withConversation: 1, withoutConversation: 1 });
+    });
+
+    it('não conta contatos de outro tenant (IDOR)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5521988887777' });
+      contacts.seed({ tenantId: 'tenant-2', phoneE164: '5521977776666' });
+
+      const response = await request(app).get(`${basePath('tenant-1')}/stats`);
+
+      expect(response.body.total).toBe(1);
+    });
+
+    it('read_only NÃO pode ler as contagens (403 — sem contact:read)', async () => {
+      const { app } = buildApp(person('read_only'));
+
+      const response = await request(app).get(`${basePath('tenant-1')}/stats`);
+
+      expect(response.status).toBe(403);
+    });
+
+    // `/stats` é declarado ANTES de `/:contactId/...` no router — sem isso o
+    // Express interpretaria "stats" como um contactId.
+    it('a rota /stats não é confundida com um contactId', async () => {
+      const { app } = buildApp(person('operator'));
+
+      const response = await request(app).get(`${basePath('tenant-1')}/stats`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('total');
+    });
+  });
+
   describe('POST /import (contact:manage)', () => {
     it('administrator importa um CSV e recebe o relatório (200)', async () => {
       const { app, contacts } = buildApp(person('administrator'));

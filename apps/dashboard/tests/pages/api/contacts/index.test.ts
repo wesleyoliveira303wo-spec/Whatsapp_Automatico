@@ -1,4 +1,5 @@
 import handler from '../../../../pages/api/contacts/index';
+import statsHandler from '../../../../pages/api/contacts/stats';
 import { createFakeReq, createFakeRes } from '../../../testDoubles';
 import { requireSession } from '../../../../lib/dashboardSession';
 
@@ -95,5 +96,35 @@ describe('proxy /api/contacts (Fase L, Bloco L1b)', () => {
     await handler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(405);
+  });
+
+  describe('GET /stats (retrofit 2026-08-16)', () => {
+    it('encaminha para /contacts/stats e devolve as contagens', async () => {
+      mockApi(200, { total: 23, withConversation: 18, withoutConversation: 5 });
+      const req = createFakeReq({ method: 'GET', query: {} });
+      const res = createFakeRes();
+
+      await statsHandler(req, res);
+
+      const [url] = (fetch as jest.Mock).mock.calls[0];
+      expect(String(url)).toBe('http://api-de-teste:4000/api/tenants/tenant-1/contacts/stats');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        total: 23,
+        withConversation: 18,
+        withoutConversation: 5,
+      });
+    });
+
+    it('método errado: 405, nunca chama a API', async () => {
+      global.fetch = jest.fn() as unknown as typeof fetch;
+      const req = createFakeReq({ method: 'POST', query: {} });
+      const res = createFakeRes();
+
+      await statsHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(405);
+      expect(fetch).not.toHaveBeenCalled();
+    });
   });
 });

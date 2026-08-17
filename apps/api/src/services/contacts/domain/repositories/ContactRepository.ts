@@ -28,10 +28,40 @@ export interface ListContactsOptions {
   search?: string;
 }
 
+/**
+ * Contato + um resumo da atividade dele — read model da TELA de Contatos
+ * (retrofit 2026-08-16). Estende `Contact` de forma aditiva em vez de
+ * poluir a entidade de Domain com dados de conversa: `Contact` continua
+ * sendo só identidade (ver sua docstring); estes campos existem porque a
+ * lista precisa mostrar "último contato" e oferecer "Abrir conversa" sem
+ * uma consulta por linha (N+1).
+ *
+ * Todos opcionais: um contato importado de planilha que nunca escreveu não
+ * tem conversa nenhuma — é justamente esse o "Sem conversa" dos cards.
+ */
+export interface ContactWithActivity extends Contact {
+  /** Conversa mais recente desta pessoa, em QUALQUER sessão do tenant. */
+  lastConversationId?: string;
+  lastConversationSessionName?: string;
+  /** `lastMessageAt` daquela conversa — a data real do último contato. */
+  lastActivityAt?: Date;
+}
+
 /** Página de resultado — `nextCursor` ausente indica fim, mesmo contrato de `AuditLogPage`. */
 export interface ContactPage {
-  contacts: Contact[];
+  contacts: ContactWithActivity[];
   nextCursor?: string;
+}
+
+/**
+ * Contagens da base inteira do tenant — os cards do topo da tela de
+ * Contatos. Deliberadamente NÃO respeitam o filtro de busca: descrevem a
+ * base, não a página que está na tela.
+ */
+export interface ContactStats {
+  total: number;
+  withConversation: number;
+  withoutConversation: number;
 }
 
 /**
@@ -106,4 +136,10 @@ export interface ContactRepository {
    * `ConversationRepository`.
    */
   setOptOutAt(tenantId: string, contactId: string, at: Date | null): Promise<Contact | undefined>;
+
+  /**
+   * Contagens da base do tenant para os cards da tela de Contatos
+   * (retrofit 2026-08-16) — ver `ContactStats`.
+   */
+  countStats(tenantId: string): Promise<ContactStats>;
 }

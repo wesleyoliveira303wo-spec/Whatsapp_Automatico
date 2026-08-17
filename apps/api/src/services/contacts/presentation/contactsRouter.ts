@@ -77,6 +77,27 @@ export function createContactsRouter(
   );
 
   /**
+   * `GET .../stats` — contagens da base para os cards do topo da tela
+   * (retrofit 2026-08-16). Mesma permissão da listagem: quem pode ver a
+   * base pode ver o tamanho dela.
+   *
+   * Registrado ANTES de qualquer rota com `:contactId` porque o Express casa
+   * na ordem de declaração — sem isso, `/stats` seria interpretado como um
+   * `contactId` chamado "stats".
+   */
+  router.get(
+    '/stats',
+    requirePermission('contact:read'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(tenantIdParamSchema, req.params, res);
+      if (!params) return;
+
+      const stats = await contactRepository.countStats(params.tenantId);
+      res.status(200).json(stats);
+    }),
+  );
+
+  /**
    * `POST .../import` — corpo é o TEXTO CRU do CSV (não JSON, não
    * multipart). `raw({ type: () => true, limit })` substitui o
    * `express.json()` global só para esta rota, mesmo padrão de

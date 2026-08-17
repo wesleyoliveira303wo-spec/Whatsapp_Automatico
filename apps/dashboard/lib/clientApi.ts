@@ -466,6 +466,26 @@ export interface Contact {
   optOutAt?: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Retrofit 2026-08-16 — resumo da atividade, para a coluna "Último
+   * contato" e o botão "Abrir conversa". Ausentes num contato que ainda não
+   * tem nenhuma conversa (ex.: importado de planilha e nunca escreveu).
+   */
+  lastConversationId?: string;
+  lastConversationSessionName?: string;
+  lastActivityAt?: string;
+}
+
+/** Contagens da base do tenant — cards do topo da tela de Contatos. */
+export interface ContactStats {
+  total: number;
+  withConversation: number;
+  withoutConversation: number;
+}
+
+/** Contagens da base. Exige `contact:read`. */
+export function fetchContactStats(): Promise<ContactStats> {
+  return request('/api/contacts/stats');
 }
 
 export interface ContactPage {

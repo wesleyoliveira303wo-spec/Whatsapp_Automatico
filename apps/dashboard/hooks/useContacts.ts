@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchContacts, importContacts, optOutContact, optInContact } from '../lib/clientApi';
-import type { Contact, ContactImportReport } from '../lib/clientApi';
+import {
+  fetchContacts,
+  fetchContactStats,
+  importContacts,
+  optOutContact,
+  optInContact,
+} from '../lib/clientApi';
+import type { Contact, ContactImportReport, ContactStats } from '../lib/clientApi';
 
 export interface UseContactsResult {
   contacts: Contact[];
+  /** Contagens da base inteira (não da página) — `null` enquanto carrega. */
+  stats: ContactStats | null;
   loading: boolean;
   errorMessage: string | null;
   hasMore: boolean;
@@ -35,6 +43,25 @@ export function useContacts(): UseContactsResult {
   const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState('');
   const [refreshToken, setRefreshToken] = useState(0);
+  const [stats, setStats] = useState<ContactStats | null>(null);
+
+  // Contagens da base — recarregadas só quando algo pode ter MUDADO a base
+  // (`refreshToken`), nunca ao digitar na busca: elas descrevem o total, não
+  // a página filtrada. Falha em silêncio (os cards somem) — os cards são
+  // informativos, não podem derrubar a lista.
+  useEffect(() => {
+    let cancelled = false;
+    fetchContactStats()
+      .then((result) => {
+        if (!cancelled) setStats(result);
+      })
+      .catch(() => {
+        if (!cancelled) setStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +123,7 @@ export function useContacts(): UseContactsResult {
 
   return {
     contacts,
+    stats,
     loading,
     errorMessage,
     hasMore,

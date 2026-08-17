@@ -4,6 +4,8 @@ import { Contact, ContactSource } from '../../domain/entities/Contact';
 import {
   ContactPage,
   ContactRepository,
+  ContactStats,
+  ContactWithActivity,
   CreateContactData,
   ListContactsOptions,
 } from '../../domain/repositories/ContactRepository';
@@ -32,6 +34,30 @@ const SOURCE_FROM_PRISMA: Record<string, ContactSource> = {
   IMPORT: 'import',
   MANUAL: 'manual',
 };
+
+/** Linha de conversa trazida pelo `include` da listagem — só os campos que a tela usa. */
+interface ConversationSummaryRow {
+  id: string;
+  sessionName: string;
+  lastMessageAt: Date | null;
+}
+
+/**
+ * Mapeia a linha do banco (com a conversa mais recente incluída) para o read
+ * model da tela. `conversations` vem como array de 0 ou 1 elemento — efeito
+ * do `take: 1` do `include`.
+ */
+function toListItem(
+  row: ContactRow & { conversations: ConversationSummaryRow[] },
+): ContactWithActivity {
+  const [lastConversation] = row.conversations;
+  return {
+    ...toDomain(row),
+    lastConversationId: lastConversation?.id,
+    lastConversationSessionName: lastConversation?.sessionName,
+    lastActivityAt: lastConversation?.lastMessageAt ?? undefined,
+  };
+}
 
 function toDomain(row: ContactRow): Contact {
   return {
@@ -119,7 +145,18 @@ export class PrismaContactRepository implements ContactRepository {
     });
   }
 
-  /** Paginação por cursor — mesmo padrão de `PrismaAuditLogRepository.listByTenant`. */
+  /**
+   * Paginação por cursor — mesmo padrão de `PrismaAuditLogRepository.listByTenant`.
+   *
+   * `include.conversations` com `take: 1` traz a conversa MAIS RECENTE de
+   * cada contato numa única consulta (o Prisma resolve isso como um join
+   * lateral), em vez de uma consulta por linha. É o que alimenta a coluna
+   * "Último contato" e o botão "Abrir conversa" da tela sem N+1.
+   *
+   * `lastMessageAt: 'desc'` com `nulls: 'last'`: uma conversa que nunca
+   * recebeu mensagem (criada mas vazia) não deve ganhar de uma com atividade
+   * real só por acaso de ordenação.
+   */
   async listByTenant(tenantId: string, options: ListContactsOptions): Promise<ContactPage> {
     const search = options.search?.trim();
     const rows = await this.prisma.whatsAppContact.findMany({
@@ -137,14 +174,36 @@ export class PrismaContactRepository implements ContactRepository {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: options.limit + 1,
       ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
+      include: {
+        conversations: {
+          orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+          take: 1,
+          select: { id: true, sessionName: true, lastMessageAt: true },
+        },
+      },
     });
 
     const hasMore = rows.length > options.limit;
     const page = hasMore ? rows.slice(0, options.limit) : rows;
-    const contacts = page.map(toDomain);
+    const contacts = page.map(toListItem);
     const nextCursor = hasMore ? page[page.length - 1].id : undefined;
 
     return { contacts, nextCursor };
+  }
+
+  /**
+   * Duas contagens baratas em vez de uma agregação — `withoutConversation` é
+   * derivado por subtração, nunca consultado (evita uma terceira ida ao
+   * banco para um número que já é conhecido).
+   */
+  async countStats(tenantId: string): Promise<ContactStats> {
+    const [total, withConversation] = await Promise.all([
+      this.prisma.whatsAppContact.count({ where: { tenantId } }),
+      this.prisma.whatsAppContact.count({
+        where: { tenantId, conversations: { some: {} } },
+      }),
+    ]);
+    return { total, withConversation, withoutConversation: total - withConversation };
   }
 
   /**
