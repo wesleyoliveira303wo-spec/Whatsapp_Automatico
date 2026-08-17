@@ -11,6 +11,7 @@ jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   fetchCampaign: jest.fn(),
   fetchCampaignRecipients: jest.fn(),
+  fetchCampaignMetrics: jest.fn(),
   startCampaign: jest.fn(),
   pauseCampaign: jest.fn(),
   cancelCampaign: jest.fn(),
@@ -46,6 +47,21 @@ function mockDetail(overrides: Partial<clientApi.Campaign> = {}): void {
       },
     ],
   });
+  (clientApi.fetchCampaignMetrics as jest.Mock).mockResolvedValue({
+    metrics: {
+      total: 3,
+      pending: 2,
+      sent: 0,
+      failed: 0,
+      replied: 0,
+      skipped: 1,
+      skipReasons: { opt_out: 1 },
+      stageCounts: { new: 0, contacted: 0, negotiating: 0, closed_won: 0, closed_lost: 0 },
+      escalatedCount: 0,
+      aiCostUsd: 0,
+      unknownAnswerCount: 0,
+    },
+  });
 }
 
 async function renderPanel(): Promise<void> {
@@ -73,6 +89,50 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
 
     expect(screen.getByText('contact-1')).toBeInTheDocument();
     expect(screen.getByText('contact-2')).toBeInTheDocument();
+  });
+
+  describe('métricas (Fase L, Bloco L7)', () => {
+    it('mostra "—" para métricas sem denominador válido (sem tentativa de envio ainda)', async () => {
+      mockDetail();
+      await renderPanel();
+
+      const dashes = screen.getAllByText('—');
+      expect(dashes.length).toBeGreaterThanOrEqual(4); // taxa de resposta, tempo, conversão, custo/conversão
+    });
+
+    it('mostra a taxa de resposta, tempo até 1ª resposta e conversão quando presentes', async () => {
+      mockDetail();
+      (clientApi.fetchCampaignMetrics as jest.Mock).mockResolvedValue({
+        metrics: {
+          total: 3,
+          pending: 0,
+          sent: 0,
+          failed: 1,
+          replied: 2,
+          skipped: 0,
+          skipReasons: {},
+          responseRate: 2 / 3,
+          avgTimeToFirstReplyMinutes: 45,
+          stageCounts: { new: 0, contacted: 0, negotiating: 1, closed_won: 1, closed_lost: 0 },
+          escalatedCount: 1,
+          conversionRate: 0.5,
+          aiCostUsd: 0.05,
+          costPerConversionUsd: 0.05,
+          unknownAnswerCount: 2,
+        },
+      });
+
+      await renderPanel();
+
+      expect(await screen.findByText('67%')).toBeInTheDocument(); // taxa de resposta
+      expect(screen.getByText('50%')).toBeInTheDocument(); // conversão
+      expect(screen.getByText('45 min')).toBeInTheDocument();
+      expect(screen.getByText('US$ 0.0500')).toBeInTheDocument();
+      expect(screen.getByText('Escalado para humano: 1')).toBeInTheDocument();
+      expect(
+        screen.getByText(/não soube responder/),
+      ).toHaveTextContent('A IA não soube responder 2 vez(es) em conversas desta campanha.');
+    });
   });
 
   it('DRAFT: botão "Iniciar envio" habilitado, "Pausar" desabilitado', async () => {

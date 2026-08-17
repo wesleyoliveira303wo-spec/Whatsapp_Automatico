@@ -118,6 +118,22 @@ export function createCampaignsRouter(campaignService: CampaignService): Router 
   );
 
   router.get(
+    '/:campaignId/metrics',
+    requirePermission('campaign:read'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(campaignIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const metrics = await campaignService.getCampaignMetrics(params.tenantId, params.campaignId);
+      res.status(200).json({ metrics });
+    }),
+  );
+
+  router.get(
     '/:campaignId/recipients',
     requirePermission('campaign:read'),
     asyncHandler(async (req, res) => {

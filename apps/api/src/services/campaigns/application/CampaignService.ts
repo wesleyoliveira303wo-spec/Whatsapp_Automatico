@@ -1,7 +1,7 @@
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
-import { Campaign, CampaignRecipientSummary } from '../domain/entities/Campaign';
+import { Campaign, CampaignRecipientSummary, CampaignMetrics } from '../domain/entities/Campaign';
 import { CampaignNotFoundError } from '../domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../domain/errors/NoRecipientsSelectedError';
 import { InvalidCampaignTransitionError } from '../domain/errors/InvalidCampaignTransitionError';
@@ -134,6 +134,21 @@ export class CampaignService {
     }
     const summary = await this.campaignRepository.summarizeRecipients(tenantId, campaignId);
     return { campaign, summary };
+  }
+
+  /**
+   * Métricas de campanha (Fase L, Bloco L7) — o funil real além de
+   * "mensagens enviadas": resposta, estágio no Pipeline, custo de IA e
+   * conversão. Lança `CampaignNotFoundError` nas mesmas condições de
+   * `getCampaign`.
+   */
+  async getCampaignMetrics(tenantId: string, campaignId: string): Promise<CampaignMetrics> {
+    await this.assertTenantExists(tenantId);
+    const metrics = await this.campaignRepository.getMetrics(tenantId, campaignId);
+    if (!metrics) {
+      throw new CampaignNotFoundError(campaignId);
+    }
+    return metrics;
   }
 
   async listRecipients(

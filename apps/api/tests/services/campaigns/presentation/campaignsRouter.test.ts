@@ -217,6 +217,60 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
     });
   });
 
+  describe('GET /:campaignId/metrics (Fase L, Bloco L7 — campaign:read)', () => {
+    it('devolve as métricas calculadas', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      campaigns.seedEligibility('contact-1', neutral);
+      const created = await request(app)
+        .post(basePath('tenant-1'))
+        .send({
+          sessionName: 'sessao',
+          name: 'Campanha',
+          messageTemplate: 'Oi',
+          contactIds: ['contact-1'],
+        });
+
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/${created.body.campaign.id}/metrics`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.metrics).toMatchObject({ total: 1, pending: 1, replied: 0, skipped: 0 });
+    });
+
+    it('read_only NÃO pode ver métricas (403)', async () => {
+      const { app, campaigns } = buildApp(person('read_only'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/${campaignId}/metrics`,
+      );
+
+      expect(response.status).toBe(403);
+    });
+
+    it('404 para campanha inexistente', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/campanha-fantasma/metrics`,
+      );
+
+      expect(response.status).toBe(404);
+    });
+
+    it('IDOR: métricas de campanha de OUTRO tenant devolvem 404', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/${campaignId}/metrics`,
+      );
+
+      expect(response.status).toBe(404);
+    });
+  });
+
   describe('GET /:campaignId/recipients (campaign:read)', () => {
     it('lista os destinatários calculados, com o motivo de supressão', async () => {
       const { app, campaigns } = buildApp(person('administrator'));

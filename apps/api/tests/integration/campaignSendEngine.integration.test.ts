@@ -355,4 +355,109 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
 
     expect(origin).toBeUndefined();
   });
+
+  // --- Fase L, Bloco L7 (métricas) ---
+
+  it('getMetrics cruza campaign_recipients + whatsapp_conversations + ai_interactions contra o banco real', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha métricas',
+      messageTemplate: 'Oi',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: 'contact-metrica-converteu', status: 'pending' },
+      { contactId: 'contact-metrica-nao-converteu', status: 'pending' },
+    ]);
+    const [converteu, naoConverteu] = await campaignRepository.listPendingRecipients(
+      tenantId,
+      campanha.id,
+    );
+    await campaignRepository.markRecipientSent(tenantId, converteu.id, {
+      attemptedAt: new Date('2026-08-17T10:00:00.000Z'),
+      conversationId: 'conversa-metrica-converteu',
+    });
+    await campaignRepository.markRecipientSent(tenantId, naoConverteu.id, {
+      attemptedAt: new Date('2026-08-17T10:00:00.000Z'),
+      conversationId: 'conversa-metrica-nao-converteu',
+    });
+    await campaignRepository.markRepliedByConversationId(tenantId, 'conversa-metrica-converteu');
+
+    await prisma.whatsAppConversation.create({
+      data: {
+        tenantId,
+        sessionName: 'sessao-a',
+        contactJid: 'metrica-converteu@s.whatsapp.net',
+        id: 'conversa-metrica-converteu',
+        stage: 'CLOSED_WON',
+      },
+    });
+    await prisma.whatsAppConversation.create({
+      data: {
+        tenantId,
+        sessionName: 'sessao-a',
+        contactJid: 'metrica-nao-converteu@s.whatsapp.net',
+        id: 'conversa-metrica-nao-converteu',
+        stage: 'NEGOTIATING',
+        escalatedAt: new Date(),
+      },
+    });
+    await prisma.aiInteraction.create({
+      data: {
+        tenantId,
+        conversationId: 'conversa-metrica-converteu',
+        provider: 'CLAUDE',
+        promptVersion: 'v2',
+        tokensInput: 100,
+        tokensOutput: 50,
+        costUsd: '0.01000000',
+        latencyMs: 500,
+        status: 'SUCCESS',
+      },
+    });
+    await prisma.aiInteraction.create({
+      data: {
+        tenantId,
+        conversationId: 'conversa-metrica-nao-converteu',
+        provider: 'CLAUDE',
+        promptVersion: 'v2',
+        tokensInput: 100,
+        tokensOutput: 50,
+        costUsd: '0.02000000',
+        latencyMs: 500,
+        status: 'SUCCESS',
+        escalationReason: 'UNKNOWN_ANSWER',
+      },
+    });
+
+    const metrics = await campaignRepository.getMetrics(tenantId, campanha.id);
+
+    expect(metrics).toMatchObject({
+      total: 2,
+      replied: 1,
+      sent: 1,
+      stageCounts: { closed_won: 1, negotiating: 1, new: 0, contacted: 0, closed_lost: 0 },
+      escalatedCount: 1,
+      conversionRate: 0.5,
+      unknownAnswerCount: 1,
+    });
+    expect(metrics?.aiCostUsd).toBeCloseTo(0.03, 6);
+    expect(metrics?.costPerConversionUsd).toBeCloseTo(0.03, 6);
+  });
+
+  it('getMetrics devolve undefined para campanha inexistente/de outro tenant', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const metrics = await campaignRepository.getMetrics(tenantId, 'campanha-fantasma');
+
+    expect(metrics).toBeUndefined();
+  });
 });

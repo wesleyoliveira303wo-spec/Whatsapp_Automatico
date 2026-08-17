@@ -3,6 +3,7 @@ import {
   CampaignRecipient,
   CampaignRecipientSummary,
   CampaignStatus,
+  CampaignMetrics,
 } from '../entities/Campaign';
 import { RecipientEligibility } from '../policies/determineSkipReason';
 import { CampaignSendOutcome } from '../policies/shouldTripCircuitBreaker';
@@ -164,4 +165,16 @@ export interface CampaignRepository {
     tenantId: string,
     conversationId: string,
   ): Promise<{ messageSent: string } | undefined>;
+
+  // --- Fase L, Bloco L7 (métricas) ---
+
+  /**
+   * Métricas de campanha (ver `CampaignMetrics`) — cruza
+   * `campaign_recipients` (desta campanha) com `whatsapp_conversations`/
+   * `ai_interactions` (das conversas VINCULADAS, via `conversationId`).
+   * Mesmo racional de `fetchEligibility`: leitura de RELATÓRIO cruzando
+   * tabelas, não dependência de escrita entre domínios (ver docstring do
+   * port). `undefined` se a campanha não existir/não pertencer ao tenant.
+   */
+  getMetrics(tenantId: string, campaignId: string): Promise<CampaignMetrics | undefined>;
 }

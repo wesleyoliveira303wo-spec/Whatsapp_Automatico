@@ -4,6 +4,8 @@ import {
   CampaignRecipientSummary,
   CampaignSkipReason,
   CampaignStatus,
+  CampaignMetrics,
+  CampaignLinkedConversationStage,
 } from '../../../../src/services/campaigns/domain/entities/Campaign';
 import { RecipientEligibility } from '../../../../src/services/campaigns/domain/policies/determineSkipReason';
 import { CampaignSendOutcome } from '../../../../src/services/campaigns/domain/policies/shouldTripCircuitBreaker';
@@ -334,5 +336,121 @@ export class FakeCampaignRepository implements CampaignRepository {
     if (!mostRecent) return undefined;
     const campaign = this.campaigns.get(mostRecent.campaignId);
     return campaign ? { messageSent: campaign.messageTemplate } : undefined;
+  }
+
+  // --- Fase L, Bloco L7 (métricas) ---
+
+  private readonly conversationStages = new Map<
+    string,
+    { stage: CampaignLinkedConversationStage; escalatedAt?: Date }
+  >();
+  private readonly aiInteractions: { conversationId: string; costUsd: number; escalationReason?: string }[] =
+    [];
+
+  /** Helper de teste: simula uma conversa vinculada (via `conversationId`), com `stage` e opcionalmente `escalatedAt`. */
+  seedConversationStage(
+    conversationId: string,
+    stage: CampaignLinkedConversationStage,
+    escalatedAt?: Date,
+  ): void {
+    this.conversationStages.set(conversationId, { stage, escalatedAt });
+  }
+
+  /** Helper de teste: simula uma `AiInteraction` de uma conversa vinculada. */
+  seedAiInteraction(conversationId: string, costUsd: number, escalationReason?: string): void {
+    this.aiInteractions.push({ conversationId, costUsd, escalationReason });
+  }
+
+  async getMetrics(tenantId: string, campaignId: string): Promise<CampaignMetrics | undefined> {
+    const campaign = this.campaigns.get(campaignId);
+    if (!campaign || campaign.tenantId !== tenantId) {
+      return undefined;
+    }
+
+    const recipients = [...this.recipients.values()].filter(
+      (row) => row.tenantId === tenantId && row.campaignId === campaignId,
+    );
+
+    let pending = 0;
+    let sent = 0;
+    let failed = 0;
+    let replied = 0;
+    let skipped = 0;
+    const skipReasons: Partial<Record<CampaignSkipReason, number>> = {};
+    const conversationIds = new Set<string>();
+    const replyDurationsMs: number[] = [];
+
+    for (const row of recipients) {
+      if (row.conversationId) conversationIds.add(row.conversationId);
+      if (row.status === 'pending') pending += 1;
+      else if (row.status === 'sent') sent += 1;
+      else if (row.status === 'failed') failed += 1;
+      else if (row.status === 'replied') {
+        replied += 1;
+        if (row.sentAt && row.repliedAt) {
+          replyDurationsMs.push(row.repliedAt.getTime() - row.sentAt.getTime());
+        }
+      } else if (row.status === 'skipped') {
+        skipped += 1;
+        if (row.skipReason) {
+          const reason = row.skipReason as CampaignSkipReason;
+          skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
+        }
+      }
+    }
+
+    const attempted = sent + failed + replied;
+    const responseRate = attempted > 0 ? replied / attempted : undefined;
+    const avgTimeToFirstReplyMinutes =
+      replyDurationsMs.length > 0
+        ? replyDurationsMs.reduce((a, b) => a + b, 0) / replyDurationsMs.length / 60_000
+        : undefined;
+
+    const stageCounts: Record<CampaignLinkedConversationStage, number> = {
+      new: 0,
+      contacted: 0,
+      negotiating: 0,
+      closed_won: 0,
+      closed_lost: 0,
+    };
+    let escalatedCount = 0;
+    for (const conversationId of conversationIds) {
+      const info = this.conversationStages.get(conversationId);
+      if (info) {
+        stageCounts[info.stage] += 1;
+        if (info.escalatedAt) escalatedCount += 1;
+      }
+    }
+    const conversionRate =
+      conversationIds.size > 0 ? stageCounts.closed_won / conversationIds.size : undefined;
+
+    let aiCostUsd = 0;
+    let unknownAnswerCount = 0;
+    for (const interaction of this.aiInteractions) {
+      if (conversationIds.has(interaction.conversationId)) {
+        aiCostUsd += interaction.costUsd;
+        if (interaction.escalationReason === 'unknown_answer') unknownAnswerCount += 1;
+      }
+    }
+    const costPerConversionUsd =
+      stageCounts.closed_won > 0 ? aiCostUsd / stageCounts.closed_won : undefined;
+
+    return {
+      total: recipients.length,
+      pending,
+      sent,
+      failed,
+      replied,
+      skipped,
+      skipReasons,
+      responseRate,
+      avgTimeToFirstReplyMinutes,
+      stageCounts,
+      escalatedCount,
+      conversionRate,
+      aiCostUsd,
+      costPerConversionUsd,
+      unknownAnswerCount,
+    };
   }
 }

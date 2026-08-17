@@ -63,3 +63,48 @@ export interface CampaignRecipientSummary {
   /** Contagem por motivo, só para os que existem (nunca zeros implícitos). */
   skipReasons: Partial<Record<CampaignSkipReason, number>>;
 }
+
+/** Espelha `Conversation['stage']` (`services/conversations/domain`) — literal duplicado de propósito para não importar um tipo inline de outro bounded context só por um union de 5 valores. */
+export type CampaignLinkedConversationStage =
+  | 'new'
+  | 'contacted'
+  | 'negotiating'
+  | 'closed_won'
+  | 'closed_lost';
+
+/**
+ * Métricas de campanha — Fase L, Bloco L7 (`FASE_L_MOTOR_DE_LEADS.md` §13).
+ * O funil real além de "mensagens enviadas": elegibilidade, entrega TENTADA
+ * (o produto não tem confirmação de entrega do WhatsApp — nunca inventa essa
+ * métrica), resposta, e o que acontece depois via Pipeline/IA.
+ *
+ * Campos `?` (opcionais) representam uma métrica sem denominador válido
+ * (ex.: `responseRate` sem nenhuma tentativa de envio ainda) — devolvidos
+ * como `undefined`, NUNCA como `0` disfarçado, para a UI distinguir "ainda
+ * não há dado" de "a taxa é zero de verdade".
+ */
+export interface CampaignMetrics {
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  replied: number;
+  skipped: number;
+  skipReasons: Partial<Record<CampaignSkipReason, number>>;
+  /** `replied / (sent + failed + replied)` — só entre quem teve o envio TENTADO. */
+  responseRate?: number;
+  /** Média de `repliedAt - sentAt` em minutos, só entre destinatários `REPLIED` com ambos os timestamps. */
+  avgTimeToFirstReplyMinutes?: number;
+  /** Contagem por `stage`, entre as conversas vinculadas a esta campanha (`CampaignRecipient.conversationId`). Sempre as 5 chaves, mesmo com 0. */
+  stageCounts: Record<CampaignLinkedConversationStage, number>;
+  /** Quantas conversas vinculadas têm `escalatedAt` preenchido (já pediram ajuda humana em algum momento). */
+  escalatedCount: number;
+  /** `closed_won / total de conversas vinculadas` — undefined se não há nenhuma conversa vinculada ainda. */
+  conversionRate?: number;
+  /** Soma de `AiInteraction.costUsd` de todas as conversas vinculadas a esta campanha. */
+  aiCostUsd: number;
+  /** `aiCostUsd / closed_won` — undefined se ainda não há nenhuma conversão. */
+  costPerConversionUsd?: number;
+  /** Quantas vezes a IA escalou por `unknown_answer` (F1.4) nas conversas desta campanha — "a IA travou N vezes". */
+  unknownAnswerCount: number;
+}

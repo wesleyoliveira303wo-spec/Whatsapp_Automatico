@@ -11,6 +11,8 @@ import {
   CampaignRecipientSummary,
   CampaignSkipReason,
   CampaignStatus,
+  CampaignMetrics,
+  CampaignLinkedConversationStage,
 } from '../../domain/entities/Campaign';
 import {
   CampaignPage,
@@ -443,7 +445,154 @@ export class PrismaCampaignRepository implements CampaignRepository {
     });
     return row ? { messageSent: row.campaign.messageTemplate } : undefined;
   }
+
+  // --- Fase L, Bloco L7 (métricas) ---
+
+  /**
+   * Um único `findMany` de todos os destinatários da campanha (limitados a
+   * 5.000 pela própria criação — `createCampaignBodySchema.contactIds.max(5000)`,
+   * `campaignsRouter.ts` — então caber tudo em memória é seguro), em vez de
+   * vários `groupBy` — mais simples de auditar e mais barato para o volume
+   * real deste produto. As duas consultas cruzadas (`whatsapp_conversations`/
+   * `ai_interactions`) ficam restritas aos `conversationId` desta campanha,
+   * nunca uma varredura ampla.
+   */
+  async getMetrics(tenantId: string, campaignId: string): Promise<CampaignMetrics | undefined> {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id: campaignId, tenantId },
+      select: { id: true },
+    });
+    if (!campaign) {
+      return undefined;
+    }
+
+    const recipients = await this.prisma.campaignRecipient.findMany({
+      where: { tenantId, campaignId },
+      select: {
+        status: true,
+        skipReason: true,
+        conversationId: true,
+        sentAt: true,
+        repliedAt: true,
+      },
+    });
+
+    let pending = 0;
+    let sent = 0;
+    let failed = 0;
+    let replied = 0;
+    let skipped = 0;
+    const skipReasons: Partial<Record<CampaignSkipReason, number>> = {};
+    const conversationIds = new Set<string>();
+    const replyDurationsMs: number[] = [];
+
+    for (const row of recipients) {
+      if (row.conversationId) {
+        conversationIds.add(row.conversationId);
+      }
+      switch (row.status) {
+        case 'PENDING':
+          pending += 1;
+          break;
+        case 'SENT':
+          sent += 1;
+          break;
+        case 'FAILED':
+          failed += 1;
+          break;
+        case 'REPLIED':
+          replied += 1;
+          if (row.sentAt && row.repliedAt) {
+            replyDurationsMs.push(row.repliedAt.getTime() - row.sentAt.getTime());
+          }
+          break;
+        case 'SKIPPED':
+          skipped += 1;
+          if (row.skipReason) {
+            const reason = row.skipReason as CampaignSkipReason;
+            skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
+          }
+          break;
+      }
+    }
+
+    const attempted = sent + failed + replied;
+    const responseRate = attempted > 0 ? replied / attempted : undefined;
+    const avgTimeToFirstReplyMinutes =
+      replyDurationsMs.length > 0
+        ? replyDurationsMs.reduce((sum, ms) => sum + ms, 0) / replyDurationsMs.length / 60_000
+        : undefined;
+
+    const stageCounts: Record<CampaignLinkedConversationStage, number> = {
+      new: 0,
+      contacted: 0,
+      negotiating: 0,
+      closed_won: 0,
+      closed_lost: 0,
+    };
+    let escalatedCount = 0;
+
+    if (conversationIds.size > 0) {
+      const conversations = await this.prisma.whatsAppConversation.findMany({
+        where: { tenantId, id: { in: [...conversationIds] } },
+        select: { stage: true, escalatedAt: true },
+      });
+      for (const conversation of conversations) {
+        stageCounts[STAGE_FROM_PRISMA[conversation.stage]] += 1;
+        if (conversation.escalatedAt) {
+          escalatedCount += 1;
+        }
+      }
+    }
+
+    const conversionRate =
+      conversationIds.size > 0 ? stageCounts.closed_won / conversationIds.size : undefined;
+
+    let aiCostUsd = 0;
+    let unknownAnswerCount = 0;
+    if (conversationIds.size > 0) {
+      const interactions = await this.prisma.aiInteraction.findMany({
+        where: { tenantId, conversationId: { in: [...conversationIds] } },
+        select: { costUsd: true, escalationReason: true },
+      });
+      for (const interaction of interactions) {
+        aiCostUsd += Number(interaction.costUsd);
+        if (interaction.escalationReason === 'UNKNOWN_ANSWER') {
+          unknownAnswerCount += 1;
+        }
+      }
+    }
+    const costPerConversionUsd =
+      stageCounts.closed_won > 0 ? aiCostUsd / stageCounts.closed_won : undefined;
+
+    return {
+      total: recipients.length,
+      pending,
+      sent,
+      failed,
+      replied,
+      skipped,
+      skipReasons,
+      responseRate,
+      avgTimeToFirstReplyMinutes,
+      stageCounts,
+      escalatedCount,
+      conversionRate,
+      aiCostUsd,
+      costPerConversionUsd,
+      unknownAnswerCount,
+    };
+  }
 }
+
+/** Mapeia `WhatsAppConversation.stage` (Prisma) para o literal de `CampaignLinkedConversationStage` — mesmos 5 valores de `Conversation['stage']` (`services/conversations`), duplicado de propósito (ver docstring do tipo). */
+const STAGE_FROM_PRISMA: Record<string, CampaignLinkedConversationStage> = {
+  NEW: 'new',
+  CONTACTED: 'contacted',
+  NEGOTIATING: 'negotiating',
+  CLOSED_WON: 'closed_won',
+  CLOSED_LOST: 'closed_lost',
+};
 
 /** Mapeia o filtro de status (união completa, incluindo `sent`/`failed`/`replied` — ainda não produzidos por L3, mas já corretos para L4/L5). */
 function recipientStatusToPrismaFilter(

@@ -443,4 +443,95 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
       );
     });
   });
+
+  describe('getCampaignMetrics() (Fase L, Bloco L7)', () => {
+    it('calcula o funil completo: resposta, estágio, escalonamento, custo e conversão', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      // 1 pending, 1 failed, 2 replied (uma converteu, outra não).
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-pending' });
+      campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-failed',
+        status: 'failed',
+      });
+      campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-converteu',
+        status: 'replied',
+        conversationId: 'conversa-converteu',
+        sentAt: new Date('2026-08-17T10:00:00.000Z'),
+        repliedAt: new Date('2026-08-17T10:10:00.000Z'), // 10 min
+      });
+      campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-nao-converteu',
+        status: 'replied',
+        conversationId: 'conversa-nao-converteu',
+        sentAt: new Date('2026-08-17T10:00:00.000Z'),
+        repliedAt: new Date('2026-08-17T10:30:00.000Z'), // 30 min
+      });
+      campaigns.seedConversationStage('conversa-converteu', 'closed_won');
+      campaigns.seedConversationStage('conversa-nao-converteu', 'negotiating', new Date());
+      campaigns.seedAiInteraction('conversa-converteu', 0.01);
+      campaigns.seedAiInteraction('conversa-nao-converteu', 0.02, 'unknown_answer');
+
+      const metrics = await service.getCampaignMetrics('tenant-1', campaignId);
+
+      expect(metrics).toMatchObject({
+        total: 4,
+        pending: 1,
+        failed: 1,
+        replied: 2,
+        sent: 0,
+        skipped: 0,
+        responseRate: 2 / 3, // 2 replied / 3 tentados (failed+replied)
+        avgTimeToFirstReplyMinutes: 20, // média de 10 e 30
+        stageCounts: { new: 0, contacted: 0, negotiating: 1, closed_won: 1, closed_lost: 0 },
+        escalatedCount: 1,
+        conversionRate: 0.5, // 1 closed_won / 2 conversas vinculadas
+        aiCostUsd: 0.03,
+        costPerConversionUsd: 0.03, // aiCostUsd / 1 closed_won
+        unknownAnswerCount: 1,
+      });
+    });
+
+    it('métricas sem denominador válido vêm undefined, nunca zero disfarçado', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' }); // só pending
+
+      const metrics = await service.getCampaignMetrics('tenant-1', campaignId);
+
+      expect(metrics.responseRate).toBeUndefined();
+      expect(metrics.avgTimeToFirstReplyMinutes).toBeUndefined();
+      expect(metrics.conversionRate).toBeUndefined();
+      expect(metrics.costPerConversionUsd).toBeUndefined();
+      expect(metrics.aiCostUsd).toBe(0);
+    });
+
+    it('lança CampaignNotFoundError para id inexistente', async () => {
+      const { service } = buildSut();
+
+      await expect(service.getCampaignMetrics('tenant-1', 'campanha-fantasma')).rejects.toThrow(
+        CampaignNotFoundError,
+      );
+    });
+
+    it('lança CampaignNotFoundError (não vaza dado) para campanha de OUTRO tenant', async () => {
+      const tenants = new FakeTenantRepository();
+      tenants.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
+      tenants.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: 'hash-2' });
+      const campaigns = new FakeCampaignRepository();
+      const service = new CampaignService(campaigns, tenants, new NoopLogger());
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+
+      await expect(service.getCampaignMetrics('tenant-1', campaignId)).rejects.toThrow(
+        CampaignNotFoundError,
+      );
+    });
+  });
 });

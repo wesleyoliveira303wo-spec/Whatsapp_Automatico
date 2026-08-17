@@ -681,6 +681,44 @@ export function cancelCampaign(campaignId: string): Promise<{ campaign: Campaign
   return request(`/api/campaigns/${encodeURIComponent(campaignId)}/cancel`, { method: 'POST' });
 }
 
+// --- Fase L, Bloco L7 — métricas de campanha ---
+
+/** Espelha `CampaignLinkedConversationStage` (`apps/api`). */
+export type CampaignLinkedConversationStage =
+  | 'new'
+  | 'contacted'
+  | 'negotiating'
+  | 'closed_won'
+  | 'closed_lost';
+
+/**
+ * O funil real de uma campanha (`FASE_L_MOTOR_DE_LEADS.md` §13) — além de
+ * "mensagens enviadas". Campos opcionais representam "ainda sem denominador
+ * válido" (ex.: nenhuma resposta ainda), nunca um `0` disfarçado.
+ */
+export interface CampaignMetrics {
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  replied: number;
+  skipped: number;
+  skipReasons: Partial<Record<CampaignSkipReason, number>>;
+  responseRate?: number;
+  avgTimeToFirstReplyMinutes?: number;
+  stageCounts: Record<CampaignLinkedConversationStage, number>;
+  escalatedCount: number;
+  conversionRate?: number;
+  aiCostUsd: number;
+  costPerConversionUsd?: number;
+  unknownAnswerCount: number;
+}
+
+/** Métricas de uma campanha. Exige `campaign:read`. */
+export function fetchCampaignMetrics(campaignId: string): Promise<{ metrics: CampaignMetrics }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`);
+}
+
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
   return request('/api/sessions');
 }

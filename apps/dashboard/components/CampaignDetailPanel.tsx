@@ -5,6 +5,7 @@ import { ChevronLeft, Play, Pause, XCircle } from 'lucide-react';
 import {
   fetchCampaign,
   fetchCampaignRecipients,
+  fetchCampaignMetrics,
   startCampaign,
   pauseCampaign,
   cancelCampaign,
@@ -13,6 +14,8 @@ import {
   type CampaignRecipient,
   type CampaignRecipientSummary,
   type CampaignSkipReason,
+  type CampaignMetrics,
+  type CampaignLinkedConversationStage,
 } from '@/lib/clientApi';
 import { formatDateTime } from '@/lib/formatters';
 import { toast } from '@/components/ui/use-toast';
@@ -49,6 +52,29 @@ const RECIPIENT_STATUS_LABELS: Record<CampaignRecipient['status'], string> = {
   replied: 'Respondeu',
 };
 
+const STAGE_LABELS: Record<CampaignLinkedConversationStage, string> = {
+  new: 'Novo',
+  contacted: 'Contatado',
+  negotiating: 'Negociando',
+  closed_won: 'Fechado',
+  closed_lost: 'Perdido',
+};
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatMinutes(value: number): string {
+  if (value < 60) return `${Math.round(value)} min`;
+  const hours = Math.floor(value / 60);
+  const minutes = Math.round(value % 60);
+  return minutes > 0 ? `${hours}h${minutes}min` : `${hours}h`;
+}
+
+function formatUsd(value: number): string {
+  return `US$ ${value.toFixed(4)}`;
+}
+
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
     if (error.status === 403) return 'Seu cargo não permite gerenciar campanhas.';
@@ -74,6 +100,7 @@ export default function CampaignDetailPanel({
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [summary, setSummary] = useState<CampaignRecipientSummary | null>(null);
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
+  const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
@@ -83,11 +110,16 @@ export default function CampaignDetailPanel({
   const load = useCallback(() => {
     setLoading(true);
     setErrorMessage(null);
-    Promise.all([fetchCampaign(campaignId), fetchCampaignRecipients(campaignId, { limit: 100 })])
-      .then(([detail, recipientPage]) => {
+    Promise.all([
+      fetchCampaign(campaignId),
+      fetchCampaignRecipients(campaignId, { limit: 100 }),
+      fetchCampaignMetrics(campaignId),
+    ])
+      .then(([detail, recipientPage, metricsResult]) => {
         setCampaign(detail.campaign);
         setSummary(detail.summary);
         setRecipients(recipientPage.recipients);
+        setMetrics(metricsResult.metrics);
       })
       .catch(() => setErrorMessage('Não foi possível carregar esta campanha.'))
       .finally(() => setLoading(false));
@@ -294,6 +326,62 @@ export default function CampaignDetailPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {metrics && (
+        <div className="mb-5">
+          <h2 className="mb-2 text-[15px] font-semibold text-foreground">Métricas</h2>
+          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border border-border bg-card px-3.5 py-3">
+              <p className="text-[12px] text-muted-foreground">Taxa de resposta</p>
+              <p className="text-[18px] font-semibold text-foreground">
+                {metrics.responseRate !== undefined ? formatPercent(metrics.responseRate) : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card px-3.5 py-3">
+              <p className="text-[12px] text-muted-foreground">Tempo até 1ª resposta</p>
+              <p className="text-[18px] font-semibold text-foreground">
+                {metrics.avgTimeToFirstReplyMinutes !== undefined
+                  ? formatMinutes(metrics.avgTimeToFirstReplyMinutes)
+                  : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card px-3.5 py-3">
+              <p className="text-[12px] text-muted-foreground">Taxa de conversão</p>
+              <p className="text-[18px] font-semibold text-foreground">
+                {metrics.conversionRate !== undefined ? formatPercent(metrics.conversionRate) : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card px-3.5 py-3">
+              <p className="text-[12px] text-muted-foreground">Custo de IA por conversão</p>
+              <p className="text-[18px] font-semibold text-foreground">
+                {metrics.costPerConversionUsd !== undefined
+                  ? formatUsd(metrics.costPerConversionUsd)
+                  : '—'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-3 flex flex-wrap gap-2">
+            {(Object.keys(metrics.stageCounts) as CampaignLinkedConversationStage[]).map(
+              (stage) => (
+                <Badge key={stage} variant="secondary">
+                  {STAGE_LABELS[stage]}: {metrics.stageCounts[stage]}
+                </Badge>
+              ),
+            )}
+            {metrics.escalatedCount > 0 && (
+              <Badge variant="warning">Escalado para humano: {metrics.escalatedCount}</Badge>
+            )}
+          </div>
+
+          {metrics.unknownAnswerCount > 0 && (
+            <p className="text-[12.5px] text-muted-foreground">
+              A IA não soube responder <strong>{metrics.unknownAnswerCount}</strong> vez(es) em
+              conversas desta campanha.
+            </p>
+          )}
+        </div>
       )}
 
       <h2 className="mb-2 text-[15px] font-semibold text-foreground">Destinatários</h2>
