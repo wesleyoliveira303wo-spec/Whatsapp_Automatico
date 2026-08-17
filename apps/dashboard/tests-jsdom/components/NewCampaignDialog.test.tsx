@@ -16,7 +16,11 @@ jest.mock('../../lib/clientApi', () => ({
 
 function openDialog(contactIds: string[] = ['contact-1', 'contact-2']): void {
   render(
-    <NewCampaignDialog sessionName="sessao-principal" contactIds={contactIds} onCreated={jest.fn()} />,
+    <NewCampaignDialog
+      sessionName="sessao-principal"
+      contactIds={contactIds}
+      onCreated={jest.fn()}
+    />,
   );
   fireEvent.click(screen.getByRole('button', { name: /Novo disparo/ }));
 }
@@ -27,7 +31,9 @@ describe('NewCampaignDialog (Fase L, Bloco L3)', () => {
   });
 
   it('o botão "Novo disparo" fica desabilitado sem nenhum contato selecionado', () => {
-    render(<NewCampaignDialog sessionName="sessao-principal" contactIds={[]} onCreated={jest.fn()} />);
+    render(
+      <NewCampaignDialog sessionName="sessao-principal" contactIds={[]} onCreated={jest.fn()} />,
+    );
     expect(screen.getByRole('button', { name: /Novo disparo/ })).toBeDisabled();
   });
 
@@ -60,7 +66,12 @@ describe('NewCampaignDialog (Fase L, Bloco L3)', () => {
   it('cria a campanha e mostra o resumo com pendentes/suprimidos por motivo', async () => {
     (clientApi.createCampaign as jest.Mock).mockResolvedValue({
       campaign: { id: 'campaign-1', name: 'Promoção', status: 'draft' },
-      summary: { total: 3, pending: 1, skipped: 2, skipReasons: { opt_out: 1, active_human_conversation: 1 } },
+      summary: {
+        total: 3,
+        pending: 1,
+        skipped: 2,
+        skipReasons: { opt_out: 1, active_human_conversation: 1 },
+      },
     });
     openDialog(['contact-1', 'contact-2', 'contact-3']);
 
@@ -110,7 +121,11 @@ describe('NewCampaignDialog (Fase L, Bloco L3)', () => {
     });
     const onCreated = jest.fn();
     render(
-      <NewCampaignDialog sessionName="sessao-principal" contactIds={['contact-1']} onCreated={onCreated} />,
+      <NewCampaignDialog
+        sessionName="sessao-principal"
+        contactIds={['contact-1']}
+        onCreated={onCreated}
+      />,
     );
     fireEvent.click(screen.getByRole('button', { name: /Novo disparo/ }));
     fireEvent.change(screen.getByLabelText('Nome da campanha'), {
@@ -131,7 +146,11 @@ describe('NewCampaignDialog (Fase L, Bloco L3)', () => {
   it('cancelar o formulário fecha o modal sem chamar createCampaign nem onCreated', () => {
     const onCreated = jest.fn();
     render(
-      <NewCampaignDialog sessionName="sessao-principal" contactIds={['contact-1']} onCreated={onCreated} />,
+      <NewCampaignDialog
+        sessionName="sessao-principal"
+        contactIds={['contact-1']}
+        onCreated={onCreated}
+      />,
     );
     fireEvent.click(screen.getByRole('button', { name: /Novo disparo/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));

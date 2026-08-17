@@ -14,7 +14,11 @@ function buildSut(): { service: CampaignService; campaigns: FakeCampaignReposito
   return { service, campaigns };
 }
 
-const neutral = { optedOut: false, hasActiveHumanConversation: false, recentlyContactedByCampaign: false };
+const neutral = {
+  optedOut: false,
+  hasActiveHumanConversation: false,
+  recentlyContactedByCampaign: false,
+};
 
 describe('CampaignService (Fase L, Bloco L3)', () => {
   describe('createCampaign()', () => {

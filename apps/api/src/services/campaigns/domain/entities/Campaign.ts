@@ -1,5 +1,6 @@
 /** Espelha `CampaignStatus` do Prisma. Só `DRAFT` é produzido por este bloco (L3) — ver docstring do model. */
-export type CampaignStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
+export type CampaignStatus =
+  'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
 
 /**
  * Uma campanha de disparo em lote — Fase L, Bloco L3.

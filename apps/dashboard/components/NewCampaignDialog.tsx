@@ -156,7 +156,10 @@ export default function NewCampaignDialog({
               {result.skipped > 0 && (
                 <div className="rounded-lg border border-border bg-card px-3.5 py-3">
                   <div className="mb-2 flex items-center gap-2">
-                    <XCircle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <XCircle
+                      className="h-4 w-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
                     <p className="text-[13px] font-medium text-foreground">
                       {result.skipped} contato(s) suprimido(s)
                     </p>
@@ -192,10 +195,7 @@ export default function NewCampaignDialog({
 
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <label
-                  htmlFor="new-campaign-name"
-                  className="text-sm font-medium text-foreground"
-                >
+                <label htmlFor="new-campaign-name" className="text-sm font-medium text-foreground">
                   Nome da campanha
                 </label>
                 <Input
@@ -230,7 +230,11 @@ export default function NewCampaignDialog({
                   Cancelar
                 </Button>
               </DialogClose>
-              <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || submitting}>
+              <Button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={!canSubmit || submitting}
+              >
                 {submitting ? 'Calculando…' : 'Calcular destinatários'}
               </Button>
             </DialogFooter>

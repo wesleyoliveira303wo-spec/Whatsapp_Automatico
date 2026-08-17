@@ -434,9 +434,9 @@ export default function ContactsPanel({ sessionName, canManage }: ContactsPanelP
             </div>
           </div>
           <p className="mt-2.5 text-[12.5px] leading-[1.55] text-muted-foreground">
-            Selecione contatos e clique em &quot;Novo disparo&quot; para criar uma campanha e ver quantos
-            receberiam a mensagem — opt-out, conversa já em atendimento humano e contato recente por
-            outra campanha são descontados automaticamente.
+            Selecione contatos e clique em &quot;Novo disparo&quot; para criar uma campanha e ver
+            quantos receberiam a mensagem — opt-out, conversa já em atendimento humano e contato
+            recente por outra campanha são descontados automaticamente.
           </p>
           <p className="mt-2.5 text-[12.5px] leading-[1.55] text-muted-foreground">
             O <strong>envio de fato</strong> ainda está em desenvolvimento: precisa de ritmo

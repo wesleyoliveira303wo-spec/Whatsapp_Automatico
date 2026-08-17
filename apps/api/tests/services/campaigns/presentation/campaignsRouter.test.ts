@@ -48,7 +48,11 @@ function basePath(tenantId: string): string {
   return `/api/tenants/${tenantId}/campaigns`;
 }
 
-const neutral = { optedOut: false, hasActiveHumanConversation: false, recentlyContactedByCampaign: false };
+const neutral = {
+  optedOut: false,
+  hasActiveHumanConversation: false,
+  recentlyContactedByCampaign: false,
+};
 
 describe('campaignsRouter (Fase L, Bloco L3)', () => {
   describe('GET / (campaign:read)', () => {
@@ -84,7 +88,12 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
 
       const response = await request(app)
         .post(basePath('tenant-1'))
-        .send({ sessionName: 'sessao', name: 'Campanha', messageTemplate: 'Oi', contactIds: ['c1'] });
+        .send({
+          sessionName: 'sessao',
+          name: 'Campanha',
+          messageTemplate: 'Oi',
+          contactIds: ['c1'],
+        });
 
       expect(response.status).toBe(403);
     });
@@ -219,7 +228,9 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.recipients).toHaveLength(2);
-      const skipped = response.body.recipients.find((r: { status: string }) => r.status === 'skipped');
+      const skipped = response.body.recipients.find(
+        (r: { status: string }) => r.status === 'skipped',
+      );
       expect(skipped.skipReason).toBe('opt_out');
     });
 

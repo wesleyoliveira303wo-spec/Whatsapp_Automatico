@@ -84,10 +84,7 @@ export class CampaignService {
 
     await this.campaignRepository.createRecipients(input.tenantId, campaign.id, drafts);
 
-    const summary = await this.campaignRepository.summarizeRecipients(
-      input.tenantId,
-      campaign.id,
-    );
+    const summary = await this.campaignRepository.summarizeRecipients(input.tenantId, campaign.id);
 
     this.logger.info('Campanha criada e destinatários calculados', {
       tenantId: input.tenantId,

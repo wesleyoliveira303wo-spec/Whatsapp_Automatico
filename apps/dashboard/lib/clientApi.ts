@@ -565,7 +565,8 @@ export function optInContact(contactId: string): Promise<{ contact: Contact }> {
 // real (fila + ritmo + disjuntor de segurança) é trabalho de um bloco
 // futuro (L4/L5), ainda não implementado.
 
-export type CampaignStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
+export type CampaignStatus =
+  'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
 
 export interface Campaign {
   id: string;
