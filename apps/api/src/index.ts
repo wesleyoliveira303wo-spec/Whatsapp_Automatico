@@ -602,9 +602,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // acima): `messageIngestionService` foi montado antes de `campaigns`
     // existir (D15), então o vínculo "marcar REPLIED numa conversa de
     // campanha" só pode ser ligado aqui.
-    const { CampaignReplyTrackerImpl } = await import(
-      './services/campaigns/infrastructure/CampaignReplyTrackerImpl'
-    );
+    const { CampaignReplyTrackerImpl } =
+      await import('./services/campaigns/infrastructure/CampaignReplyTrackerImpl');
     messageIngestionService.setCampaignReplyTracker(
       new CampaignReplyTrackerImpl(campaigns.campaignRepository, logger),
     );

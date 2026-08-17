@@ -308,7 +308,11 @@ export class FakeCampaignRepository implements CampaignRepository {
 
   async markRepliedByConversationId(tenantId: string, conversationId: string): Promise<void> {
     for (const [id, row] of this.recipients.entries()) {
-      if (row.tenantId === tenantId && row.conversationId === conversationId && row.status === 'sent') {
+      if (
+        row.tenantId === tenantId &&
+        row.conversationId === conversationId &&
+        row.status === 'sent'
+      ) {
         this.recipients.set(id, { ...row, status: 'replied', repliedAt: FIXED_NOW });
       }
     }

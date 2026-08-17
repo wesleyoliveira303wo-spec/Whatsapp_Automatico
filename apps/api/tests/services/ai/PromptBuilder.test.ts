@@ -317,7 +317,14 @@ describe('PromptBuilder', () => {
   it('L6: campaignContext ausente (undefined) não altera o systemPrompt', () => {
     const builder = new PromptBuilder();
 
-    const withCampaign = builder.build([], PROMPT_VERSION, undefined, undefined, undefined, undefined);
+    const withCampaign = builder.build(
+      [],
+      PROMPT_VERSION,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
     const withoutCampaign = builder.build([], PROMPT_VERSION);
 
     expect(withCampaign.systemPrompt).toBe(withoutCampaign.systemPrompt);

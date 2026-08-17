@@ -337,10 +337,7 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
       conversationId: 'conversa-origem',
     });
 
-    const origin = await campaignRepository.findOriginByConversationId(
-      tenantId,
-      'conversa-origem',
-    );
+    const origin = await campaignRepository.findOriginByConversationId(tenantId, 'conversa-origem');
 
     expect(origin).toEqual({ messageSent: 'Mensagem recente' });
   });
