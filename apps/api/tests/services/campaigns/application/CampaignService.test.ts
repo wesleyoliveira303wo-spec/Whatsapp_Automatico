@@ -2,16 +2,24 @@ import { CampaignService } from '../../../../src/services/campaigns/application/
 import { TenantNotFoundError } from '../../../../src/shared/tenant/domain/errors/TenantNotFoundError';
 import { CampaignNotFoundError } from '../../../../src/services/campaigns/domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../../../../src/services/campaigns/domain/errors/NoRecipientsSelectedError';
+import { InvalidCampaignTransitionError } from '../../../../src/services/campaigns/domain/errors/InvalidCampaignTransitionError';
+import { SendingEngineNotConfiguredError } from '../../../../src/services/campaigns/domain/errors/SendingEngineNotConfiguredError';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeCampaignRepository } from '../infrastructure/FakeCampaignRepository';
+import { FakeCampaignSendDispatcher } from '../infrastructure/FakeCampaignSendDispatcher';
 
-function buildSut(): { service: CampaignService; campaigns: FakeCampaignRepository } {
+function buildSut(): {
+  service: CampaignService;
+  campaigns: FakeCampaignRepository;
+  dispatcher: FakeCampaignSendDispatcher;
+} {
   const tenants = new FakeTenantRepository();
   tenants.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
   const campaigns = new FakeCampaignRepository();
-  const service = new CampaignService(campaigns, tenants, new NoopLogger());
-  return { service, campaigns };
+  const dispatcher = new FakeCampaignSendDispatcher();
+  const service = new CampaignService(campaigns, tenants, new NoopLogger(), dispatcher);
+  return { service, campaigns, dispatcher };
 }
 
 const neutral = {
@@ -246,6 +254,188 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
 
       const page = await service.listCampaigns('tenant-2', { limit: 20 });
       expect(page.campaigns).toEqual([]);
+    });
+  });
+
+  describe('startCampaign() (Fase L, Bloco L4)', () => {
+    it('agenda todos os pendentes com delay crescente e muda status para running', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      campaigns.seedEligibility('contact-1', neutral);
+      campaigns.seedEligibility('contact-2', neutral);
+      const created = await service.createCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        name: 'Campanha',
+        messageTemplate: 'Oi',
+        contactIds: ['contact-1', 'contact-2'],
+      });
+
+      const campaign = await service.startCampaign('tenant-1', created.campaign.id);
+
+      expect(campaign.status).toBe('running');
+      expect(dispatcher.scheduled).toHaveLength(2);
+      expect(dispatcher.scheduled[0].delayMs).toBeLessThan(dispatcher.scheduled[1].delayMs);
+    });
+
+    it('sem nenhum destinatário pendente (todos suprimidos): vai direto para completed, sem agendar nada', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      campaigns.seedEligibility('contact-1', { ...neutral, optedOut: true });
+      const created = await service.createCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        name: 'Campanha',
+        messageTemplate: 'Oi',
+        contactIds: ['contact-1'],
+      });
+
+      const campaign = await service.startCampaign('tenant-1', created.campaign.id);
+
+      expect(campaign.status).toBe('completed');
+      expect(dispatcher.scheduled).toHaveLength(0);
+    });
+
+    it('retomar uma campanha PAUSED reagenda os PENDING restantes', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'paused',
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      const campaign = await service.startCampaign('tenant-1', campaignId);
+
+      expect(campaign.status).toBe('running');
+      expect(dispatcher.scheduled).toHaveLength(1);
+    });
+
+    it('lança InvalidCampaignTransitionError para campanha já RUNNING', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      await expect(service.startCampaign('tenant-1', campaignId)).rejects.toThrow(
+        InvalidCampaignTransitionError,
+      );
+    });
+
+    it('lança InvalidCampaignTransitionError para campanha COMPLETED', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+
+      await expect(service.startCampaign('tenant-1', campaignId)).rejects.toThrow(
+        InvalidCampaignTransitionError,
+      );
+    });
+
+    it('lança CampaignNotFoundError para id inexistente', async () => {
+      const { service } = buildSut();
+
+      await expect(service.startCampaign('tenant-1', 'campanha-fantasma')).rejects.toThrow(
+        CampaignNotFoundError,
+      );
+    });
+
+    it('lança SendingEngineNotConfiguredError sem dispatcher configurado (modo degradado)', async () => {
+      const tenants = new FakeTenantRepository();
+      tenants.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
+      const campaigns = new FakeCampaignRepository();
+      const service = new CampaignService(campaigns, tenants, new NoopLogger()); // sem dispatcher
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      await expect(service.startCampaign('tenant-1', campaignId)).rejects.toThrow(
+        SendingEngineNotConfiguredError,
+      );
+    });
+
+    it('setCampaignSendDispatcher() liga o motor depois da construção (injeção tardia)', async () => {
+      const tenants = new FakeTenantRepository();
+      tenants.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
+      const campaigns = new FakeCampaignRepository();
+      const service = new CampaignService(campaigns, tenants, new NoopLogger());
+      const dispatcher = new FakeCampaignSendDispatcher();
+      service.setCampaignSendDispatcher(dispatcher);
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      const campaign = await service.startCampaign('tenant-1', campaignId);
+
+      expect(campaign.status).toBe('running');
+      expect(dispatcher.scheduled).toHaveLength(1);
+    });
+  });
+
+  describe('pauseCampaign()', () => {
+    it('pausa uma campanha RUNNING', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const campaign = await service.pauseCampaign('tenant-1', campaignId);
+
+      expect(campaign.status).toBe('paused');
+      expect(campaign.pausedReason).toBe('paused_manually');
+    });
+
+    it('lança InvalidCampaignTransitionError para campanha DRAFT (nunca foi iniciada)', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      await expect(service.pauseCampaign('tenant-1', campaignId)).rejects.toThrow(
+        InvalidCampaignTransitionError,
+      );
+    });
+
+    it('lança CampaignNotFoundError para id inexistente', async () => {
+      const { service } = buildSut();
+
+      await expect(service.pauseCampaign('tenant-1', 'campanha-fantasma')).rejects.toThrow(
+        CampaignNotFoundError,
+      );
+    });
+  });
+
+  describe('cancelCampaign()', () => {
+    it.each(['draft', 'running', 'paused'] as const)(
+      'cancela uma campanha %s',
+      async (status) => {
+        const { service, campaigns } = buildSut();
+        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao', status });
+
+        const campaign = await service.cancelCampaign('tenant-1', campaignId);
+
+        expect(campaign.status).toBe('cancelled');
+      },
+    );
+
+    it.each(['completed', 'cancelled'] as const)(
+      'lança InvalidCampaignTransitionError para campanha já %s',
+      async (status) => {
+        const { service, campaigns } = buildSut();
+        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao', status });
+
+        await expect(service.cancelCampaign('tenant-1', campaignId)).rejects.toThrow(
+          InvalidCampaignTransitionError,
+        );
+      },
+    );
+
+    it('lança CampaignNotFoundError para id inexistente', async () => {
+      const { service } = buildSut();
+
+      await expect(service.cancelCampaign('tenant-1', 'campanha-fantasma')).rejects.toThrow(
+        CampaignNotFoundError,
+      );
     });
   });
 });

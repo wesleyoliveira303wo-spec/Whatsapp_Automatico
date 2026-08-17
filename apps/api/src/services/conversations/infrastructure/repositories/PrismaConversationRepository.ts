@@ -206,6 +206,24 @@ export class PrismaConversationRepository implements ConversationRepository {
   }
 
   /**
+   * Fase L, Bloco L4 (aditivo — ver docstring do port). `findFirst` (não a
+   * chave única `tenantId_sessionName_contactJid`, que exige o JID, não o
+   * `contactId`) — o índice `@@index([contactId])` já existente (Bloco L1)
+   * mantém a busca barata.
+   */
+  async findByContactAndSession(
+    tenantId: string,
+    sessionName: string,
+    contactId: string,
+  ): Promise<Conversation | undefined> {
+    const row = await this.prisma.whatsAppConversation.findFirst({
+      where: { tenantId, sessionName, contactId },
+      ...CONVERSATION_TAGS_INCLUDE,
+    });
+    return row ? toDomain(row) : undefined;
+  }
+
+  /**
    * Milestone 3, Bloco 5 (D10 — aditivo). `updateMany` (não `update`) porque
    * o `where` precisa combinar `id` E `tenantId` (defesa em profundidade,
    * mesmo racional documentado no port) — a chave primária do Prisma

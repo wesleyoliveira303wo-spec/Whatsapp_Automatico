@@ -277,7 +277,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       expect(screen.getByRole('button', { name: /Novo disparo/ })).toBeDisabled();
     });
 
-    it('mostra o painel de campanhas com o aviso de envio "Em breve"', async () => {
+    it('mostra o painel de campanhas com o link para a lista de campanhas da sessão', async () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
       render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
@@ -285,7 +285,8 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       await waitFor(() => {
         expect(screen.getByText('Disparos / Campanhas')).toBeInTheDocument();
       });
-      expect(screen.getByText('Envio em breve')).toBeInTheDocument();
+      const link = screen.getByRole('link', { name: /Ver campanhas desta sessão/ });
+      expect(link).toHaveAttribute('href', '/sessions/sessao-principal/campaigns');
     });
   });
 

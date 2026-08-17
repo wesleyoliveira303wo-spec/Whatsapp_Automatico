@@ -569,6 +569,13 @@ model CampaignRecipient {
   sentAt         DateTime?               @map("sent_at")
   repliedAt      DateTime?               @map("replied_at")
   conversationId String?                 @map("conversation_id")
+  /// Fase L, Bloco L4 (2026-08-17) — quando o ENVIO foi de fato tentado
+  /// (sucesso OU falha), independente de `sentAt` (que só existe no
+  /// sucesso). Sustenta o disjuntor de segurança: "as últimas N tentativas,
+  /// em ordem cronológica, tiveram taxa de falha alta?" — sem este campo não
+  /// haveria como ordenar uma tentativa FALHA no tempo (só `createdAt`, que é
+  /// quando o destinatário foi MATERIALIZADO, não quando foi tentado).
+  attemptedAt    DateTime?               @map("attempted_at")
   createdAt      DateTime                @default(now()) @map("created_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -582,6 +589,10 @@ model CampaignRecipient {
   /// 7 dias" — busca por `(tenantId, contactId, status, sentAt)` sem varrer a
   /// tabela inteira.
   @@index([tenantId, contactId, status, sentAt])
+  /// Fase L, Bloco L4 — suporta o disjuntor de segurança ("últimas N
+  /// tentativas desta campanha, em ordem") e o teto diário ("quantos SENT
+  /// hoje nesta campanha").
+  @@index([tenantId, campaignId, attemptedAt])
   @@map("campaign_recipients")
 }
 

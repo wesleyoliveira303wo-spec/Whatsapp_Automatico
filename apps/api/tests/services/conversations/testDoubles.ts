@@ -60,6 +60,17 @@ export class FakeConversationRepository implements ConversationRepository {
     return this.conversations.get(id);
   }
 
+  /** Fase L, Bloco L4 (aditivo). Espelha `PrismaConversationRepository.findByContactAndSession()`. */
+  async findByContactAndSession(
+    tenantId: string,
+    sessionName: string,
+    contactId: string,
+  ): Promise<Conversation | undefined> {
+    return Array.from(this.conversations.values()).find(
+      (c) => c.tenantId === tenantId && c.sessionName === sessionName && c.contactId === contactId,
+    );
+  }
+
   /**
    * Milestone 3, Bloco 5 (D10 — aditivo). Espelha
    * `PrismaConversationRepository.updateStatus()`: `undefined` se não

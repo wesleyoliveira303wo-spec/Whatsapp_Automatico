@@ -3,12 +3,16 @@ import { Logger } from '../../../shared/domain/Logger';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { CampaignNotFoundError } from '../domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../domain/errors/NoRecipientsSelectedError';
+import { InvalidCampaignTransitionError } from '../domain/errors/InvalidCampaignTransitionError';
+import { SendingEngineNotConfiguredError } from '../domain/errors/SendingEngineNotConfiguredError';
 
 /**
- * Middleware de erro para `createCampaignsRouter` — Fase L, Bloco L3.
- * Mapeia `TenantNotFoundError`/`CampaignNotFoundError` (404) e
- * `NoRecipientsSelectedError` (400). Erros de forma do input (query/corpo
- * inválido) já são resolvidos por `validateOrRespond` dentro do router.
+ * Middleware de erro para `createCampaignsRouter` — Fase L, Blocos L3/L4.
+ * Mapeia `TenantNotFoundError`/`CampaignNotFoundError` (404),
+ * `NoRecipientsSelectedError`/`InvalidCampaignTransitionError` (400) e
+ * `SendingEngineNotConfiguredError` (503 — modo degradado, sem `REDIS_URL`).
+ * Erros de forma do input (query/corpo inválido) já são resolvidos por
+ * `validateOrRespond` dentro do router.
  *
  * Montado ESCOPADO ao path do router (D17), nunca globalmente.
  */
@@ -28,6 +32,18 @@ export function createCampaignsErrorHandler(logger: Logger): ErrorRequestHandler
     }
     if (error instanceof NoRecipientsSelectedError) {
       res.status(400).json({ error: 'no_recipients_selected', message: error.message });
+      return;
+    }
+    if (error instanceof InvalidCampaignTransitionError) {
+      res.status(400).json({
+        error: 'invalid_campaign_transition',
+        message: error.message,
+        currentStatus: error.currentStatus,
+      });
+      return;
+    }
+    if (error instanceof SendingEngineNotConfiguredError) {
+      res.status(503).json({ error: 'sending_engine_not_configured', message: error.message });
       return;
     }
     logger.error('Erro não tratado nas rotas de campanhas', { error });

@@ -50,6 +50,8 @@ export interface CampaignRecipient {
   sentAt?: Date;
   repliedAt?: Date;
   conversationId?: string;
+  /** Fase L, Bloco L4 — quando o envio foi TENTADO (sucesso ou falha). Alimenta o disjuntor de segurança. */
+  attemptedAt?: Date;
   createdAt: Date;
 }
 

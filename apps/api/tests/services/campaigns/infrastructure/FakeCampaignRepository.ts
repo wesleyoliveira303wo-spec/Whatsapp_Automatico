@@ -3,8 +3,10 @@ import {
   CampaignRecipient,
   CampaignRecipientSummary,
   CampaignSkipReason,
+  CampaignStatus,
 } from '../../../../src/services/campaigns/domain/entities/Campaign';
 import { RecipientEligibility } from '../../../../src/services/campaigns/domain/policies/determineSkipReason';
+import { CampaignSendOutcome } from '../../../../src/services/campaigns/domain/policies/shouldTripCircuitBreaker';
 import {
   CampaignPage,
   CampaignRecipientDraft,
@@ -151,5 +153,148 @@ export class FakeCampaignRepository implements CampaignRepository {
   /** Helper de teste: define a elegibilidade que `fetchEligibility` devolverá para um contato. */
   seedEligibility(contactId: string, eligibility: RecipientEligibility): void {
     this.eligibility.set(contactId, eligibility);
+  }
+
+  // --- Fase L, Bloco L4 (motor de envio) ---
+
+  async findRecipientById(
+    tenantId: string,
+    recipientId: string,
+  ): Promise<CampaignRecipient | undefined> {
+    const row = this.recipients.get(recipientId);
+    return row && row.tenantId === tenantId ? row : undefined;
+  }
+
+  async listPendingRecipients(tenantId: string, campaignId: string): Promise<CampaignRecipient[]> {
+    return [...this.recipients.values()]
+      .filter((row) => row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'pending')
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  async countSentToday(tenantId: string, campaignId: string): Promise<number> {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return [...this.recipients.values()].filter(
+      (row) =>
+        row.tenantId === tenantId &&
+        row.campaignId === campaignId &&
+        row.status === 'sent' &&
+        row.sentAt &&
+        row.sentAt.getTime() >= startOfToday.getTime(),
+    ).length;
+  }
+
+  async countPending(tenantId: string, campaignId: string): Promise<number> {
+    return [...this.recipients.values()].filter(
+      (row) => row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'pending',
+    ).length;
+  }
+
+  async markRecipientSent(
+    tenantId: string,
+    recipientId: string,
+    data: { attemptedAt: Date; conversationId: string },
+  ): Promise<void> {
+    const row = this.recipients.get(recipientId);
+    if (!row || row.tenantId !== tenantId) return;
+    this.recipients.set(recipientId, {
+      ...row,
+      status: 'sent',
+      sentAt: data.attemptedAt,
+      attemptedAt: data.attemptedAt,
+      conversationId: data.conversationId,
+    });
+  }
+
+  async markRecipientFailed(
+    tenantId: string,
+    recipientId: string,
+    data: { attemptedAt: Date; errorMessage: string },
+  ): Promise<void> {
+    const row = this.recipients.get(recipientId);
+    if (!row || row.tenantId !== tenantId) return;
+    this.recipients.set(recipientId, {
+      ...row,
+      status: 'failed',
+      attemptedAt: data.attemptedAt,
+      errorMessage: data.errorMessage,
+    });
+  }
+
+  async listRecentOutcomes(
+    tenantId: string,
+    campaignId: string,
+    limit: number,
+  ): Promise<CampaignSendOutcome[]> {
+    return [...this.recipients.values()]
+      .filter(
+        (row) =>
+          row.tenantId === tenantId &&
+          row.campaignId === campaignId &&
+          (row.status === 'sent' || row.status === 'failed'),
+      )
+      .sort((a, b) => (b.attemptedAt?.getTime() ?? 0) - (a.attemptedAt?.getTime() ?? 0))
+      .slice(0, limit)
+      .map((row) => (row.status === 'sent' ? 'sent' : 'failed'));
+  }
+
+  async updateCampaignStatus(
+    tenantId: string,
+    campaignId: string,
+    status: CampaignStatus,
+    pausedReason?: string,
+  ): Promise<Campaign | undefined> {
+    const row = this.campaigns.get(campaignId);
+    if (!row || row.tenantId !== tenantId) return undefined;
+    const updated: Campaign = {
+      ...row,
+      status,
+      pausedReason: status === 'paused' ? pausedReason : undefined,
+      updatedAt: FIXED_NOW,
+    };
+    this.campaigns.set(campaignId, updated);
+    return updated;
+  }
+
+  /** Helper de teste: pré-carrega uma campanha com campos customizados (ex.: `status`, `dailyLimit`), devolvendo o `id` gerado. */
+  seedCampaign(data: Partial<Campaign> & { tenantId: string; sessionName: string }): string {
+    const id = data.id ?? `campaign-${this.nextCampaignId++}`;
+    this.campaigns.set(id, {
+      id,
+      tenantId: data.tenantId,
+      sessionName: data.sessionName,
+      name: data.name ?? 'Campanha de teste',
+      messageTemplate: data.messageTemplate ?? 'Olá!',
+      status: data.status ?? 'draft',
+      intervalSeconds: data.intervalSeconds ?? 75,
+      dailyLimit: data.dailyLimit ?? 30,
+      sendWindowStart: data.sendWindowStart,
+      sendWindowEnd: data.sendWindowEnd,
+      pausedReason: data.pausedReason,
+      createdByUserId: data.createdByUserId,
+      createdAt: FIXED_NOW,
+      updatedAt: FIXED_NOW,
+    });
+    return id;
+  }
+
+  /** Helper de teste: pré-carrega um destinatário com campos customizados (ex.: `status: 'pending'` numa campanha já existente), devolvendo o `id` gerado. */
+  seedRecipient(data: Partial<CampaignRecipient> & { tenantId: string; campaignId: string; contactId: string }): string {
+    const id = data.id ?? `recipient-${this.nextRecipientId++}`;
+    this.recipients.set(id, {
+      id,
+      tenantId: data.tenantId,
+      campaignId: data.campaignId,
+      contactId: data.contactId,
+      status: data.status ?? 'pending',
+      skipReason: data.skipReason,
+      errorMessage: data.errorMessage,
+      sentAt: data.sentAt,
+      repliedAt: data.repliedAt,
+      conversationId: data.conversationId,
+      attemptedAt: data.attemptedAt,
+      createdAt: data.createdAt ?? FIXED_NOW,
+    });
+    return id;
   }
 }

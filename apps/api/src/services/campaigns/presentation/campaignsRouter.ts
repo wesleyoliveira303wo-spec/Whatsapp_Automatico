@@ -42,17 +42,23 @@ function actorUserId(req: Request): string | undefined {
 }
 
 /**
- * Router REST de campanhas — Fase L, Bloco L3.
+ * Router REST de campanhas — Fase L, Blocos L3 (criar/calcular) e L4 (motor
+ * de envio: `start`/`pause`/`cancel`).
  *
- * **Só cria e calcula destinatários — nunca envia nada.** Montado sob
- * `/api/tenants/:tenantId/campaigns` (tenant-wide na URL, mesmo padrão de
- * `contactsRouter`; `sessionName` é um campo do corpo/da entidade, não da
- * rota — uma campanha é sempre de uma sessão, mas listar/consultar campanhas
- * não precisa estar aninhado por sessão).
+ * Montado sob `/api/tenants/:tenantId/campaigns` (tenant-wide na URL, mesmo
+ * padrão de `contactsRouter`; `sessionName` é um campo do corpo/da entidade,
+ * não da rota — uma campanha é sempre de uma sessão, mas listar/consultar
+ * campanhas não precisa estar aninhado por sessão).
  *
  * RBAC POR ROTA: `GET` exige `campaign:read` (operator+, mesmo nível de
- * `analytics:read`); `POST` (criar+materializar) exige `campaign:manage`
- * (administrator+) — uma campanha errada atinge muita gente de uma vez.
+ * `analytics:read`); toda escrita (`POST` de criar/`start`/`pause`/`cancel`)
+ * exige `campaign:manage` (administrator+) — uma campanha errada atinge
+ * muita gente de uma vez e pode custar o número.
+ *
+ * `start`/`pause`/`cancel` funcionam mesmo no modo degradado (sem
+ * `REDIS_URL`) do ponto de vista da ROTA — a recusa acontece dentro de
+ * `CampaignService.startCampaign()` (`SendingEngineNotConfiguredError`,
+ * 503), não aqui.
  */
 export function createCampaignsRouter(campaignService: CampaignService): Router {
   const router = Router({ mergeParams: true });
@@ -130,6 +136,56 @@ export function createCampaignsRouter(campaignService: CampaignService): Router 
         status: query.status,
       });
       res.status(200).json(page);
+    }),
+  );
+
+  // --- Fase L, Bloco L4 (motor de envio) — mesma permissão de criar (`campaign:manage`): iniciar/pausar/cancelar um disparo real é ação de alto risco. ---
+
+  router.post(
+    '/:campaignId/start',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(campaignIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const campaign = await campaignService.startCampaign(params.tenantId, params.campaignId);
+      res.status(200).json({ campaign });
+    }),
+  );
+
+  router.post(
+    '/:campaignId/pause',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(campaignIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const campaign = await campaignService.pauseCampaign(params.tenantId, params.campaignId);
+      res.status(200).json({ campaign });
+    }),
+  );
+
+  router.post(
+    '/:campaignId/cancel',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(campaignIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const campaign = await campaignService.cancelCampaign(params.tenantId, params.campaignId);
+      res.status(200).json({ campaign });
     }),
   );
 

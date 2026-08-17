@@ -9,21 +9,30 @@ import { UserRole } from '../../../../src/services/auth/domain/entities/User';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeCampaignRepository } from '../infrastructure/FakeCampaignRepository';
+import { FakeCampaignSendDispatcher } from '../infrastructure/FakeCampaignSendDispatcher';
 
 /**
- * Testes do campaignsRouter — Fase L, Bloco L3: RBAC por rota
- * (GET->campaign:read, POST->campaign:manage) + IDOR entre tenants.
+ * Testes do campaignsRouter — Fase L, Blocos L3/L4: RBAC por rota
+ * (GET->campaign:read, escrita->campaign:manage) + IDOR entre tenants.
  * Mount TENANT-WIDE, mesmo padrão de `contactsRouter.test.ts`.
+ *
+ * `withDispatcher` liga o motor de envio (L4) — omitido nos testes de L3
+ * (criação/leitura), que não precisam dele.
  */
-function buildApp(principal?: Principal): {
+function buildApp(
+  principal?: Principal,
+  options: { withDispatcher?: boolean } = {},
+): {
   app: express.Express;
   campaigns: FakeCampaignRepository;
+  dispatcher?: FakeCampaignSendDispatcher;
 } {
   const tenantRepository = new FakeTenantRepository();
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
   tenantRepository.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: 'hash-2' });
   const campaigns = new FakeCampaignRepository();
-  const service = new CampaignService(campaigns, tenantRepository, new NoopLogger());
+  const dispatcher = options.withDispatcher ? new FakeCampaignSendDispatcher() : undefined;
+  const service = new CampaignService(campaigns, tenantRepository, new NoopLogger(), dispatcher);
 
   const app = express();
   app.use(express.json());
@@ -36,7 +45,7 @@ function buildApp(principal?: Principal): {
     createCampaignsRouter(service),
   );
   app.use('/api/tenants/:tenantId/campaigns', createCampaignsErrorHandler(new NoopLogger()));
-  return { app, campaigns };
+  return { app, campaigns, dispatcher };
 }
 
 function person(role: UserRole): Principal {
@@ -263,6 +272,141 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       );
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('POST /:campaignId/start (Fase L, Bloco L4 — campaign:manage)', () => {
+    it('operator NÃO pode iniciar (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'), { withDispatcher: true });
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/start`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('administrator inicia uma campanha DRAFT com destinatários pendentes (200)', async () => {
+      const { app, campaigns, dispatcher } = buildApp(person('administrator'), {
+        withDispatcher: true,
+      });
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/start`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.status).toBe('running');
+      expect(dispatcher!.scheduled).toHaveLength(1);
+    });
+
+    it('sem motor de envio configurado (modo degradado): 503', async () => {
+      const { app, campaigns } = buildApp(person('administrator')); // sem withDispatcher
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/start`);
+
+      expect(response.status).toBe(503);
+      expect(response.body.error).toBe('sending_engine_not_configured');
+    });
+
+    it('campanha já RUNNING: 400 (transição inválida)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'), { withDispatcher: true });
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/start`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_campaign_transition');
+    });
+
+    it('404 para campanha inexistente', async () => {
+      const { app } = buildApp(person('administrator'), { withDispatcher: true });
+
+      const response = await request(app).post(
+        `${basePath('tenant-1')}/campanha-fantasma/start`,
+      );
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe('POST /:campaignId/pause (campaign:manage)', () => {
+    it('administrator pausa uma campanha RUNNING (200)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/pause`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.status).toBe('paused');
+    });
+
+    it('operator NÃO pode pausar (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/pause`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('campanha DRAFT: 400 (nunca foi iniciada)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/pause`);
+
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('POST /:campaignId/cancel (campaign:manage)', () => {
+    it('administrator cancela uma campanha RUNNING (200)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/cancel`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.status).toBe('cancelled');
+    });
+
+    it('operator NÃO pode cancelar (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/cancel`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('campanha já COMPLETED: 400 (terminal)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/cancel`);
+
+      expect(response.status).toBe(400);
     });
   });
 });

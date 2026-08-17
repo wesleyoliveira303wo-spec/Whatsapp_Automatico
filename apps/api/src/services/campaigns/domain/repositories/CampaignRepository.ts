@@ -1,5 +1,6 @@
-import { Campaign, CampaignRecipient, CampaignRecipientSummary } from '../entities/Campaign';
+import { Campaign, CampaignRecipient, CampaignRecipientSummary, CampaignStatus } from '../entities/Campaign';
 import { RecipientEligibility } from '../policies/determineSkipReason';
+import { CampaignSendOutcome } from '../policies/shouldTripCircuitBreaker';
 
 /** Dados para criar a campanha (sempre `DRAFT` — este bloco não agenda/inicia envio). */
 export interface CreateCampaignData {
@@ -91,4 +92,47 @@ export interface CampaignRepository {
     campaignId: string,
     options: ListCampaignRecipientsOptions,
   ): Promise<CampaignRecipientPage>;
+
+  // --- Fase L, Bloco L4 (motor de envio) ---
+
+  /** Busca UM destinatário pelo id, escopado ao tenant — usado pelo `CampaignSendJobProcessor` a cada job (camada 3 de idempotência: só envia se ainda `PENDING`). */
+  findRecipientById(tenantId: string, recipientId: string): Promise<CampaignRecipient | undefined>;
+
+  /** Todos os destinatários `PENDING` de uma campanha, na ordem em que foram materializados — a ordem que `computeSendDelayMs` usa para calcular `n`. */
+  listPendingRecipients(tenantId: string, campaignId: string): Promise<CampaignRecipient[]>;
+
+  /** Quantos destinatários `SENT` HOJE (dia corrente, horário do servidor) nesta campanha — o teto diário (`Campaign.dailyLimit`). */
+  countSentToday(tenantId: string, campaignId: string): Promise<number>;
+
+  /** Quantos destinatários ainda `PENDING` nesta campanha — usado para decidir se a campanha terminou (0 = `COMPLETED`). */
+  countPending(tenantId: string, campaignId: string): Promise<number>;
+
+  /** Marca um destinatário como enviado com sucesso — grava `sentAt`/`attemptedAt`/`conversationId`. */
+  markRecipientSent(
+    tenantId: string,
+    recipientId: string,
+    data: { attemptedAt: Date; conversationId: string },
+  ): Promise<void>;
+
+  /** Marca um destinatário como falho — grava `attemptedAt`/`errorMessage`, nunca `sentAt`. */
+  markRecipientFailed(
+    tenantId: string,
+    recipientId: string,
+    data: { attemptedAt: Date; errorMessage: string },
+  ): Promise<void>;
+
+  /** As últimas `limit` tentativas (`SENT`/`FAILED`, ordenadas por `attemptedAt` DESC) desta campanha — alimenta `shouldTripCircuitBreaker`. */
+  listRecentOutcomes(
+    tenantId: string,
+    campaignId: string,
+    limit: number,
+  ): Promise<CampaignSendOutcome[]>;
+
+  /** Muda `Campaign.status` (e opcionalmente `pausedReason`, só relevante ao pausar). `undefined` se a campanha não existir/não pertencer ao tenant. */
+  updateCampaignStatus(
+    tenantId: string,
+    campaignId: string,
+    status: CampaignStatus,
+    pausedReason?: string,
+  ): Promise<Campaign | undefined>;
 }

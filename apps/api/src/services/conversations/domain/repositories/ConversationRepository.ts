@@ -130,6 +130,24 @@ export interface ConversationRepository {
   findById(id: string): Promise<Conversation | undefined>;
 
   /**
+   * Busca a conversa de UM contato numa sessão específica — Fase L, Bloco L4.
+   * Único consumidor: `WhatsAppCampaignMessageSender` (implementação real do
+   * port `CampaignMessageSender`, `services/campaigns/domain`), que precisa
+   * do `contactJid` REAL da conversa já existente para enviar uma mensagem
+   * de campanha — nunca reconstruído a partir de `phoneE164` (identidade
+   * ≠ endereço de envio, ver docstring de `normalizePhoneToE164`: mandar
+   * para a forma canônica poderia entregar a outro número). `undefined` se
+   * este contato nunca teve conversa nesta sessão — é exatamente esse o
+   * sinal que a Fase L usa para recusar enviar campanha a quem não tem
+   * histórico real ali (reengajamento, não lista fria).
+   */
+  findByContactAndSession(
+    tenantId: string,
+    sessionName: string,
+    contactId: string,
+  ): Promise<Conversation | undefined>;
+
+  /**
    * Muda `status` de uma conversa existente (Milestone 3, Bloco 5 — suporta
    * `POST .../conversations/:id/escalate` e `.../resume`, D10 do levantamento
    * arquitetural: um único método genérico por valor de enum, em vez de dois

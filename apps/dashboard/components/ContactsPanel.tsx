@@ -421,28 +421,25 @@ export default function ContactsPanel({ sessionName, canManage }: ContactsPanelP
       </div>
 
       <aside className="w-full shrink-0 xl:w-[340px]">
-        <div className="rounded-lg border border-dashed border-border bg-card p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <div className="mb-1 flex items-center gap-2.5">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
               <Send className="h-[18px] w-[18px]" aria-hidden="true" />
             </div>
-            <div>
-              <p className="text-[14px] font-semibold text-foreground">Disparos / Campanhas</p>
-              <Badge variant="secondary" className="mt-0.5">
-                Envio em breve
-              </Badge>
-            </div>
+            <p className="text-[14px] font-semibold text-foreground">Disparos / Campanhas</p>
           </div>
           <p className="mt-2.5 text-[12.5px] leading-[1.55] text-muted-foreground">
-            Selecione contatos e clique em &quot;Novo disparo&quot; para criar uma campanha e ver
-            quantos receberiam a mensagem — opt-out, conversa já em atendimento humano e contato
-            recente por outra campanha são descontados automaticamente.
+            Selecione contatos e clique em &quot;Novo disparo&quot; para criar uma campanha —
+            opt-out, conversa já em atendimento humano e contato recente por outra campanha são
+            descontados automaticamente. O envio é sempre em REENGAJAMENTO: só chega a quem já tem
+            conversa nesta sessão.
           </p>
-          <p className="mt-2.5 text-[12.5px] leading-[1.55] text-muted-foreground">
-            O <strong>envio de fato</strong> ainda está em desenvolvimento: precisa de ritmo
-            controlado e parada automática de segurança — sem isso, o número do WhatsApp corre risco
-            de bloqueio.
-          </p>
+          <Link
+            href={`/sessions/${encodeURIComponent(sessionName)}/campaigns`}
+            className="mt-3 inline-block text-[12.5px] font-medium text-primary underline"
+          >
+            Ver campanhas desta sessão →
+          </Link>
         </div>
       </aside>
     </div>

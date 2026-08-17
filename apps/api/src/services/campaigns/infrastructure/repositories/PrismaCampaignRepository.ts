@@ -1,6 +1,7 @@
 import type {
   PrismaClient,
   CampaignRecipientStatus as PrismaCampaignRecipientStatus,
+  CampaignStatus as PrismaCampaignStatus,
 } from '@prisma/client';
 
 import {
@@ -21,9 +22,19 @@ import {
   ListCampaignsOptions,
 } from '../../domain/repositories/CampaignRepository';
 import { RecipientEligibility } from '../../domain/policies/determineSkipReason';
+import { CampaignSendOutcome } from '../../domain/policies/shouldTripCircuitBreaker';
 
 /** Janela de "contatado recentemente por outra campanha" — mesmo valor citado na análise aprovada (`FASE_L_MOTOR_DE_LEADS.md`). */
 const RECENT_CONTACT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const STATUS_TO_PRISMA: Record<CampaignStatus, PrismaCampaignStatus> = {
+  draft: 'DRAFT',
+  scheduled: 'SCHEDULED',
+  running: 'RUNNING',
+  paused: 'PAUSED',
+  completed: 'COMPLETED',
+  cancelled: 'CANCELLED',
+};
 
 const STATUS_FROM_PRISMA: Record<string, CampaignStatus> = {
   DRAFT: 'draft',
@@ -79,6 +90,7 @@ interface CampaignRecipientRow {
   sentAt: Date | null;
   repliedAt: Date | null;
   conversationId: string | null;
+  attemptedAt: Date | null;
   createdAt: Date;
 }
 
@@ -114,6 +126,7 @@ function recipientToDomain(row: CampaignRecipientRow): CampaignRecipient {
     sentAt: row.sentAt ?? undefined,
     repliedAt: row.repliedAt ?? undefined,
     conversationId: row.conversationId ?? undefined,
+    attemptedAt: row.attemptedAt ?? undefined,
     createdAt: row.createdAt,
   };
 }
@@ -306,6 +319,108 @@ export class PrismaCampaignRepository implements CampaignRepository {
       recipients: page.map(recipientToDomain),
       nextCursor: hasMore ? page[page.length - 1].id : undefined,
     };
+  }
+
+  // --- Fase L, Bloco L4 (motor de envio) ---
+
+  async findRecipientById(
+    tenantId: string,
+    recipientId: string,
+  ): Promise<CampaignRecipient | undefined> {
+    const row = await this.prisma.campaignRecipient.findFirst({
+      where: { id: recipientId, tenantId },
+    });
+    return row ? recipientToDomain(row) : undefined;
+  }
+
+  async listPendingRecipients(tenantId: string, campaignId: string): Promise<CampaignRecipient[]> {
+    const rows = await this.prisma.campaignRecipient.findMany({
+      where: { tenantId, campaignId, status: 'PENDING' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return rows.map(recipientToDomain);
+  }
+
+  async countSentToday(tenantId: string, campaignId: string): Promise<number> {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return this.prisma.campaignRecipient.count({
+      where: { tenantId, campaignId, status: 'SENT', sentAt: { gte: startOfToday } },
+    });
+  }
+
+  async countPending(tenantId: string, campaignId: string): Promise<number> {
+    return this.prisma.campaignRecipient.count({
+      where: { tenantId, campaignId, status: 'PENDING' },
+    });
+  }
+
+  async markRecipientSent(
+    tenantId: string,
+    recipientId: string,
+    data: { attemptedAt: Date; conversationId: string },
+  ): Promise<void> {
+    await this.prisma.campaignRecipient.updateMany({
+      where: { id: recipientId, tenantId },
+      data: {
+        status: 'SENT',
+        sentAt: data.attemptedAt,
+        attemptedAt: data.attemptedAt,
+        conversationId: data.conversationId,
+      },
+    });
+  }
+
+  async markRecipientFailed(
+    tenantId: string,
+    recipientId: string,
+    data: { attemptedAt: Date; errorMessage: string },
+  ): Promise<void> {
+    await this.prisma.campaignRecipient.updateMany({
+      where: { id: recipientId, tenantId },
+      data: { status: 'FAILED', attemptedAt: data.attemptedAt, errorMessage: data.errorMessage },
+    });
+  }
+
+  /**
+   * `SENT`/`FAILED` mais recentes desta campanha, por `attemptedAt` DESC —
+   * alimenta `shouldTripCircuitBreaker`. `SKIPPED`/`PENDING`/`REPLIED` nunca
+   * entram nesta amostra (não são tentativas de ENVIO).
+   */
+  async listRecentOutcomes(
+    tenantId: string,
+    campaignId: string,
+    limit: number,
+  ): Promise<CampaignSendOutcome[]> {
+    const rows = await this.prisma.campaignRecipient.findMany({
+      where: { tenantId, campaignId, status: { in: ['SENT', 'FAILED'] } },
+      orderBy: { attemptedAt: 'desc' },
+      take: limit,
+      select: { status: true },
+    });
+    return rows.map((row) => (row.status === 'SENT' ? 'sent' : 'failed'));
+  }
+
+  async updateCampaignStatus(
+    tenantId: string,
+    campaignId: string,
+    status: CampaignStatus,
+    pausedReason?: string,
+  ): Promise<Campaign | undefined> {
+    const { count } = await this.prisma.campaign.updateMany({
+      where: { id: campaignId, tenantId },
+      data: {
+        status: STATUS_TO_PRISMA[status],
+        // Só grava `pausedReason` de fato quando é uma pausa — retomar
+        // (`running`)/cancelar/concluir limpa o motivo anterior, para a UI
+        // nunca mostrar um aviso de pausa obsoleto numa campanha ativa.
+        pausedReason: status === 'paused' ? (pausedReason ?? null) : null,
+      },
+    });
+    if (count === 0) {
+      return undefined;
+    }
+    return this.findById(tenantId, campaignId);
   }
 }
 

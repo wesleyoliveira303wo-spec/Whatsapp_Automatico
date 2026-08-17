@@ -4,7 +4,11 @@ import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/Tenant
 import { Campaign, CampaignRecipientSummary } from '../domain/entities/Campaign';
 import { CampaignNotFoundError } from '../domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../domain/errors/NoRecipientsSelectedError';
+import { InvalidCampaignTransitionError } from '../domain/errors/InvalidCampaignTransitionError';
+import { SendingEngineNotConfiguredError } from '../domain/errors/SendingEngineNotConfiguredError';
 import { determineSkipReason } from '../domain/policies/determineSkipReason';
+import { computeSendDelayMs } from '../domain/policies/computeSendDelayMs';
+import { CampaignSendDispatcher } from '../domain/dispatchers/CampaignSendDispatcher';
 import {
   CampaignPage,
   CampaignRecipientDraft,
@@ -13,6 +17,9 @@ import {
   ListCampaignRecipientsOptions,
   ListCampaignsOptions,
 } from '../domain/repositories/CampaignRepository';
+
+/** Variação aleatória somada ao intervalo-base de cada envio (ver `computeSendDelayMs`) — mesmo espírito conservador do resto do motor de ritmo. */
+const DEFAULT_JITTER_MAX_MS = 15_000;
 
 export interface CreateCampaignInput {
   tenantId: string;
@@ -43,7 +50,20 @@ export class CampaignService {
     private readonly campaignRepository: CampaignRepository,
     private readonly tenantRepository: TenantRepository,
     private readonly logger: Logger,
+    /**
+     * Fase L, Bloco L4 — OPCIONAL (mesmo padrão de `mediaSender` em
+     * `ConversationsService`): ausente no modo degradado (sem `REDIS_URL`),
+     * onde `campaignsRouter` continua montado para leitura/criação, mas o
+     * motor de envio não existe. `startCampaign()` recusa com um erro claro
+     * (`SendingEngineNotConfiguredError`) em vez de quebrar.
+     */
+    private campaignSendDispatcher?: CampaignSendDispatcher,
   ) {}
+
+  /** Injeção tardia (Fase L, Bloco L4) — mesmo motivo/mesmo padrão de `ConversationsService.setMediaSender`: só existe depois que `WhatsAppConnectionRegistry` é montado, numa etapa posterior da composição em `index.ts`. */
+  setCampaignSendDispatcher(dispatcher: CampaignSendDispatcher): void {
+    this.campaignSendDispatcher = dispatcher;
+  }
 
   async createCampaign(input: CreateCampaignInput): Promise<CreateCampaignResult> {
     await this.assertTenantExists(input.tenantId);
@@ -127,6 +147,128 @@ export class CampaignService {
       throw new CampaignNotFoundError(campaignId);
     }
     return this.campaignRepository.listRecipients(tenantId, campaignId, options);
+  }
+
+  /**
+   * Inicia (ou RETOMA, após pausa) uma campanha — Fase L, Bloco L4. Só
+   * `draft`/`paused` podem virar `running`; qualquer outro status lança
+   * `InvalidCampaignTransitionError`.
+   *
+   * Reagenda TODOS os destinatários ainda `PENDING` (não só os nunca
+   * tentados) com um delay FRESCO, calculado a partir de AGORA — nunca do
+   * `n` original de quando a campanha nasceu. É isto que torna retomar uma
+   * campanha pausada seguro sem lógica extra: um job cujo horário chegou
+   * enquanto a campanha estava pausada já rodou, viu `status !== 'running'`
+   * e terminou sem enviar (removendo o `jobId`, ver `CampaignSendJobProcessor`)
+   * — o destinatário ficou `PENDING`, órfão de qualquer job futuro, até este
+   * método rodar de novo e reagendá-lo.
+   */
+  async startCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
+    await this.assertTenantExists(tenantId);
+    if (!this.campaignSendDispatcher) {
+      throw new SendingEngineNotConfiguredError();
+    }
+
+    const campaign = await this.campaignRepository.findById(tenantId, campaignId);
+    if (!campaign) {
+      throw new CampaignNotFoundError(campaignId);
+    }
+    if (campaign.status !== 'draft' && campaign.status !== 'paused') {
+      throw new InvalidCampaignTransitionError(campaign.status, 'start');
+    }
+
+    const pendingRecipients = await this.campaignRepository.listPendingRecipients(
+      tenantId,
+      campaignId,
+    );
+
+    if (pendingRecipients.length === 0) {
+      // Nada para enviar (ex.: todos suprimidos na materialização) — a
+      // campanha nunca chega a `running`, vai direto para `completed`.
+      const completed = await this.campaignRepository.updateCampaignStatus(
+        tenantId,
+        campaignId,
+        'completed',
+      );
+      return completed!;
+    }
+
+    const now = new Date();
+    await Promise.all(
+      pendingRecipients.map((recipient, index) => {
+        const delayMs = computeSendDelayMs(index, {
+          intervalBaseMs: campaign.intervalSeconds * 1000,
+          jitterMaxMs: DEFAULT_JITTER_MAX_MS,
+          sendWindowStart: campaign.sendWindowStart,
+          sendWindowEnd: campaign.sendWindowEnd,
+          now,
+        });
+        return this.campaignSendDispatcher!.scheduleRecipient(
+          tenantId,
+          campaignId,
+          recipient.id,
+          delayMs,
+        );
+      }),
+    );
+
+    const updated = await this.campaignRepository.updateCampaignStatus(
+      tenantId,
+      campaignId,
+      'running',
+    );
+    this.logger.info('Campanha iniciada/retomada', {
+      tenantId,
+      campaignId,
+      recipientsScheduled: pendingRecipients.length,
+    });
+    return updated!;
+  }
+
+  /**
+   * Pausa uma campanha em execução — Fase L, Bloco L4. Não toca a fila (ver
+   * docstring de `CampaignSendDispatcher`): jobs já agendados disparam
+   * normalmente no horário, olham `status`, e não fazem nada.
+   */
+  async pauseCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
+    await this.assertTenantExists(tenantId);
+    const campaign = await this.campaignRepository.findById(tenantId, campaignId);
+    if (!campaign) {
+      throw new CampaignNotFoundError(campaignId);
+    }
+    if (campaign.status !== 'running') {
+      throw new InvalidCampaignTransitionError(campaign.status, 'pause');
+    }
+    const updated = await this.campaignRepository.updateCampaignStatus(
+      tenantId,
+      campaignId,
+      'paused',
+      'paused_manually',
+    );
+    this.logger.info('Campanha pausada manualmente', { tenantId, campaignId });
+    return updated!;
+  }
+
+  /**
+   * Cancela uma campanha (terminal — não pode ser retomada). Permitido a
+   * partir de qualquer status ainda não terminal (`draft`/`running`/`paused`).
+   */
+  async cancelCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
+    await this.assertTenantExists(tenantId);
+    const campaign = await this.campaignRepository.findById(tenantId, campaignId);
+    if (!campaign) {
+      throw new CampaignNotFoundError(campaignId);
+    }
+    if (campaign.status === 'completed' || campaign.status === 'cancelled') {
+      throw new InvalidCampaignTransitionError(campaign.status, 'cancel');
+    }
+    const updated = await this.campaignRepository.updateCampaignStatus(
+      tenantId,
+      campaignId,
+      'cancelled',
+    );
+    this.logger.info('Campanha cancelada', { tenantId, campaignId });
+    return updated!;
   }
 
   private async assertTenantExists(tenantId: string): Promise<void> {

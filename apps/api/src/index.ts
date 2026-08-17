@@ -35,6 +35,9 @@ interface ShutdownHandles {
   prisma: { $disconnect: () => Promise<void> };
   outboundWorker?: Worker;
   aiReplyProducerConnection?: Redis;
+  /** Fase L, Bloco L4 — ausentes nos mesmos casos de `outboundWorker`/`aiReplyProducerConnection` (modo degradado, sem `REDIS_URL`). */
+  campaignSendWorker?: Worker;
+  campaignSendConnection?: Redis;
 }
 
 let shutdownHandles: ShutdownHandles | undefined;
@@ -179,7 +182,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createQuickRepliesComposition },
       { createTagsComposition },
       { createContactsComposition },
-      { createCampaignsComposition },
+      { createCampaignsComposition, wireCampaignSendEngine },
       { createAuthComposition },
       { createAuthenticate },
       { requirePermission },
@@ -200,7 +203,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       import('./services/tags/compositionRoot'),
       // Fase L, Bloco L1b — contatos, mesmo racional (CRUD sem Redis).
       import('./services/contacts/compositionRoot'),
-      // Fase L, Bloco L3 — campanhas (só criação/cálculo, sem envio; sem fila).
+      // Fase L, Blocos L3/L4 — campanhas (criação/cálculo sempre; motor de
+      // envio ligado só no ramo completo, ver `wireCampaignSendEngine` abaixo).
       import('./services/campaigns/compositionRoot'),
       import('./services/auth/compositionRoot'),
       import('./shared/presentation/authenticate'),
@@ -588,12 +592,35 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use('/api/tenants/:tenantId/contacts', contacts.contactsErrorHandler);
 
     // Fase L, Bloco L3 — campanhas: TENANT-WIDE na URL (mesmo racional de
-    // Contatos acima), sem fila (só criação/cálculo de destinatários, sem
-    // envio). RBAC POR ROTA (campaign:read na leitura, campaign:manage na
-    // criação/materialização).
+    // Contatos acima). RBAC POR ROTA (campaign:read na leitura,
+    // campaign:manage na criação/materialização/start/pause/cancel).
     const campaigns = createCampaignsComposition(prisma, logger);
     app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);
     app.use('/api/tenants/:tenantId/campaigns', campaigns.campaignsErrorHandler);
+
+    // Fase L, Bloco L4 — liga o motor de envio: `WhatsAppCampaignMessageSender`
+    // (implementação real do port `CampaignMessageSender`, precisa de
+    // `registry`+`conversationRepository`+`messageRepository`, todos só
+    // disponíveis aqui) + `Worker` consumidor da fila `campaign-send`, com a
+    // MESMA disciplina de conexão dedicada já usada para `outboundWorker`
+    // acima (D19 — nunca reaproveitar uma conexão de produtor para um
+    // `Worker`, que exige `maxRetriesPerRequest: null`).
+    const campaignSendConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+    const { WhatsAppCampaignMessageSender } = await import(
+      './services/whatsapp/infrastructure/WhatsAppCampaignMessageSender'
+    );
+    const campaignMessageSender = new WhatsAppCampaignMessageSender(
+      registry,
+      conversationRepository,
+      messageRepository,
+      logger,
+    );
+    const campaignSendWorker = wireCampaignSendEngine(
+      campaigns,
+      campaignMessageSender,
+      campaignSendConnection,
+      logger,
+    );
 
     // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
     // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)
@@ -698,7 +725,13 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded', checks });
     });
 
-    shutdownHandles = { prisma, outboundWorker, aiReplyProducerConnection };
+    shutdownHandles = {
+      prisma,
+      outboundWorker,
+      aiReplyProducerConnection,
+      campaignSendWorker,
+      campaignSendConnection,
+    };
   } catch (error) {
     console.error('Falha ao montar rotas de sessão do WhatsApp:', error);
   }
@@ -716,13 +749,25 @@ async function shutdown(): Promise<void> {
   if (!shutdownHandles) {
     return;
   }
-  const { prisma, outboundWorker, aiReplyProducerConnection } = shutdownHandles;
+  const {
+    prisma,
+    outboundWorker,
+    aiReplyProducerConnection,
+    campaignSendWorker,
+    campaignSendConnection,
+  } = shutdownHandles;
 
   if (outboundWorker) {
     await outboundWorker.close();
   }
+  if (campaignSendWorker) {
+    await campaignSendWorker.close();
+  }
   if (aiReplyProducerConnection) {
     await aiReplyProducerConnection.quit();
+  }
+  if (campaignSendConnection) {
+    await campaignSendConnection.quit();
   }
   await prisma.$disconnect();
 }

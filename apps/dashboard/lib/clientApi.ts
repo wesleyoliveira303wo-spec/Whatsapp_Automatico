@@ -575,6 +575,8 @@ export interface Campaign {
   name: string;
   messageTemplate: string;
   status: CampaignStatus;
+  /** Fase L, Bloco L4 — só relevante quando `status === 'paused'` (motivo da pausa automática, ex.: teto diário/disjuntor de segurança). */
+  pausedReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -624,6 +626,59 @@ export function fetchCampaign(
   campaignId: string,
 ): Promise<{ campaign: Campaign; summary: CampaignRecipientSummary }> {
   return request(`/api/campaigns/${encodeURIComponent(campaignId)}`);
+}
+
+// --- Fase L, Bloco L4 — motor de envio (start/pause/cancel + destinatários) ---
+
+export type CampaignRecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped' | 'replied';
+
+export interface CampaignRecipient {
+  id: string;
+  tenantId: string;
+  campaignId: string;
+  contactId: string;
+  status: CampaignRecipientStatus;
+  skipReason?: string;
+  errorMessage?: string;
+  sentAt?: string;
+  repliedAt?: string;
+  conversationId?: string;
+  createdAt: string;
+}
+
+export interface CampaignRecipientPage {
+  recipients: CampaignRecipient[];
+  nextCursor?: string;
+}
+
+/** Destinatários calculados de uma campanha, paginado, com filtro opcional por status. Exige `campaign:read`. */
+export function fetchCampaignRecipients(
+  campaignId: string,
+  options: { limit?: number; cursor?: string; status?: CampaignRecipientStatus } = {},
+): Promise<CampaignRecipientPage> {
+  const params = new URLSearchParams();
+  if (options.limit) params.set('limit', String(options.limit));
+  if (options.cursor) params.set('cursor', options.cursor);
+  if (options.status) params.set('status', options.status);
+  const query = params.toString();
+  return request(
+    `/api/campaigns/${encodeURIComponent(campaignId)}/recipients${query ? `?${query}` : ''}`,
+  );
+}
+
+/** Inicia (ou retoma, após pausa) o envio real da campanha. Exige `campaign:manage`. */
+export function startCampaign(campaignId: string): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/start`, { method: 'POST' });
+}
+
+/** Pausa uma campanha em execução — não toca os jobs já agendados, só impede novos envios. Exige `campaign:manage`. */
+export function pauseCampaign(campaignId: string): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/pause`, { method: 'POST' });
+}
+
+/** Cancela uma campanha (terminal — não pode ser retomada). Exige `campaign:manage`. */
+export function cancelCampaign(campaignId: string): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/cancel`, { method: 'POST' });
 }
 
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
