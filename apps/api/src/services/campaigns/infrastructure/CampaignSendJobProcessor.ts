@@ -70,10 +70,7 @@ export class CampaignSendJobProcessor {
       return;
     }
 
-    const sentToday = await this.campaignRepository.countSentToday(
-      data.tenantId,
-      data.campaignId,
-    );
+    const sentToday = await this.campaignRepository.countSentToday(data.tenantId, data.campaignId);
     if (sentToday >= campaign.dailyLimit) {
       await this.campaignRepository.updateCampaignStatus(
         data.tenantId,

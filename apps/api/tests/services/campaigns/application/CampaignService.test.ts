@@ -406,23 +406,28 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
   });
 
   describe('cancelCampaign()', () => {
-    it.each(['draft', 'running', 'paused'] as const)(
-      'cancela uma campanha %s',
-      async (status) => {
-        const { service, campaigns } = buildSut();
-        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao', status });
+    it.each(['draft', 'running', 'paused'] as const)('cancela uma campanha %s', async (status) => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status,
+      });
 
-        const campaign = await service.cancelCampaign('tenant-1', campaignId);
+      const campaign = await service.cancelCampaign('tenant-1', campaignId);
 
-        expect(campaign.status).toBe('cancelled');
-      },
-    );
+      expect(campaign.status).toBe('cancelled');
+    });
 
     it.each(['completed', 'cancelled'] as const)(
       'lança InvalidCampaignTransitionError para campanha já %s',
       async (status) => {
         const { service, campaigns } = buildSut();
-        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao', status });
+        const campaignId = campaigns.seedCampaign({
+          tenantId: 'tenant-1',
+          sessionName: 'sessao',
+          status,
+        });
 
         await expect(service.cancelCampaign('tenant-1', campaignId)).rejects.toThrow(
           InvalidCampaignTransitionError,

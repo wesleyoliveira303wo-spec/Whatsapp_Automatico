@@ -12,9 +12,7 @@ interface CampaignDetailPageProps {
 }
 
 /** Detalhe de UMA campanha (resumo + destinatários + iniciar/pausar/cancelar) — Fase L, Bloco L4. */
-export const getServerSideProps: GetServerSideProps<CampaignDetailPageProps> = async (
-  context,
-) => {
+export const getServerSideProps: GetServerSideProps<CampaignDetailPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
   if (guard.kind === 'redirect') {
     return { redirect: guard.redirect };

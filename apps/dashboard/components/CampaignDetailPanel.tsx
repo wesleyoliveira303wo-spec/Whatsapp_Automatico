@@ -187,9 +187,8 @@ export default function CampaignDetailPanel({
               <DialogTitle>Confirmar disparo real</DialogTitle>
               <DialogDescription>
                 Isto vai enviar mensagens de WhatsApp reais para até{' '}
-                <strong>{summary.pending}</strong> contato(s) pendente(s), com ritmo espaçado.
-                Você poderá pausar a qualquer momento, mas mensagens já enviadas não podem ser
-                desfeitas.
+                <strong>{summary.pending}</strong> contato(s) pendente(s), com ritmo espaçado. Você
+                poderá pausar a qualquer momento, mas mensagens já enviadas não podem ser desfeitas.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -239,8 +238,8 @@ export default function CampaignDetailPanel({
             <DialogHeader>
               <DialogTitle>Cancelar esta campanha?</DialogTitle>
               <DialogDescription>
-                Ação definitiva — uma campanha cancelada não pode ser retomada. Destinatários
-                ainda pendentes não receberão mensagem nenhuma.
+                Ação definitiva — uma campanha cancelada não pode ser retomada. Destinatários ainda
+                pendentes não receberão mensagem nenhuma.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -309,7 +308,8 @@ export default function CampaignDetailPanel({
             <span className="truncate text-foreground">{recipient.contactId}</span>
             <span className="shrink-0 text-muted-foreground">
               {RECIPIENT_STATUS_LABELS[recipient.status]}
-              {recipient.skipReason && ` · ${SKIP_REASON_LABELS[recipient.skipReason as CampaignSkipReason] ?? recipient.skipReason}`}
+              {recipient.skipReason &&
+                ` · ${SKIP_REASON_LABELS[recipient.skipReason as CampaignSkipReason] ?? recipient.skipReason}`}
               {recipient.errorMessage && ` · ${recipient.errorMessage}`}
             </span>
           </div>

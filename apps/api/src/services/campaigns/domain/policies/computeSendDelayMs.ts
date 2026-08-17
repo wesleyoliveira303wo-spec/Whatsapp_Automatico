@@ -42,7 +42,11 @@ function parseHhMmToMinutes(value: string): number | null {
  * Assume `sendWindowStart < sendWindowEnd` (janela dentro do mesmo dia, nunca
  * atravessando a meia-noite) — mesma restrição documentada na UI.
  */
-function pushIntoSendWindow(targetDate: Date, sendWindowStart: string, sendWindowEnd: string): Date {
+function pushIntoSendWindow(
+  targetDate: Date,
+  sendWindowStart: string,
+  sendWindowEnd: string,
+): Date {
   const startMinutes = parseHhMmToMinutes(sendWindowStart);
   const endMinutes = parseHhMmToMinutes(sendWindowEnd);
   if (startMinutes === null || endMinutes === null || startMinutes >= endMinutes) {

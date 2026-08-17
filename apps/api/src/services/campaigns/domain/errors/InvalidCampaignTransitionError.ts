@@ -6,9 +6,7 @@ export class InvalidCampaignTransitionError extends Error {
     public readonly currentStatus: CampaignStatus,
     public readonly attemptedAction: 'start' | 'pause' | 'cancel',
   ) {
-    super(
-      `Não é possível "${attemptedAction}" uma campanha com status "${currentStatus}".`,
-    );
+    super(`Não é possível "${attemptedAction}" uma campanha com status "${currentStatus}".`);
     this.name = 'InvalidCampaignTransitionError';
   }
 }

@@ -326,9 +326,7 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
     it('404 para campanha inexistente', async () => {
       const { app } = buildApp(person('administrator'), { withDispatcher: true });
 
-      const response = await request(app).post(
-        `${basePath('tenant-1')}/campanha-fantasma/start`,
-      );
+      const response = await request(app).post(`${basePath('tenant-1')}/campanha-fantasma/start`);
 
       expect(response.status).toBe(404);
     });

@@ -24,10 +24,7 @@ export const getServerSideProps: GetServerSideProps<CampaignsPageProps> = async 
   return { props: { tenantId: session.tenantId, sessionName } };
 };
 
-export default function CampaignsPage({
-  tenantId,
-  sessionName,
-}: CampaignsPageProps): JSX.Element {
+export default function CampaignsPage({ tenantId, sessionName }: CampaignsPageProps): JSX.Element {
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
       <Head>

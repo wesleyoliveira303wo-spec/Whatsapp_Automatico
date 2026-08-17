@@ -1,10 +1,7 @@
 import { Queue } from 'bullmq';
 
 import { CampaignSendDispatcher } from '../../domain/dispatchers/CampaignSendDispatcher';
-import {
-  CAMPAIGN_SEND_JOB_NAME,
-  CampaignSendJobData,
-} from '../queues/CampaignSendQueue';
+import { CAMPAIGN_SEND_JOB_NAME, CampaignSendJobData } from '../queues/CampaignSendQueue';
 
 /**
  * Implementação real (produtor) de `CampaignSendDispatcher` sobre a fila

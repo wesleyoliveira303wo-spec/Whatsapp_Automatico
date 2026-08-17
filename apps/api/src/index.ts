@@ -606,9 +606,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // acima (D19 — nunca reaproveitar uma conexão de produtor para um
     // `Worker`, que exige `maxRetriesPerRequest: null`).
     const campaignSendConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
-    const { WhatsAppCampaignMessageSender } = await import(
-      './services/whatsapp/infrastructure/WhatsAppCampaignMessageSender'
-    );
+    const { WhatsAppCampaignMessageSender } =
+      await import('./services/whatsapp/infrastructure/WhatsAppCampaignMessageSender');
     const campaignMessageSender = new WhatsAppCampaignMessageSender(
       registry,
       conversationRepository,

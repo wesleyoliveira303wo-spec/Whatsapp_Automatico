@@ -1,4 +1,9 @@
-import { Campaign, CampaignRecipient, CampaignRecipientSummary, CampaignStatus } from '../entities/Campaign';
+import {
+  Campaign,
+  CampaignRecipient,
+  CampaignRecipientSummary,
+  CampaignStatus,
+} from '../entities/Campaign';
 import { RecipientEligibility } from '../policies/determineSkipReason';
 import { CampaignSendOutcome } from '../policies/shouldTripCircuitBreaker';
 

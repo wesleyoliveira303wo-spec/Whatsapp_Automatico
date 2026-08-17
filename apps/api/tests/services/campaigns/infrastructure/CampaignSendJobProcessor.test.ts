@@ -104,7 +104,10 @@ describe('CampaignSendJobProcessor (Fase L, Bloco L4)', () => {
       campaignId,
       contactId: 'contact-1',
     });
-    sender.queueResult('contact-1', { ok: false, failureReason: 'sem_conversa_existente_nesta_sessao' });
+    sender.queueResult('contact-1', {
+      ok: false,
+      failureReason: 'sem_conversa_existente_nesta_sessao',
+    });
 
     await processor.process({ tenantId: 'tenant-1', campaignId, recipientId });
 

@@ -16,9 +16,7 @@ export class FakeCampaignMessageSender implements CampaignMessageSender {
     content: string,
   ): Promise<CampaignMessageSendResult> {
     this.calls.push({ tenantId, sessionName, contactId, content });
-    return (
-      this.results.get(contactId) ?? { ok: true, conversationId: `conversation-${contactId}` }
-    );
+    return this.results.get(contactId) ?? { ok: true, conversationId: `conversation-${contactId}` };
   }
 
   queueResult(contactId: string, result: CampaignMessageSendResult): void {

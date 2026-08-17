@@ -167,7 +167,10 @@ export class FakeCampaignRepository implements CampaignRepository {
 
   async listPendingRecipients(tenantId: string, campaignId: string): Promise<CampaignRecipient[]> {
     return [...this.recipients.values()]
-      .filter((row) => row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'pending')
+      .filter(
+        (row) =>
+          row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'pending',
+      )
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 
@@ -186,7 +189,8 @@ export class FakeCampaignRepository implements CampaignRepository {
 
   async countPending(tenantId: string, campaignId: string): Promise<number> {
     return [...this.recipients.values()].filter(
-      (row) => row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'pending',
+      (row) =>
+        row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'pending',
     ).length;
   }
 
@@ -279,7 +283,9 @@ export class FakeCampaignRepository implements CampaignRepository {
   }
 
   /** Helper de teste: pré-carrega um destinatário com campos customizados (ex.: `status: 'pending'` numa campanha já existente), devolvendo o `id` gerado. */
-  seedRecipient(data: Partial<CampaignRecipient> & { tenantId: string; campaignId: string; contactId: string }): string {
+  seedRecipient(
+    data: Partial<CampaignRecipient> & { tenantId: string; campaignId: string; contactId: string },
+  ): string {
     const id = data.id ?? `recipient-${this.nextRecipientId++}`;
     this.recipients.set(id, {
       id,

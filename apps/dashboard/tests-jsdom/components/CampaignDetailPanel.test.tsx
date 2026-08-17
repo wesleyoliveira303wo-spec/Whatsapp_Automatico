@@ -31,7 +31,12 @@ function mockDetail(overrides: Partial<clientApi.Campaign> = {}): void {
   });
   (clientApi.fetchCampaignRecipients as jest.Mock).mockResolvedValue({
     recipients: [
-      { id: 'r1', contactId: 'contact-1', status: 'pending', createdAt: '2026-08-17T10:00:00.000Z' },
+      {
+        id: 'r1',
+        contactId: 'contact-1',
+        status: 'pending',
+        createdAt: '2026-08-17T10:00:00.000Z',
+      },
       {
         id: 'r2',
         contactId: 'contact-2',

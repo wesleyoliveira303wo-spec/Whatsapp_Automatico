@@ -22,7 +22,10 @@ const STATUS_LABELS: Record<CampaignStatus, string> = {
   cancelled: 'Cancelada',
 };
 
-const STATUS_BADGE_VARIANT: Record<CampaignStatus, 'secondary' | 'success' | 'warning' | 'default' | 'destructive'> = {
+const STATUS_BADGE_VARIANT: Record<
+  CampaignStatus,
+  'secondary' | 'success' | 'warning' | 'default' | 'destructive'
+> = {
   draft: 'secondary',
   scheduled: 'secondary',
   running: 'success',
