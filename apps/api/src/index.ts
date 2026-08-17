@@ -179,6 +179,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createQuickRepliesComposition },
       { createTagsComposition },
       { createContactsComposition },
+      { createCampaignsComposition },
       { createAuthComposition },
       { createAuthenticate },
       { requirePermission },
@@ -199,6 +200,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       import('./services/tags/compositionRoot'),
       // Fase L, Bloco L1b — contatos, mesmo racional (CRUD sem Redis).
       import('./services/contacts/compositionRoot'),
+      // Fase L, Bloco L3 — campanhas (só criação/cálculo, sem envio; sem fila).
+      import('./services/campaigns/compositionRoot'),
       import('./services/auth/compositionRoot'),
       import('./shared/presentation/authenticate'),
       import('./shared/presentation/requirePermission'),
@@ -369,6 +372,12 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       const degradedContacts = createContactsComposition(prisma, logger);
       app.use('/api/tenants/:tenantId/contacts', authenticate, degradedContacts.contactsRouter);
       app.use('/api/tenants/:tenantId/contacts', degradedContacts.contactsErrorHandler);
+
+      // Fase L, Bloco L3 — campanhas: CRUD autocontido sobre Postgres, sem
+      // fila (este bloco não envia nada), mesmo racional de Contatos acima.
+      const degradedCampaigns = createCampaignsComposition(prisma, logger);
+      app.use('/api/tenants/:tenantId/campaigns', authenticate, degradedCampaigns.campaignsRouter);
+      app.use('/api/tenants/:tenantId/campaigns', degradedCampaigns.campaignsErrorHandler);
 
       shutdownHandles = { prisma };
       return;
@@ -577,6 +586,14 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     const contacts = createContactsComposition(prisma, logger);
     app.use('/api/tenants/:tenantId/contacts', authenticate, contacts.contactsRouter);
     app.use('/api/tenants/:tenantId/contacts', contacts.contactsErrorHandler);
+
+    // Fase L, Bloco L3 — campanhas: TENANT-WIDE na URL (mesmo racional de
+    // Contatos acima), sem fila (só criação/cálculo de destinatários, sem
+    // envio). RBAC POR ROTA (campaign:read na leitura, campaign:manage na
+    // criação/materialização).
+    const campaigns = createCampaignsComposition(prisma, logger);
+    app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);
+    app.use('/api/tenants/:tenantId/campaigns', campaigns.campaignsErrorHandler);
 
     // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
     // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)

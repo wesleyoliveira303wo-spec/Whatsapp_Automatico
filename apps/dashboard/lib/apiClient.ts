@@ -176,3 +176,11 @@ export const callTagsApi = createApiClient('sessions');
  * `schema.prisma`. RBAC (contact:read/manage) imposto pela API.
  */
 export const callContactsApi = createApiClient('contacts');
+
+/**
+ * Cliente do recurso `campaigns` (Fase L, Bloco L3 — criação e cálculo de
+ * destinatários; NUNCA envia mensagem), consumido por `pages/api/campaigns/*`.
+ * TENANT-WIDE na URL, mesmo padrão de `callContactsApi` — `sessionName` é um
+ * campo do corpo, não da rota. RBAC (campaign:read/manage) imposto pela API.
+ */
+export const callCampaignsApi = createApiClient('campaigns');

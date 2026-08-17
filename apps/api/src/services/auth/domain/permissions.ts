@@ -28,6 +28,8 @@ export type Permission =
   | 'tag:manage'
   | 'contact:read'
   | 'contact:manage'
+  | 'campaign:read'
+  | 'campaign:manage'
   | 'user:read'
   | 'user:create'
   | 'user:update'
@@ -68,6 +70,12 @@ const OPERATOR: readonly Permission[] = [
   // administrator+ (`contact:manage`), mesmo racional de quick_reply/tag:
   // uma importacao errada polui a base do tenant inteiro de uma vez.
   'contact:read',
+  // Fase L, Bloco L3 — quem ja atende ja pode VER campanhas existentes
+  // (mesmo nivel de analytics:read). So CRIAR/materializar exige
+  // administrator+ (`campaign:manage`, abaixo): uma campanha errada atinge
+  // muita gente de uma vez (e pode custar o numero), entao o nivel de
+  // permissao reflete o raio do estrago, nao a frequencia de uso.
+  'campaign:read',
 ];
 
 const MANAGER: readonly Permission[] = [
@@ -102,6 +110,12 @@ const ADMINISTRATOR: readonly Permission[] = [
   // ai_profile:update/quick_reply:manage. LER a base ja esta liberado desde
   // OPERATOR (`contact:read` acima).
   'contact:manage',
+  // Fase L, Bloco L3 — criar/materializar uma campanha e administracao de
+  // ALTO RISCO: mais alto que `message:send` de proposito (uma mensagem
+  // errada atinge uma pessoa; uma campanha errada atinge muitas e pode
+  // custar o numero do WhatsApp). LER campanhas ja esta liberado desde
+  // OPERATOR (`campaign:read` acima).
+  'campaign:manage',
 ];
 
 /**

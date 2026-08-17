@@ -351,6 +351,10 @@ model Tenant {
   contacts              WhatsAppContact[]
   // Fase L, Bloco L2 (2026-08-15) — log de consentimento (opt-in/opt-out).
   contactConsentEvents  ContactConsentEvent[]
+  // Fase L, Bloco L3 (2026-08-17) — campanhas de disparo em lote (só criação
+  // e cálculo de destinatários nesta rodada, sem envio).
+  campaigns             Campaign[]
+  campaignRecipients    CampaignRecipient[]
 
   @@map("tenants")
 }
@@ -474,6 +478,111 @@ enum ContactSource {
   MANUAL
 
   @@map("contact_source")
+}
+
+/// Estado de uma campanha — Fase L, Bloco L3. `SCHEDULED`/`RUNNING`/`PAUSED`/
+/// `COMPLETED`/`CANCELLED` existem no enum desde já, mesmo sem UI para eles
+/// nesta rodada (nenhum motor de envio existe ainda — ver `Campaign`), para
+/// não exigir migration nova quando o L4/L5 (fila + disjuntor) forem
+/// implementados. L3 só produz campanhas em `DRAFT`.
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+
+  @@map("campaign_status")
+}
+
+/// Uma campanha de disparo em lote — Fase L, Bloco L3.
+///
+/// **Este bloco só CRIA e CALCULA quem receberia — NÃO envia nenhuma
+/// mensagem.** O envio de fato (fila `campaign-send`, ritmo/`intervalSeconds`,
+/// disjuntor de segurança) é trabalho do L4/L5, ainda não implementado; os
+/// campos de ritmo abaixo já existem no schema por decisão de projeto
+/// (`FASE_L_MOTOR_DE_LEADS.md` §10.3): mais barato declará-los agora do que
+/// fazer uma segunda migration quando o motor de envio nascer.
+///
+/// Por sessão (não tenant-wide, diferente de `WhatsAppContact`) — uma
+/// campanha dispara por um número de WhatsApp específico.
+model Campaign {
+  id              String         @id @default(uuid())
+  tenantId        String         @map("tenant_id")
+  sessionName     String         @map("session_name")
+  name            String
+  messageTemplate String         @db.Text @map("message_template")
+  status          CampaignStatus @default(DRAFT)
+  scheduledFor    DateTime?      @map("scheduled_for")
+  intervalSeconds Int            @default(75) @map("interval_seconds")
+  dailyLimit      Int            @default(30) @map("daily_limit")
+  sendWindowStart String?        @map("send_window_start")
+  sendWindowEnd   String?        @map("send_window_end")
+  pausedReason    String?        @map("paused_reason")
+  createdByUserId String?        @map("created_by_user_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipients CampaignRecipient[]
+
+  @@index([tenantId, sessionName, status])
+  @@map("campaigns")
+}
+
+/// Status de um destinatário DENTRO de uma campanha — Fase L, Bloco L3.
+/// `SENT`/`FAILED`/`REPLIED` só passam a existir de fato a partir do L4/L5
+/// (envio real); nesta rodada, a materialização só produz `PENDING` (elegível)
+/// ou `SKIPPED` (suprimido, com `skipReason`).
+enum CampaignRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+  REPLIED
+
+  @@map("campaign_recipient_status")
+}
+
+/// Um destinatário calculado de uma campanha — onde mora o "63 de 100, eis os
+/// motivos" (Fase L, Bloco L3). Uma linha por `(campaignId, contactId)`,
+/// criada na MATERIALIZAÇÃO (`CampaignService.createCampaign`), nunca editada
+/// à mão.
+///
+/// `skipReason` é texto livre (não enum) DE PROPÓSITO — mesmo racional de
+/// `ContactConsentEvent.reason`: motivos novos de supressão não devem exigir
+/// migration. Os três usados por este bloco: `"opt_out"`,
+/// `"active_human_conversation"`, `"recently_contacted"`.
+///
+/// SEM relação Prisma para `WhatsAppContact`/`WhatsAppConversation` — mesmo
+/// padrão de baixo acoplamento entre bounded contexts já usado em
+/// `AuditLog`/`ContactConsentEvent` (o id fica gravado, sem FK).
+model CampaignRecipient {
+  id             String                  @id @default(uuid())
+  tenantId       String                  @map("tenant_id")
+  campaignId     String                  @map("campaign_id")
+  contactId      String                  @map("contact_id")
+  status         CampaignRecipientStatus @default(PENDING)
+  skipReason     String?                 @map("skip_reason")
+  errorMessage   String?                 @db.Text @map("error_message")
+  sentAt         DateTime?               @map("sent_at")
+  repliedAt      DateTime?               @map("replied_at")
+  conversationId String?                 @map("conversation_id")
+  createdAt      DateTime                @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  /// Idempotência, camada 1: materializar a mesma campanha duas vezes nunca
+  /// duplica um destinatário (`createMany({ skipDuplicates: true })`).
+  @@unique([campaignId, contactId])
+  @@index([tenantId, campaignId, status])
+  /// Suporta a regra de supressão "contatado por OUTRA campanha há menos de
+  /// 7 dias" — busca por `(tenantId, contactId, status, sentAt)` sem varrer a
+  /// tabela inteira.
+  @@index([tenantId, contactId, status, sentAt])
+  @@map("campaign_recipients")
 }
 
 /// Espelha apps/api/src/services/whatsapp/domain/entities/WhatsAppSession.ts

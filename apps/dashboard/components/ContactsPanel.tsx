@@ -13,8 +13,11 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
 import ErrorState from '@/components/states/ErrorState';
+import NewCampaignDialog from '@/components/NewCampaignDialog';
 
 interface ContactsPanelProps {
+  /** Sessão dona da campanha (Fase L, Bloco L3) — uma campanha é sempre de UM WhatsApp. */
+  sessionName: string;
   /**
    * Só administrator/owner veem o botão de importar E o botão de
    * opt-out/opt-in por linha — as duas ações exigem `contact:manage` na API
@@ -90,20 +93,20 @@ function StatCard({ icon: Icon, label, value }: StatCardProps): JSX.Element {
  * (`WhatsAppContact`, tenant-wide), com contagens no topo, importação de
  * planilha e controle de consentimento (opt-out/opt-in).
  *
- * DELIBERADAMENTE FORA nesta rodada, e visível como "em breve" na coluna da
- * direita: o painel de Disparos/Campanhas. Ele pressupõe um motor de envio
- * com ritmo controlado e disjuntor de segurança que ainda não existe (ver
- * `FASE_L_MOTOR_DE_LEADS.md` §9.3) — mostrar números de campanha aqui hoje
- * seria inventar dado. A seleção em lote (checkboxes) já funciona e alimenta
- * o contador do botão, para que o dia em que o motor existir seja só ligar a
- * ação.
+ * Fase L, Bloco L3 (2026-08-17) — "Novo disparo" agora CRIA a campanha e
+ * CALCULA quem receberia (`NewCampaignDialog`), aplicando as três regras de
+ * supressão automática (opt-out, conversa ativa com humano, contatado há
+ * menos de 7 dias por outra campanha). **Ainda não envia nenhuma
+ * mensagem** — o motor de envio com ritmo controlado e disjuntor de
+ * segurança (ver `FASE_L_MOTOR_DE_LEADS.md` §9.3) é um bloco futuro; o
+ * painel "Disparos / Campanhas" à direita segue "em breve" por isso.
  *
  * Igualmente fora: o botão "Filtros" do mockup. Um filtro correto precisa
  * ser server-side (a lista é paginada por cursor — filtrar só o que já
  * está na tela mentiria sobre o resultado), e isso é mudança de backend, não
  * de layout. Preferi não entregar um botão que não faz nada.
  */
-export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.Element {
+export default function ContactsPanel({ sessionName, canManage }: ContactsPanelProps): JSX.Element {
   const {
     contacts,
     stats,
@@ -273,17 +276,11 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                 <Upload className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
                 {importing ? 'Importando…' : 'Importar planilha'}
               </Button>
-              <Button
-                type="button"
-                size="cta"
-                className="shrink-0"
-                disabled
-                title="Campanhas ainda não estão disponíveis — em desenvolvimento."
-              >
-                <Send className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                Novo disparo
-                {selectedIds.size > 0 && ` (${selectedIds.size})`}
-              </Button>
+              <NewCampaignDialog
+                sessionName={sessionName}
+                contactIds={Array.from(selectedIds)}
+                onCreated={() => setSelectedIds(new Set())}
+              />
             </>
           )}
         </div>
@@ -432,18 +429,19 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
             <div>
               <p className="text-[14px] font-semibold text-foreground">Disparos / Campanhas</p>
               <Badge variant="secondary" className="mt-0.5">
-                Em breve
+                Envio em breve
               </Badge>
             </div>
           </div>
           <p className="mt-2.5 text-[12.5px] leading-[1.55] text-muted-foreground">
-            Enviar mensagens para vários contatos de uma vez ainda está em desenvolvimento. O envio
-            precisa de ritmo controlado e parada automática de segurança — sem isso, o número do
-            WhatsApp corre risco de bloqueio.
+            Selecione contatos e clique em &quot;Novo disparo&quot; para criar uma campanha e ver quantos
+            receberiam a mensagem — opt-out, conversa já em atendimento humano e contato recente por
+            outra campanha são descontados automaticamente.
           </p>
           <p className="mt-2.5 text-[12.5px] leading-[1.55] text-muted-foreground">
-            Enquanto isso, a base de contatos e o opt-out já estão prontos: quem pedir para sair não
-            entrará em nenhuma campanha futura.
+            O <strong>envio de fato</strong> ainda está em desenvolvimento: precisa de ritmo
+            controlado e parada automática de segurança — sem isso, o número do WhatsApp corre risco
+            de bloqueio.
           </p>
         </div>
       </aside>

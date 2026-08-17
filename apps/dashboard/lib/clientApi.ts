@@ -560,6 +560,71 @@ export function optInContact(contactId: string): Promise<{ contact: Contact }> {
   return request(`/api/contacts/${encodeURIComponent(contactId)}/opt-in`, { method: 'POST' });
 }
 
+// --- Campanhas (Fase L, Bloco L3) ---
+// Só CRIA e CALCULA quem receberia — NUNCA envia nenhuma mensagem. O envio
+// real (fila + ritmo + disjuntor de segurança) é trabalho de um bloco
+// futuro (L4/L5), ainda não implementado.
+
+export type CampaignStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
+
+export interface Campaign {
+  id: string;
+  tenantId: string;
+  sessionName: string;
+  name: string;
+  messageTemplate: string;
+  status: CampaignStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CampaignSkipReason = 'opt_out' | 'active_human_conversation' | 'recently_contacted';
+
+/** O "63 de 100, eis os motivos" — resumo devolvido junto com a campanha recém-criada. */
+export interface CampaignRecipientSummary {
+  total: number;
+  pending: number;
+  skipped: number;
+  skipReasons: Partial<Record<CampaignSkipReason, number>>;
+}
+
+/**
+ * Cria a campanha e materializa os destinatários (aplica as três regras de
+ * supressão: opt-out, conversa ativa com humano, contatado há menos de 7
+ * dias por outra campanha). Exige `campaign:manage` (administrator+).
+ */
+export function createCampaign(input: {
+  sessionName: string;
+  name: string;
+  messageTemplate: string;
+  contactIds: string[];
+}): Promise<{ campaign: Campaign; summary: CampaignRecipientSummary }> {
+  return request('/api/campaigns', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export interface CampaignPage {
+  campaigns: Campaign[];
+  nextCursor?: string;
+}
+
+/** Lista campanhas do tenant, paginado por cursor. Exige `campaign:read` (operator+). */
+export function fetchCampaigns(
+  options: { limit?: number; cursor?: string } = {},
+): Promise<CampaignPage> {
+  const params = new URLSearchParams();
+  if (options.limit) params.set('limit', String(options.limit));
+  if (options.cursor) params.set('cursor', options.cursor);
+  const query = params.toString();
+  return request(`/api/campaigns${query ? `?${query}` : ''}`);
+}
+
+/** Detalhe de uma campanha (campanha + resumo de destinatários). Exige `campaign:read`. */
+export function fetchCampaign(
+  campaignId: string,
+): Promise<{ campaign: Campaign; summary: CampaignRecipientSummary }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}`);
+}
+
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
   return request('/api/sessions');
 }

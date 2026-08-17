@@ -59,7 +59,7 @@ export default function ContactsPage({
             ou importada de uma planilha.
           </p>
 
-          <ContactsPanel canManage={canManage} />
+          <ContactsPanel sessionName={sessionName} canManage={canManage} />
         </div>
       </div>
     </SessionLayout>

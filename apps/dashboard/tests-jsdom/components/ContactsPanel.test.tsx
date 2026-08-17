@@ -49,7 +49,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('carrega e lista os contatos ao montar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-    render(<ContactsPanel canManage={false} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('Maria')).toBeInTheDocument();
@@ -61,7 +61,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       contacts: [contact({ name: undefined })],
     });
 
-    render(<ContactsPanel canManage={false} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('+55 21 98888-7777')).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('mostra estado vazio quando não há contatos', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<ContactsPanel canManage={false} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
 
     await waitFor(() => {
       expect(screen.getByText('Nenhum contato ainda')).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('sem permissão de gerenciar (canManage=false): não mostra o botão de importar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-    render(<ContactsPanel canManage={false} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     expect(screen.queryByRole('button', { name: /Importar planilha/ })).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('com permissão (canManage=true): mostra o botão de importar', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<ContactsPanel canManage={true} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     expect(screen.getByRole('button', { name: /Importar planilha/ })).toBeInTheDocument();
@@ -99,7 +99,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
   it('busca refaz a listagem com o termo digitado', async () => {
     (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-    render(<ContactsPanel canManage={false} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalledTimes(1));
 
     fireEvent.change(screen.getByPlaceholderText(/Buscar por nome ou telefone/), {
@@ -118,7 +118,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       .mockResolvedValueOnce({ contacts: [contact()], nextCursor: 'contact-1' })
       .mockResolvedValueOnce({ contacts: [contact({ id: 'contact-2', name: 'João' })] });
 
-    render(<ContactsPanel canManage={false} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
     await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Carregar mais' }));
@@ -141,7 +141,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       invalid: [],
     });
 
-    render(<ContactsPanel canManage={true} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'contatos.csv', {
@@ -170,7 +170,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       new ClientApiError(403, { error: 'forbidden' }),
     );
 
-    render(<ContactsPanel canManage={true} />);
+    render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
     await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
     const file = new File(['Nome,Telefone\nMaria,5521988887777'], 'contatos.csv', {
@@ -200,7 +200,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
         withoutConversation: 5,
       });
 
-      render(<ContactsPanel canManage={false} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
 
       await waitFor(() => {
         expect(screen.getByText('23')).toBeInTheDocument();
@@ -214,7 +214,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
       (clientApi.fetchContactStats as jest.Mock).mockRejectedValue(new Error('falhou'));
 
-      render(<ContactsPanel canManage={false} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
 
       await waitFor(() => {
         expect(screen.getByText('Maria')).toBeInTheDocument();
@@ -234,7 +234,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
         ],
       });
 
-      render(<ContactsPanel canManage={false} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
       await waitFor(() => expect(screen.getByText('Com Conversa')).toBeInTheDocument());
 
       const links = screen.getAllByRole('link', { name: /Abrir conversa/ });
@@ -245,7 +245,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
     it('seleção em lote alimenta o contador do botão de disparo', async () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
       await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
       fireEvent.click(screen.getByLabelText('Selecionar Maria'));
@@ -258,7 +258,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
         contacts: [contact(), contact({ id: 'contact-2', name: 'João' })],
       });
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
       await waitFor(() => expect(screen.getByText('João')).toBeInTheDocument());
 
       fireEvent.click(screen.getByLabelText('Selecionar todos os contatos desta página'));
@@ -271,21 +271,21 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
     it('o botão de disparo está desabilitado (campanhas ainda não existem)', async () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
       await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
       expect(screen.getByRole('button', { name: /Novo disparo/ })).toBeDisabled();
     });
 
-    it('mostra o painel de campanhas como "Em breve"', async () => {
+    it('mostra o painel de campanhas com o aviso de envio "Em breve"', async () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [] });
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
 
       await waitFor(() => {
         expect(screen.getByText('Disparos / Campanhas')).toBeInTheDocument();
       });
-      expect(screen.getByText('Em breve')).toBeInTheDocument();
+      expect(screen.getByText('Envio em breve')).toBeInTheDocument();
     });
   });
 
@@ -296,7 +296,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
         contacts: [contact({ optOutAt: '2026-08-16T00:00:00.000Z' })],
       });
 
-      render(<ContactsPanel canManage={false} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
 
       await waitFor(() => {
         expect(screen.getByText('Opt-out')).toBeInTheDocument();
@@ -306,7 +306,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
     it('sem permissão (canManage=false): não mostra o botão de opt-out/opt-in', async () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({ contacts: [contact()] });
 
-      render(<ContactsPanel canManage={false} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={false} />);
       await waitFor(() => expect(clientApi.fetchContacts).toHaveBeenCalled());
 
       expect(screen.queryByRole('button', { name: /opt-out/i })).not.toBeInTheDocument();
@@ -318,7 +318,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
         contact: contact({ optOutAt: '2026-08-16T00:00:00.000Z' }),
       });
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
       await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
       fireEvent.click(screen.getByRole('button', { name: 'Marcar opt-out' }));
@@ -339,7 +339,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       });
       (clientApi.optInContact as jest.Mock).mockResolvedValue({ contact: contact() });
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
       await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Reverter opt-out' })).toBeInTheDocument(),
       );
@@ -361,7 +361,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
         new ClientApiError(403, { error: 'forbidden' }),
       );
 
-      render(<ContactsPanel canManage={true} />);
+      render(<ContactsPanel sessionName="sessao-principal" canManage={true} />);
       await waitFor(() => expect(screen.getByText('Maria')).toBeInTheDocument());
 
       fireEvent.click(screen.getByRole('button', { name: 'Marcar opt-out' }));
