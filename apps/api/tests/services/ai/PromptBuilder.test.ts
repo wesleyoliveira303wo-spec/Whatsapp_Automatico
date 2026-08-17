@@ -271,4 +271,55 @@ describe('PromptBuilder', () => {
 
     expect(withOffHours.systemPrompt).toBe(withoutOffHours.systemPrompt);
   });
+
+  // --- Fase L, Bloco L6: campaignContext (6º parâmetro) ---
+
+  it('L6: injeta o campaignContext ao final do systemPrompt quando informado', () => {
+    const builder = new PromptBuilder();
+    const campaignContext = '# Origem desta conversa\nNós procuramos o lead primeiro.';
+
+    const request = builder.build(
+      [],
+      PROMPT_VERSION,
+      undefined,
+      undefined,
+      undefined,
+      campaignContext,
+    );
+
+    expect(request.systemPrompt).toContain('Você é um assistente de atendimento.');
+    expect(request.systemPrompt).toContain('# Origem desta conversa');
+    expect(request.systemPrompt).toContain('Nós procuramos o lead primeiro.');
+  });
+
+  it('L6: campaignContext vem APÓS businessContext e offHoursContext quando todos presentes', () => {
+    const builder = new PromptBuilder();
+    const businessContext = 'Salão da Maria.';
+    const offHoursContext = '# Aviso de Horário\nFora do expediente.';
+    const campaignContext = '# Origem desta conversa\nNós procuramos o lead primeiro.';
+
+    const request = builder.build(
+      [],
+      PROMPT_VERSION,
+      businessContext,
+      undefined,
+      offHoursContext,
+      campaignContext,
+    );
+
+    const prompt = request.systemPrompt;
+    expect(prompt.indexOf('Salão da Maria.')).toBeLessThan(prompt.indexOf('Fora do expediente.'));
+    expect(prompt.indexOf('Fora do expediente.')).toBeLessThan(
+      prompt.indexOf('Nós procuramos o lead primeiro.'),
+    );
+  });
+
+  it('L6: campaignContext ausente (undefined) não altera o systemPrompt', () => {
+    const builder = new PromptBuilder();
+
+    const withCampaign = builder.build([], PROMPT_VERSION, undefined, undefined, undefined, undefined);
+    const withoutCampaign = builder.build([], PROMPT_VERSION);
+
+    expect(withCampaign.systemPrompt).toBe(withoutCampaign.systemPrompt);
+  });
 });

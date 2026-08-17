@@ -3,6 +3,8 @@ import { MediaDownloader } from '../../whatsapp/domain/providers/MediaDownloader
 import { AiInteraction } from '../domain/entities/AiInteraction';
 import { AiInteractionRepository } from '../domain/repositories/AiInteractionRepository';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
+import { CampaignOriginResolver } from '../domain/repositories/CampaignOriginResolver';
+import { buildCampaignContext } from '../domain/campaignContext';
 import { calculateCostUsd } from '../domain/AiPricing';
 import { PromptVersion } from '../domain/PromptVersion';
 import { AiGenerationResult, AiMediaContentPart } from '../domain/providers/AiProvider';
@@ -174,6 +176,12 @@ export class ConversationAiService {
      * IA, não para servir um binário a um humano.
      */
     private readonly mediaDownloader?: MediaDownloader,
+    /**
+     * Fase L, Bloco L6 — OPCIONAL, mesmo padrão de `mediaDownloader`: sem
+     * ele configurado, o comportamento é idêntico ao de antes deste bloco
+     * (nenhuma conversa recebe o bloco de contexto de campanha).
+     */
+    private readonly campaignOriginResolver?: CampaignOriginResolver,
   ) {}
 
   async generateReply(
@@ -198,12 +206,14 @@ export class ConversationAiService {
       sessionName,
     );
     const mediaByMessageId = await this.loadLatestInboundMedia(tenantId, sessionName, messages);
+    const campaignContext = await this.loadCampaignContext(tenantId, conversationId);
     const request = this.promptBuilder.build(
       messages,
       promptVersion,
       businessContext,
       mediaByMessageId,
       offHoursContext,
+      campaignContext,
     );
     const startedAt = Date.now();
 
@@ -333,6 +343,28 @@ export class ConversationAiService {
       };
     } catch {
       return {};
+    }
+  }
+
+  /**
+   * Fase L, Bloco L6 — descobre se esta conversa nasceu de uma campanha e,
+   * se sim, monta o bloco de contexto (`buildCampaignContext`). DEGRADAÇÃO
+   * GRACIOSA, mesmo racional de `loadProfileContext`: sem resolver
+   * configurado, ou qualquer falha, devolve `undefined` — nunca impede a
+   * resposta ao cliente.
+   */
+  private async loadCampaignContext(
+    tenantId: string,
+    conversationId: string,
+  ): Promise<string | undefined> {
+    if (!this.campaignOriginResolver) {
+      return undefined;
+    }
+    try {
+      const origin = await this.campaignOriginResolver.findOrigin(tenantId, conversationId);
+      return origin ? buildCampaignContext(origin.messageSent) : undefined;
+    } catch {
+      return undefined;
     }
   }
 

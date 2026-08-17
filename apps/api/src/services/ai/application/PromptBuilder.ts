@@ -104,18 +104,28 @@ export class PromptBuilder {
    * "Informações da empresa" (se houver), em seção própria. `undefined` ou
    * string vazia = sem aviso de horário (comportamento anterior inalterado).
    */
+  /**
+   * Fase L, Bloco L6 (2026-08-17): novo 6º parâmetro `campaignContext` — já
+   * formatado por `buildCampaignContext()` (domain `campaignContext.ts`),
+   * presente só quando a conversa nasceu de uma campanha de disparo.
+   * Corrige a premissa do `v2` (conversa sempre iniciada pelo cliente) sem
+   * reescrever nenhum prompt existente. `undefined` = comportamento
+   * inalterado (conversa comum).
+   */
   build(
     messages: Message[],
     promptVersion: PromptVersion,
     businessContext?: string,
     mediaByMessageId?: Map<string, AiMediaContentPart>,
     offHoursContext?: string,
+    campaignContext?: string,
   ): AiGenerationRequest {
     return {
       systemPrompt: this.composeSystemPrompt(
         promptVersion.systemPrompt,
         businessContext,
         offHoursContext,
+        campaignContext,
       ),
       messages: messages.map((message) => ({
         role: message.direction === 'inbound' ? 'user' : 'assistant',
@@ -140,6 +150,7 @@ export class PromptBuilder {
     basePrompt: string,
     businessContext?: string,
     offHoursContext?: string,
+    campaignContext?: string,
   ): string {
     let prompt = basePrompt;
 
@@ -154,6 +165,13 @@ export class PromptBuilder {
     const trimmedOffHours = offHoursContext?.trim();
     if (trimmedOffHours) {
       prompt += `\n\n${trimmedOffHours}`;
+    }
+
+    // Fase L, Bloco L6 — depois dos demais blocos: o mais importante é a
+    // empresa/horário; a origem de campanha é um detalhe de enquadramento.
+    const trimmedCampaign = campaignContext?.trim();
+    if (trimmedCampaign) {
+      prompt += `\n\n${trimmedCampaign}`;
     }
 
     return prompt;

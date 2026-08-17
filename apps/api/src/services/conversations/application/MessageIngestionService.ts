@@ -10,6 +10,7 @@ import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityR
 import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
 import { OptOutDetector } from '../domain/repositories/OptOutDetector';
+import { CampaignReplyTracker } from '../domain/repositories/CampaignReplyTracker';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
@@ -77,7 +78,21 @@ export class MessageIngestionService implements MessageReceivedHandler {
     // (ver `OptOutDetector`), mesmo racional de `ContactResolver`.
     private readonly optOutDetector: OptOutDetector,
     private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
+    /**
+     * Fase L, Bloco L6 — OPCIONAL (mesmo padrão de `mediaSender` em
+     * `ConversationsService`): a composição de `conversations` é montada
+     * ANTES da de `campaigns` em `index.ts` (D15), então esta dependência só
+     * existe depois, via `setCampaignReplyTracker`. Sem ela configurada
+     * (modo degradado, sem `REDIS_URL`), respostas a campanha simplesmente
+     * não são marcadas `REPLIED` — nunca impede a ingestão da mensagem.
+     */
+    private campaignReplyTracker?: CampaignReplyTracker,
   ) {}
+
+  /** Injeção tardia (Fase L, Bloco L6) — mesmo motivo de `ConversationsService.setMediaSender`. */
+  setCampaignReplyTracker(campaignReplyTracker: CampaignReplyTracker): void {
+    this.campaignReplyTracker = campaignReplyTracker;
+  }
 
   async handle(message: InboundWhatsAppMessage): Promise<void> {
     // ADR #97: mensagens enviadas pelo operador de outro dispositivo chegam com
@@ -207,6 +222,17 @@ export class MessageIngestionService implements MessageReceivedHandler {
     // bloco de resolução de contato acima.
     if (!isOutbound && contactId) {
       await this.optOutDetector.detectAndRecord(message.tenantId, contactId, message.content);
+    }
+
+    // Fase L, Bloco L6 — marca REPLIED se esta conversa nasceu de campanha.
+    // Só para INBOUND (o operador respondendo não é o "lead respondendo"),
+    // chaveado por `conversationId` (não `contactId` — não precisa de
+    // identidade resolvida). `markRepliedIfCampaignOrigin` nunca lança.
+    if (!isOutbound && this.campaignReplyTracker) {
+      await this.campaignReplyTracker.markRepliedIfCampaignOrigin(
+        message.tenantId,
+        conversation.id,
+      );
     }
 
     if (!isOutbound) {

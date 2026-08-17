@@ -12,6 +12,7 @@ import { AiAvailabilityRepository } from '../../../src/services/conversations/do
 import { AiRateLimiter } from '../../../src/services/conversations/domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../../../src/services/conversations/domain/repositories/ContactResolver';
 import { OptOutDetector } from '../../../src/services/conversations/domain/repositories/OptOutDetector';
+import { CampaignReplyTracker } from '../../../src/services/conversations/domain/repositories/CampaignReplyTracker';
 
 /**
  * Fake compartilhado do `ConversationRepository` (Milestone 3, Bloco 2) — em
@@ -445,5 +446,14 @@ export class FakeOptOutDetector implements OptOutDetector {
 
   async detectAndRecord(tenantId: string, contactId: string, content: string): Promise<void> {
     this.calls.push({ tenantId, contactId, content });
+  }
+}
+
+/** Fase L, Bloco L6 — Fake de `CampaignReplyTracker`. */
+export class FakeCampaignReplyTracker implements CampaignReplyTracker {
+  readonly calls: Array<{ tenantId: string; conversationId: string }> = [];
+
+  async markRepliedIfCampaignOrigin(tenantId: string, conversationId: string): Promise<void> {
+    this.calls.push({ tenantId, conversationId });
   }
 }

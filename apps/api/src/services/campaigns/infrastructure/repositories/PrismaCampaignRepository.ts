@@ -422,6 +422,27 @@ export class PrismaCampaignRepository implements CampaignRepository {
     }
     return this.findById(tenantId, campaignId);
   }
+
+  // --- Fase L, Bloco L6 ---
+
+  async markRepliedByConversationId(tenantId: string, conversationId: string): Promise<void> {
+    await this.prisma.campaignRecipient.updateMany({
+      where: { tenantId, conversationId, status: 'SENT' },
+      data: { status: 'REPLIED', repliedAt: new Date() },
+    });
+  }
+
+  async findOriginByConversationId(
+    tenantId: string,
+    conversationId: string,
+  ): Promise<{ messageSent: string } | undefined> {
+    const row = await this.prisma.campaignRecipient.findFirst({
+      where: { tenantId, conversationId, status: { in: ['SENT', 'REPLIED'] } },
+      orderBy: { sentAt: 'desc' },
+      select: { campaign: { select: { messageTemplate: true } } },
+    });
+    return row ? { messageSent: row.campaign.messageTemplate } : undefined;
+  }
 }
 
 /** Mapeia o filtro de status (união completa, incluindo `sent`/`failed`/`replied` — ainda não produzidos por L3, mas já corretos para L4/L5). */

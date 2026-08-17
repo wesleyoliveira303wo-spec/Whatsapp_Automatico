@@ -6,6 +6,7 @@ import { FakeAiProviderFactory } from './infrastructure/FakeAiProviderFactory';
 import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionRepository';
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 import { FakeMediaDownloader } from '../whatsapp/infrastructure/FakeMediaDownloader';
+import { FakeCampaignOriginResolver } from './infrastructure/FakeCampaignOriginResolver';
 
 const TENANT_ID = 'tenant-1';
 const CONVERSATION_ID = 'conversation-1';
@@ -786,6 +787,98 @@ describe('ConversationAiService', () => {
       );
 
       expect(result.status).toBe('success');
+    });
+  });
+
+  describe('Fase L, Bloco L6 — contexto de campanha no prompt', () => {
+    function buildSutWithCampaignOrigin(): {
+      sut: ConversationAiService;
+      aiProviderFactory: FakeAiProviderFactory;
+      campaignOriginResolver: FakeCampaignOriginResolver;
+    } {
+      const aiProviderFactory = new FakeAiProviderFactory();
+      const aiInteractionRepository = new FakeAiInteractionRepository();
+      const campaignOriginResolver = new FakeCampaignOriginResolver();
+      const sut = new ConversationAiService(
+        aiProviderFactory,
+        'claude',
+        new PromptBuilder(),
+        aiInteractionRepository,
+        undefined,
+        undefined,
+        undefined,
+        campaignOriginResolver,
+      );
+      return { sut, aiProviderFactory, campaignOriginResolver };
+    }
+
+    it('injeta o bloco de origem de campanha quando a conversa nasceu de uma', async () => {
+      const { sut, aiProviderFactory, campaignOriginResolver } = buildSutWithCampaignOrigin();
+      campaignOriginResolver.seed(CONVERSATION_ID, 'Olá! Temos uma promoção para você.');
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      const sentSystemPrompt = aiProviderFactory.provider.generateReplyCalls[0].systemPrompt;
+      expect(sentSystemPrompt).toContain('Você é um assistente de atendimento.'); // base preservado
+      expect(sentSystemPrompt).toContain('# Origem desta conversa');
+      expect(sentSystemPrompt).toContain('Olá! Temos uma promoção para você.');
+    });
+
+    it('usa só o prompt base quando a conversa não nasceu de campanha', async () => {
+      const { sut, aiProviderFactory } = buildSutWithCampaignOrigin(); // resolver vazio
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+
+    it('degrada graciosamente (responde com o prompt base) quando a resolução falha', async () => {
+      const { sut, aiProviderFactory, campaignOriginResolver } = buildSutWithCampaignOrigin();
+      campaignOriginResolver.seed(CONVERSATION_ID, 'Olá!');
+      campaignOriginResolver.failNextFind();
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+
+    it('sem resolver configurado: comportamento idêntico a antes deste bloco', async () => {
+      const { sut, aiProviderFactory } = buildSut(); // sem campaignOriginResolver
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
     });
   });
 });

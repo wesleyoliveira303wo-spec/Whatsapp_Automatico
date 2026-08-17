@@ -12,6 +12,8 @@ import {
 } from './services/conversations/infrastructure/queues/AiReplyQueue';
 import { PrismaAiInteractionRepository } from './services/ai/infrastructure/repositories/PrismaAiInteractionRepository';
 import { PrismaAiBusinessProfileRepository } from './services/ai/infrastructure/repositories/PrismaAiBusinessProfileRepository';
+import { PrismaCampaignRepository } from './services/campaigns/infrastructure/repositories/PrismaCampaignRepository';
+import { CampaignOriginResolverImpl } from './services/campaigns/infrastructure/CampaignOriginResolverImpl';
 import { AiProviderFactoryImpl } from './services/ai/infrastructure/AiProviderFactoryImpl';
 import { AiProviderName } from './services/ai/domain/providers/AiProviderName';
 import { PromptBuilder } from './services/ai/application/PromptBuilder';
@@ -184,6 +186,16 @@ async function main(): Promise<void> {
     );
   }
 
+  // Fase L, Bloco L6 — descobre se a conversa nasceu de campanha e injeta o
+  // bloco de contexto correspondente. Puro leitor de Postgres (nunca toca
+  // Baileys), então pode ser construído aqui direto, sem injeção tardia
+  // vinda de `apps/api/index.ts` (diferente de `campaignReplyTracker`, que
+  // precisa do `WhatsAppConnectionRegistry`, único no processo HTTP).
+  const campaignOriginResolver = new CampaignOriginResolverImpl(
+    new PrismaCampaignRepository(prisma),
+    logger.child({ module: 'campaign-origin-resolver' }),
+  );
+
   const conversationAiService = new ConversationAiService(
     aiProviderFactory,
     selectedProvider,
@@ -194,6 +206,7 @@ async function main(): Promise<void> {
     // prompt. `undefined` acima mantém o `maxReplyLength` no default.
     aiBusinessProfileRepository,
     mediaDownloader,
+    campaignOriginResolver,
   );
   const promptVersion = getPromptVersion(AI_PROMPT_VERSION ?? 'v1');
 

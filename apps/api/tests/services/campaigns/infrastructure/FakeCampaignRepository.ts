@@ -303,4 +303,32 @@ export class FakeCampaignRepository implements CampaignRepository {
     });
     return id;
   }
+
+  // --- Fase L, Bloco L6 ---
+
+  async markRepliedByConversationId(tenantId: string, conversationId: string): Promise<void> {
+    for (const [id, row] of this.recipients.entries()) {
+      if (row.tenantId === tenantId && row.conversationId === conversationId && row.status === 'sent') {
+        this.recipients.set(id, { ...row, status: 'replied', repliedAt: FIXED_NOW });
+      }
+    }
+  }
+
+  async findOriginByConversationId(
+    tenantId: string,
+    conversationId: string,
+  ): Promise<{ messageSent: string } | undefined> {
+    const candidates = [...this.recipients.values()]
+      .filter(
+        (row) =>
+          row.tenantId === tenantId &&
+          row.conversationId === conversationId &&
+          (row.status === 'sent' || row.status === 'replied'),
+      )
+      .sort((a, b) => (b.sentAt?.getTime() ?? 0) - (a.sentAt?.getTime() ?? 0));
+    const [mostRecent] = candidates;
+    if (!mostRecent) return undefined;
+    const campaign = this.campaigns.get(mostRecent.campaignId);
+    return campaign ? { messageSent: campaign.messageTemplate } : undefined;
+  }
 }

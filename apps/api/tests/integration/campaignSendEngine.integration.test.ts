@@ -227,4 +227,135 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
     });
     expect(total).toBe(1);
   });
+
+  // --- Fase L, Bloco L6 (marca REPLIED + IA reconhece origem de campanha) ---
+
+  it('markRepliedByConversationId marca REPLIED só quem estava SENT para aquela conversa', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha L6',
+      messageTemplate: 'Olá! Promoção especial para você.',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: 'contact-respondeu', status: 'pending' },
+      { contactId: 'contact-outra-conversa', status: 'pending' },
+    ]);
+    const [respondeu, outraConversa] = await campaignRepository.listPendingRecipients(
+      tenantId,
+      campanha.id,
+    );
+    await campaignRepository.markRecipientSent(tenantId, respondeu.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-que-respondeu',
+    });
+    await campaignRepository.markRecipientSent(tenantId, outraConversa.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-outra',
+    });
+
+    await campaignRepository.markRepliedByConversationId(tenantId, 'conversa-que-respondeu');
+
+    const marcado = await campaignRepository.findRecipientById(tenantId, respondeu.id);
+    const naoMarcado = await campaignRepository.findRecipientById(tenantId, outraConversa.id);
+    expect(marcado?.status).toBe('replied');
+    expect(marcado?.repliedAt).toBeInstanceOf(Date);
+    expect(naoMarcado?.status).toBe('sent');
+  });
+
+  it('markRepliedByConversationId é idempotente — chamar de novo não lança nem duplica efeito', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha L6 idempotência',
+      messageTemplate: 'Oi',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: 'contact-idempotente', status: 'pending' },
+    ]);
+    const [recipient] = await campaignRepository.listPendingRecipients(tenantId, campanha.id);
+    await campaignRepository.markRecipientSent(tenantId, recipient.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-idempotente',
+    });
+
+    await campaignRepository.markRepliedByConversationId(tenantId, 'conversa-idempotente');
+    await campaignRepository.markRepliedByConversationId(tenantId, 'conversa-idempotente');
+
+    const marcado = await campaignRepository.findRecipientById(tenantId, recipient.id);
+    expect(marcado?.status).toBe('replied');
+  });
+
+  it('findOriginByConversationId devolve o texto da campanha MAIS RECENTE (SENT/REPLIED) para aquela conversa', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanhaAntiga = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha antiga',
+      messageTemplate: 'Mensagem antiga',
+    });
+    const campanhaRecente = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha recente',
+      messageTemplate: 'Mensagem recente',
+    });
+    await campaignRepository.createRecipients(tenantId, campanhaAntiga.id, [
+      { contactId: 'contact-origem', status: 'pending' },
+    ]);
+    await campaignRepository.createRecipients(tenantId, campanhaRecente.id, [
+      { contactId: 'contact-origem', status: 'pending' },
+    ]);
+    const [antigoRecipient] = await campaignRepository.listPendingRecipients(
+      tenantId,
+      campanhaAntiga.id,
+    );
+    const [recenteRecipient] = await campaignRepository.listPendingRecipients(
+      tenantId,
+      campanhaRecente.id,
+    );
+    await campaignRepository.markRecipientSent(tenantId, antigoRecipient.id, {
+      attemptedAt: new Date(Date.now() - 60_000),
+      conversationId: 'conversa-origem',
+    });
+    await campaignRepository.markRecipientSent(tenantId, recenteRecipient.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-origem',
+    });
+
+    const origin = await campaignRepository.findOriginByConversationId(
+      tenantId,
+      'conversa-origem',
+    );
+
+    expect(origin).toEqual({ messageSent: 'Mensagem recente' });
+  });
+
+  it('findOriginByConversationId devolve undefined para conversa sem origem de campanha', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const origin = await campaignRepository.findOriginByConversationId(
+      tenantId,
+      'conversa-sem-campanha-nenhuma',
+    );
+
+    expect(origin).toBeUndefined();
+  });
 });

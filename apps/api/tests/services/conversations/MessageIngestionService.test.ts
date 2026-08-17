@@ -8,6 +8,7 @@ import {
   FakeAiRateLimiter,
   FakeContactResolver,
   FakeOptOutDetector,
+  FakeCampaignReplyTracker,
 } from './testDoubles';
 
 function buildSut(): {
@@ -19,6 +20,7 @@ function buildSut(): {
   aiRateLimiter: FakeAiRateLimiter;
   contactResolver: FakeContactResolver;
   optOutDetector: FakeOptOutDetector;
+  campaignReplyTracker: FakeCampaignReplyTracker;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
@@ -27,6 +29,7 @@ function buildSut(): {
   const aiRateLimiter = new FakeAiRateLimiter();
   const contactResolver = new FakeContactResolver();
   const optOutDetector = new FakeOptOutDetector();
+  const campaignReplyTracker = new FakeCampaignReplyTracker();
   const sut = new MessageIngestionService(
     conversationRepository,
     messageRepository,
@@ -35,6 +38,8 @@ function buildSut(): {
     aiRateLimiter,
     contactResolver,
     optOutDetector,
+    undefined,
+    campaignReplyTracker,
   );
   return {
     sut,
@@ -45,6 +50,7 @@ function buildSut(): {
     aiRateLimiter,
     contactResolver,
     optOutDetector,
+    campaignReplyTracker,
   };
 }
 
@@ -637,6 +643,74 @@ describe('MessageIngestionService', () => {
 
       expect(messageRepository.getAll()).toHaveLength(1);
       expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+    });
+  });
+
+  describe('resposta a campanha (Fase L, Bloco L6)', () => {
+    it('aciona o tracker com o conversationId a cada mensagem INBOUND', async () => {
+      const { sut, campaignReplyTracker, conversationRepository } = buildSut();
+
+      await sut.handle(buildInboundMessage({ content: 'Oi, recebi sua mensagem' }));
+
+      const [conversation] = conversationRepository.getAll();
+      expect(campaignReplyTracker.calls).toEqual([
+        { tenantId: 'tenant-1', conversationId: conversation.id },
+      ]);
+    });
+
+    it('NÃO aciona o tracker para mensagem outbound (operador de outro dispositivo)', async () => {
+      const { sut, campaignReplyTracker } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
+
+      expect(campaignReplyTracker.calls).toHaveLength(0);
+    });
+
+    it('sem tracker configurado (modo degradado): a ingestão segue normalmente', async () => {
+      const conversationRepository = new FakeConversationRepository();
+      const messageRepository = new FakeMessageRepository();
+      const aiReplyScheduler = new FakeAiReplyScheduler();
+      const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
+      const aiRateLimiter = new FakeAiRateLimiter();
+      const contactResolver = new FakeContactResolver();
+      const optOutDetector = new FakeOptOutDetector();
+      const sutWithoutTracker = new MessageIngestionService(
+        conversationRepository,
+        messageRepository,
+        aiReplyScheduler,
+        aiAvailabilityRepository,
+        aiRateLimiter,
+        contactResolver,
+        optOutDetector,
+      ); // sem `campaignReplyTracker`
+
+      await expect(sutWithoutTracker.handle(buildInboundMessage())).resolves.toBeUndefined();
+      expect(messageRepository.getAll()).toHaveLength(1);
+    });
+
+    it('setCampaignReplyTracker() liga o vínculo depois da construção (injeção tardia)', async () => {
+      const conversationRepository = new FakeConversationRepository();
+      const messageRepository = new FakeMessageRepository();
+      const aiReplyScheduler = new FakeAiReplyScheduler();
+      const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
+      const aiRateLimiter = new FakeAiRateLimiter();
+      const contactResolver = new FakeContactResolver();
+      const optOutDetector = new FakeOptOutDetector();
+      const sutLateWired = new MessageIngestionService(
+        conversationRepository,
+        messageRepository,
+        aiReplyScheduler,
+        aiAvailabilityRepository,
+        aiRateLimiter,
+        contactResolver,
+        optOutDetector,
+      );
+      const lateTracker = new FakeCampaignReplyTracker();
+      sutLateWired.setCampaignReplyTracker(lateTracker);
+
+      await sutLateWired.handle(buildInboundMessage());
+
+      expect(lateTracker.calls).toHaveLength(1);
     });
   });
 });

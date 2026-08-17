@@ -140,4 +140,28 @@ export interface CampaignRepository {
     status: CampaignStatus,
     pausedReason?: string,
   ): Promise<Campaign | undefined>;
+
+  // --- Fase L, Bloco L6 (IA reconhece origem de campanha + marca resposta) ---
+
+  /**
+   * Marca `REPLIED` (+ `repliedAt`) em todo `CampaignRecipient` ainda `SENT`
+   * cujo `conversationId` seja este — implementação de
+   * `CampaignReplyTracker.markRepliedIfCampaignOrigin` (`services/conversations/domain`).
+   * No-op se não houver nenhum `SENT` para essa conversa (não é origem de
+   * campanha, ou já foi marcada antes).
+   */
+  markRepliedByConversationId(tenantId: string, conversationId: string): Promise<void>;
+
+  /**
+   * Para uma `conversationId`, devolve o texto que a campanha MAIS RECENTE
+   * enviou primeiro (`Campaign.messageTemplate`), ou `undefined` se a
+   * conversa nunca recebeu campanha nenhuma — implementação de
+   * `CampaignOriginResolver.findOrigin` (`services/ai/domain`). Considera
+   * `SENT` e `REPLIED` (uma conversa que já respondeu continua "de origem
+   * de campanha" para efeito de contexto da IA).
+   */
+  findOriginByConversationId(
+    tenantId: string,
+    conversationId: string,
+  ): Promise<{ messageSent: string } | undefined>;
 }

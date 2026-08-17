@@ -598,6 +598,17 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);
     app.use('/api/tenants/:tenantId/campaigns', campaigns.campaignsErrorHandler);
 
+    // Fase L, Bloco L6 — injeção tardia (mesmo motivo de `setMediaSender`
+    // acima): `messageIngestionService` foi montado antes de `campaigns`
+    // existir (D15), então o vínculo "marcar REPLIED numa conversa de
+    // campanha" só pode ser ligado aqui.
+    const { CampaignReplyTrackerImpl } = await import(
+      './services/campaigns/infrastructure/CampaignReplyTrackerImpl'
+    );
+    messageIngestionService.setCampaignReplyTracker(
+      new CampaignReplyTrackerImpl(campaigns.campaignRepository, logger),
+    );
+
     // Fase L, Bloco L4 — liga o motor de envio: `WhatsAppCampaignMessageSender`
     // (implementação real do port `CampaignMessageSender`, precisa de
     // `registry`+`conversationRepository`+`messageRepository`, todos só
