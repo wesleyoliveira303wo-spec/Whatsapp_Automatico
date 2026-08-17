@@ -242,9 +242,7 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       const { app, campaigns } = buildApp(person('read_only'));
       const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
 
-      const response = await request(app).get(
-        `${basePath('tenant-1')}/${campaignId}/metrics`,
-      );
+      const response = await request(app).get(`${basePath('tenant-1')}/${campaignId}/metrics`);
 
       expect(response.status).toBe(403);
     });
@@ -252,9 +250,7 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
     it('404 para campanha inexistente', async () => {
       const { app } = buildApp(person('administrator'));
 
-      const response = await request(app).get(
-        `${basePath('tenant-1')}/campanha-fantasma/metrics`,
-      );
+      const response = await request(app).get(`${basePath('tenant-1')}/campanha-fantasma/metrics`);
 
       expect(response.status).toBe(404);
     });
@@ -263,9 +259,7 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       const { app, campaigns } = buildApp(person('administrator'));
       const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
 
-      const response = await request(app).get(
-        `${basePath('tenant-1')}/${campaignId}/metrics`,
-      );
+      const response = await request(app).get(`${basePath('tenant-1')}/${campaignId}/metrics`);
 
       expect(response.status).toBe(404);
     });

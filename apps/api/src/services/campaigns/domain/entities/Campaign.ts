@@ -66,11 +66,7 @@ export interface CampaignRecipientSummary {
 
 /** Espelha `Conversation['stage']` (`services/conversations/domain`) — literal duplicado de propósito para não importar um tipo inline de outro bounded context só por um union de 5 valores. */
 export type CampaignLinkedConversationStage =
-  | 'new'
-  | 'contacted'
-  | 'negotiating'
-  | 'closed_won'
-  | 'closed_lost';
+  'new' | 'contacted' | 'negotiating' | 'closed_won' | 'closed_lost';
 
 /**
  * Métricas de campanha — Fase L, Bloco L7 (`FASE_L_MOTOR_DE_LEADS.md` §13).

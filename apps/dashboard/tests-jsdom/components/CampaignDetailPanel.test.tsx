@@ -129,9 +129,9 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       expect(screen.getByText('45 min')).toBeInTheDocument();
       expect(screen.getByText('US$ 0.0500')).toBeInTheDocument();
       expect(screen.getByText('Escalado para humano: 1')).toBeInTheDocument();
-      expect(
-        screen.getByText(/não soube responder/),
-      ).toHaveTextContent('A IA não soube responder 2 vez(es) em conversas desta campanha.');
+      expect(screen.getByText(/não soube responder/)).toHaveTextContent(
+        'A IA não soube responder 2 vez(es) em conversas desta campanha.',
+      );
     });
   });
 

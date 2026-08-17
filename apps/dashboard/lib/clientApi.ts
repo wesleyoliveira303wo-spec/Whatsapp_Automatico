@@ -685,11 +685,7 @@ export function cancelCampaign(campaignId: string): Promise<{ campaign: Campaign
 
 /** Espelha `CampaignLinkedConversationStage` (`apps/api`). */
 export type CampaignLinkedConversationStage =
-  | 'new'
-  | 'contacted'
-  | 'negotiating'
-  | 'closed_won'
-  | 'closed_lost';
+  'new' | 'contacted' | 'negotiating' | 'closed_won' | 'closed_lost';
 
 /**
  * O funil real de uma campanha (`FASE_L_MOTOR_DE_LEADS.md` §13) — além de

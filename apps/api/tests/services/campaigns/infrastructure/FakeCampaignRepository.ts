@@ -344,8 +344,11 @@ export class FakeCampaignRepository implements CampaignRepository {
     string,
     { stage: CampaignLinkedConversationStage; escalatedAt?: Date }
   >();
-  private readonly aiInteractions: { conversationId: string; costUsd: number; escalationReason?: string }[] =
-    [];
+  private readonly aiInteractions: {
+    conversationId: string;
+    costUsd: number;
+    escalationReason?: string;
+  }[] = [];
 
   /** Helper de teste: simula uma conversa vinculada (via `conversationId`), com `stage` e opcionalmente `escalatedAt`. */
   seedConversationStage(
