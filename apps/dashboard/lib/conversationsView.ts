@@ -117,6 +117,53 @@ export function findConversationById(
 }
 
 /**
+ * Onda 1 do redesign (2026-08-22) — painel central da inbox de Conversas.
+ *
+ * Antes, sem uma conversa selecionada, o painel central mostrava só um card
+ * de estado vazio centralizado ("Selecione uma conversa"), deixando ~60% da
+ * tela em branco mesmo numa sessão cheia de trabalho pendente — um dos
+ * achados concretos de "por que o produto parece genérico" (auditoria
+ * 2026-08-22, §5.1). `selectWaitingConversations`/`selectUnreadConversations`
+ * derivam a fila do dia a partir do MESMO array `conversations` que a lista
+ * já carrega — zero requisição nova, zero dado inventado (`CLAUDE.md`,
+ * `index.tsx`: "mostrar [indicador] sem dado real seria inventar dado").
+ *
+ * Puras e extraídas aqui pelo mesmo racional de `groupConversationsByPipelineColumn`:
+ * testáveis sem jsdom.
+ */
+
+/**
+ * Conversas aguardando atendente — `escalatedAt` definido, ordenadas pela
+ * mais ANTIGA primeiro (quem espera há mais tempo é a mais urgente).
+ */
+export function selectWaitingConversations(
+  conversations: ConversationSummary[],
+  limit: number,
+): ConversationSummary[] {
+  return conversations
+    .filter((conversation) => conversation.escalatedAt)
+    .sort(
+      (a, b) => new Date(a.escalatedAt ?? 0).getTime() - new Date(b.escalatedAt ?? 0).getTime(),
+    )
+    .slice(0, limit);
+}
+
+/** Conversas com mensagens não lidas, mais recentes primeiro (`lastMessageAt` — cai para `createdAt` quando ausente, mesmo fallback de `ConversationListItem`). */
+export function selectUnreadConversations(
+  conversations: ConversationSummary[],
+  limit: number,
+): ConversationSummary[] {
+  return conversations
+    .filter((conversation) => conversation.unreadCount > 0)
+    .sort(
+      (a, b) =>
+        new Date(b.lastMessageAt ?? b.createdAt).getTime() -
+        new Date(a.lastMessageAt ?? a.createdAt).getTime(),
+    )
+    .slice(0, limit);
+}
+
+/**
  * Agrupa conversas nas COLUNAS do board Kanban — pipeline de CRM (Milestone
  * 6, Bloco M6H-5; coluna "Não cliente" acrescentada em 2026-08-01, ADR #96).
  * Função pura extraída de `PipelineBoard` pelo mesmo racional de

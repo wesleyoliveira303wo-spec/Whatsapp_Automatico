@@ -53,10 +53,19 @@ export default function Home({ tenantId }: HomeProps): JSX.Element {
       <main className="flex-1 overflow-y-auto p-6 lg:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            {/*
+              ONDA 1 DO REDESIGN (2026-08-22) — `text-2xl` (24px) não existe
+              na escala tipográfica do Design System (`DESIGN_SYSTEM.md` §3:
+              "escala fixa — nunca inventar um tamanho fora desta lista":
+              21/17/15.5-13/12.5/11.5). O Workspace é a PRIMEIRA tela que
+              todo cliente novo vê, e era a única com um tamanho de título
+              inventado — 21px é o passo real da escala para "Título de tela
+              (H1)", já usado em Pipeline/Analytics/Contatos/Campanhas.
+            */}
+            <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
               Seus WhatsApps
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-[13px] text-muted-foreground">
               Conecte e gerencie os números que o Francis atende.
             </p>
           </div>

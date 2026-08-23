@@ -127,7 +127,18 @@ function ConversationListItem({
             </span>
           )}
         </div>
-        <div className="mt-[7px] flex flex-nowrap items-center gap-[5px] overflow-hidden">
+        {/*
+          ONDA 1 DO REDESIGN (2026-08-22) — altura de linha constante (regra
+          do próprio Design System, §1: "Ritmo previsível... o olho aprende o
+          padrão uma vez"). Esta faixa (selo de estágio + tags) só renderizava
+          quando havia conteúdo — uma `<div>` sem filhos colapsa para 0px —
+          então linhas com selo/tag ficavam 20px mais altas que as sem nada
+          (medido na tela real: 89px vs. 69px, mesma lista, lado a lado).
+          `h-5` (mesma altura de um selo) reserva o espaço SEMPRE, com ou sem
+          conteúdo — uma linha "Novo" sem tag fica só um pouco de respiro em
+          branco, não uma linha mais curta.
+        */}
+        <div className="mt-[7px] flex h-5 flex-nowrap items-center gap-[5px] overflow-hidden">
           {/* Selos de Pipeline — só um é exibido por vez:
               - "Aguardando atendente" (reforma do escalonamento): a IA pediu ajuda humana.
               - "Não cliente" (ADR #96): conversa excluída do funil comercial.

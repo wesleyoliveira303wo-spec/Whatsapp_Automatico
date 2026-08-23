@@ -3,6 +3,7 @@ import { MessageCircle, Search } from 'lucide-react';
 import ConversationFilterTabs, { type ConversationFilterValue } from './ConversationFilterTabs';
 import ConversationListItem from './ConversationListItem';
 import ConversationDetailPanel from './ConversationDetailPanel';
+import ConversationQueuePanel from './ConversationQueuePanel';
 import ConversationContextPanel from './ConversationContextPanel';
 import LoadMoreButton from './LoadMoreButton';
 import { Input } from '@/components/ui/input';
@@ -235,13 +236,11 @@ export default function ConversationInbox({
             aiEnabled={aiEnabled}
           />
         ) : (
-          <div className="flex h-full items-center justify-center p-6">
-            <EmptyState
-              icon={MessageCircle}
-              title="Selecione uma conversa"
-              description="Escolha um contato na lista ao lado para ver a conversa."
-            />
-          </div>
+          // ONDA 1 DO REDESIGN (2026-08-22) — o convite genérico "Selecione
+          // uma conversa" virou a fila do dia: mesma disciplina do resto do
+          // painel, `conversations` já está carregado, nenhuma requisição
+          // nova. Ver docstring de `ConversationQueuePanel`.
+          <ConversationQueuePanel sessionName={sessionName} conversations={conversations} />
         )}
       </div>
 

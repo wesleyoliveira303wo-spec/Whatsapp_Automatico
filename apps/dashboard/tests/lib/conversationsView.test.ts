@@ -3,6 +3,8 @@ import {
   findConversationById,
   groupConversationsByPipelineColumn,
   reconcileConversationIdentities,
+  selectWaitingConversations,
+  selectUnreadConversations,
 } from '../../lib/conversationsView';
 import type { ConversationSummary } from '../../lib/clientApi';
 
@@ -220,5 +222,67 @@ describe('reconcileConversationIdentities (performance, auditoria 2026-08-22)', 
 
     expect(reconciled.map((c) => c.id)).toEqual(['b']);
     expect(reconciled[0]).toBe(previous[1]);
+  });
+});
+
+describe('selectWaitingConversations (fila do dia, Onda 1 do redesign)', () => {
+  it('filtra so as com escalatedAt definido', () => {
+    const waiting = buildConversation('a', { escalatedAt: '2026-08-20T10:00:00.000Z' });
+    const notWaiting = buildConversation('b', { escalatedAt: undefined });
+
+    expect(selectWaitingConversations([waiting, notWaiting], 10).map((c) => c.id)).toEqual(['a']);
+  });
+
+  it('ordena pela mais ANTIGA primeiro — quem espera ha mais tempo e a mais urgente', () => {
+    const recent = buildConversation('recent', { escalatedAt: '2026-08-20T12:00:00.000Z' });
+    const old = buildConversation('old', { escalatedAt: '2026-08-20T08:00:00.000Z' });
+
+    expect(selectWaitingConversations([recent, old], 10).map((c) => c.id)).toEqual([
+      'old',
+      'recent',
+    ]);
+  });
+
+  it('respeita o limite', () => {
+    const items = ['a', 'b', 'c'].map((id) =>
+      buildConversation(id, { escalatedAt: '2026-08-20T10:00:00.000Z' }),
+    );
+
+    expect(selectWaitingConversations(items, 2)).toHaveLength(2);
+  });
+});
+
+describe('selectUnreadConversations (fila do dia, Onda 1 do redesign)', () => {
+  it('filtra so as com unreadCount > 0', () => {
+    const unread = buildConversation('a', { unreadCount: 3 });
+    const read = buildConversation('b', { unreadCount: 0 });
+
+    expect(selectUnreadConversations([unread, read], 10).map((c) => c.id)).toEqual(['a']);
+  });
+
+  it('ordena pela mais RECENTE primeiro (lastMessageAt)', () => {
+    const older = buildConversation('older', {
+      unreadCount: 1,
+      lastMessageAt: '2026-08-20T08:00:00.000Z',
+    });
+    const newer = buildConversation('newer', {
+      unreadCount: 1,
+      lastMessageAt: '2026-08-20T12:00:00.000Z',
+    });
+
+    expect(selectUnreadConversations([older, newer], 10).map((c) => c.id)).toEqual([
+      'newer',
+      'older',
+    ]);
+  });
+
+  it('cai para createdAt quando lastMessageAt esta ausente', () => {
+    const withPreview = buildConversation('a', {
+      unreadCount: 1,
+      lastMessageAt: undefined,
+      createdAt: '2026-08-20T09:00:00.000Z',
+    });
+
+    expect(selectUnreadConversations([withPreview], 10)).toHaveLength(1);
   });
 });
