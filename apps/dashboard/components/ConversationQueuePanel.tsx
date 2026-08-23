@@ -1,14 +1,8 @@
 import Link from 'next/link';
 import { CheckCircle2, Clock, Inbox } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  selectWaitingConversations,
-  selectUnreadConversations,
-} from '@/lib/conversationsView';
-import {
-  formatContactDisplayNameParts,
-  formatShortRelativeTime,
-} from '@/lib/formatters';
+import { selectWaitingConversations, selectUnreadConversations } from '@/lib/conversationsView';
+import { formatContactDisplayNameParts, formatShortRelativeTime } from '@/lib/formatters';
 import ContactAvatar from './ContactAvatar';
 import DisplayNameParts from './DisplayNameParts';
 import type { ConversationSummary } from '@/lib/clientApi';

@@ -46,10 +46,7 @@ function buildConversation(
 describe('ConversationQueuePanel', () => {
   it('mostra "Tudo em dia" quando não há nenhuma conversa aguardando ou não lida', () => {
     render(
-      <ConversationQueuePanel
-        sessionName="vendas"
-        conversations={[buildConversation('a')]}
-      />,
+      <ConversationQueuePanel sessionName="vendas" conversations={[buildConversation('a')]} />,
     );
 
     expect(screen.getByText('Tudo em dia')).toBeInTheDocument();
@@ -65,9 +62,7 @@ describe('ConversationQueuePanel', () => {
       unreadCount: 4,
       contactName: 'João',
     });
-    render(
-      <ConversationQueuePanel sessionName="vendas" conversations={[waiting, unread]} />,
-    );
+    render(<ConversationQueuePanel sessionName="vendas" conversations={[waiting, unread]} />);
 
     expect(screen.getByText('Fila do dia')).toBeInTheDocument();
     expect(screen.getByText('Maria')).toBeInTheDocument();
@@ -75,19 +70,14 @@ describe('ConversationQueuePanel', () => {
     expect(screen.getByText('4')).toBeInTheDocument();
 
     const waitingLink = screen.getByText('Maria').closest('a');
-    expect(waitingLink).toHaveAttribute(
-      'href',
-      '/sessions/vendas/conversations/waiting-1',
-    );
+    expect(waitingLink).toHaveAttribute('href', '/sessions/vendas/conversations/waiting-1');
   });
 
   it('mostra mensagem de vazio POR SEÇÃO quando só uma das duas filas tem item', () => {
     const waiting = buildConversation('waiting-1', {
       escalatedAt: '2026-08-20T10:00:00.000Z',
     });
-    render(
-      <ConversationQueuePanel sessionName="vendas" conversations={[waiting]} />,
-    );
+    render(<ConversationQueuePanel sessionName="vendas" conversations={[waiting]} />);
 
     expect(screen.getByText('Nenhuma conversa com mensagem não lida.')).toBeInTheDocument();
   });

@@ -142,9 +142,7 @@ export function selectWaitingConversations(
 ): ConversationSummary[] {
   return conversations
     .filter((conversation) => conversation.escalatedAt)
-    .sort(
-      (a, b) => new Date(a.escalatedAt ?? 0).getTime() - new Date(b.escalatedAt ?? 0).getTime(),
-    )
+    .sort((a, b) => new Date(a.escalatedAt ?? 0).getTime() - new Date(b.escalatedAt ?? 0).getTime())
     .slice(0, limit);
 }
 
