@@ -8,6 +8,8 @@ function createFakePrisma(): {
     updateMany: jest.Mock;
     findMany: jest.Mock;
     count: jest.Mock;
+    groupBy: jest.Mock;
+    deleteMany: jest.Mock;
   };
 } {
   return {
@@ -18,6 +20,8 @@ function createFakePrisma(): {
       updateMany: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
+      groupBy: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
     },
   };
 }
@@ -258,6 +262,55 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
       });
     });
 
+    // Padronização de exibição de contato (2026-08-20) — o `select` da
+    // conversa mais recente precisa trazer `contactName` (apelido do
+    // WhatsApp), senão a tela de Contatos não tem como mostrar "telefone +
+    // apelido" para um contato ainda sem nome salvo.
+    it('inclui contactName no select da conversa mais recente', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([ROW_WITH_CONVERSATIONS]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      await repo.listByTenant('tenant-1', { limit: 20 });
+
+      const [args] = prisma.whatsAppContact.findMany.mock.calls[0];
+      expect(args.include.conversations.select).toMatchObject({ contactName: true });
+    });
+
+    it('mapeia contactName da conversa incluída para lastConversationContactName', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([
+        {
+          ...SAMPLE_ROW,
+          conversations: [
+            { id: 'conv-1', sessionName: 'vendas', lastMessageAt: null, contactName: 'Apelido WhatsApp' },
+          ],
+        },
+      ]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const { contacts } = await repo.listByTenant('tenant-1', { limit: 20 });
+
+      expect(contacts[0].lastConversationContactName).toBe('Apelido WhatsApp');
+    });
+
+    it('deixa lastConversationContactName indefinido quando a conversa não capturou pushName', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppContact.findMany.mockResolvedValue([
+        {
+          ...SAMPLE_ROW,
+          conversations: [
+            { id: 'conv-1', sessionName: 'vendas', lastMessageAt: null, contactName: null },
+          ],
+        },
+      ]);
+      const repo = new PrismaContactRepository(prisma as never);
+
+      const { contacts } = await repo.listByTenant('tenant-1', { limit: 20 });
+
+      expect(contacts[0].lastConversationContactName).toBeUndefined();
+    });
+
     it('mapeia a conversa incluída para os campos de atividade do read model', async () => {
       const prisma = createFakePrisma();
       const lastMessageAt = new Date('2026-08-14T10:00:00Z');
@@ -341,12 +394,26 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
   describe('countStats()', () => {
     it('conta total e com-conversa, derivando sem-conversa por subtração', async () => {
       const prisma = createFakePrisma();
-      prisma.whatsAppContact.count.mockResolvedValueOnce(23).mockResolvedValueOnce(18);
+      prisma.whatsAppContact.count
+        .mockResolvedValueOnce(23)
+        .mockResolvedValueOnce(18)
+        .mockResolvedValueOnce(0);
+      prisma.whatsAppContact.groupBy.mockResolvedValue([
+        { source: 'WHATSAPP', _count: { _all: 15 } },
+        { source: 'IMPORT', _count: { _all: 5 } },
+        { source: 'MANUAL', _count: { _all: 3 } },
+      ]);
       const repo = new PrismaContactRepository(prisma as never);
 
       const stats = await repo.countStats('tenant-1');
 
-      expect(stats).toEqual({ total: 23, withConversation: 18, withoutConversation: 5 });
+      expect(stats).toEqual({
+        total: 23,
+        withConversation: 18,
+        withoutConversation: 5,
+        optedOut: 0,
+        bySource: { whatsapp: 15, import: 5, manual: 3 },
+      });
       // A segunda contagem filtra por "tem ao menos uma conversa".
       expect(prisma.whatsAppContact.count).toHaveBeenNthCalledWith(2, {
         where: { tenantId: 'tenant-1', conversations: { some: {} } },

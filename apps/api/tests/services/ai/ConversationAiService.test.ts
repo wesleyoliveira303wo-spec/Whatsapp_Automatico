@@ -747,6 +747,61 @@ describe('ConversationAiService', () => {
       expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].media).toBeUndefined();
     });
 
+    // CORREÇÃO 2026-08-21 — bug MEDIDO em produção: o método sempre se chamou
+    // `loadLatestInboundMedia`, mas o filtro nunca checou `direction`. Numa
+    // conversa nascida de campanha COM ANEXO, a mídia mais recente do
+    // histórico é a NOSSA imagem de disparo (guardada no `AgentMediaCache`
+    // desde a correção de 2026-08-20, portanto baixável) — o Gemini recebia a
+    // própria imagem da campanha como entrada multimodal e reagia como se o
+    // cliente a tivesse enviado, derrubando a conversa logo no 1º turno.
+    it('NUNCA baixa mídia OUTBOUND (nossa própria imagem de campanha/operador)', async () => {
+      const { sut, aiProviderFactory, mediaDownloader } = buildSutWithMediaDownloader();
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [
+          buildImageMessage({
+            id: 'm-imagem-da-campanha',
+            direction: 'outbound',
+            content: 'Olá! me chamo Wesley Francis.',
+            media: { mimeType: 'image/jpeg', url: '', mediaKeyEncrypted: '' },
+          }),
+        ],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(mediaDownloader.downloadCalls).toEqual([]);
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].media).toBeUndefined();
+    });
+
+    it('escolhe a última mídia INBOUND, ignorando uma mídia outbound mais recente', async () => {
+      const { sut, mediaDownloader } = buildSutWithMediaDownloader();
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [
+          buildImageMessage({
+            id: 'm-do-cliente',
+            direction: 'inbound',
+            media: { mimeType: 'image/jpeg', url: 'https://cliente.enc', mediaKeyEncrypted: 'enc:1' },
+          }),
+          buildImageMessage({
+            id: 'm-nossa-resposta',
+            direction: 'outbound',
+            media: { mimeType: 'image/png', url: '', mediaKeyEncrypted: '' },
+          }),
+        ],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(mediaDownloader.downloadCalls).toHaveLength(1);
+      expect(mediaDownloader.downloadCalls[0].media.url).toBe('https://cliente.enc');
+    });
+
     it('ignora mensagens de vídeo/documento/figurinha (restrito a image/audio nesta rodada)', async () => {
       const { sut, aiProviderFactory, mediaDownloader } = buildSutWithMediaDownloader();
 

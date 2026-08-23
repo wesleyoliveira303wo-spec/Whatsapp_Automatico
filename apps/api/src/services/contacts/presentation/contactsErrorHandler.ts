@@ -3,6 +3,7 @@ import { Logger } from '../../../shared/domain/Logger';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { TooManyImportRowsError } from '../domain/errors/TooManyImportRowsError';
 import { ContactNotFoundError } from '../domain/errors/ContactNotFoundError';
+import { ContactPhoneAlreadyExistsError } from '../domain/errors/ContactPhoneAlreadyExistsError';
 
 /**
  * Middleware de erro (Express, 4 parâmetros) para `createContactsRouter` —
@@ -27,6 +28,10 @@ export function createContactsErrorHandler(logger: Logger): ErrorRequestHandler 
     }
     if (error instanceof ContactNotFoundError) {
       res.status(404).json({ error: 'contact_not_found', message: error.message });
+      return;
+    }
+    if (error instanceof ContactPhoneAlreadyExistsError) {
+      res.status(409).json({ error: 'contact_phone_already_exists', message: error.message });
       return;
     }
     if (error instanceof TooManyImportRowsError) {

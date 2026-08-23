@@ -13,18 +13,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session) return;
 
   if (req.method === 'GET') {
-    const { limit, cursor, search } = req.query;
+    const { limit, cursor, search, status: filterStatus } = req.query;
     const { status: apiStatus, body } = await callContactsApi(session, '', {
       query: {
         limit: typeof limit === 'string' ? limit : undefined,
         cursor: typeof cursor === 'string' ? cursor : undefined,
         search: typeof search === 'string' ? search : undefined,
+        status: typeof filterStatus === 'string' ? filterStatus : undefined,
       },
     });
     res.status(apiStatus).json(body);
     return;
   }
 
-  res.setHeader('Allow', 'GET');
+  // Reorganização Contatos/Campanhas (2026-08-17) — criação manual.
+  if (req.method === 'POST') {
+    const { status: apiStatus, body } = await callContactsApi(session, '', {
+      method: 'POST',
+      body: req.body,
+    });
+    res.status(apiStatus).json(body);
+    return;
+  }
+
+  res.setHeader('Allow', 'GET, POST');
   res.status(405).json({ error: 'method_not_allowed' });
 }

@@ -55,7 +55,9 @@ describe('Integração real — elegibilidade de campanha (Fase L, Bloco L3)', (
       source: 'whatsapp',
     });
 
-    const eligibility = await campaignRepository.fetchEligibility(tenantId, [contato.id]);
+    const eligibility = await campaignRepository.fetchEligibility(tenantId, 'integration-test-l3', [
+      contato.id,
+    ]);
 
     expect(eligibility.get(contato.id)).toEqual({
       optedOut: false,
@@ -77,7 +79,9 @@ describe('Integração real — elegibilidade de campanha (Fase L, Bloco L3)', (
     });
     await contactRepository.setOptOutAt(tenantId, contato.id, new Date());
 
-    const eligibility = await campaignRepository.fetchEligibility(tenantId, [contato.id]);
+    const eligibility = await campaignRepository.fetchEligibility(tenantId, 'integration-test-l3', [
+      contato.id,
+    ]);
 
     expect(eligibility.get(contato.id)?.optedOut).toBe(true);
   });
@@ -120,13 +124,46 @@ describe('Integração real — elegibilidade de campanha (Fase L, Bloco L3)', (
       },
     });
 
-    const eligibility = await campaignRepository.fetchEligibility(tenantId, [
+    const eligibility = await campaignRepository.fetchEligibility(tenantId, 'integration-test-l3', [
       comDono.id,
       semDono.id,
     ]);
 
     expect(eligibility.get(comDono.id)?.hasActiveHumanConversation).toBe(true);
     expect(eligibility.get(semDono.id)?.hasActiveHumanConversation).toBe(false);
+  });
+
+  // Correção 2026-08-20 — achado real: um contato em atendimento humano no
+  // WhatsApp A bloqueava campanha no WhatsApp B. "Conversa ativa com humano"
+  // passou a ser escopada por sessão ("cada WhatsApp é uma empresa
+  // independente", mesmo racional da navegação desde a M6H-1).
+  it('conversa HUMAN com dono em OUTRA sessão NÃO bloqueia elegibilidade nesta sessão', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const contato = await contactRepository.findOrCreateByPhone({
+      tenantId,
+      phoneE164: '5521900000010',
+      source: 'whatsapp',
+    });
+    await prisma.whatsAppConversation.create({
+      data: {
+        tenantId,
+        sessionName: 'integration-test-l3-outra-sessao',
+        contactJid: '5521900000010@s.whatsapp.net',
+        contactId: contato.id,
+        status: 'HUMAN',
+        assignedToUserId: 'user-de-teste',
+      },
+    });
+
+    const eligibility = await campaignRepository.fetchEligibility(tenantId, 'integration-test-l3', [
+      contato.id,
+    ]);
+
+    expect(eligibility.get(contato.id)?.hasActiveHumanConversation).toBe(false);
   });
 
   it('contato SENT há menos de 7 dias por outra campanha é sinalizado — SENT há mais de 7 dias NÃO é', async () => {
@@ -175,13 +212,49 @@ describe('Integração real — elegibilidade de campanha (Fase L, Bloco L3)', (
       },
     });
 
-    const eligibility = await campaignRepository.fetchEligibility(tenantId, [
+    const eligibility = await campaignRepository.fetchEligibility(tenantId, 'integration-test-l3', [
       recente.id,
       antigo.id,
     ]);
 
     expect(eligibility.get(recente.id)?.recentlyContactedByCampaign).toBe(true);
     expect(eligibility.get(antigo.id)?.recentlyContactedByCampaign).toBe(false);
+  });
+
+  // Correção 2026-08-20 — mesma lógica do teste de conversa HUMAN acima:
+  // "contatado recentemente" só bloqueia dentro da MESMA sessão.
+  it('SENT há menos de 7 dias por campanha de OUTRA sessão NÃO bloqueia elegibilidade nesta sessão', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const contato = await contactRepository.findOrCreateByPhone({
+      tenantId,
+      phoneE164: '5521900000011',
+      source: 'whatsapp',
+    });
+    const campanhaOutraSessao = await campaignRepository.create({
+      tenantId,
+      sessionName: 'integration-test-l3-outra-sessao',
+      name: 'Campanha de outra sessão',
+      messageTemplate: 'Oi',
+    });
+    await prisma.campaignRecipient.create({
+      data: {
+        tenantId,
+        campaignId: campanhaOutraSessao.id,
+        contactId: contato.id,
+        status: 'SENT',
+        sentAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    const eligibility = await campaignRepository.fetchEligibility(tenantId, 'integration-test-l3', [
+      contato.id,
+    ]);
+
+    expect(eligibility.get(contato.id)?.recentlyContactedByCampaign).toBe(false);
   });
 
   it('materializar duas vezes a mesma campanha não duplica destinatário (constraint @@unique)', async () => {
@@ -242,5 +315,60 @@ describe('Integração real — elegibilidade de campanha (Fase L, Bloco L3)', (
       where: { tenantId, campaignId: campanha.id },
     });
     expect(total).toBe(0);
+  });
+
+  // Retrofit visual 2026-08-18 — `getSessionOverview` é a consulta mais
+  // arriscada deste bloco: filtra `campaign_recipients` por um relacionamento
+  // ANINHADO (`campaign: { sessionName }`), algo que nenhum outro método
+  // deste repositório fazia até aqui. Um Fake nunca provaria que o Prisma
+  // resolve esse JOIN corretamente contra o schema real.
+  it('getSessionOverview() agrega status/enviados/respostas só da sessão pedida, via JOIN real', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const sessionName = `integration-overview-${Date.now()}`;
+    const outraSessao = `${sessionName}-outra`;
+    const contato = await contactRepository.findOrCreateByPhone({
+      tenantId,
+      phoneE164: '5521900000009',
+      source: 'whatsapp',
+    });
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName,
+      name: 'Campanha da sessão certa',
+      messageTemplate: 'Oi',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: contato.id, status: 'pending' },
+    ]);
+    const [recipient] = (
+      await campaignRepository.listRecipients(tenantId, campanha.id, { limit: 10 })
+    ).recipients;
+    await campaignRepository.markRecipientSent(tenantId, recipient.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conv-fake',
+    });
+
+    // Campanha de OUTRA sessão do mesmo tenant — nunca deve entrar na conta.
+    const campanhaOutraSessao = await campaignRepository.create({
+      tenantId,
+      sessionName: outraSessao,
+      name: 'Campanha de outra sessão',
+      messageTemplate: 'Oi',
+    });
+    await campaignRepository.createRecipients(tenantId, campanhaOutraSessao.id, [
+      { contactId: contato.id, status: 'pending' },
+    ]);
+
+    const overview = await campaignRepository.getSessionOverview(tenantId, sessionName);
+
+    expect(overview.totalCampaigns).toBe(1);
+    expect(overview.statusCounts.draft).toBe(1);
+    expect(overview.totalSent).toBe(1);
+    expect(overview.totalReplied).toBe(0);
   });
 });

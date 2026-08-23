@@ -8,6 +8,7 @@ import { PrismaTenantRepository } from '../../shared/tenant/infrastructure/Prism
 import { PrismaCampaignRepository } from './infrastructure/repositories/PrismaCampaignRepository';
 import { CampaignRepository } from './domain/repositories/CampaignRepository';
 import { CampaignMessageSender } from './domain/providers/CampaignMessageSender';
+import { ContactLookup } from './domain/ports/ContactLookup';
 import { CampaignService } from './application/CampaignService';
 import { createCampaignsRouter } from './presentation/campaignsRouter';
 import { createCampaignsErrorHandler } from './presentation/campaignsErrorHandler';
@@ -42,11 +43,25 @@ export interface CampaignsComposition {
 export function createCampaignsComposition(
   prisma: PrismaClient,
   logger: Logger,
+  /**
+   * Reorganização Contatos/Campanhas (2026-08-17) — OPCIONAL (mesmo padrão do
+   * resto desta composição): quem monta (`index.ts`) já cria `contacts`
+   * ANTES de `campaigns`, então normalmente está sempre presente; ausente só
+   * degrada (telefones de planilha/manual nunca "viram" Contato existente),
+   * nunca quebra.
+   */
+  contactLookup?: ContactLookup,
 ): CampaignsComposition {
   const campaignRepository = new PrismaCampaignRepository(prisma);
   const tenantRepository = new PrismaTenantRepository(prisma);
 
-  const campaignService = new CampaignService(campaignRepository, tenantRepository, logger);
+  const campaignService = new CampaignService(
+    campaignRepository,
+    tenantRepository,
+    logger,
+    undefined,
+    contactLookup,
+  );
   const campaignsRouter = createCampaignsRouter(campaignService);
   const campaignsErrorHandler = createCampaignsErrorHandler(logger);
 
@@ -90,12 +105,21 @@ export function wireCampaignSendEngine(
     },
     {
       connection: redisConnection,
-      // Libera o `jobId` (`recipientId`) mesmo quando o job roda e NÃO
-      // envia nada (campanha pausada/cancelada, destinatário já processado)
-      // — é isso que permite `CampaignService.startCampaign()` reagendar um
-      // destinatário `PENDING` órfão ao retomar uma campanha (ver docstring
-      // do método).
-      removeOnComplete: { count: 1000 },
+      // CORREÇÃO 2026-08-18 (achado real: retomar/reabrir uma campanha nunca
+      // reagendava ninguém — ver docstring de `BullMqCampaignSendDispatcher`
+      // para o diagnóstico completo). `{ count: 1000 }` PARECIA "liberar o
+      // jobId", mas no volume real de envios de campanha isso nunca evict
+      // nada na prática — o jobId ficava preso indefinidamente. `{ count: 0 }`
+      // remove o job assim que ele completa (equivalente, para `WorkerOptions`,
+      // do `removeOnComplete: true` já usado nas filas `ai-reply`/
+      // `whatsapp-outbound` — `WorkerOptions` só aceita a forma `KeepJobs`
+      // aqui, diferente de `JobOptions`, que aceita `boolean`). A garantia de
+      // correção de verdade agora mora em
+      // `BullMqCampaignSendDispatcher.scheduleRecipient` (remove
+      // explicitamente antes de reagendar); isto aqui é só higiene.
+      removeOnComplete: { count: 0 },
+      // Falhas continuam retidas (diagnóstico) — reagendar depois de uma
+      // falha funciona porque o dispatcher remove o job antigo antes.
       removeOnFail: { count: 500 },
     },
   );

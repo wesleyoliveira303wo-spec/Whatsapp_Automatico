@@ -5,6 +5,7 @@ import { ConversationNotFoundError } from '../domain/errors/ConversationNotFound
 import { ConversationOwnershipError } from '../domain/errors/ConversationOwnershipError';
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
 import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
+import { ConversationContactUnavailableError } from '../domain/errors/ConversationContactUnavailableError';
 import { AgentMediaTooLargeError } from '../domain/errors/AgentMediaTooLargeError';
 import { AgentMediaTypeMismatchError } from '../domain/errors/AgentMediaTypeMismatchError';
 import { WhatsAppNotConnectedError } from '../../whatsapp/domain/errors/WhatsAppNotConnectedError';
@@ -53,6 +54,16 @@ export function createConversationsErrorHandler(logger: Logger): ErrorRequestHan
     }
     if (error instanceof MessageMediaNotFoundError) {
       res.status(404).json({ error: 'message_media_not_found', message: error.message });
+      return;
+    }
+    // Retrofit visual 2026-08-18 — botão "Salvar contato": conversa sem
+    // telefone real a derivar (`@lid`, grupo, canal).
+    if (error instanceof ConversationContactUnavailableError) {
+      res.status(422).json({
+        error: 'conversation_contact_unavailable',
+        message:
+          'Não é possível salvar este contato: o WhatsApp não expõe o número real deste endereço (privacidade ativada).',
+      });
       return;
     }
     // Fase 1, Bloco F1.3.

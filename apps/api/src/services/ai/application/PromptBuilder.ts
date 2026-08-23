@@ -44,6 +44,23 @@ export function describeMessageContent(message: Message): string {
   }
   const label = MEDIA_CONTENT_TYPE_LABEL[message.contentType];
   const caption = message.content.trim();
+
+  // CORREÇÃO 2026-08-21 (bug medido em produção): até aqui o texto era fixo
+  // em "O cliente enviou", ignorando `direction`. Numa conversa nascida de
+  // campanha com anexo, a mensagem de abertura é NOSSA e é uma imagem — a IA
+  // lia o PRÓPRIO turno dela (`role: 'assistant'`) dizendo "[O cliente enviou
+  // um(a) imagem com a legenda: <o pitch de abertura>]". Resultado real: ela
+  // abria a conversa perguntando sobre uma imagem que o cliente nunca mandou,
+  // o cliente respondia "Não mandei imagem!", e a conversa morria em duas
+  // trocas de desculpa — sem a IA nunca perceber que já tinha se apresentado.
+  // Mídia enviada por NÓS (operador, IA ou campanha) precisa ser descrita na
+  // primeira pessoa, para o histórico continuar coerente.
+  if (message.direction === 'outbound') {
+    return caption
+      ? `[Você enviou um(a) ${label} com a legenda: "${caption}"]`
+      : `[Você enviou um(a) ${label}, sem legenda]`;
+  }
+
   return caption
     ? `[O cliente enviou um(a) ${label} com a legenda: "${caption}"]`
     : `[O cliente enviou um(a) ${label}, sem legenda]`;
@@ -126,6 +143,7 @@ export class PromptBuilder {
         businessContext,
         offHoursContext,
         campaignContext,
+        promptVersion.closingDirective,
       ),
       messages: messages.map((message) => ({
         role: message.direction === 'inbound' ? 'user' : 'assistant',
@@ -145,12 +163,24 @@ export class PromptBuilder {
    * 2. `offHoursContext` — aviso de horário de atendimento (F1.8). Injetado
    *    depois do `businessContext` quando presente. Nunca substitui as regras
    *    de segurança do prompt base; só adiciona contexto situacional.
+   *
+   * 3. `closingDirective` (2026-08-20, 3ª rodada) — SEMPRE por último, depois
+   *    de TODOS os blocos de contexto. Motivo medido: o Cérebro da IA é texto
+   *    livre escrito pelo cliente e pode ser enorme (10.395 caracteres na
+   *    instalação onde o problema apareceu, contra 7.285 do prompt base) — e
+   *    costuma conter instruções de CONDUTA ("não empurro o serviço nas
+   *    primeiras mensagens"). Tudo que o prompt base diz sobre formato/postura
+   *    ficava soterrado sob esse bloco e era sistematicamente derrotado por
+   *    ele. A diretiva final é curta e mecânica de propósito: recupera a
+   *    última palavra sobre formato e condução SEM enfraquecer as regras de
+   *    segurança, que continuam no prompt base.
    */
   private composeSystemPrompt(
     basePrompt: string,
     businessContext?: string,
     offHoursContext?: string,
     campaignContext?: string,
+    closingDirective?: string,
   ): string {
     let prompt = basePrompt;
 
@@ -172,6 +202,13 @@ export class PromptBuilder {
     const trimmedCampaign = campaignContext?.trim();
     if (trimmedCampaign) {
       prompt += `\n\n${trimmedCampaign}`;
+    }
+
+    // Sempre o ÚLTIMO bloco — é justamente a posição que dá a ela o poder de
+    // corrigir instruções de conduta vindas do Cérebro da IA. Nunca mover.
+    const trimmedClosing = closingDirective?.trim();
+    if (trimmedClosing) {
+      prompt += `\n\n${trimmedClosing}`;
     }
 
     return prompt;

@@ -77,7 +77,7 @@ describe('ConversationContextPanel (Redesign 2026-08-05, R3)', () => {
     expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
-  it('mostra nome, telefone formatado e "Cliente há X"', () => {
+  it('sem contato salvo, mostra telefone + apelido no cabeçalho (em partes) e o telefone de novo na linha auxiliar', () => {
     mockUseConversationDetail.mockReturnValue({
       conversation: buildConversation({ contactName: 'Maria Costa' }),
       loading: false,
@@ -86,9 +86,27 @@ describe('ConversationContextPanel (Redesign 2026-08-05, R3)', () => {
       applyUpdate: jest.fn(),
     });
     render(<ConversationContextPanel sessionName="vendas" conversationId="c1" />);
+    // O telefone aparece duas vezes (cabeçalho + linha auxiliar do "Salvar
+    // contato") — `DisplayNameParts` bota cada parte num `<span>` próprio.
+    expect(screen.getAllByText('+55 11 98122-4471')).toHaveLength(2);
     expect(screen.getByText('Maria Costa')).toBeInTheDocument();
-    expect(screen.getByText('+55 11 98122-4471')).toBeInTheDocument();
     expect(screen.getByText(/Cliente há/)).toBeInTheDocument();
+  });
+
+  it('mostra só o savedContactName no cabeçalho quando o contato está salvo (regra 2026-08-20)', () => {
+    mockUseConversationDetail.mockReturnValue({
+      conversation: buildConversation({
+        contactName: 'Apelido WhatsApp',
+        savedContactName: 'Maria Salva',
+      }),
+      loading: false,
+      errorMessage: null,
+      refresh: jest.fn(),
+      applyUpdate: jest.fn(),
+    });
+    render(<ConversationContextPanel sessionName="vendas" conversationId="c1" />);
+    expect(screen.getByText('Maria Salva')).toBeInTheDocument();
+    expect(screen.queryByText(/Apelido WhatsApp/)).not.toBeInTheDocument();
   });
 
   it('mostra o chip "Aguardando atendente" quando escalatedAt está presente', () => {

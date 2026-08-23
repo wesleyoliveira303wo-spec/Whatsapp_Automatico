@@ -5,7 +5,10 @@ import {
   formatDateTime,
   formatConversationTimestamp,
   formatContactDisplayName,
+  formatContactDisplayNameParts,
   formatContactInitials,
+  formatPersonLabel,
+  formatPersonLabelParts,
   PRIVATE_CONTACT_LABEL,
   formatConversationStageLabel,
   CONVERSATION_STAGE_ORDER,
@@ -88,21 +91,30 @@ describe('formatters (M2, Fase 4)', () => {
     });
   });
 
-  describe('formatContactDisplayName (padronização 2026-08-15)', () => {
-    it('usa contactName quando presente', () => {
+  describe('formatContactDisplayName (regra 2026-08-20: nome salvo > telefone + apelido)', () => {
+    it('usa savedContactName sozinho quando presente, mesmo com contactName e telefone disponíveis', () => {
+      expect(
+        formatContactDisplayName('5511999999999@s.whatsapp.net', 'Apelido WhatsApp', 'Maria Salva'),
+      ).toBe('Maria Salva');
+    });
+
+    // Mudança de política 2026-08-20 (pedido do fundador): antes, o apelido do
+    // WhatsApp sozinho já bastava como "nome". Agora, sem um nome SALVO, o
+    // telefone é obrigatório — o apelido só complementa.
+    it('sem nome salvo, combina telefone + apelido do WhatsApp (nunca só o apelido)', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Maria Silva')).toBe(
-        'Maria Silva',
+        '+55 11 99999-9999 · Maria Silva',
       );
     });
 
-    // O bug relatado: sem nome, a lista exibia os dígitos crus ("5511999999999"),
+    // O bug original: sem nome, a lista exibia os dígitos crus ("5511999999999"),
     // e não o telefone formatado — em 67% da base real.
-    it('cai para o telefone FORMATADO quando contactName está ausente, nunca os dígitos crus', () => {
+    it('sem nome salvo nem apelido, mostra só o telefone FORMATADO, nunca os dígitos crus', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net')).toBe('+55 11 99999-9999');
     });
 
-    it('cai para o telefone formatado quando contactName é só espaços', () => {
-      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '   ')).toBe(
+    it('ignora savedContactName/contactName quando são só espaços', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '   ', '   ')).toBe(
         '+55 11 99999-9999',
       );
     });
@@ -111,15 +123,21 @@ describe('formatters (M2, Fase 4)', () => {
       expect(formatContactDisplayName('556588887777@s.whatsapp.net')).toBe('+55 65 8888-7777');
     });
 
-    it('usa um rótulo curto para LID, nunca o número gigante de privacidade', () => {
+    it('usa um rótulo curto para LID sem apelido, nunca o número gigante de privacidade', () => {
       expect(formatContactDisplayName('225236742053984@lid')).toBe(PRIVATE_CONTACT_LABEL);
     });
 
-    it('prefere o nome do WhatsApp mesmo num contato LID', () => {
+    it('LID sem nome salvo usa o apelido do WhatsApp sozinho — não existe telefone a exibir', () => {
       expect(formatContactDisplayName('225236742053984@lid', 'Wesley')).toBe('Wesley');
     });
 
-    it('ignora um "nome" sem letra nem dígito (só emoji/pontuação) e usa o telefone', () => {
+    it('LID com nome salvo usa só o nome salvo', () => {
+      expect(formatContactDisplayName('225236742053984@lid', 'Wesley', 'Wesley Francis')).toBe(
+        'Wesley Francis',
+      );
+    });
+
+    it('ignora um "nome"/apelido sem letra nem dígito (só emoji/pontuação) e usa o telefone', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '❤️')).toBe(
         '+55 11 99999-9999',
       );
@@ -128,26 +146,76 @@ describe('formatters (M2, Fase 4)', () => {
       );
     });
 
-    it('aceita nome em qualquer alfabeto (não só A-Z)', () => {
-      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Ана')).toBe('Ана');
-    });
-
-    it('colapsa espaços internos para toda linha da lista ter a mesma cara', () => {
-      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Maria   da    Silva')).toBe(
-        'Maria da Silva',
+    it('aceita nome salvo em qualquer alfabeto (não só A-Z)', () => {
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net', undefined, 'Ана')).toBe(
+        'Ана',
       );
     });
 
-    it('trunca um nome gigante em vez de deixar a linha quebrar', () => {
+    it('colapsa espaços internos para toda linha da lista ter a mesma cara', () => {
+      expect(
+        formatContactDisplayName('5511999999999@s.whatsapp.net', undefined, 'Maria   da    Silva'),
+      ).toBe('Maria da Silva');
+    });
+
+    it('trunca um nome salvo gigante em vez de deixar a linha quebrar', () => {
       const gigante = 'A'.repeat(80);
-      const resultado = formatContactDisplayName('5511999999999@s.whatsapp.net', gigante);
+      const resultado = formatContactDisplayName('5511999999999@s.whatsapp.net', undefined, gigante);
 
       expect(resultado.length).toBeLessThanOrEqual(40);
       expect(resultado.endsWith('…')).toBe(true);
     });
+
+    // CORREÇÃO 2026-08-21 (pedido do fundador: apelido em fonte menor/mais
+    // clara, ver `formatContactDisplayNameParts`/`DisplayNameParts`): cada
+    // parte agora é truncada de forma INDEPENDENTE, não mais a string
+    // combinada como um todo — o telefone nunca é cortado por causa de um
+    // apelido grande.
+    it('trunca o apelido independentemente, sem nunca cortar o telefone', () => {
+      const apelidoGigante = 'A'.repeat(80);
+      const resultado = formatContactDisplayName('5511999999999@s.whatsapp.net', apelidoGigante);
+
+      expect(resultado.startsWith('+55 11 99999-9999 · ')).toBe(true);
+      expect(resultado.endsWith('…')).toBe(true);
+      // Prefixo do telefone (21 caracteres) + apelido truncado (até 40).
+      expect(resultado.length).toBeLessThanOrEqual(61);
+    });
   });
 
-  describe('formatContactInitials (Milestone 6, Bloco M6H-2b)', () => {
+  describe('formatContactDisplayNameParts (2026-08-21 — apelido em partes, para estilização visual)', () => {
+    it('savedContactName vira só primary, sem secondary', () => {
+      expect(
+        formatContactDisplayNameParts('5511999999999@s.whatsapp.net', 'Apelido', 'Maria Salva'),
+      ).toEqual({ primary: 'Maria Salva' });
+    });
+
+    it('sem nome salvo, telefone vira primary e o apelido vira secondary', () => {
+      expect(formatContactDisplayNameParts('5511999999999@s.whatsapp.net', 'Maria Silva')).toEqual({
+        primary: '+55 11 99999-9999',
+        secondary: 'Maria Silva',
+      });
+    });
+
+    it('sem nome salvo nem apelido, só primary (telefone), sem secondary', () => {
+      expect(formatContactDisplayNameParts('5511999999999@s.whatsapp.net')).toEqual({
+        primary: '+55 11 99999-9999',
+      });
+    });
+
+    it('LID sem apelido: só primary (PRIVATE_CONTACT_LABEL), sem secondary', () => {
+      expect(formatContactDisplayNameParts('225236742053984@lid')).toEqual({
+        primary: PRIVATE_CONTACT_LABEL,
+      });
+    });
+
+    it('LID com apelido: apelido vira primary sozinho — não existe telefone para secondary', () => {
+      expect(formatContactDisplayNameParts('225236742053984@lid', 'Wesley')).toEqual({
+        primary: 'Wesley',
+      });
+    });
+  });
+
+  describe('formatContactInitials (Milestone 6, Bloco M6H-2b; prioridade de nome salvo 2026-08-20)', () => {
     it('usa as iniciais das duas primeiras palavras do contactName', () => {
       expect(formatContactInitials('5511999999999@s.whatsapp.net', 'Maria Silva')).toBe('MS');
     });
@@ -156,7 +224,13 @@ describe('formatters (M2, Fase 4)', () => {
       expect(formatContactInitials('5511999999999@s.whatsapp.net', 'Loja')).toBe('L');
     });
 
-    it('cai para os últimos 2 dígitos do número quando não há contactName', () => {
+    it('prefere savedContactName sobre contactName (mesma prioridade de formatContactDisplayName)', () => {
+      expect(
+        formatContactInitials('5511999999999@s.whatsapp.net', 'Apelido WhatsApp', 'Zeca Salvo'),
+      ).toBe('ZS');
+    });
+
+    it('cai para os últimos 2 dígitos do número quando não há contactName nem savedContactName', () => {
       expect(formatContactInitials('5511999999999@s.whatsapp.net')).toBe('99');
     });
 
@@ -170,6 +244,51 @@ describe('formatters (M2, Fase 4)', () => {
 
     it('cai para o número quando o nome não tem letra nem dígito', () => {
       expect(formatContactInitials('5511999999999@s.whatsapp.net', '❤️')).toBe('99');
+    });
+  });
+
+  describe('formatPersonLabel (aba Contatos/Campanhas — mesma regra sobre telefone E.164 puro)', () => {
+    it('usa savedName sozinho quando presente', () => {
+      expect(
+        formatPersonLabel({ phoneE164: '5511999999999', savedName: 'Maria Salva', nickname: 'Apelido' }),
+      ).toBe('Maria Salva');
+    });
+
+    it('sem savedName, combina telefone + nickname', () => {
+      expect(formatPersonLabel({ phoneE164: '5511999999999', nickname: 'Maria Silva' })).toBe(
+        '+55 11 99999-9999 · Maria Silva',
+      );
+    });
+
+    it('sem savedName nem nickname, mostra só o telefone formatado', () => {
+      expect(formatPersonLabel({ phoneE164: '5511999999999' })).toBe('+55 11 99999-9999');
+    });
+
+    it('ignora nickname sem letra nem dígito', () => {
+      expect(formatPersonLabel({ phoneE164: '5511999999999', nickname: '❤️' })).toBe(
+        '+55 11 99999-9999',
+      );
+    });
+  });
+
+  describe('formatPersonLabelParts (2026-08-21 — apelido em partes, para estilização visual)', () => {
+    it('savedName vira só primary, sem secondary', () => {
+      expect(
+        formatPersonLabelParts({ phoneE164: '5511999999999', savedName: 'Maria Salva', nickname: 'Apelido' }),
+      ).toEqual({ primary: 'Maria Salva' });
+    });
+
+    it('sem savedName, telefone vira primary e o nickname vira secondary', () => {
+      expect(formatPersonLabelParts({ phoneE164: '5511999999999', nickname: 'Maria Silva' })).toEqual({
+        primary: '+55 11 99999-9999',
+        secondary: 'Maria Silva',
+      });
+    });
+
+    it('sem savedName nem nickname, só primary (telefone), sem secondary', () => {
+      expect(formatPersonLabelParts({ phoneE164: '5511999999999' })).toEqual({
+        primary: '+55 11 99999-9999',
+      });
     });
   });
 

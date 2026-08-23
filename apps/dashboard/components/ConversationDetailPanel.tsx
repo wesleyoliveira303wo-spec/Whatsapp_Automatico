@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowDown, RefreshCw } from 'lucide-react';
 import ConversationStatusBadge from './ConversationStatusBadge';
 import ConversationActions from './ConversationActions';
-import ConversationHandoffPopup from './ConversationHandoffPopup';
 import MessageTimeline from './MessageTimeline';
 import MessageComposer from './MessageComposer';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,9 +10,10 @@ import ErrorState from '@/components/states/ErrorState';
 import { useConversationDetail } from '@/hooks/useConversationDetail';
 import { useMessagesTimeline } from '@/hooks/useMessagesTimeline';
 import { useAiInteractions } from '@/hooks/useAiInteractions';
-import { formatContactDisplayName } from '@/lib/formatters';
+import { formatContactDisplayNameParts } from '@/lib/formatters';
 import { markConversationAsRead, type ConversationSummary } from '@/lib/clientApi';
 import ContactAvatar from './ContactAvatar';
+import DisplayNameParts from './DisplayNameParts';
 
 interface ConversationDetailPanelProps {
   sessionName: string;
@@ -88,16 +88,6 @@ export default function ConversationDetailPanel({
   const previousConversationIdRef = useRef<string | null>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const [showJumpToRecent, setShowJumpToRecent] = useState(false);
-
-  // Fase 1, Bloco F1.10 — Pop-up de handoff humano: decide, ao ABRIR a
-  // conversa (não a cada poll), se ela está escalada (`escalatedAt`
-  // preenchido) e ainda ninguém assumiu (`status === 'bot'`) — mesma
-  // condição já usada para o aviso de texto no rodapé, abaixo. `handoffCheckedForRef`
-  // garante que essa decisão só é tomada UMA VEZ por `conversationId`: fechar
-  // o pop-up sem assumir não o reabre sozinho no próximo poll da MESMA
-  // conversa (o `conversation` muda de referência a cada ~4s, mas o id não).
-  const handoffCheckedForRef = useRef<string | null>(null);
-  const [handoffOpen, setHandoffOpen] = useState(false);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'auto'): void => {
     const container = scrollContainerRef.current;
@@ -183,20 +173,6 @@ export default function ConversationDetailPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberadamente sem `conversation`/`applyUpdate`/`onConversationUpdated`: rodar por eles recriaria um loop (marcar como lida muda `conversation`, que dispararia o efeito de novo)
   }, [conversationId, messages]);
 
-  useEffect(() => {
-    // `conversation` nas deps é necessário para o efeito reavaliar quando ele
-    // sai de `null` (ainda carregando) para o valor real pela 1ª vez — o
-    // guard abaixo (`handoffCheckedForRef`), não as deps, é quem garante que
-    // isso só decide UMA VEZ por `conversationId`, ignorando as reexecuções
-    // seguintes causadas por cada nova referência que o polling traz.
-    if (!conversation) return;
-    if (handoffCheckedForRef.current === conversationId) return;
-    handoffCheckedForRef.current = conversationId;
-    if (conversation.status === 'bot' && conversation.escalatedAt) {
-      setHandoffOpen(true);
-    }
-  }, [conversationId, conversation]);
-
   if (loading) {
     return (
       <div className="flex h-full flex-col gap-4 p-4">
@@ -220,15 +196,6 @@ export default function ConversationDetailPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <ConversationHandoffPopup
-        conversation={conversation}
-        open={handoffOpen}
-        onOpenChange={setHandoffOpen}
-        onUpdated={(updated) => {
-          applyUpdate(updated);
-          onConversationUpdated?.(updated);
-        }}
-      />
       <div className="flex h-[60px] shrink-0 items-center gap-3 border-b border-border px-[18px]">
         <Link
           href={`/sessions/${encodeURIComponent(sessionName)}/conversations`}
@@ -241,12 +208,19 @@ export default function ConversationDetailPanel({
           sessionName={conversation.sessionName}
           contactJid={conversation.contactJid}
           contactName={conversation.contactName}
+          savedContactName={conversation.savedContactName}
           className="h-[34px] w-[34px] text-[12.5px]"
         />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-[14.5px] font-semibold tracking-tight text-foreground">
-              {formatContactDisplayName(conversation.contactJid, conversation.contactName)}
+              <DisplayNameParts
+                {...formatContactDisplayNameParts(
+                  conversation.contactJid,
+                  conversation.contactName,
+                  conversation.savedContactName,
+                )}
+              />
             </h2>
             <ConversationStatusBadge
               status={conversation.status}

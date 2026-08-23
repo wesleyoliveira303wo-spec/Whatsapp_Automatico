@@ -57,10 +57,16 @@ function buildCandidate(overrides: Partial<Conversation> = {}): Conversation {
   };
 }
 
-/** Redesign 2026-08-05 (R4) — `include` que as 3 queries de leitura completa (upsert/findUnique/findMany) sempre acrescentam (ver `CONVERSATION_TAGS_INCLUDE`). */
+/**
+ * Redesign 2026-08-05 (R4), estendido em 2026-08-20 — `include` que as 3
+ * queries de leitura completa (upsert/findUnique/findMany) sempre acrescentam
+ * (ver `CONVERSATION_INCLUDE`). `contact: { select: { name: true } }`
+ * resolve `savedContactName` — padronização de exibição de contato.
+ */
 const TAGS_INCLUDE = {
   include: {
     conversationTags: { include: { tag: { select: { id: true, name: true, color: true } } } },
+    contact: { select: { name: true } },
   },
 };
 
@@ -92,7 +98,11 @@ describe('PrismaConversationRepository', () => {
           tenantId: 'tenant-1',
           sessionName: 'default',
           contactJid: '5511999999999@s.whatsapp.net',
+          contactName: undefined,
+          contactId: undefined,
           status: 'BOT',
+          stage: 'NEW',
+          stageSetBy: 'AI',
           createdAt: new Date('2026-07-10T12:00:00Z'),
           updatedAt: new Date('2026-07-10T12:00:00Z'),
         },
@@ -202,13 +212,47 @@ describe('PrismaConversationRepository', () => {
           sessionName: 'default',
           contactJid: '5511999999999@s.whatsapp.net',
           contactName: 'Maria Silva',
+          contactId: undefined,
           status: 'BOT',
+          stage: 'NEW',
+          stageSetBy: 'AI',
           createdAt: new Date('2026-07-10T12:00:00Z'),
           updatedAt: new Date('2026-07-10T12:00:00Z'),
         },
         update: { contactName: 'Maria Silva' },
         ...TAGS_INCLUDE,
       });
+    });
+
+    // Fase L, Bloco L5 (2026-08-20) — antes deste bloco, `contactId`/`stage`/
+    // `stageSetBy` do `create` eram silenciosamente ignorados (só os defaults
+    // de coluna valiam). `WhatsAppCampaignMessageSender` (primeiro contato de
+    // campanha) passou a depender de que eles sejam de fato persistidos.
+    it('inclui contactId/stage/stageSetBy no create quando informados (primeiro contato de campanha)', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppConversation.upsert.mockResolvedValue({
+        ...SAMPLE_ROW,
+        contactId: 'contact-9',
+        stage: 'CONTACTED',
+      });
+      const repo = new PrismaConversationRepository(prisma as never);
+
+      await repo.upsertByTenantSessionAndContact(
+        'tenant-1',
+        'default',
+        '5511999999999@s.whatsapp.net',
+        buildCandidate({ contactId: 'contact-9', stage: 'contacted', stageSetBy: 'ai' }),
+      );
+
+      expect(prisma.whatsAppConversation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            contactId: 'contact-9',
+            stage: 'CONTACTED',
+            stageSetBy: 'AI',
+          }),
+        }),
+      );
     });
 
     it('NÃO inclui contactName no update quando a mensagem não trouxe nome (nunca apaga um nome já salvo por falta de nome numa mensagem posterior)', async () => {
@@ -302,6 +346,49 @@ describe('PrismaConversationRepository', () => {
       const result = await repo.findById('conversation-inexistente');
 
       expect(result).toBeUndefined();
+    });
+
+    // Padronização de exibição de contato (2026-08-20) — `savedContactName`
+    // vem do relacionamento `contact` incluído por `CONVERSATION_INCLUDE`.
+    describe('savedContactName (padronização de exibição de contato, 2026-08-20)', () => {
+      it('mapeia contact.name para savedContactName quando o Contato tem nome salvo', async () => {
+        const prisma = createFakePrisma();
+        prisma.whatsAppConversation.findUnique.mockResolvedValue({
+          ...SAMPLE_ROW,
+          contact: { name: 'Maria Salva' },
+        });
+        const repo = new PrismaConversationRepository(prisma as never);
+
+        const result = await repo.findById('conversation-1');
+
+        expect(result?.savedContactName).toBe('Maria Salva');
+      });
+
+      it('deixa savedContactName indefinido quando não há contactId (contact: null)', async () => {
+        const prisma = createFakePrisma();
+        prisma.whatsAppConversation.findUnique.mockResolvedValue({
+          ...SAMPLE_ROW,
+          contact: null,
+        });
+        const repo = new PrismaConversationRepository(prisma as never);
+
+        const result = await repo.findById('conversation-1');
+
+        expect(result?.savedContactName).toBeUndefined();
+      });
+
+      it('deixa savedContactName indefinido quando o Contato existe mas ainda não tem nome salvo', async () => {
+        const prisma = createFakePrisma();
+        prisma.whatsAppConversation.findUnique.mockResolvedValue({
+          ...SAMPLE_ROW,
+          contact: { name: null },
+        });
+        const repo = new PrismaConversationRepository(prisma as never);
+
+        const result = await repo.findById('conversation-1');
+
+        expect(result?.savedContactName).toBeUndefined();
+      });
     });
   });
 

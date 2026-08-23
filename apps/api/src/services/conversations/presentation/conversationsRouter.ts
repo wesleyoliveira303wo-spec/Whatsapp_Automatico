@@ -141,6 +141,11 @@ const setExcludedFromPipelineBodySchema = z.object({
   excluded: z.boolean(),
 });
 
+/** Corpo do `POST .../save-contact` — retrofit visual 2026-08-18. `name` é opcional (contato pode ser salvo sem nome). */
+const saveContactBodySchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+});
+
 /**
  * Router REST (Presentation, Milestone 3, Bloco 5) para o ciclo de vida de
  * uma `Conversation` — escalonar/retomar atendimento e listar
@@ -440,6 +445,35 @@ export function createConversationsRouter(conversationsService: ConversationsSer
         params.tenantId,
         params.conversationId,
         body.excluded,
+        toActor(req),
+        toMeta(req),
+      );
+      res.status(200).json(conversation);
+    }),
+  );
+
+  router.post(
+    '/:conversationId/save-contact',
+    // Retrofit visual 2026-08-18: mesma régua de `stage`/`exclude-from-pipeline`
+    // (`message:send`) — salvar o contato desta conversa é ação operacional
+    // do dia a dia de quem já está atendendo, não gestão da base do tenant
+    // inteiro (essa é a régua de `contact:manage`, reservada a
+    // importação/edição/remoção em `contactsRouter`).
+    requirePermission('message:send'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(conversationIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(saveContactBodySchema, req.body, res);
+      if (!body) return;
+
+      const conversation = await conversationsService.saveContactFromConversation(
+        params.tenantId,
+        params.conversationId,
+        body.name,
         toActor(req),
         toMeta(req),
       );

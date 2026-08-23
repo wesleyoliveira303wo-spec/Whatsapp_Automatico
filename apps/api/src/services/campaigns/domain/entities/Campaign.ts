@@ -10,11 +10,16 @@ export type CampaignStatus =
  * projeto registrada em `FASE_L_MOTOR_DE_LEADS.md` §10.3) mas não têm efeito
  * nenhum nesta rodada — nenhum motor de envio os lê ainda.
  */
+/** Categorias de mídia suportadas para o anexo de uma campanha — mesmo vocabulário de `MediaSender`/`MessageContentType`, exceto `text`/`sticker` (não aplicáveis a um disparo em massa). */
+export type CampaignMediaContentType = 'image' | 'audio' | 'video' | 'document';
+
 export interface Campaign {
   id: string;
   tenantId: string;
   sessionName: string;
   name: string;
+  /** Texto livre opcional (reorganização Contatos/Campanhas, 2026-08-17) — só para o operador se orientar, nunca lido por regra nenhuma. */
+  description?: string;
   messageTemplate: string;
   status: CampaignStatus;
   scheduledFor?: Date;
@@ -24,6 +29,18 @@ export interface Campaign {
   sendWindowEnd?: string;
   pausedReason?: string;
   createdByUserId?: string;
+  /**
+   * Fase L, Bloco L8 (2026-08-20) — metadados do anexo, quando a campanha tem
+   * um (`undefined` = sem mídia, mensagem só de texto). DELIBERADAMENTE sem o
+   * binário aqui: esta entidade é o que `findById`/`listByTenant` devolvem em
+   * toda resposta JSON de lista/detalhe — o BINÁRIO só é lido sob demanda via
+   * `CampaignRepository.getMediaContent` (rota de download dedicada).
+   */
+  media?: {
+    contentType: CampaignMediaContentType;
+    mimeType: string;
+    fileName?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,12 +55,44 @@ export type CampaignRecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped' 
  */
 export type CampaignSkipReason = 'opt_out' | 'active_human_conversation' | 'recently_contacted';
 
-/** Um destinatário materializado de uma campanha — onde mora "63 de 100, eis os motivos". */
+/**
+ * Um destinatário materializado de uma campanha — onde mora "63 de 100, eis
+ * os motivos".
+ *
+ * Reorganização Contatos/Campanhas (2026-08-17): `contactId` é opcional —
+ * um destinatário vindo de planilha/lista manual sem Contato correspondente
+ * nasce só com `phoneE164`/`name` (nunca força a criação de um Contato).
+ * Sempre um dos dois está presente, nunca nenhum (garantido por
+ * `CampaignService.createCampaign` + `CHECK` no banco).
+ */
 export interface CampaignRecipient {
   id: string;
   tenantId: string;
   campaignId: string;
-  contactId: string;
+  contactId?: string;
+  /** Só presente quando `contactId` é ausente — o telefone (já normalizado) de quem não tem Contato salvo. */
+  phoneE164?: string;
+  /** Nome opcional trazido pela planilha/lista manual — só existe junto de `phoneE164`. */
+  name?: string;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — quando `contactId` é
+   * definido, o Contato salvo resolvido EM LOTE por `listRecipients` (nunca
+   * linha a linha, nunca nos demais métodos deste repositório — só a leitura
+   * usada para exibir a lista precisa disso). `undefined` para um destinatário
+   * "solto" (`phoneE164`/`name` acima), OU quando o resultado não veio de
+   * `listRecipients`.
+   *
+   * `name` só existe quando o operador salvou um nome para esse Contato;
+   * `nickname` é o apelido do WhatsApp (`WhatsAppConversation.contactName`) da
+   * conversa vinculada a este destinatário, quando houver — mesmo par de
+   * dados usado em Conversas/Pipeline/Contatos, aqui resolvido para a mesma
+   * regra de exibição ("nome salvo sozinho; senão telefone + apelido").
+   */
+  contact?: {
+    name?: string;
+    phoneE164: string;
+    nickname?: string;
+  };
   status: CampaignRecipientStatus;
   skipReason?: string;
   errorMessage?: string;
@@ -103,4 +152,31 @@ export interface CampaignMetrics {
   costPerConversionUsd?: number;
   /** Quantas vezes a IA escalou por `unknown_answer` (F1.4) nas conversas desta campanha — "a IA travou N vezes". */
   unknownAnswerCount: number;
+}
+
+/**
+ * Visão geral de campanhas de UMA sessão — retrofit visual 2026-08-18
+ * (réplica de imagem do fundador), tela "Campanhas". Cards do topo +
+ * donut "Status das campanhas" do painel lateral.
+ *
+ * `trends` (variação vs. mês anterior) só existe quando o mês anterior tem
+ * uma base > 0 para comparar — `undefined` nunca vira "0%" disfarçado (mesma
+ * disciplina de `CampaignMetrics`/`responseRate`).
+ */
+export interface CampaignSessionOverview {
+  totalCampaigns: number;
+  statusCounts: Record<CampaignStatus, number>;
+  totalSent: number;
+  totalReplied: number;
+  responseRate?: number;
+  trends: {
+    /** Campanhas criadas este mês vs. mês anterior. */
+    campaignsDeltaPct?: number;
+    /** Mensagens enviadas este mês vs. mês anterior (por `sentAt`). */
+    messagesSentDeltaPct?: number;
+    /** Respostas recebidas este mês vs. mês anterior (por `repliedAt`). */
+    repliesDeltaPct?: number;
+    /** Taxa de resposta deste mês vs. mês anterior. */
+    responseRateDeltaPct?: number;
+  };
 }

@@ -79,17 +79,32 @@ describe('ConversationListItem (Milestone 6, Bloco M6H-2)', () => {
     expect(screen.getByRole('link')).toHaveClass('bg-muted');
   });
 
-  it('mostra o contactName (pushName) em vez do número quando presente (Milestone 6, Bloco M6H-2b)', () => {
+  it('sem contato salvo, mostra número + contactName (pushName) — regra 2026-08-20', () => {
     render(
       <ConversationListItem conversation={buildConversation({ contactName: 'Maria Silva' })} />,
     );
+    // Duas partes em elementos separados (`DisplayNameParts`) — o apelido sai
+    // menor/mais claro, ver `DisplayNameParts.test.tsx`.
+    expect(screen.getByText('+55 11 99999-9999')).toBeInTheDocument();
     expect(screen.getByText('Maria Silva')).toBeInTheDocument();
-    expect(screen.queryByText('+55 11 99999-9999')).not.toBeInTheDocument();
   });
 
   it('cai para o número formatado quando não há contactName', () => {
     render(<ConversationListItem conversation={buildConversation()} />);
     expect(screen.getByText('+55 11 99999-9999')).toBeInTheDocument();
+  });
+
+  it('mostra só o savedContactName quando o contato está salvo, mesmo com contactName presente', () => {
+    render(
+      <ConversationListItem
+        conversation={buildConversation({
+          contactName: 'Apelido WhatsApp',
+          savedContactName: 'Maria Salva',
+        })}
+      />,
+    );
+    expect(screen.getByText('Maria Salva')).toBeInTheDocument();
+    expect(screen.queryByText(/\+55 11 99999-9999/)).not.toBeInTheDocument();
   });
 
   it('mostra o círculo com a contagem quando unreadCount > 0 (indicador de não lidas, 2026-07-25)', () => {

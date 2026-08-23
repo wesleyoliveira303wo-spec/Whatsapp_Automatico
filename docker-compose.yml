@@ -93,6 +93,12 @@ services:
       # Dashboard como BFF — só o servidor Next.js (rotas pages/api/*) sabe
       # onde a API vive agora.
       API_BASE_URL: "http://api:4000"
+      # 2026-08-22 — mesmo fix já existente em docker-compose.prod.yml. O
+      # `.env` compartilhado define PORT=4000 para a API, e `next start`
+      # também obedece a PORT — sem esta linha o Dashboard sobe escutando na
+      # 4000 dentro do container, enquanto o mapeamento de porta aponta para
+      # a 3000, e nada responde em localhost:3000 no host.
+      PORT: "3000"
 
 volumes:
   pgdata:

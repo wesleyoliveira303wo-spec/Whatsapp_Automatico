@@ -2,6 +2,7 @@ import {
   mergeConversationPages,
   findConversationById,
   groupConversationsByPipelineColumn,
+  reconcileConversationIdentities,
 } from '../../lib/conversationsView';
 import type { ConversationSummary } from '../../lib/clientApi';
 
@@ -147,5 +148,75 @@ describe('groupConversationsByPipelineColumn (pipeline de CRM, Milestone 6, Bloc
 
       expect(groups.not_client.map((c) => c.id)).toEqual(['newer', 'older']);
     });
+  });
+});
+
+describe('reconcileConversationIdentities (performance, auditoria 2026-08-22)', () => {
+  it('devolve o array ANTERIOR quando nada mudou — assim ate o useMemo de quem consome para de invalidar', () => {
+    const previous = [buildConversation('a'), buildConversation('b')];
+    // Objetos novos com o MESMO conteudo: e exatamente o que `JSON.parse` do
+    // frame seguinte do SSE produz a cada ~2s.
+    const next = [buildConversation('a'), buildConversation('b')];
+
+    expect(reconcileConversationIdentities(previous, next)).toBe(previous);
+  });
+
+  it('reaproveita a referencia de cada conversa inalterada, trocando so a que mudou', () => {
+    const previous = [buildConversation('a'), buildConversation('b')];
+    const next = [buildConversation('a'), buildConversation('b', { unreadCount: 3 })];
+
+    const reconciled = reconcileConversationIdentities(previous, next);
+
+    expect(reconciled).not.toBe(previous);
+    expect(reconciled[0]).toBe(previous[0]);
+    expect(reconciled[1]).toBe(next[1]);
+    expect(reconciled[1].unreadCount).toBe(3);
+  });
+
+  it('detecta mudanca em campo opcional que apareceu (contagem de chaves diferente)', () => {
+    const previous = [buildConversation('a')];
+    const next = [buildConversation('a', { escalatedAt: '2026-08-22T10:00:00.000Z' })];
+
+    const reconciled = reconcileConversationIdentities(previous, next);
+
+    expect(reconciled[0]).toBe(next[0]);
+    expect(reconciled[0].escalatedAt).toBe('2026-08-22T10:00:00.000Z');
+  });
+
+  it('detecta mudanca de tag (unico campo nao escalar da interface)', () => {
+    const previous = [buildConversation('a', { tags: [{ id: 't1', name: 'VIP', color: 'green' }] })];
+    const next = [buildConversation('a', { tags: [{ id: 't1', name: 'VIP+', color: 'green' }] })];
+
+    expect(reconcileConversationIdentities(previous, next)[0]).toBe(next[0]);
+  });
+
+  it('reaproveita as referencias mesmo quando a ORDEM muda (conversa nova desloca a lista)', () => {
+    const previous = [buildConversation('a'), buildConversation('b')];
+    const next = [buildConversation('novo'), buildConversation('a'), buildConversation('b')];
+
+    const reconciled = reconcileConversationIdentities(previous, next);
+
+    // Array novo (a lista de fato mudou), mas os itens antigos preservam a
+    // identidade — so o item novo e um objeto novo.
+    expect(reconciled).not.toBe(previous);
+    expect(reconciled.map((c) => c.id)).toEqual(['novo', 'a', 'b']);
+    expect(reconciled[1]).toBe(previous[0]);
+    expect(reconciled[2]).toBe(previous[1]);
+  });
+
+  it('devolve o proprio `next` quando nao ha nada anterior (primeiro frame)', () => {
+    const next = [buildConversation('a')];
+
+    expect(reconcileConversationIdentities([], next)).toBe(next);
+  });
+
+  it('nao reaproveita nada quando a conversa sumiu da lista', () => {
+    const previous = [buildConversation('a'), buildConversation('b')];
+    const next = [buildConversation('b')];
+
+    const reconciled = reconcileConversationIdentities(previous, next);
+
+    expect(reconciled.map((c) => c.id)).toEqual(['b']);
+    expect(reconciled[0]).toBe(previous[1]);
   });
 });

@@ -49,6 +49,17 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     expect(screen.getByLabelText('Configurações e conta')).toBeInTheDocument();
   });
 
+  // Reorganização Contatos/Campanhas (2026-08-17, 2ª rodada — pedido do
+  // fundador): Campanhas volta a ter item próprio no rail, separado de
+  // Contatos.
+  it('mostra Campanhas para qualquer cargo, com link para a rota certa da sessão', () => {
+    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
+    render(<SessionRail sessionName="vendas" />);
+    const link = screen.getByLabelText('Campanhas');
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/sessions/vendas/campaigns');
+  });
+
   it('esconde Analytics e IA para cargo sem gestão', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
     render(<SessionRail sessionName="vendas" />);

@@ -4,6 +4,8 @@ import {
   CampaignRecipientSummary,
   CampaignStatus,
   CampaignMetrics,
+  CampaignSessionOverview,
+  CampaignMediaContentType,
 } from '../entities/Campaign';
 import { RecipientEligibility } from '../policies/determineSkipReason';
 import { CampaignSendOutcome } from '../policies/shouldTripCircuitBreaker';
@@ -13,13 +15,20 @@ export interface CreateCampaignData {
   tenantId: string;
   sessionName: string;
   name: string;
+  description?: string;
   messageTemplate: string;
   createdByUserId?: string;
 }
 
-/** Uma linha pronta para inserção em lote — já com o motivo de supressão decidido pelo Domain. */
+/**
+ * Uma linha pronta para inserção em lote — já com o motivo de supressão
+ * decidido pelo Domain. Sempre `contactId` OU `phoneE164` (nunca os dois,
+ * nunca nenhum) — ver docstring de `CampaignRecipient`.
+ */
 export interface CampaignRecipientDraft {
-  contactId: string;
+  contactId?: string;
+  phoneE164?: string;
+  name?: string;
   status: 'pending' | 'skipped';
   skipReason?: string;
 }
@@ -28,6 +37,8 @@ export interface CampaignRecipientDraft {
 export interface ListCampaignsOptions {
   limit: number;
   cursor?: string;
+  /** Aditivo (2026-08-18) — filtra pelo lado do SERVIDOR (a tela de Campanhas é sempre de UMA sessão). */
+  sessionName?: string;
 }
 
 export interface CampaignPage {
@@ -72,9 +83,17 @@ export interface CampaignRepository {
    * `RecipientEligibility`. Contatos que não existem/não pertencem ao tenant
    * simplesmente não aparecem no mapa devolvido (o chamador decide o que
    * fazer com um id desconhecido).
+   *
+   * `sessionName` (2026-08-20, correção pós-L5): "conversa ativa com humano"
+   * e "contatado recentemente" são checados só DENTRO desta sessão, não em
+   * qualquer WhatsApp do tenant — mesmo racional já usado por toda a
+   * navegação do produto desde a M6H-1 ("cada WhatsApp é uma empresa
+   * independente"). Alguém sendo atendido por um humano no WhatsApp A não
+   * deveria bloquear uma campanha no WhatsApp B — são relações distintas.
    */
   fetchEligibility(
     tenantId: string,
+    sessionName: string,
     contactIds: string[],
   ): Promise<Map<string, RecipientEligibility>>;
 
@@ -93,6 +112,17 @@ export interface CampaignRepository {
   /** Contagens por status/motivo — o "63 de 100, eis os motivos" da tela de detalhe. */
   summarizeRecipients(tenantId: string, campaignId: string): Promise<CampaignRecipientSummary>;
 
+  /**
+   * Lista destinatários, paginado — a tela de detalhe da campanha
+   * (`GET .../campaigns/:id/recipients`).
+   *
+   * Padronização de exibição de contato (2026-08-20): implementações devem
+   * resolver `CampaignRecipient.contact` (nome salvo + telefone + apelido do
+   * WhatsApp) EM LOTE para a página inteira — nunca uma consulta por linha —
+   * para todo destinatário com `contactId` definido. Sem isso, a UI não tem
+   * como identificar quem é um destinatário vinculado a um Contato salvo sem
+   * nome ainda (o bug original: mostrava o `contactId`, um UUID cru).
+   */
   listRecipients(
     tenantId: string,
     campaignId: string,
@@ -127,6 +157,22 @@ export interface CampaignRepository {
     data: { attemptedAt: Date; errorMessage: string },
   ): Promise<void>;
 
+  /**
+   * Reabrir campanha (2026-08-18, pedido do fundador — não havia botão para
+   * retomar uma campanha `completed`/`cancelled` com destinatários que
+   * falharam por um problema transitório, ex.: a sessão do WhatsApp
+   * reconectando bem na hora do envio). Devolve `FAILED` para `PENDING`
+   * (limpa `errorMessage`), tornando-os candidatos de novo a
+   * `listPendingRecipients`/`countPending`.
+   *
+   * NUNCA toca `SKIPPED` — quem foi suprimido na materialização (opt-out,
+   * conversa ativa com humano, contatado recentemente por outra campanha)
+   * continua suprimido; reabrir uma campanha não pode ser um jeito indireto
+   * de burlar essas regras de segurança. Devolve quantos destinatários foram
+   * resetados (para o Service decidir se há algo para agendar).
+   */
+  resetFailedRecipientsToPending(tenantId: string, campaignId: string): Promise<number>;
+
   /** As últimas `limit` tentativas (`SENT`/`FAILED`, ordenadas por `attemptedAt` DESC) desta campanha — alimenta `shouldTripCircuitBreaker`. */
   listRecentOutcomes(
     tenantId: string,
@@ -141,6 +187,19 @@ export interface CampaignRepository {
     status: CampaignStatus,
     pausedReason?: string,
   ): Promise<Campaign | undefined>;
+
+  /**
+   * Remove a campanha definitivamente — retrofit visual 2026-08-18 (pedido
+   * do fundador, menu "⋮" da lista). `CampaignRecipient.onDelete: Cascade`
+   * cuida de apagar os destinatários junto, sem precisar de uma segunda
+   * chamada. Devolve `true` se algo foi apagado, `false` se a campanha não
+   * existia/não pertencia ao tenant (mesmo padrão de `ContactRepository.deleteById`).
+   *
+   * `CampaignService.deleteCampaign` é quem recusa apagar uma campanha
+   * `running` (aqui o método só executa — a regra de negócio não mora no
+   * repositório).
+   */
+  deleteById(tenantId: string, campaignId: string): Promise<boolean>;
 
   // --- Fase L, Bloco L6 (IA reconhece origem de campanha + marca resposta) ---
 
@@ -177,4 +236,45 @@ export interface CampaignRepository {
    * port). `undefined` se a campanha não existir/não pertencer ao tenant.
    */
   getMetrics(tenantId: string, campaignId: string): Promise<CampaignMetrics | undefined>;
+
+  // --- Retrofit visual 2026-08-18 (réplica de imagem) ---
+
+  /**
+   * Visão geral de campanhas de uma sessão — cards do topo + donut "Status
+   * das campanhas". Ver docstring de `CampaignSessionOverview`.
+   */
+  getSessionOverview(tenantId: string, sessionName: string): Promise<CampaignSessionOverview>;
+
+  // --- Fase L, Bloco L8 (mídia na campanha) ---
+
+  /**
+   * Anexa (ou SUBSTITUI, se já havia uma) mídia à campanha — grava as quatro
+   * colunas de uma vez. A regra "só DRAFT pode ter mídia anexada/trocada" NÃO
+   * mora aqui (mesmo racional já usado em `updateCampaignStatus`/
+   * `deleteById`: regra de negócio fica no Service, o repositório só
+   * executa). `undefined` se a campanha não existir/não pertencer ao tenant.
+   */
+  attachMedia(
+    tenantId: string,
+    campaignId: string,
+    media: { contentType: CampaignMediaContentType; buffer: Buffer; mimeType: string; fileName?: string },
+  ): Promise<Campaign | undefined>;
+
+  /** Remove a mídia anexada (as quatro colunas voltam a `NULL`) — no-op silencioso se a campanha não tinha nenhuma. `undefined` se a campanha não existir/não pertencer ao tenant. */
+  removeMedia(tenantId: string, campaignId: string): Promise<Campaign | undefined>;
+
+  /**
+   * Devolve o BINÁRIO da mídia anexada — usado por dois consumidores: a rota
+   * de download (`GET .../campaigns/:id/media`, preview na Dashboard) e
+   * `CampaignSendJobProcessor` (busca o binário a cada envio; ver docstring
+   * do processor para o porquê disso ser aceitável neste volume). `undefined`
+   * se a campanha não existir/não pertencer ao tenant OU não tiver mídia.
+   */
+  getMediaContent(
+    tenantId: string,
+    campaignId: string,
+  ): Promise<
+    | { contentType: CampaignMediaContentType; buffer: Buffer; mimeType: string; fileName?: string }
+    | undefined
+  >;
 }

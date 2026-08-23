@@ -90,6 +90,7 @@ export default function ConversationInbox({
         (conversation) =>
           formatContactJid(conversation.contactJid).toLowerCase().includes(term) ||
           (conversation.contactName ?? '').toLowerCase().includes(term) ||
+          (conversation.savedContactName ?? '').toLowerCase().includes(term) ||
           (conversation.lastMessagePreview ?? '').toLowerCase().includes(term),
       );
     }
@@ -98,6 +99,14 @@ export default function ConversationInbox({
 
   const hasSelection = Boolean(selectedConversationId);
   const hasActiveFilter = filter !== 'all';
+  /**
+   * Busca e filtro `unread` são resolvidos no CLIENTE, sobre o já carregado
+   * (ver docstring do componente). Quando algum deles está ativo, o contador
+   * precisa mostrar os dois números ("12 de 50"); sem eles, mostrar
+   * "50 de 50" só produzia a falsa impressão de completude que a auditoria
+   * de 2026-08-22 encontrou.
+   */
+  const isNarrowedDown = hasActiveFilter || search.trim().length > 0;
 
   return (
     <div className="flex h-full">
@@ -112,10 +121,27 @@ export default function ConversationInbox({
         )}
       >
         <div className="flex flex-col gap-3 px-4 pb-2.5 pt-4">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline justify-between gap-2">
             <h1 className="text-[17px] font-semibold tracking-tight text-foreground">Conversas</h1>
-            <span className="tabular-nums text-xs text-muted-foreground">
-              {visibleConversations.length} de {conversations.length}
+            {/*
+              Contador honesto (auditoria 2026-08-22). Antes exibia
+              "{filtradas} de {carregadas}", o que produzia "50 de 50" numa
+              sessão com 58 conversas no servidor — o operador lia como "vi
+              tudo". O denominador aqui NUNCA foi o total do tenant, só o que
+              já veio pelo SSE + "Carregar mais"; o sufixo "+" diz que existe
+              mais além do carregado, e o `title` explica por extenso.
+            */}
+            <span
+              className="shrink-0 tabular-nums text-xs text-muted-foreground"
+              title={
+                hasMore
+                  ? `${conversations.length} conversas carregadas até agora; existem mais no servidor. Use "Carregar mais".`
+                  : `${conversations.length} conversas carregadas — não há mais nenhuma além destas.`
+              }
+            >
+              {isNarrowedDown
+                ? `${visibleConversations.length} de ${conversations.length}${hasMore ? '+' : ''}`
+                : `${conversations.length}${hasMore ? '+' : ''}`}
             </span>
           </div>
           <div className="relative">
@@ -147,38 +173,50 @@ export default function ConversationInbox({
               <Skeleton className="h-[60px] w-full rounded-lg" />
               <Skeleton className="h-[60px] w-full rounded-lg" />
             </div>
-          ) : visibleConversations.length === 0 ? (
-            <div className="p-4">
-              <EmptyState
-                icon={MessageCircle}
-                title={
-                  search
-                    ? 'Nenhum resultado'
-                    : hasActiveFilter
-                      ? 'Nenhuma conversa neste filtro'
-                      : 'Nenhuma conversa ainda'
-                }
-                description={
-                  search
-                    ? 'Tente buscar por outro nome, número ou trecho de mensagem.'
-                    : hasActiveFilter
-                      ? 'Troque o filtro acima para ver conversas de outro tipo.'
-                      : 'Elas aparecem aqui assim que um contato mandar mensagem neste WhatsApp.'
-                }
-              />
-            </div>
           ) : (
             <>
-              {visibleConversations.map((conversation) => (
-                <ConversationListItem
-                  key={conversation.id}
-                  conversation={conversation}
-                  active={conversation.id === selectedConversationId}
-                  aiEnabled={aiEnabled}
-                />
-              ))}
-              {!search && (
-                <div className="p-3">
+              {visibleConversations.length === 0 ? (
+                <div className="p-4">
+                  <EmptyState
+                    icon={MessageCircle}
+                    title={
+                      search
+                        ? 'Nenhum resultado'
+                        : hasActiveFilter
+                          ? 'Nenhuma conversa neste filtro'
+                          : 'Nenhuma conversa ainda'
+                    }
+                    description={
+                      search
+                        ? hasMore
+                          ? 'A busca cobre apenas as conversas já carregadas. Carregue mais abaixo e tente de novo.'
+                          : 'Tente buscar por outro nome, número ou trecho de mensagem.'
+                        : hasActiveFilter
+                          ? 'Troque o filtro acima para ver conversas de outro tipo.'
+                          : 'Elas aparecem aqui assim que um contato mandar mensagem neste WhatsApp.'
+                    }
+                  />
+                </div>
+              ) : (
+                visibleConversations.map((conversation) => (
+                  <ConversationListItem
+                    key={conversation.id}
+                    conversation={conversation}
+                    active={conversation.id === selectedConversationId}
+                    aiEnabled={aiEnabled}
+                  />
+                ))
+              )}
+              {/*
+                Auditoria 2026-08-22: este botão era escondido enquanto havia
+                busca (`{!search && ...}`). Como a busca é client-side, sobre o
+                que já foi carregado, procurar um contato que ainda não veio do
+                servidor levava a "Nenhum resultado" SEM nenhuma saída na tela.
+                Agora ele acompanha só `hasMore` — o próprio `LoadMoreButton`
+                já não renderiza nada quando não há mais páginas.
+              */}
+              {hasMore && (
+                <div className="flex p-3">
                   <LoadMoreButton onClick={loadMore} loading={loadingMore} hasMore={hasMore} />
                 </div>
               )}

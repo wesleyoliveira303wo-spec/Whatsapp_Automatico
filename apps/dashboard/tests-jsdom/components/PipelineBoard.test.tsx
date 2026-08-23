@@ -59,7 +59,14 @@ const mockedUsePipelineConversations = usePipelineConversations as jest.Mock;
  * puramente visuais no componente.
  */
 function findColumn(label: string): HTMLElement {
-  return screen.getByText(label).closest('.pipeline-column') as HTMLElement;
+  // Consulta pelo CABEÇALHO (`<h3>`), não por texto solto: desde que
+  // `PipelineCard` ganhou o `<select>` "Mover…" (alternativa por teclado ao
+  // arrasto, auditoria de acessibilidade 2026-08-22), cada rótulo de coluna
+  // também existe como `<option>` dentro de todo card — `getByText('Novo')`
+  // passou a encontrar dois elementos e falhava por ambiguidade.
+  return screen
+    .getByRole('heading', { name: label, level: 3 })
+    .closest('.pipeline-column') as HTMLElement;
 }
 
 /** Arrasta o único card do board para a coluna de rótulo `label`. */
@@ -125,6 +132,38 @@ describe('PipelineBoard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
     expect(screen.getByText('Nenhuma conversa nesta sessão ainda')).toBeInTheDocument();
   });
 
+  /**
+   * Teto de carga do board (auditoria 2026-08-22) — o hook para de paginar ao
+   * atingir `MAX_PIPELINE_PAGES` e sinaliza `truncated`. Esconder isso seria a
+   * mesma perda silenciosa de dado encontrada na lista de destinatários de
+   * campanha; o board precisa dizer que está mostrando um recorte.
+   */
+  it('avisa quando a sessão tem mais conversas do que cabe no board', () => {
+    mockedUsePipelineConversations.mockReturnValue({
+      conversations: [buildConversation('a', { stage: 'new' })],
+      loading: false,
+      errorMessage: null,
+      truncated: true,
+      refresh: jest.fn(),
+      applyLocalUpdate: jest.fn(),
+    });
+    render(<PipelineBoard sessionName="vendas" />);
+    expect(screen.getByRole('status')).toHaveTextContent(/conversas mais recentes desta sessão/i);
+  });
+
+  it('não mostra o aviso de recorte quando a sessão inteira coube no board', () => {
+    mockedUsePipelineConversations.mockReturnValue({
+      conversations: [buildConversation('a', { stage: 'new' })],
+      loading: false,
+      errorMessage: null,
+      truncated: false,
+      refresh: jest.fn(),
+      applyLocalUpdate: jest.fn(),
+    });
+    render(<PipelineBoard sessionName="vendas" />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('renderiza as 6 colunas (5 estágios do funil + Não cliente) com as conversas agrupadas', () => {
     mockedUsePipelineConversations.mockReturnValue({
       conversations: [
@@ -137,12 +176,19 @@ describe('PipelineBoard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
       applyLocalUpdate: jest.fn(),
     });
     render(<PipelineBoard sessionName="vendas" />);
-    expect(screen.getByText('Novo')).toBeInTheDocument();
-    expect(screen.getByText('Contatado')).toBeInTheDocument();
-    expect(screen.getByText('Negociando')).toBeInTheDocument();
-    expect(screen.getByText('Fechado')).toBeInTheDocument();
-    expect(screen.getByText('Perdido')).toBeInTheDocument();
-    expect(screen.getByText('Não cliente')).toBeInTheDocument();
+    // Pelo cabeçalho da coluna, não por texto solto — mesma desambiguação do
+    // helper `findColumn` acima (os rótulos também existem como `<option>`
+    // dentro do `<select>` "Mover…" de cada card).
+    for (const label of [
+      'Novo',
+      'Contatado',
+      'Negociando',
+      'Fechado',
+      'Perdido',
+      'Não cliente',
+    ]) {
+      expect(screen.getByRole('heading', { name: label, level: 3 })).toBeInTheDocument();
+    }
   });
 
   it('ao soltar um card numa coluna nova, chama updateConversationStage e aplica localmente', async () => {
@@ -304,6 +350,34 @@ describe('PipelineBoard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' }));
         expect(refresh).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('alternativa por teclado ao arrastar-e-soltar (achado de auditoria de acessibilidade, 2026-08-22)', () => {
+    it('mover pelo select do card aciona a MESMA gravação que o drag-and-drop', async () => {
+      const applyLocalUpdate = jest.fn();
+      const conversation = buildConversation('a', { stage: 'new' });
+      mockedUsePipelineConversations.mockReturnValue({
+        conversations: [conversation],
+        loading: false,
+        errorMessage: null,
+        refresh: jest.fn(),
+        applyLocalUpdate,
+      });
+      const updated = { ...conversation, stage: 'contacted', stageSetBy: 'human' };
+      (clientApi.updateConversationStage as jest.Mock).mockResolvedValue(updated);
+
+      render(<PipelineBoard sessionName="vendas" />);
+      const select = screen.getByRole('combobox', {
+        name: 'Mover conversa para outro estágio do Pipeline',
+      });
+      fireEvent.change(select, { target: { value: 'contacted' } });
+
+      await waitFor(() => {
+        expect(clientApi.updateConversationStage).toHaveBeenCalledWith('a', 'contacted');
+        expect(applyLocalUpdate).toHaveBeenCalledWith(updated);
+      });
+      expect(clientApi.setConversationExcludedFromPipeline).not.toHaveBeenCalled();
     });
   });
 });

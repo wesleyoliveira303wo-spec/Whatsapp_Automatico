@@ -131,7 +131,13 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
       const response = await request(app).get(`${basePath('tenant-1')}/stats`);
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({ total: 2, withConversation: 1, withoutConversation: 1 });
+      expect(response.body).toEqual({
+        total: 2,
+        withConversation: 1,
+        withoutConversation: 1,
+        optedOut: 0,
+        bySource: { whatsapp: 2, import: 0, manual: 0 },
+      });
     });
 
     it('não conta contatos de outro tenant (IDOR)', async () => {
@@ -316,6 +322,142 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
       const response = await request(app).post(`${basePath('tenant-1')}/contact-fantasma/opt-in`);
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('POST / (contact:manage) — criação manual (Reorganização Contatos/Campanhas, 2026-08-17)', () => {
+    it('administrator cria um contato novo (201, wasCreated: true)', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send({ phone: '65988887777', name: 'Maria' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.wasCreated).toBe(true);
+      expect(response.body.contact).toMatchObject({
+        phoneE164: '5565988887777',
+        name: 'Maria',
+        source: 'manual',
+      });
+    });
+
+    it('telefone já existente: devolve o contato como está (200, wasCreated: false)', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777', name: 'Já Existia' });
+
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send({ phone: '65988887777', name: 'Nome Novo Ignorado' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.wasCreated).toBe(false);
+      expect(response.body.contact.name).toBe('Já Existia');
+    });
+
+    it('telefone inválido: 400', async () => {
+      const { app } = buildApp(person('administrator'));
+      const response = await request(app).post(basePath('tenant-1')).send({ phone: '123' });
+      expect(response.status).toBe(400);
+    });
+
+    it('operator NÃO pode criar contato manualmente (403)', async () => {
+      const { app } = buildApp(person('operator'));
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send({ phone: '65988887777' });
+      expect(response.status).toBe(403);
+    });
+  });
+
+  describe('PATCH /:contactId (contact:manage)', () => {
+    it('edita o nome (200)', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777' });
+
+      const response = await request(app)
+        .patch(`${basePath('tenant-1')}/${id}`)
+        .send({ name: 'Novo Nome' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.contact.name).toBe('Novo Nome');
+    });
+
+    it('edita o telefone (normalizado)', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777' });
+
+      const response = await request(app)
+        .patch(`${basePath('tenant-1')}/${id}`)
+        .send({ phone: '(65) 8888-7776' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.contact.phoneE164).toBe('5565988887776');
+    });
+
+    it('telefone que já pertence a OUTRO contato: 409', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777' });
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887776' });
+
+      const response = await request(app)
+        .patch(`${basePath('tenant-1')}/${id}`)
+        .send({ phone: '65988887777' });
+
+      expect(response.status).toBe(409);
+    });
+
+    it('IDOR: contactId de outro tenant devolve 404, nunca edita', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'outro-tenant', phoneE164: '5565988887777' });
+
+      const response = await request(app)
+        .patch(`${basePath('tenant-1')}/${id}`)
+        .send({ name: 'Invasor' });
+
+      expect(response.status).toBe(404);
+    });
+
+    it('operator NÃO pode editar (403)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777' });
+
+      const response = await request(app)
+        .patch(`${basePath('tenant-1')}/${id}`)
+        .send({ name: 'Novo Nome' });
+
+      expect(response.status).toBe(403);
+    });
+  });
+
+  describe('DELETE /:contactId (contact:manage)', () => {
+    it('administrator remove o contato (204)', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${id}`);
+
+      expect(response.status).toBe(204);
+      expect(await contacts.findById('tenant-1', id)).toBeUndefined();
+    });
+
+    it('IDOR: contactId de outro tenant devolve 404, nunca remove', async () => {
+      const { app, contacts } = buildApp(person('administrator'));
+      const id = contacts.seed({ tenantId: 'outro-tenant', phoneE164: '5565988887777' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${id}`);
+
+      expect(response.status).toBe(404);
+      expect(await contacts.findById('outro-tenant', id)).toBeDefined();
+    });
+
+    it('operator NÃO pode remover (403)', async () => {
+      const { app, contacts } = buildApp(person('operator'));
+      const id = contacts.seed({ tenantId: 'tenant-1', phoneE164: '5565988887777' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${id}`);
+
+      expect(response.status).toBe(403);
     });
   });
 });

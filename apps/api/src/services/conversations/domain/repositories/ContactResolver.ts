@@ -26,4 +26,19 @@ export interface ContactResolver {
    * conversa segue funcionando sem vínculo.
    */
   resolveByWhatsAppJid(tenantId: string, contactJid: string): Promise<string | undefined>;
+
+  /**
+   * Grava (ou sobrescreve) o nome de um contato já identificado — botão
+   * "Salvar contato" do painel de contexto da conversa (retrofit visual
+   * 2026-08-18). DIFERENTE de `resolveByWhatsAppJid`: aqui é uma ação HUMANA
+   * explícita (o operador clicou e digitou um nome), então falhas devem
+   * PROPAGAR (o operador precisa ver o erro), não desaparecer em `debug`/
+   * `warn` como a resolução automática de identidade.
+   *
+   * Sobrescreve um nome já existente de propósito — diferente de
+   * `ContactRepository.setNameIfMissing` (usado pela importação em lote, que
+   * só preenche): uma correção manual feita pelo operador que está com a
+   * pessoa na tela é sempre a fonte mais confiável disponível.
+   */
+  saveName(tenantId: string, contactId: string, name: string): Promise<void>;
 }

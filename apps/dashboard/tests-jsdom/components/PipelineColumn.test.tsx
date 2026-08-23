@@ -52,6 +52,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onDropOnColumn={jest.fn()}
         dragOver={false}
         onDragEnterColumn={jest.fn()}
+        onMoveCard={jest.fn()}
       />,
     );
     expect(screen.getByText('Novo')).toBeInTheDocument();
@@ -69,6 +70,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onDropOnColumn={jest.fn()}
         dragOver={false}
         onDragEnterColumn={jest.fn()}
+        onMoveCard={jest.fn()}
       />,
     );
     expect(container.querySelector('.bg-warning')).toBeInTheDocument();
@@ -83,6 +85,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onDropOnColumn={jest.fn()}
         dragOver={false}
         onDragEnterColumn={jest.fn()}
+        onMoveCard={jest.fn()}
       />,
     );
     expect(container.querySelector('.bg-success')).toBeInTheDocument();
@@ -99,6 +102,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onDropOnColumn={jest.fn()}
         dragOver={false}
         onDragEnterColumn={jest.fn()}
+        onMoveCard={jest.fn()}
       />,
     );
     expect(screen.getByText('Nenhum card aqui')).toBeInTheDocument();
@@ -116,6 +120,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onDropOnColumn={jest.fn()}
         dragOver
         onDragEnterColumn={jest.fn()}
+        onMoveCard={jest.fn()}
       />,
     );
     expect(container.firstChild).toHaveClass('border-primary');
@@ -133,6 +138,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           onDropOnColumn={jest.fn()}
           dragOver={false}
           onDragEnterColumn={jest.fn()}
+          onMoveCard={jest.fn()}
         />,
       );
       expect(screen.getByText('Não cliente')).toBeInTheDocument();
@@ -149,6 +155,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           onDropOnColumn={jest.fn()}
           dragOver={false}
           onDragEnterColumn={jest.fn()}
+          onMoveCard={jest.fn()}
         />,
       );
       expect(container.firstChild).toHaveClass('border-dashed', 'bg-transparent');
@@ -167,6 +174,7 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           onDropOnColumn={onDropOnColumn}
           dragOver={false}
           onDragEnterColumn={jest.fn()}
+          onMoveCard={jest.fn()}
         />,
       );
 
@@ -174,5 +182,27 @@ describe('PipelineColumn (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
 
       expect(onDropOnColumn).toHaveBeenCalledWith('not_client');
     });
+  });
+
+  it('repassa o id da conversa certa ao mover um card pelo select (alternativa por teclado, auditoria 2026-08-22)', () => {
+    const onMoveCard = jest.fn();
+    render(
+      <PipelineColumn
+        column="new"
+        conversations={[buildConversation('a'), buildConversation('b')]}
+        draggedId={null}
+        onDragStart={jest.fn()}
+        onDragEnd={jest.fn()}
+        onDropOnColumn={jest.fn()}
+        dragOver={false}
+        onDragEnterColumn={jest.fn()}
+        onMoveCard={onMoveCard}
+      />,
+    );
+    const selects = screen.getAllByRole('combobox', {
+      name: 'Mover conversa para outro estágio do Pipeline',
+    });
+    fireEvent.change(selects[1], { target: { value: 'negotiating' } });
+    expect(onMoveCard).toHaveBeenCalledWith('b', 'negotiating');
   });
 });

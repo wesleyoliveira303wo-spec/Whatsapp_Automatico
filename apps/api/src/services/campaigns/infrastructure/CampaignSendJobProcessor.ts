@@ -9,7 +9,7 @@ const CIRCUIT_BREAKER_SAMPLE_SIZE = 5;
 
 /**
  * Consome a fila `campaign-send` e entrega, de fato, UMA mensagem de
- * campanha — Fase L, Bloco L4. Instanciado exclusivamente DENTRO do processo
+ * campanha — Fase L, Blocos L4/L5. Instanciado exclusivamente DENTRO do processo
  * `apps/api` (único dono dos sockets Baileys, ADR #54), nunca em
  * `worker.ts`.
  *
@@ -30,7 +30,10 @@ const CIRCUIT_BREAKER_SAMPLE_SIZE = 5;
  *    (`pausedReason: 'daily_limit_reached'`) e não envia agora — o
  *    destinatário permanece `PENDING`, pronto para ser reagendado quando a
  *    campanha for retomada (dia seguinte).
- * 4. **Envia** via `CampaignMessageSender` (porta para `services/whatsapp`).
+ * 4. **Envia** via `CampaignMessageSender` (porta para `services/whatsapp`) —
+ *    se `campaign.media` tiver metadados, busca o BINÁRIO primeiro (Fase L,
+ *    Bloco L8) e passa junto; sem mídia, envia só texto (comportamento
+ *    original, inalterado).
  * 5. **Grava o resultado**: sucesso → `SENT` + `sentAt`/`conversationId`;
  *    falha → `FAILED` + `errorMessage`. Ambos gravam `attemptedAt`.
  * 6. **Disjuntor de segurança**: reavalia as últimas tentativas desta
@@ -87,11 +90,23 @@ export class CampaignSendJobProcessor {
       return;
     }
 
+    // Fase L, Bloco L8 — busca o binário da mídia (se a campanha tiver uma)
+    // A CADA job: mais simples de auditar que cachear entre jobs, e o custo
+    // real é aceitável no volume deste produto (uma campanha de algumas
+    // centenas de destinatários lê algumas centenas de vezes um binário de
+    // no máximo `MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES`, ver `CampaignService`).
+    // `campaign.media` (metadados) já veio no `findById` acima; só busca o
+    // BINÁRIO se de fato houver anexo.
+    const media = campaign.media
+      ? await this.campaignRepository.getMediaContent(data.tenantId, data.campaignId)
+      : undefined;
+
     const result = await this.campaignMessageSender.send(
       data.tenantId,
       campaign.sessionName,
-      recipient.contactId,
+      { contactId: recipient.contactId, phoneE164: recipient.phoneE164, name: recipient.name },
       campaign.messageTemplate,
+      media,
     );
     const attemptedAt = new Date();
 

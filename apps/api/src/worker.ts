@@ -221,8 +221,24 @@ async function main(): Promise<void> {
   const workerConnection = new IORedis(REDIS_URL as string, { maxRetriesPerRequest: null });
   const outboundConnection = new IORedis(REDIS_URL as string, { maxRetriesPerRequest: null });
 
+  // CORREÇÃO 2026-08-18: esta é a Queue REAL usada pelas respostas da IA
+  // (`AiReplyJobProcessor`, abaixo) — a fila `whatsapp-outbound` também é
+  // construída em `services/conversations/compositionRoot.ts`, mas aquela
+  // instância serve só o processo `apps/api` (envio manual do operador, N2);
+  // as respostas da IA passam por AQUI, dentro de `worker.ts`. Sem
+  // `attempts` configurado, o BullMQ usa o default de 1 tentativa — uma
+  // reconexão momentânea do socket Baileys na hora do envio derrubava a
+  // mensagem PERMANENTEMENTE e em SILÊNCIO (a IA já tinha gerado a resposta
+  // com sucesso; só o envio falhava, sem nenhum sinal ao cliente/operador).
+  // Ver a mesma correção espelhada em `conversations/compositionRoot.ts`.
   const outboundQueue = new Queue<WhatsAppOutboundJobData>(WHATSAPP_OUTBOUND_QUEUE_NAME, {
     connection: outboundConnection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: true,
+      removeOnFail: 500,
+    },
   });
   const outboundMessageDispatcher = new BullMqOutboundMessageDispatcher(outboundQueue);
 

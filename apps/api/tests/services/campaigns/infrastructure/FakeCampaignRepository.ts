@@ -6,6 +6,8 @@ import {
   CampaignStatus,
   CampaignMetrics,
   CampaignLinkedConversationStage,
+  CampaignSessionOverview,
+  CampaignMediaContentType,
 } from '../../../../src/services/campaigns/domain/entities/Campaign';
 import { RecipientEligibility } from '../../../../src/services/campaigns/domain/policies/determineSkipReason';
 import { CampaignSendOutcome } from '../../../../src/services/campaigns/domain/policies/shouldTripCircuitBreaker';
@@ -35,6 +37,8 @@ export class FakeCampaignRepository implements CampaignRepository {
   private readonly campaigns = new Map<string, Campaign>();
   private readonly recipients = new Map<string, CampaignRecipient>();
   private readonly eligibility = new Map<string, RecipientEligibility>();
+  /** Fase L, Bloco L8 — o binário fica FORA de `campaigns` (mesmo racional do Prisma real: nunca no objeto `Campaign`). */
+  private readonly mediaBuffers = new Map<string, Buffer>();
   private nextCampaignId = 1;
   private nextRecipientId = 1;
 
@@ -45,6 +49,7 @@ export class FakeCampaignRepository implements CampaignRepository {
       tenantId: data.tenantId,
       sessionName: data.sessionName,
       name: data.name,
+      description: data.description,
       messageTemplate: data.messageTemplate,
       status: 'draft',
       intervalSeconds: 75,
@@ -64,7 +69,11 @@ export class FakeCampaignRepository implements CampaignRepository {
 
   async listByTenant(tenantId: string, options: ListCampaignsOptions): Promise<CampaignPage> {
     const all = [...this.campaigns.values()]
-      .filter((row) => row.tenantId === tenantId)
+      .filter(
+        (row) =>
+          row.tenantId === tenantId &&
+          (!options.sessionName || row.sessionName === options.sessionName),
+      )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const startIndex = options.cursor ? all.findIndex((row) => row.id === options.cursor) + 1 : 0;
     const page = all.slice(startIndex, startIndex + options.limit);
@@ -75,6 +84,7 @@ export class FakeCampaignRepository implements CampaignRepository {
 
   async fetchEligibility(
     _tenantId: string,
+    _sessionName: string,
     contactIds: string[],
   ): Promise<Map<string, RecipientEligibility>> {
     const result = new Map<string, RecipientEligibility>();
@@ -94,7 +104,11 @@ export class FakeCampaignRepository implements CampaignRepository {
   ): Promise<void> {
     for (const draft of recipients) {
       const existing = [...this.recipients.values()].find(
-        (row) => row.campaignId === campaignId && row.contactId === draft.contactId,
+        (row) =>
+          row.campaignId === campaignId &&
+          (draft.contactId
+            ? row.contactId === draft.contactId
+            : row.phoneE164 === draft.phoneE164),
       );
       if (existing) continue; // skipDuplicates
       const id = `recipient-${this.nextRecipientId++}`;
@@ -103,6 +117,8 @@ export class FakeCampaignRepository implements CampaignRepository {
         tenantId,
         campaignId,
         contactId: draft.contactId,
+        phoneE164: draft.phoneE164,
+        name: draft.name,
         status: draft.status,
         skipReason: draft.skipReason,
         createdAt: FIXED_NOW,
@@ -227,6 +243,17 @@ export class FakeCampaignRepository implements CampaignRepository {
     });
   }
 
+  async resetFailedRecipientsToPending(tenantId: string, campaignId: string): Promise<number> {
+    let count = 0;
+    for (const [id, row] of this.recipients.entries()) {
+      if (row.tenantId === tenantId && row.campaignId === campaignId && row.status === 'failed') {
+        this.recipients.set(id, { ...row, status: 'pending', errorMessage: undefined });
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   async listRecentOutcomes(
     tenantId: string,
     campaignId: string,
@@ -262,6 +289,16 @@ export class FakeCampaignRepository implements CampaignRepository {
     return updated;
   }
 
+  async deleteById(tenantId: string, campaignId: string): Promise<boolean> {
+    const row = this.campaigns.get(campaignId);
+    if (!row || row.tenantId !== tenantId) return false;
+    this.campaigns.delete(campaignId);
+    for (const [recipientId, recipient] of this.recipients.entries()) {
+      if (recipient.campaignId === campaignId) this.recipients.delete(recipientId);
+    }
+    return true;
+  }
+
   /** Helper de teste: pré-carrega uma campanha com campos customizados (ex.: `status`, `dailyLimit`), devolvendo o `id` gerado. */
   seedCampaign(data: Partial<Campaign> & { tenantId: string; sessionName: string }): string {
     const id = data.id ?? `campaign-${this.nextCampaignId++}`;
@@ -286,7 +323,7 @@ export class FakeCampaignRepository implements CampaignRepository {
 
   /** Helper de teste: pré-carrega um destinatário com campos customizados (ex.: `status: 'pending'` numa campanha já existente), devolvendo o `id` gerado. */
   seedRecipient(
-    data: Partial<CampaignRecipient> & { tenantId: string; campaignId: string; contactId: string },
+    data: Partial<CampaignRecipient> & { tenantId: string; campaignId: string },
   ): string {
     const id = data.id ?? `recipient-${this.nextRecipientId++}`;
     this.recipients.set(id, {
@@ -294,6 +331,8 @@ export class FakeCampaignRepository implements CampaignRepository {
       tenantId: data.tenantId,
       campaignId: data.campaignId,
       contactId: data.contactId,
+      phoneE164: data.phoneE164,
+      name: data.name,
       status: data.status ?? 'pending',
       skipReason: data.skipReason,
       errorMessage: data.errorMessage,
@@ -455,5 +494,130 @@ export class FakeCampaignRepository implements CampaignRepository {
       costPerConversionUsd,
       unknownAnswerCount,
     };
+  }
+
+  // --- Retrofit visual 2026-08-18 ---
+
+  async getSessionOverview(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<CampaignSessionOverview> {
+    const campaigns = [...this.campaigns.values()].filter(
+      (row) => row.tenantId === tenantId && row.sessionName === sessionName,
+    );
+    const campaignIds = new Set(campaigns.map((row) => row.id));
+    const recipients = [...this.recipients.values()].filter(
+      (row) => row.tenantId === tenantId && campaignIds.has(row.campaignId),
+    );
+
+    const statusCounts: Record<CampaignStatus, number> = {
+      draft: 0,
+      scheduled: 0,
+      running: 0,
+      paused: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+    for (const campaign of campaigns) {
+      statusCounts[campaign.status] += 1;
+    }
+
+    const totalSent = recipients.filter((r) => r.status === 'sent' || r.status === 'replied').length;
+    const totalReplied = recipients.filter((r) => r.status === 'replied').length;
+
+    const now = FIXED_NOW;
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const inRange = (date: Date | undefined, start: Date, end?: Date): boolean =>
+      Boolean(date && date >= start && (!end || date < end));
+
+    const campaignsThisMonth = campaigns.filter((c) => inRange(c.createdAt, currentMonthStart)).length;
+    const campaignsLastMonth = campaigns.filter((c) =>
+      inRange(c.createdAt, previousMonthStart, currentMonthStart),
+    ).length;
+    const sentThisMonth = recipients.filter(
+      (r) => (r.status === 'sent' || r.status === 'replied') && inRange(r.sentAt, currentMonthStart),
+    ).length;
+    const sentLastMonth = recipients.filter(
+      (r) =>
+        (r.status === 'sent' || r.status === 'replied') &&
+        inRange(r.sentAt, previousMonthStart, currentMonthStart),
+    ).length;
+    const repliedThisMonth = recipients.filter(
+      (r) => r.status === 'replied' && inRange(r.repliedAt, currentMonthStart),
+    ).length;
+    const repliedLastMonth = recipients.filter(
+      (r) => r.status === 'replied' && inRange(r.repliedAt, previousMonthStart, currentMonthStart),
+    ).length;
+
+    const deltaPct = (current: number, previous: number): number | undefined =>
+      previous === 0 ? undefined : Math.round(((current - previous) / previous) * 100);
+
+    const responseRateThisMonth = sentThisMonth > 0 ? repliedThisMonth / sentThisMonth : undefined;
+    const responseRateLastMonth = sentLastMonth > 0 ? repliedLastMonth / sentLastMonth : undefined;
+
+    return {
+      totalCampaigns: campaigns.length,
+      statusCounts,
+      totalSent,
+      totalReplied,
+      responseRate: totalSent > 0 ? totalReplied / totalSent : undefined,
+      trends: {
+        campaignsDeltaPct: deltaPct(campaignsThisMonth, campaignsLastMonth),
+        messagesSentDeltaPct: deltaPct(sentThisMonth, sentLastMonth),
+        repliesDeltaPct: deltaPct(repliedThisMonth, repliedLastMonth),
+        responseRateDeltaPct:
+          responseRateThisMonth !== undefined && responseRateLastMonth !== undefined
+            ? deltaPct(responseRateThisMonth, responseRateLastMonth)
+            : undefined,
+      },
+    };
+  }
+
+  // --- Fase L, Bloco L8 (mídia na campanha) ---
+
+  async attachMedia(
+    tenantId: string,
+    campaignId: string,
+    media: {
+      contentType: CampaignMediaContentType;
+      buffer: Buffer;
+      mimeType: string;
+      fileName?: string;
+    },
+  ): Promise<Campaign | undefined> {
+    const row = this.campaigns.get(campaignId);
+    if (!row || row.tenantId !== tenantId) return undefined;
+    this.mediaBuffers.set(campaignId, media.buffer);
+    const updated: Campaign = {
+      ...row,
+      media: { contentType: media.contentType, mimeType: media.mimeType, fileName: media.fileName },
+      updatedAt: FIXED_NOW,
+    };
+    this.campaigns.set(campaignId, updated);
+    return updated;
+  }
+
+  async removeMedia(tenantId: string, campaignId: string): Promise<Campaign | undefined> {
+    const row = this.campaigns.get(campaignId);
+    if (!row || row.tenantId !== tenantId) return undefined;
+    this.mediaBuffers.delete(campaignId);
+    const updated: Campaign = { ...row, media: undefined, updatedAt: FIXED_NOW };
+    this.campaigns.set(campaignId, updated);
+    return updated;
+  }
+
+  async getMediaContent(
+    tenantId: string,
+    campaignId: string,
+  ): Promise<
+    | { contentType: CampaignMediaContentType; buffer: Buffer; mimeType: string; fileName?: string }
+    | undefined
+  > {
+    const row = this.campaigns.get(campaignId);
+    if (!row || row.tenantId !== tenantId || !row.media) return undefined;
+    const buffer = this.mediaBuffers.get(campaignId);
+    if (!buffer) return undefined;
+    return { ...row.media, buffer };
   }
 }

@@ -95,6 +95,68 @@ describe('PromptBuilder', () => {
       ]);
     });
 
+    // CORREÇÃO 2026-08-21 — bug MEDIDO em produção: a descrição era fixa em
+    // "O cliente enviou", ignorando `direction`. Numa conversa de campanha com
+    // anexo, a mensagem de abertura é NOSSA e é uma imagem, então a IA lia o
+    // próprio turno dela (`role: 'assistant'`) afirmando que o CLIENTE tinha
+    // mandado uma imagem — e abria a conversa perguntando sobre uma imagem
+    // inexistente ("Não mandei imagem!", resposta real de um cliente).
+    describe('direção da mídia (correção 2026-08-21)', () => {
+      it('descreve mídia OUTBOUND na primeira pessoa, nunca como se o cliente tivesse enviado', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'outbound',
+            contentType: 'image',
+            content: 'Olá! me chamo Wesley Francis.',
+            media: { mimeType: 'image/jpeg', url: '', mediaKeyEncrypted: '' },
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages).toEqual([
+          {
+            role: 'assistant',
+            content: '[Você enviou um(a) imagem com a legenda: "Olá! me chamo Wesley Francis."]',
+          },
+        ]);
+        expect(request.messages[0].content).not.toContain('O cliente enviou');
+      });
+
+      it('descreve mídia OUTBOUND sem legenda também na primeira pessoa', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'outbound',
+            contentType: 'document',
+            content: '',
+            media: { mimeType: 'application/pdf', url: '', mediaKeyEncrypted: '' },
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe('[Você enviou um(a) documento, sem legenda]');
+      });
+
+      it('mídia INBOUND continua descrita como "O cliente enviou" (sem regressão)', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'inbound',
+            contentType: 'image',
+            content: '',
+            media: { mimeType: 'image/jpeg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe('[O cliente enviou um(a) imagem, sem legenda]');
+      });
+    });
+
     it.each([
       ['audio', 'áudio'],
       ['video', 'vídeo'],
@@ -312,6 +374,67 @@ describe('PromptBuilder', () => {
     expect(prompt.indexOf('Fora do expediente.')).toBeLessThan(
       prompt.indexOf('Nós procuramos o lead primeiro.'),
     );
+  });
+
+  // --- closingDirective (2026-08-20, 3ª rodada) ---
+  //
+  // A causa raiz medida: o Cérebro da IA é texto livre do cliente e pode ser
+  // MAIOR que o prompt base (10.395 vs 7.285 caracteres na instalação onde o
+  // problema apareceu), e costuma conter instruções de conduta. Tudo que o
+  // prompt base dizia sobre formato/postura ficava soterrado sob esse bloco.
+  describe('closingDirective — a última palavra sobre formato e condução', () => {
+    const WITH_CLOSING: PromptVersion = {
+      ...PROMPT_VERSION,
+      id: 'v-teste',
+      closingDirective: 'LEMBRETE FINAL: responda em 2 ou 3 mensagens curtas.',
+    };
+
+    it('vem DEPOIS de TODOS os blocos de contexto — inclusive do Cérebro da IA', () => {
+      const builder = new PromptBuilder();
+
+      const request = builder.build(
+        [],
+        WITH_CLOSING,
+        'Salão da Maria.',
+        undefined,
+        '# Aviso de Horário\nFora do expediente.',
+        '# Origem desta conversa\nNós procuramos o lead primeiro.',
+      );
+
+      const prompt = request.systemPrompt;
+      const closingIndex = prompt.indexOf('LEMBRETE FINAL');
+      expect(closingIndex).toBeGreaterThan(prompt.indexOf('Salão da Maria.'));
+      expect(closingIndex).toBeGreaterThan(prompt.indexOf('Fora do expediente.'));
+      expect(closingIndex).toBeGreaterThan(prompt.indexOf('Nós procuramos o lead primeiro.'));
+      // É literalmente o fim do prompt — é disso que vem o poder dela.
+      expect(prompt.trimEnd().endsWith('responda em 2 ou 3 mensagens curtas.')).toBe(true);
+    });
+
+    it('continua sendo a última mesmo quando o Cérebro da IA é enorme (o caso real)', () => {
+      const builder = new PromptBuilder();
+      const cerebroGigante = `Regra de ouro: não empurro o serviço.\n${'x'.repeat(10_000)}`;
+
+      const request = builder.build([], WITH_CLOSING, cerebroGigante);
+
+      const prompt = request.systemPrompt;
+      expect(prompt.indexOf('LEMBRETE FINAL')).toBeGreaterThan(
+        prompt.indexOf('Regra de ouro: não empurro o serviço.'),
+      );
+    });
+
+    it('versão sem closingDirective monta o prompt exatamente como antes (v1/v2/v3 intactos)', () => {
+      const builder = new PromptBuilder();
+
+      const semDiretiva = builder.build([], PROMPT_VERSION, 'Salão da Maria.');
+      const comDiretivaVazia = builder.build(
+        [],
+        { ...PROMPT_VERSION, closingDirective: '   ' },
+        'Salão da Maria.',
+      );
+
+      expect(comDiretivaVazia.systemPrompt).toBe(semDiretiva.systemPrompt);
+      expect(semDiretiva.systemPrompt).not.toContain('LEMBRETE FINAL');
+    });
   });
 
   it('L6: campaignContext ausente (undefined) não altera o systemPrompt', () => {

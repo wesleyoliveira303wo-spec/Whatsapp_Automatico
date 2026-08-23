@@ -6,6 +6,7 @@ import {
   CreateContactData,
   ListContactsOptions,
 } from '../../../../src/services/contacts/domain/repositories/ContactRepository';
+import { ContactPhoneAlreadyExistsError } from '../../../../src/services/contacts/domain/errors/ContactPhoneAlreadyExistsError';
 
 const FIXED_NOW = new Date('2026-08-15T00:00:00.000Z');
 
@@ -90,6 +91,13 @@ export class FakeContactRepository implements ContactRepository {
         (row) => row.name?.toLowerCase().includes(search) || row.phoneE164.includes(search),
       );
     }
+    if (options.status === 'with_conversation') {
+      all = all.filter((row) => this.conversations.has(row.id));
+    } else if (options.status === 'without_conversation') {
+      all = all.filter((row) => !this.conversations.has(row.id));
+    } else if (options.status === 'opted_out') {
+      all = all.filter((row) => row.optOutAt !== undefined);
+    }
 
     const startIndex = options.cursor ? all.findIndex((row) => row.id === options.cursor) + 1 : 0;
     const page = all.slice(startIndex, startIndex + options.limit);
@@ -113,10 +121,17 @@ export class FakeContactRepository implements ContactRepository {
   async countStats(tenantId: string): Promise<ContactStats> {
     const all = [...this.rows.values()].filter((row) => row.tenantId === tenantId);
     const withConversation = all.filter((row) => this.conversations.has(row.id)).length;
+    const optedOut = all.filter((row) => row.optOutAt !== undefined).length;
+    const bySource: Record<Contact['source'], number> = { whatsapp: 0, import: 0, manual: 0 };
+    for (const row of all) {
+      bySource[row.source] += 1;
+    }
     return {
       total: all.length,
       withConversation,
       withoutConversation: all.length - withConversation,
+      optedOut,
+      bySource,
     };
   }
 
@@ -126,6 +141,51 @@ export class FakeContactRepository implements ContactRepository {
     conversation: { id: string; sessionName: string; lastMessageAt?: Date },
   ): void {
     this.conversations.set(contactId, conversation);
+  }
+
+  async findManyByPhones(tenantId: string, phonesE164: string[]): Promise<Contact[]> {
+    return [...this.rows.values()].filter(
+      (row) => row.tenantId === tenantId && phonesE164.includes(row.phoneE164),
+    );
+  }
+
+  async update(
+    tenantId: string,
+    contactId: string,
+    data: { name?: string; phoneE164?: string },
+  ): Promise<Contact | undefined> {
+    const row = this.rows.get(contactId);
+    if (!row || row.tenantId !== tenantId) {
+      return undefined;
+    }
+    if (data.phoneE164) {
+      const collision = [...this.rows.values()].find(
+        (other) =>
+          other.id !== contactId &&
+          other.tenantId === tenantId &&
+          other.phoneE164 === data.phoneE164,
+      );
+      if (collision) {
+        throw new ContactPhoneAlreadyExistsError(data.phoneE164);
+      }
+    }
+    const updated: Contact = {
+      ...row,
+      name: data.name !== undefined ? data.name : row.name,
+      phoneE164: data.phoneE164 !== undefined ? data.phoneE164 : row.phoneE164,
+      updatedAt: FIXED_NOW,
+    };
+    this.rows.set(contactId, updated);
+    return updated;
+  }
+
+  async deleteById(tenantId: string, contactId: string): Promise<boolean> {
+    const row = this.rows.get(contactId);
+    if (!row || row.tenantId !== tenantId) {
+      return false;
+    }
+    this.rows.delete(contactId);
+    return true;
   }
 
   /** Helper de teste: pré-carrega um contato, devolvendo o `id` gerado. */

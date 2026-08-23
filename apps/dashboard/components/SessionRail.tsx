@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { MessageSquare, Brain, BarChart3, Kanban, Contact } from 'lucide-react';
+import { MessageSquare, Brain, BarChart3, Kanban, Contact, Send } from 'lucide-react';
 import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
@@ -91,6 +91,12 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
     // dia a dia (permissão `contact:read` já libera desde OPERATOR); só a
     // IMPORTAÇÃO em lote, dentro da própria tela, exige administrator/owner.
     { href: `${base}/contacts`, label: 'Contatos', icon: Contact },
+    // Reorganização Contatos/Campanhas (2026-08-17, 2ª rodada — pedido do
+    // fundador): Campanhas volta a ser destino PRÓPRIO do rail — "Contatos"
+    // é CRM puro, "Campanhas" é a ferramenta de disparo, domínios separados
+    // de propósito (ver docstring de `CampaignsSidePanel`... removido; a
+    // criação/gestão de campanhas mora nas páginas `/campaigns`).
+    { href: `${base}/campaigns`, label: 'Campanhas', icon: Send },
     { href: `${base}/pipeline`, label: 'Pipeline', icon: Kanban },
     { href: `${base}/analytics`, label: 'Analytics', icon: BarChart3, requiresManager: true },
     { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },

@@ -50,16 +50,14 @@ export default function ContactsPage({
         <title>{pageTitle(`Contatos · ${sessionName}`)}</title>
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
-        {/* Largura maior que as demais telas de sessão (840px): esta tem duas
-            colunas (lista + painel de campanhas) a partir de `xl`. */}
+        {/* Largura maior (1400px): duas colunas (lista + painel "Ações rápidas/Insights") a partir de `xl`. */}
         <div className="max-w-[1400px] px-6 pb-12 pt-5">
           <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Contatos</h1>
           <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
-            Base de contatos da empresa — criada automaticamente quando alguém escreve no WhatsApp,
-            ou importada de uma planilha.
+            Gerencie seus contatos e mantenha seu relacionamento sempre organizado.
           </p>
 
-          <ContactsPanel sessionName={sessionName} canManage={canManage} />
+          <ContactsPanel canManage={canManage} />
         </div>
       </div>
     </SessionLayout>

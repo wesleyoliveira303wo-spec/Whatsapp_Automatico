@@ -1,12 +1,14 @@
 import Link from 'next/link';
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import {
   formatConversationTimestamp,
-  formatContactDisplayName,
+  formatContactDisplayNameParts,
   formatConversationStatusLabel,
   formatConversationStageLabel,
 } from '@/lib/formatters';
 import ContactAvatar from './ContactAvatar';
+import DisplayNameParts from './DisplayNameParts';
 import TagChip from './TagChip';
 import type { ConversationSummary } from '@/lib/clientApi';
 
@@ -38,7 +40,7 @@ interface ConversationListItemProps {
  * que já vem no DTO — funciona mesmo antes/depois do filtro server-side
  * (M6H-2), já que cada linha sempre sabe a própria sessão.
  */
-export default function ConversationListItem({
+function ConversationListItem({
   conversation,
   active = false,
   aiEnabled = true,
@@ -70,13 +72,26 @@ export default function ConversationListItem({
         sessionName={conversation.sessionName}
         contactJid={conversation.contactJid}
         contactName={conversation.contactName}
+        savedContactName={conversation.savedContactName}
         waitingForHuman={waitingForHuman}
         className="h-[38px] w-[38px] text-[13px]"
+        // CORREÇÃO 2026-08-18: a lista tem uma linha por conversa — buscar
+        // foto ao vivo para cada uma martelava o socket do Baileys sem
+        // parar (achado real de produção, contribuiu para falhas de envio).
+        // Só iniciais aqui; a foto de verdade continua no cabeçalho da
+        // conversa aberta (`ConversationContextPanel`), onde é só 1 contato.
+        fetchLive={false}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <p className="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-tight text-foreground">
-            {formatContactDisplayName(conversation.contactJid, conversation.contactName)}
+            <DisplayNameParts
+              {...formatContactDisplayNameParts(
+                conversation.contactJid,
+                conversation.contactName,
+                conversation.savedContactName,
+              )}
+            />
           </p>
           <span
             className={cn(
@@ -167,3 +182,19 @@ export default function ConversationListItem({
     </Link>
   );
 }
+
+/**
+ * PERFORMANCE (auditoria 2026-08-22) — esta é a linha mais cara do produto em
+ * volume: a lista de Conversas vive de um poll SSE de ~2s
+ * (`SSE_POLL_INTERVAL_MS`), e cada frame produz um array novo, então TODA a
+ * lista era reconciliada 30x por minuto, indefinidamente, enquanto a aba
+ * estivesse aberta. Medido na sessão real de 58 conversas: 31,8 KB por frame
+ * e 58 linhas reconstruídas a cada 2s, cada uma montando `ContactAvatar`,
+ * até 3 `TagChip` e vários `formatters`.
+ *
+ * Comparador padrão é suficiente e correto: as três props são
+ * `conversation` (objeto novo só quando aquela conversa muda de fato —
+ * `mergeConversationPages` preserva a identidade dos itens inalterados) e
+ * dois booleanos.
+ */
+export default memo(ConversationListItem);

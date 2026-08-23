@@ -45,6 +45,19 @@ export interface Conversation {
    * vínculo nunca pode ser pré-condição para receber uma mensagem.
    */
   contactId?: string;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — nome que um humano
+   * salvou para esta pessoa na aba Contatos (`WhatsAppContact.name`),
+   * resolvido via `contactId` numa projeção só-leitura (mesmo padrão de
+   * `tags` nesta entidade: `services/conversations` LÊ a tabela de contatos
+   * para exibir, nunca ESCREVE nela — quem grava é `services/contacts`).
+   * `undefined` sempre que `contactId` é ausente, OU quando o contato existe
+   * mas ainda não tem nome salvo (a maioria — criados automaticamente pelo
+   * WhatsApp). É este campo, e só ele, que autoriza a UI a mostrar UM nome
+   * sozinho em vez de "telefone + apelido do WhatsApp" — ver
+   * `formatContactDisplayName` (`apps/dashboard`).
+   */
+  savedContactName?: string;
   status: 'bot' | 'human';
   /**
    * Dono atual do atendimento (Milestone 5, Bloco M5D — ownership, D57): o

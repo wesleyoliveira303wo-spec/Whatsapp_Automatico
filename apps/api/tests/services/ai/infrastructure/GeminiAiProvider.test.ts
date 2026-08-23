@@ -165,6 +165,34 @@ describe('GeminiAiProvider', () => {
     expect(result.content).toBe('Parte um. Parte dois.');
   });
 
+  it('correção 2026-08-18: NUNCA inclui um part marcado thought:true (raciocínio interno) na resposta ao cliente', async () => {
+    const fetchFn = fakeFetchOk({
+      candidates: [
+        {
+          content: {
+            parts: [
+              { text: 'but they already sent text, it might look stupid.', thought: true },
+              { text: 'Fala! Bom dia! Tudo bem por aí? Como posso te ajudar hoje?' },
+            ],
+          },
+        },
+      ],
+      usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+      modelVersion: 'gemini-3.5-flash',
+    });
+    const provider = new GeminiAiProvider(
+      'k',
+      'gemini-3.5-flash',
+      undefined,
+      fetchFn as unknown as typeof fetch,
+    );
+
+    const result = await provider.generateReply({ systemPrompt: 's', messages: [] });
+
+    expect(result.content).toBe('Fala! Bom dia! Tudo bem por aí? Como posso te ajudar hoje?');
+    expect(result.content).not.toMatch(/thought|might look stupid/i);
+  });
+
   it('usa o model do construtor como fallback quando a resposta não traz modelVersion', async () => {
     const fetchFn = fakeFetchOk({
       candidates: [{ content: { parts: [{ text: 'oi' }] } }],

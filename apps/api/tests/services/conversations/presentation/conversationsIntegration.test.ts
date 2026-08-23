@@ -9,7 +9,7 @@ import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLo
 import { FakeApiKeyHasher } from '../../../shared/security/FakeApiKeyHasher';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../../auth/testDoubles';
-import { FakeConversationRepository, FakeMessageRepository } from '../testDoubles';
+import { FakeConversationRepository, FakeMessageRepository, FakeContactResolver } from '../testDoubles';
 import { FakeMediaSender } from '../../whatsapp/infrastructure/FakeMediaSender';
 import { Conversation } from '../../../../src/services/conversations/domain/entities/Conversation';
 import { UserRole } from '../../../../src/services/auth/domain/entities/User';
@@ -29,6 +29,7 @@ function buildApp(): {
   conversationRepository: FakeConversationRepository;
   access: Hs256AccessTokenService;
   mediaSender: FakeMediaSender;
+  contactResolver: FakeContactResolver;
 } {
   const hasher = new FakeApiKeyHasher();
   const tenantRepository = new FakeTenantRepository();
@@ -46,6 +47,7 @@ function buildApp(): {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
   const mediaSender = new FakeMediaSender();
+  const contactResolver = new FakeContactResolver();
   const conversationsService = new ConversationsService(
     conversationRepository,
     messageRepository,
@@ -55,6 +57,8 @@ function buildApp(): {
     undefined,
     undefined,
     mediaSender,
+    undefined,
+    contactResolver,
   );
   const access = new Hs256AccessTokenService(SECRET, 900);
   const authenticate = createAuthenticate(access, hasher, tenantRepository, new NoopLogger());
@@ -70,7 +74,7 @@ function buildApp(): {
     '/api/tenants/:tenantId/conversations',
     createConversationsErrorHandler(new NoopLogger()),
   );
-  return { app, conversationRepository, access, mediaSender };
+  return { app, conversationRepository, access, mediaSender, contactResolver };
 }
 
 function buildConversation(overrides: Partial<Conversation> = {}): Conversation {
@@ -426,6 +430,112 @@ describe('Integração authenticate + RBAC + conversationsRouter (M3 Bloco 5 / M
 
     expect(response.status).toBe(200);
     expect(response.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c-dentro']);
+  });
+
+  // --- POST .../save-contact (retrofit visual 2026-08-18, botão "Salvar contato") ---
+
+  it('chave da empresa (plano máquina) salva o contato e devolve a conversa com contactId', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/save-contact')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ name: 'Maria Costa' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ contactId: 'contact-99' });
+  });
+
+  it('Operator (crachá) também pode salvar contato (message:send, sem exigir ownership)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(
+      buildConversation({ contactId: 'contact-99', status: 'human', assignedToUserId: 'op-2' }),
+    );
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/save-contact')
+      .set('authorization', bearer(access, 'op-1', 'operator'))
+      .send({ name: 'Maria Costa' });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('ReadOnly NÃO pode salvar contato -> 403 forbidden (RBAC)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/save-contact')
+      .set('authorization', bearer(access, 'ro-1', 'read_only'))
+      .send({ name: 'Maria Costa' });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'forbidden' });
+  });
+
+  it('nome vazio ou maior que 200 caracteres -> 400 invalid_params', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/save-contact')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ name: 'x'.repeat(201) });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: 'invalid_params' });
+  });
+
+  it('salva sem name (opcional) -> 200', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/save-contact')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({});
+
+    expect(response.status).toBe(200);
+  });
+
+  it('conversa @lid sem contactId e sem telefone a derivar -> 422 conversation_contact_unavailable', async () => {
+    const { app, conversationRepository, contactResolver } = buildApp();
+    contactResolver.setUnresolvable();
+    conversationRepository.seed(
+      buildConversation({ contactId: undefined, contactJid: '225236742053984@lid' }),
+    );
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/save-contact')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ name: 'Maria' });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toMatchObject({ error: 'conversation_contact_unavailable' });
+  });
+
+  it('salvar contato de conversa inexistente -> 404 conversation_not_found', async () => {
+    const { app } = buildApp();
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-inexistente/save-contact')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ name: 'Maria' });
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: 'conversation_not_found' });
+  });
+
+  it('[IDOR] chave do tenant-1 não salva contato de conversa do tenant-2 (403)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ tenantId: 'tenant-2' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-2/conversations/conversation-1/save-contact')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ name: 'Maria' });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
   });
 
   // --- GET .../conversations/:conversationId (Fase 1, Bloco F1.10) ---

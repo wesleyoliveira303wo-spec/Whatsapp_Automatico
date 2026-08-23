@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import {
   formatPipelineColumnLabel,
@@ -17,6 +18,8 @@ interface PipelineColumnProps {
   onDropOnColumn: (column: PipelineColumnKey) => void;
   dragOver: boolean;
   onDragEnterColumn: (column: PipelineColumnKey) => void;
+  /** Alternativa por teclado/clique ao arrastar-e-soltar (achado de auditoria de acessibilidade 2026-08-22) — repassada de `PipelineBoard` até o `<select>` de cada `PipelineCard`. */
+  onMoveCard: (conversationId: string, column: PipelineColumnKey) => void;
 }
 
 /**
@@ -41,7 +44,7 @@ interface PipelineColumnProps {
  * Classe `pipeline-column` (não-Tailwind) é um hook estável para os testes
  * localizarem a coluna independente do valor exato de largura/raio.
  */
-export default function PipelineColumn({
+function PipelineColumn({
   column,
   conversations,
   draggedId,
@@ -50,6 +53,7 @@ export default function PipelineColumn({
   onDropOnColumn,
   dragOver,
   onDragEnterColumn,
+  onMoveCard,
 }: PipelineColumnProps): JSX.Element {
   const isNotClientColumn = column === NOT_CLIENT_COLUMN;
 
@@ -98,6 +102,7 @@ export default function PipelineColumn({
               onDragStart(conversation.id);
             }}
             onDragEnd={onDragEnd}
+            onMoveToColumn={(targetColumn) => onMoveCard(conversation.id, targetColumn)}
           />
         ))}
         {conversations.length === 0 && (
@@ -107,3 +112,12 @@ export default function PipelineColumn({
     </div>
   );
 }
+
+/**
+ * PERFORMANCE (auditoria 2026-08-22) — comparador padrão basta aqui: desde
+ * esta rodada `PipelineBoard` entrega `conversations` por `useMemo` e todos
+ * os handlers por `useCallback` estáveis, então as únicas props que mudam de
+ * verdade são `draggedId` e `dragOver` — exatamente as duas que DEVEM
+ * provocar re-render (feedback visual do arrasto).
+ */
+export default memo(PipelineColumn);

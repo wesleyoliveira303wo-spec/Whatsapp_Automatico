@@ -90,7 +90,22 @@ export default function MessageTimeline({
             )}
             <MessageBubble
               message={message}
-              aiInteraction={interactionByMessageId.get(message.id)}
+              // CORREÇÃO 2026-08-18: `AiInteraction.messageId` é um campo de
+              // DUPLO PROPÓSITO no backend — grava a mensagem INBOUND que
+              // originou a geração (Fase 1, F1.4) até o envio outbound ter
+              // sucesso, quando `linkMessage()` o REESCREVE para apontar à
+              // Message outbound enviada (Bloco 3b/4). Enquanto o envio não
+              // é confirmado (ex.: falha de conexão do WhatsApp), o campo
+              // ainda aponta para a mensagem INBOUND — sem esta guarda, o
+              // selo "Gerada por IA" aparecia por engano numa bolha do
+              // PRÓPRIO cliente (achado real: um áudio recebido do cliente
+              // marcado como "gerado pela IA"). `Gerada por IA` só faz
+              // sentido em mensagens outbound; nunca inferir o contrário.
+              aiInteraction={
+                message.direction === 'outbound'
+                  ? interactionByMessageId.get(message.id)
+                  : undefined
+              }
             />
           </Fragment>
         );

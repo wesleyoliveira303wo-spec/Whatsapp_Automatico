@@ -17,6 +17,8 @@ import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { ConversationNotFoundError } from '../domain/errors/ConversationNotFoundError';
 import { ConversationOwnershipError } from '../domain/errors/ConversationOwnershipError';
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
+import { ConversationContactUnavailableError } from '../domain/errors/ConversationContactUnavailableError';
+import { ContactResolver } from '../domain/repositories/ContactResolver';
 import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
 import { AgentMediaTooLargeError } from '../domain/errors/AgentMediaTooLargeError';
 import { AgentMediaTypeMismatchError } from '../domain/errors/AgentMediaTypeMismatchError';
@@ -125,6 +127,12 @@ export class ConversationsService {
     // construtor comum, com uma instância própria por padrão (cada teste que
     // não se importa com o cache não precisa fornecer um).
     private readonly agentMediaCache: AgentMediaCache = new AgentMediaCache(),
+    // Botão "Salvar contato" do painel de contexto (retrofit visual
+    // 2026-08-18). OPCIONAL pelo mesmo motivo de `outboundMessageDispatcher`:
+    // testes que não exercitam `saveContactFromConversation` não precisam
+    // fornecer um. Em produção é sempre injetado (a mesma instância já usada
+    // por `MessageIngestionService`, ver `compositionRoot.ts`).
+    private readonly contactResolver?: ContactResolver,
   ) {}
 
   /**
@@ -638,6 +646,64 @@ export class ConversationsService {
       meta,
     );
     return updated;
+  }
+
+  /**
+   * `POST .../conversations/:id/save-contact` — botão "Salvar contato" do
+   * painel de contexto (retrofit visual 2026-08-18): o operador, olhando uma
+   * conversa, salva a pessoa na base de Contatos (Fase L) sem sair da tela.
+   * Mesma régua de permissão de `updateStage`/`exclude-from-pipeline`
+   * (`message:send`, ação operacional do dia a dia dentro de uma conversa já
+   * sendo atendida — não `contact:manage`, reservado a ações que afetam a
+   * base do tenant inteiro de uma vez, como importação em lote).
+   *
+   * Dois casos:
+   * - a conversa já tem `contactId` (a maioria — todo `contactJid` com
+   *   telefone real já é auto-vinculado na ingestão, ver `ContactResolver`):
+   *   este método só GRAVA o nome, se informado.
+   * - a conversa ainda não tem `contactId` (raro — falha pontual da
+   *   resolução automática): tenta resolver agora e LIGA a conversa a ele
+   *   (`linkContact`, idempotente). Se não houver telefone a derivar (`@lid`,
+   *   grupo, canal), lança `ConversationContactUnavailableError` — não há
+   *   contato nenhum para salvar.
+   *
+   * `name` vazio/ausente é válido (o contato é criado/vinculado sem nome,
+   * mesmo comportamento do resto do produto para um contato "cru").
+   */
+  async saveContactFromConversation(
+    tenantId: string,
+    conversationId: string,
+    name: string | undefined,
+    actor: ConversationActor = { canResumeAny: true },
+    meta: ConversationActionMeta = {},
+  ): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    if (!this.contactResolver) {
+      throw new Error('ContactResolver não configurado para salvar contato a partir da conversa.');
+    }
+
+    const existing = await this.conversationRepository.findById(conversationId);
+    if (!existing || existing.tenantId !== tenantId) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+
+    let contactId = existing.contactId;
+    if (!contactId) {
+      contactId = await this.contactResolver.resolveByWhatsAppJid(tenantId, existing.contactJid);
+      if (!contactId) {
+        throw new ConversationContactUnavailableError(conversationId);
+      }
+      await this.conversationRepository.linkContact(tenantId, conversationId, contactId);
+    }
+
+    if (name) {
+      await this.contactResolver.saveName(tenantId, contactId, name);
+    }
+
+    await this.audit(tenantId, actor.userId, 'conversation.contact_saved', conversationId, meta);
+
+    const updated = await this.conversationRepository.findById(conversationId);
+    return updated ?? { ...existing, contactId };
   }
 
   private async assertTenantExists(tenantId: string): Promise<void> {

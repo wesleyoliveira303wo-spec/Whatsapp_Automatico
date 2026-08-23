@@ -4,11 +4,13 @@ import ConversationStatusBadge from './ConversationStatusBadge';
 import AiInteractionPanel from './AiInteractionPanel';
 import ConversationTagPicker from './ConversationTagPicker';
 import ConversationSummarySection from './ConversationSummarySection';
+import SaveContactButton from './SaveContactButton';
+import DisplayNameParts from './DisplayNameParts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useConversationDetail } from '@/hooks/useConversationDetail';
 import { useAiInteractions } from '@/hooks/useAiInteractions';
 import {
-  formatContactDisplayName,
+  formatContactDisplayNameParts,
   formatPhoneNumber,
   formatClientSince,
   formatConversationStageLabel,
@@ -70,13 +72,21 @@ export default function ConversationContextPanel({
           sessionName={sessionName}
           contactJid={conversation.contactJid}
           contactName={conversation.contactName}
+          savedContactName={conversation.savedContactName}
           className="mb-3 h-[68px] w-[68px] text-[21px]"
         />
         <p className="text-[15.5px] font-semibold tracking-tight text-foreground">
-          {formatContactDisplayName(conversation.contactJid, conversation.contactName)}
+          <DisplayNameParts
+            {...formatContactDisplayNameParts(
+              conversation.contactJid,
+              conversation.contactName,
+              conversation.savedContactName,
+            )}
+          />
         </p>
-        <p className="mt-[3px] text-[12.5px] tabular-nums text-muted-foreground">
+        <p className="mt-[3px] flex items-center justify-center gap-1.5 text-[12.5px] tabular-nums text-muted-foreground">
           {formatPhoneNumber(conversation.contactJid)}
+          <SaveContactButton conversation={conversation} onUpdated={applyUpdate} />
         </p>
 
         <div className="mt-[13px] flex flex-wrap items-center justify-center gap-[5px]">

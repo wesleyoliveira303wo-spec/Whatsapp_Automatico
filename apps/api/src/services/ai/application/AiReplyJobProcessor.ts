@@ -60,6 +60,21 @@ const DEFAULT_HISTORY_LIMIT = 20;
 const DEFAULT_PARAGRAPH_DELAY_MS = 900;
 
 /**
+ * CORREÇÃO 2026-08-18 (achado real: cota diária grátis do Gemini esgotada —
+ * 20 requisições/dia — deixou duas conversas travadas em falha por HORAS, e
+ * o cliente nunca recebeu nem o aviso de encaminhamento, porque
+ * `escalatedAt` já estava preenchido de uma escalada de 11 DIAS atrás nunca
+ * assumida por ninguém). "Não repetir o aviso" fazia sentido para não
+ * mandar a mesma desculpa 3-4 vezes seguidas na MESMA rajada de falhas
+ * (ADR #79) — mas, sem expirar, também significava nunca mais avisar o
+ * cliente enquanto a conversa ficasse escalada, por mais tempo que passasse.
+ * Depois desta janela, uma nova falha volta a avisar o cliente (e também
+ * "reabre a contagem": a próxima falha só volta a suprimir depois de
+ * esperar a janela de novo).
+ */
+const DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS = 6 * 60 * 60 * 1000;
+
+/**
  * Orquestra o processamento de UM job da fila `ai-reply` — Milestone 3,
  * Bloco 4. Deliberadamente extraído de `worker.ts` (que só instancia esta
  * classe com dependências reais e a liga a um `bullmq.Worker`): mantém a
@@ -147,6 +162,9 @@ export class AiReplyJobProcessor {
     private readonly humanHandoffMessage: string = DEFAULT_HUMAN_HANDOFF_MESSAGE,
     private readonly paragraphDelayMs: number = DEFAULT_PARAGRAPH_DELAY_MS,
     private readonly sleepFn: (ms: number) => Promise<void> = defaultSleep,
+    // CORREÇÃO 2026-08-18 — ver docstring de `DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS`.
+    private readonly handoffNoticeRepeatAfterMs: number = DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS,
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   async process(data: AiReplyJobData): Promise<void> {
@@ -259,11 +277,15 @@ export class AiReplyJobProcessor {
       // contador/som da Dashboard vivo (requisito da ADR #79: "escalada
       // repetida dispara um novo alerta"). O que foi silenciado é só a
       // repetição VOLTADA AO CLIENTE.
-      const clienteJaAvisado = conversation.escalatedAt != null;
+      const msSinceUltimoAviso = conversation.escalatedAt
+        ? this.now().getTime() - conversation.escalatedAt.getTime()
+        : null;
+      const clienteJaAvisado =
+        msSinceUltimoAviso !== null && msSinceUltimoAviso < this.handoffNoticeRepeatAfterMs;
       if (clienteJaAvisado) {
         this.logger.info(
-          'Aviso de encaminhamento suprimido: cliente já foi avisado nesta escalada',
-          { ...data, escalatedAt: conversation.escalatedAt },
+          'Aviso de encaminhamento suprimido: cliente já foi avisado recentemente nesta escalada',
+          { ...data, escalatedAt: conversation.escalatedAt, msSinceUltimoAviso },
         );
       } else {
         await this.sendHumanHandoffNotice(data.tenantId, data.conversationId);
@@ -292,7 +314,20 @@ export class AiReplyJobProcessor {
         content: paragraphs[index],
         ...(index === 0
           ? { aiInteractionId: result.aiInteractionId }
-          : { idempotencyKey: `${result.aiInteractionId}:${index}` }),
+          : // CORREÇÃO 2026-08-21 (bug MEDIDO em produção, causa do "balão
+            // único"): o separador aqui era `:`, e o BullMQ REJEITA um
+            // `jobId` customizado que contenha `:` — a menos que ele tenha
+            // exatamente 3 partes (`job.js`, `validateOptions`: "Custom Id
+            // cannot contain :", uma compatibilidade legada com repeatable
+            // jobs). `<uuid>:1` tem 2 partes, então `queue.add()` LANÇAVA no
+            // balão 2; a exceção derrubava o job `ai-reply` inteiro e o balão
+            // 3 nunca era tentado. Resultado visível: o cliente sempre
+            // recebia SÓ o primeiro parágrafo, em silêncio (o balão 1 já
+            // tinha sido enviado e gravado, então nada parecia quebrado).
+            // Por isso o `jobId` do `ai-reply` (`tenant:conversa:mensagem`)
+            // funciona: 3 partes, passa na regra por coincidência.
+            // `-p` NUNCA pode virar `:` de novo — há teste travando isso.
+            { idempotencyKey: `${result.aiInteractionId}-p${index}` }),
       });
     }
 

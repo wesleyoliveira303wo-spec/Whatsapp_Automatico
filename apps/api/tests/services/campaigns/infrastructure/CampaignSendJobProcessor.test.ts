@@ -35,8 +35,101 @@ describe('CampaignSendJobProcessor (Fase L, Bloco L4)', () => {
     expect(recipient?.conversationId).toBe('conversation-contact-1');
     expect(recipient?.attemptedAt).toBeInstanceOf(Date);
     expect(sender.calls).toEqual([
-      { tenantId: 'tenant-1', sessionName: 'sessao', contactId: 'contact-1', content: 'Olá!' },
+      {
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        recipient: { contactId: 'contact-1', phoneE164: undefined, name: undefined },
+        content: 'Olá!',
+      },
     ]);
+  });
+
+  // Fase L, Bloco L5 — destinatário "solto" (planilha/lista manual, sem
+  // Contato correspondente): `phoneE164`/`name` precisam chegar ao sender,
+  // não só `contactId`.
+  it('destinatário solto (sem contactId): repassa phoneE164/name ao sender', async () => {
+    const { processor, campaigns, sender } = buildSut();
+    const campaignId = campaigns.seedCampaign({
+      tenantId: 'tenant-1',
+      sessionName: 'sessao',
+      status: 'running',
+    });
+    const recipientId = campaigns.seedRecipient({
+      tenantId: 'tenant-1',
+      campaignId,
+      phoneE164: '+5511988887777',
+      name: 'Fulano',
+    });
+
+    await processor.process({ tenantId: 'tenant-1', campaignId, recipientId });
+
+    expect(sender.calls).toEqual([
+      {
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        recipient: { contactId: undefined, phoneE164: '+5511988887777', name: 'Fulano' },
+        content: 'Olá!',
+      },
+    ]);
+    const recipient = await campaigns.findRecipientById('tenant-1', recipientId);
+    expect(recipient?.status).toBe('sent');
+  });
+
+  // Fase L, Bloco L8 — campanha com mídia anexada: o processor busca o
+  // BINÁRIO (via `getMediaContent`) e repassa ao sender junto do texto.
+  it('campanha com mídia anexada: busca o binário e repassa ao sender', async () => {
+    const { processor, campaigns, sender } = buildSut();
+    const campaignId = campaigns.seedCampaign({
+      tenantId: 'tenant-1',
+      sessionName: 'sessao',
+      status: 'running',
+    });
+    await campaigns.attachMedia('tenant-1', campaignId, {
+      contentType: 'image',
+      buffer: Buffer.from('bytes-da-imagem'),
+      mimeType: 'image/jpeg',
+      fileName: 'promo.jpg',
+    });
+    const recipientId = campaigns.seedRecipient({
+      tenantId: 'tenant-1',
+      campaignId,
+      contactId: 'contact-1',
+    });
+
+    await processor.process({ tenantId: 'tenant-1', campaignId, recipientId });
+
+    expect(sender.calls).toEqual([
+      {
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        recipient: { contactId: 'contact-1', phoneE164: undefined, name: undefined },
+        content: 'Olá!',
+        media: {
+          contentType: 'image',
+          buffer: Buffer.from('bytes-da-imagem'),
+          mimeType: 'image/jpeg',
+          fileName: 'promo.jpg',
+        },
+      },
+    ]);
+  });
+
+  it('campanha SEM mídia: envia só texto, sender recebe media=undefined (comportamento original)', async () => {
+    const { processor, campaigns, sender } = buildSut();
+    const campaignId = campaigns.seedCampaign({
+      tenantId: 'tenant-1',
+      sessionName: 'sessao',
+      status: 'running',
+    });
+    const recipientId = campaigns.seedRecipient({
+      tenantId: 'tenant-1',
+      campaignId,
+      contactId: 'contact-1',
+    });
+
+    await processor.process({ tenantId: 'tenant-1', campaignId, recipientId });
+
+    expect(sender.calls[0].media).toBeUndefined();
   });
 
   it('campanha não RUNNING: não envia nada, destinatário continua pending', async () => {

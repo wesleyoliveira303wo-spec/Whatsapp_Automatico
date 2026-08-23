@@ -7,6 +7,8 @@ import { RequestWithPrincipal } from '../../../shared/presentation/authenticate'
 import { ContactRepository } from '../domain/repositories/ContactRepository';
 import { ContactImportService } from '../application/ContactImportService';
 import { ContactConsentService } from '../application/ContactConsentService';
+import { normalizePhoneToE164 } from '../domain/phoneNumber';
+import { ContactNotFoundError } from '../domain/errors/ContactNotFoundError';
 
 const tenantIdParamSchema = z.object({
   tenantId: z.string().trim().min(1, 'tenantId não pode ser vazio'),
@@ -20,7 +22,24 @@ const listContactsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().trim().min(1).optional(),
   search: z.string().trim().min(1).optional(),
+  status: z.enum(['with_conversation', 'without_conversation', 'opted_out']).optional(),
 });
+
+/** Reorganização Contatos/Campanhas (2026-08-17) — criação manual de um único contato. */
+const createContactBodySchema = z.object({
+  phone: z.string().trim().min(1, 'phone não pode ser vazio'),
+  name: z.string().trim().min(1).max(200).optional(),
+});
+
+/** `PATCH /:contactId` — pelo menos um dos dois campos precisa estar presente. */
+const updateContactBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    phone: z.string().trim().min(1).optional(),
+  })
+  .refine((data) => data.name !== undefined || data.phone !== undefined, {
+    message: 'Informe ao menos um campo para editar (name ou phone).',
+  });
 
 /**
  * `userId` de quem está autenticado, quando é uma PESSOA (plano máquina —
@@ -71,8 +90,46 @@ export function createContactsRouter(
         limit: query.limit ?? 20,
         cursor: query.cursor,
         search: query.search,
+        status: query.status,
       });
       res.status(200).json(page);
+    }),
+  );
+
+  /**
+   * `POST /` — cria um contato manualmente (Reorganização Contatos/Campanhas,
+   * 2026-08-17: a tela de Contatos vira um CRUD de verdade). Mesma
+   * deduplicação por telefone de sempre (`findOrCreateByPhone`): se o
+   * telefone já é um contato existente, ele é devolvido como está (nome
+   * já definido nunca é sobrescrito) — `wasCreated` avisa a UI qual dos
+   * dois casos aconteceu, sem inventar um segundo endpoint.
+   */
+  router.post(
+    '/',
+    requirePermission('contact:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(tenantIdParamSchema, req.params, res);
+      if (!params) return;
+      const body = validateOrRespond(createContactBodySchema, req.body, res);
+      if (!body) return;
+
+      const phoneE164 = normalizePhoneToE164(body.phone);
+      if (!phoneE164) {
+        res.status(400).json({
+          error: 'invalid_phone',
+          message: 'Telefone inválido — confira o DDD e o número.',
+        });
+        return;
+      }
+
+      const existing = await contactRepository.findByPhone(params.tenantId, phoneE164);
+      const contact = await contactRepository.findOrCreateByPhone({
+        tenantId: params.tenantId,
+        phoneE164,
+        name: body.name,
+        source: 'manual',
+      });
+      res.status(existing ? 200 : 201).json({ contact, wasCreated: !existing });
     }),
   );
 
@@ -126,6 +183,67 @@ export function createContactsRouter(
         req.body.toString('utf-8'),
       );
       res.status(200).json(report);
+    }),
+  );
+
+  /**
+   * `PATCH .../:contactId` — edita nome e/ou telefone (Reorganização
+   * Contatos/Campanhas, 2026-08-17). Mesma permissão de `/import`
+   * (`contact:manage`): editar a identidade de um contato é gestão da base.
+   */
+  router.patch(
+    '/:contactId',
+    requirePermission('contact:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(contactIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(updateContactBodySchema, req.body, res);
+      if (!body) return;
+
+      let phoneE164: string | undefined;
+      if (body.phone !== undefined) {
+        phoneE164 = normalizePhoneToE164(body.phone);
+        if (!phoneE164) {
+          res.status(400).json({
+            error: 'invalid_phone',
+            message: 'Telefone inválido — confira o DDD e o número.',
+          });
+          return;
+        }
+      }
+
+      const contact = await contactRepository.update(params.tenantId, params.contactId, {
+        name: body.name,
+        phoneE164,
+      });
+      if (!contact) {
+        throw new ContactNotFoundError(params.contactId);
+      }
+      res.status(200).json({ contact });
+    }),
+  );
+
+  /** `DELETE .../:contactId` — remove o contato definitivamente. Não apaga histórico de conversa (ver docstring do port). */
+  router.delete(
+    '/:contactId',
+    requirePermission('contact:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(contactIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const deleted = await contactRepository.deleteById(params.tenantId, params.contactId);
+      if (!deleted) {
+        throw new ContactNotFoundError(params.contactId);
+      }
+      res.status(204).send();
     }),
   );
 

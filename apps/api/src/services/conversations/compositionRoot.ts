@@ -20,6 +20,7 @@ import { PrismaConsentEventRepository } from '../contacts/infrastructure/reposit
 import { ContactConsentService } from '../contacts/application/ContactConsentService';
 import { KeywordOptOutDetector } from '../contacts/infrastructure/KeywordOptOutDetector';
 import { ConversationsService } from './application/ConversationsService';
+import { AgentMediaCache } from './infrastructure/AgentMediaCache';
 import {
   WHATSAPP_OUTBOUND_QUEUE_NAME,
   WhatsAppOutboundJobData,
@@ -59,6 +60,17 @@ export interface ConversationsComposition {
    */
   messageIngestionService: MessageIngestionService;
   conversationsService: ConversationsService;
+  /**
+   * Bug real (2026-08-20) — a mesma instância também precisa ser injetada em
+   * `WhatsAppCampaignMessageSender` (`index.ts`), senão mídia de campanha
+   * nunca aparece na prévia da Dashboard: `getMessageMedia` procura primeiro
+   * neste cache (mídia enviada por NÓS nunca tem referência real ao CDN do
+   * WhatsApp, ADR #90); sem `.set()` no envio de campanha, cai no fallback
+   * de `mediaDownloader.download()`, que tenta descriptografar
+   * `mediaKeyEncrypted` VAZIO (de propósito) e lança "Invalid initialization
+   * vector" — a imagem falha ao carregar na conversa.
+   */
+  agentMediaCache: AgentMediaCache;
   /**
    * Fase 1, Bloco F1.10 (observabilidade mínima) — exposta para o endpoint
    * `/health/ready` (`index.ts`) conseguir reportar profundidade da fila
@@ -104,10 +116,34 @@ export function createConversationsComposition(
   // Feature N2 (responder pela Dashboard): produtor da fila outbound, para o
   // operador enviar pela MESMA fila da IA (consumida pelo OutboundCommandConsumer
   // dentro do apps/api). Reusa a mesma `redisConnection` — dois produtores
-  // (ai-reply + whatsapp-outbound) podem compartilhar a conexão; `maxRetries`
-  // só importa para o Worker consumidor (D19, já tratado em index.ts).
+  // (ai-reply + whatsapp-outbound) podem compartilhar a conexão.
+  //
+  // CORREÇÃO 2026-08-18 (bug real observado em produção — "a IA gerou a
+  // resposta mas o cliente não recebeu nada"): `OutboundCommandConsumer`
+  // sempre foi documentado para propagar `WhatsAppNotConnectedError` e
+  // "deixar o BullMQ aplicar retry/backoff CONFIGURADO" (ver sua própria
+  // docstring, decisão D4) — mas nenhum retry jamais foi de fato configurado
+  // aqui. Sem `attempts`, o BullMQ usa o default de 1 tentativa: um job que
+  // cai bem no meio de uma reconexão momentânea do socket Baileys (comum,
+  // segundos de duração) falhava PERMANENTEMENTE e em SILÊNCIO — o
+  // `AiInteraction` já registrava `status: success` (a IA gerou a resposta
+  // certinho), mas nenhuma `Message` outbound era criada, então nem o
+  // cliente nem o operador viam qualquer sinal de erro. Confirmado via
+  // inspeção direta da fila `bull:whatsapp-outbound:failed` no Redis: 13
+  // jobs represados, todos com o mesmo `failedReason`. `attempts: 3` +
+  // backoff exponencial cobre a reconexão transitória (retries em ~5s/10s);
+  // uma sessão de fato offline por mais tempo que isso ainda falha ao fim
+  // dos 3 tentativas — risco residual aceito, mesma categoria "at-least-once"
+  // já documentada no resto desta fila. `removeOnFail: 500` espelha
+  // `aiReplyQueue` acima (higiene, sem perder visibilidade de diagnóstico).
   const outboundQueue = new Queue<WhatsAppOutboundJobData>(WHATSAPP_OUTBOUND_QUEUE_NAME, {
     connection: redisConnection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: true,
+      removeOnFail: 500,
+    },
   });
   const outboundMessageDispatcher = new BullMqOutboundMessageDispatcher(outboundQueue);
 
@@ -152,6 +188,11 @@ export function createConversationsComposition(
     contactResolver,
     optOutDetector,
   );
+  // Instância explícita (não o default do construtor) — precisa ser
+  // RETIDA/EXPOSTA para `index.ts` injetar a MESMA nela em
+  // `WhatsAppCampaignMessageSender` (ver docstring de `agentMediaCache` em
+  // `ConversationsComposition`).
+  const agentMediaCache = new AgentMediaCache();
   const conversationsService = new ConversationsService(
     conversationRepository,
     messageRepository,
@@ -159,6 +200,14 @@ export function createConversationsComposition(
     auditLogRepository,
     logger,
     outboundMessageDispatcher,
+    // `mediaDownloader`/`mediaSender` ficam de fora aqui de propósito (D15 —
+    // injetados tardiamente por `index.ts` via setter, ver docstring do
+    // construtor). `contactResolver` não tem esse problema de ordem
+    // circular: já existe (linha acima) antes deste `new`.
+    undefined,
+    undefined,
+    agentMediaCache,
+    contactResolver,
   );
 
   return {
@@ -166,6 +215,7 @@ export function createConversationsComposition(
     messageRepository,
     messageIngestionService,
     conversationsService,
+    agentMediaCache,
     aiReplyQueue,
   };
 }

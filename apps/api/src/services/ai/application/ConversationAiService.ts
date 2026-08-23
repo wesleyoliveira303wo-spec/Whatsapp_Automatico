@@ -409,6 +409,17 @@ export class ConversationAiService {
         contentType: 'image' | 'audio';
         media: NonNullable<Message['media']>;
       } =>
+        // CORREÇÃO 2026-08-21 (bug medido em produção): o nome do método
+        // sempre disse "Inbound", mas o filtro nunca checou `direction`.
+        // Numa conversa nascida de campanha COM ANEXO, a mídia mais recente
+        // do histórico é a NOSSA imagem de disparo — ela era baixada (o
+        // `AgentMediaCache` passou a guardar mídia de campanha desde a
+        // correção de 2026-08-20) e enviada ao Gemini como entrada
+        // multimodal, ou seja: o modelo literalmente VIA a própria imagem da
+        // campanha e reagia como se o cliente a tivesse mandado ("Vi que você
+        // mandou umas imagens"). Interpretar mídia só faz sentido para o que
+        // o CLIENTE enviou — o que nós mandamos, nós já sabemos o que é.
+        message.direction === 'inbound' &&
         (message.contentType === 'image' || message.contentType === 'audio') &&
         Boolean(message.media),
     );

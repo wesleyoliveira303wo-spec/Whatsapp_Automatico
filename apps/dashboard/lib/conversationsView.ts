@@ -28,6 +28,86 @@ export function mergeConversationPages(
   return merged;
 }
 
+/** Compara as tags de duas conversas por conteudo (id/name/color sao todos escalares). */
+function sameConversationTags(
+  a: ConversationSummary['tags'],
+  b: ConversationSummary['tags'],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index].id !== b[index].id) return false;
+    if (a[index].name !== b[index].name) return false;
+    if (a[index].color !== b[index].color) return false;
+  }
+  return true;
+}
+
+/**
+ * Igualdade ESTRUTURAL rasa de `ConversationSummary`. Rasa e suficiente
+ * porque todo campo da interface e escalar, com uma unica excecao (`tags`,
+ * tratada acima). Compara tambem a quantidade de chaves, para detectar um
+ * campo opcional que apareceu ou sumiu entre dois frames.
+ */
+function sameConversation(a: ConversationSummary, b: ConversationSummary): boolean {
+  if (a === b) return true;
+  const keys = Object.keys(a) as (keyof ConversationSummary)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (key === 'tags') {
+      if (!sameConversationTags(a.tags, b.tags)) return false;
+      continue;
+    }
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+/**
+ * Estabiliza a IDENTIDADE dos objetos entre dois frames da lista viva
+ * (auditoria 2026-08-22).
+ *
+ * Por que existe: a primeira pagina da lista chega por SSE a cada ~2s
+ * (`SSE_POLL_INTERVAL_MS`), e cada frame passa por `JSON.parse` — ou seja,
+ * TODA conversa vira um objeto novo a cada 2 segundos, mesmo quando nada
+ * mudou nela. Com isso, `React.memo` em `ConversationListItem` seria
+ * completamente inutil (a prop `conversation` nunca seria a mesma
+ * referencia), e a lista inteira era reconciliada 30x por minuto,
+ * indefinidamente, enquanto a aba estivesse aberta.
+ *
+ * Esta funcao devolve um array em que cada conversa cujo CONTEUDO nao mudou
+ * mantem a referencia do frame anterior. Quando nada mudou em nenhuma delas
+ * (o caso comum), devolve o proprio array anterior — assim ate o `useMemo`
+ * de quem consome para de invalidar.
+ *
+ * Pura de proposito (mesmo racional de `mergeConversationPages`): testavel no
+ * projeto `dashboard` (node, sem jsdom).
+ */
+export function reconcileConversationIdentities(
+  previous: ConversationSummary[],
+  next: ConversationSummary[],
+): ConversationSummary[] {
+  if (previous.length === 0) return next;
+
+  const previousById = new Map(previous.map((conversation) => [conversation.id, conversation]));
+  let identicalToPrevious = previous.length === next.length;
+
+  const reconciled = next.map((conversation, index) => {
+    const earlier = previousById.get(conversation.id);
+    if (earlier && sameConversation(earlier, conversation)) {
+      // Mesmo conteudo, mas pode ter mudado de POSICAO (uma conversa nova
+      // desloca a lista) — nesse caso o array precisa ser novo, ainda que
+      // todos os itens sejam reaproveitados.
+      if (previous[index] !== earlier) identicalToPrevious = false;
+      return earlier;
+    }
+    identicalToPrevious = false;
+    return conversation;
+  });
+
+  return identicalToPrevious ? previous : reconciled;
+}
+
 /** Busca uma conversa por `id` numa lista ja carregada — `undefined` se ausente (quem chama decide o fallback). */
 export function findConversationById(
   conversations: ConversationSummary[],

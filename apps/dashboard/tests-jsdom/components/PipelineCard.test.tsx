@@ -1,7 +1,7 @@
 /**
  * Pipeline de CRM (Milestone 6, Bloco M6H-5) — teste do `PipelineCard`.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PipelineCard from '../../components/PipelineCard';
 import * as clientApi from '../../lib/clientApi';
@@ -44,6 +44,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         conversation={buildConversation()}
         onDragStart={jest.fn()}
         onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
       />,
     );
     expect(screen.getByText('+55 11 99999-9999')).toBeInTheDocument();
@@ -59,6 +60,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         conversation={buildConversation({ stageSetBy: 'ai' })}
         onDragStart={jest.fn()}
         onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
       />,
     );
     expect(screen.getByTitle('Classificado pela IA')).toBeInTheDocument();
@@ -70,6 +72,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         conversation={buildConversation({ stageSetBy: 'human' })}
         onDragStart={jest.fn()}
         onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
       />,
     );
     expect(screen.getByTitle('Classificado por humano')).toBeInTheDocument();
@@ -81,6 +84,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         conversation={buildConversation({ stageSetBy: 'human' })}
         onDragStart={jest.fn()}
         onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
       />,
     );
     expect(screen.queryByText(/não classifica mais/)).not.toBeInTheDocument();
@@ -93,6 +97,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         conversation={buildConversation()}
         onDragStart={jest.fn()}
         onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
         dragging
       />,
     );
@@ -106,6 +111,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           conversation={buildConversation({ excludedFromPipeline: true, stageSetBy: 'ai' })}
           onDragStart={jest.fn()}
           onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
         />,
       );
       expect(screen.getByText('IA desligada')).toBeInTheDocument();
@@ -118,6 +124,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           conversation={buildConversation({ excludedFromPipeline: true })}
           onDragStart={jest.fn()}
           onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
         />,
       );
       expect(screen.queryByText(/neste estágio/)).not.toBeInTheDocument();
@@ -129,6 +136,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           conversation={buildConversation({ excludedFromPipeline: true })}
           onDragStart={jest.fn()}
           onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
         />,
       );
       expect(screen.getByRole('link', { name: 'Ver conversa' })).toBeInTheDocument();
@@ -144,6 +152,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         conversation={buildConversation({ stageUpdatedAt: fiveDaysAgo.toISOString() })}
         onDragStart={jest.fn()}
         onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
       />,
     );
     expect(screen.getByText('há 5 dias neste estágio')).toBeInTheDocument();
@@ -158,6 +167,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           })}
           onDragStart={jest.fn()}
           onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
         />,
       );
       expect(screen.getByText('Enterprise')).toBeInTheDocument();
@@ -169,10 +179,65 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           conversation={buildConversation({ tags: [] })}
           onDragStart={jest.fn()}
           onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
         />,
       );
       // Só o `title` do ícone classificador deve sobrar — nenhum chip de tag.
       expect(container.querySelectorAll('span[title]')).toHaveLength(1);
+    });
+  });
+
+  describe('alternativa por teclado ao arrastar-e-soltar (achado de auditoria de acessibilidade, 2026-08-22)', () => {
+    it('lista as outras colunas do Pipeline, excluindo a coluna atual', () => {
+      render(
+        <PipelineCard
+          conversation={buildConversation({ stage: 'negotiating' })}
+          onDragStart={jest.fn()}
+          onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
+        />,
+      );
+      const select = screen.getByRole('combobox', {
+        name: 'Mover conversa para outro estágio do Pipeline',
+      });
+      const optionLabels = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
+      expect(optionLabels).toEqual(['Mover…', 'Não cliente', 'Novo', 'Contatado', 'Fechado', 'Perdido']);
+    });
+
+    it('chamar onMoveToColumn com o estágio escolhido ao mudar o select', () => {
+      const onMoveToColumn = jest.fn();
+      render(
+        <PipelineCard
+          conversation={buildConversation({ stage: 'new' })}
+          onDragStart={jest.fn()}
+          onDragEnd={jest.fn()}
+          onMoveToColumn={onMoveToColumn}
+        />,
+      );
+      const select = screen.getByRole('combobox', {
+        name: 'Mover conversa para outro estágio do Pipeline',
+      });
+      fireEvent.change(select, { target: { value: 'contacted' } });
+      expect(onMoveToColumn).toHaveBeenCalledWith('contacted');
+    });
+
+    it('exclui a coluna atual das opções também para um card em "Não cliente"', () => {
+      render(
+        <PipelineCard
+          conversation={buildConversation({ excludedFromPipeline: true, stage: 'negotiating' })}
+          onDragStart={jest.fn()}
+          onDragEnd={jest.fn()}
+          onMoveToColumn={jest.fn()}
+        />,
+      );
+      const select = screen.getByRole('combobox', {
+        name: 'Mover conversa para outro estágio do Pipeline',
+      });
+      const optionValues = Array.from(select.querySelectorAll('option')).map(
+        (o) => (o as HTMLOptionElement).value,
+      );
+      expect(optionValues).not.toContain('not_client');
+      expect(optionValues).toContain('negotiating');
     });
   });
 });

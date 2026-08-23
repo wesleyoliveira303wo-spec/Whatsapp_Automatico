@@ -20,12 +20,21 @@ export interface CreateContactData {
   createdAt?: Date;
 }
 
+/**
+ * Filtro rápido da tela de Contatos (retrofit visual 2026-08-17, réplica de
+ * referência do fundador) — espelha as abas "Todos/Com conversa/Sem
+ * conversa/Opt-outs". `undefined`/`'all'` = sem filtro.
+ */
+export type ContactStatusFilter = 'with_conversation' | 'without_conversation' | 'opted_out';
+
 /** Opções de listagem paginada — mesmo formato de `ListAuditLogsOptions` (cursor por id, limit obrigatório). */
 export interface ListContactsOptions {
   limit: number;
   cursor?: string;
   /** Filtro por texto livre (nome OU telefone) — Bloco L1b, tela "Leads". */
   search?: string;
+  /** Aditivo (2026-08-17) — filtra por uma das abas da tela. */
+  status?: ContactStatusFilter;
 }
 
 /**
@@ -45,6 +54,16 @@ export interface ContactWithActivity extends Contact {
   lastConversationSessionName?: string;
   /** `lastMessageAt` daquela conversa — a data real do último contato. */
   lastActivityAt?: Date;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — apelido do WhatsApp
+   * (`WhatsAppConversation.contactName`) capturado na conversa mais recente
+   * desta pessoa, junto com o mesmo `include` que já resolve
+   * `lastConversationId`. Ausente sem conversa nenhuma, ou se aquela
+   * conversa nunca capturou um `pushName`. Serve para a tela de Contatos
+   * mostrar "telefone + apelido" num contato ainda sem `name` salvo — mesma
+   * regra de `formatContactDisplayName` (`apps/dashboard`).
+   */
+  lastConversationContactName?: string;
 }
 
 /** Página de resultado — `nextCursor` ausente indica fim, mesmo contrato de `AuditLogPage`. */
@@ -62,6 +81,10 @@ export interface ContactStats {
   total: number;
   withConversation: number;
   withoutConversation: number;
+  /** Aditivo (2026-08-17) — quantos contatos estão em opt-out agora. */
+  optedOut: number;
+  /** Aditivo (2026-08-18) — contagem por origem, para "Principais fontes" na tela de Contatos. */
+  bySource: Record<ContactSource, number>;
 }
 
 /**
@@ -142,4 +165,42 @@ export interface ContactRepository {
    * (retrofit 2026-08-16) — ver `ContactStats`.
    */
   countStats(tenantId: string): Promise<ContactStats>;
+
+  /**
+   * Busca vários contatos pelos telefones canônicos de uma vez — sustenta
+   * `ContactLookupImpl` (Reorganização Contatos/Campanhas, 2026-08-17):
+   * "destes telefones de uma planilha/lista manual, quais já são Contatos
+   * conhecidos?". Telefones sem Contato simplesmente não aparecem no
+   * resultado.
+   */
+  findManyByPhones(tenantId: string, phonesE164: string[]): Promise<Contact[]>;
+
+  /**
+   * Edita nome e/ou telefone de um contato já existente — Reorganização
+   * Contatos/Campanhas (2026-08-17), a tela de Contatos vira um CRUD de
+   * verdade. `undefined` num campo significa "não mexe nele" (mesma
+   * convenção de `UpdateConversationStatusOptions`: presença da chave decide
+   * se altera). Editar o telefone para um valor que já pertence a OUTRO
+   * contato do mesmo tenant lança `ContactPhoneAlreadyExistsError` (a
+   * constraint `@@unique([tenantId, phoneE164])` é quem garante isso).
+   *
+   * Devolve `undefined` (não lança) se o contato não existir/não pertencer
+   * ao tenant — mesmo padrão de `setOptOutAt`.
+   */
+  update(
+    tenantId: string,
+    contactId: string,
+    data: { name?: string; phoneE164?: string },
+  ): Promise<Contact | undefined>;
+
+  /**
+   * Remove um contato definitivamente. Não tem `@relation`/FK para
+   * `WhatsAppConversation`/`CampaignRecipient` (ver docstring dos models) —
+   * apagar um contato nunca apaga histórico de conversa nem destinatários de
+   * campanha já materializados; eles só deixam de ter um Contato vinculado.
+   *
+   * Devolve `true` se algo foi removido, `false` se o contato não
+   * existia/não pertencia ao tenant.
+   */
+  deleteById(tenantId: string, contactId: string): Promise<boolean>;
 }

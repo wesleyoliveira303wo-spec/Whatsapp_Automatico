@@ -10,7 +10,10 @@ interface CampaignsPageProps {
   sessionName: string;
 }
 
-/** Lista de campanhas de uma sessão — Fase L, Blocos L3/L4. */
+/**
+ * Lista de campanhas — Reorganização Contatos/Campanhas (2026-08-17, 2ª
+ * rodada): domínio próprio no rail, separado de Contatos.
+ */
 export const getServerSideProps: GetServerSideProps<CampaignsPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
   if (guard.kind === 'redirect') {
@@ -31,7 +34,8 @@ export default function CampaignsPage({ tenantId, sessionName }: CampaignsPagePr
         <title>{pageTitle(`Campanhas · ${sessionName}`)}</title>
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
-        <div className="max-w-[900px] px-6 pb-12 pt-5">
+        {/* Largura maior (1400px), mesma medida de Contatos: duas colunas (lista + painel lateral) a partir de `xl`. */}
+        <div className="max-w-[1400px] px-6 pb-12 pt-5">
           <CampaignsPanel sessionName={sessionName} />
         </div>
       </div>

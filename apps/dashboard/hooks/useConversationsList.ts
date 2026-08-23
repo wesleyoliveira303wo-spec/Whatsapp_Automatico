@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEventSource } from './useEventSource';
 import { fetchConversations } from '../lib/clientApi';
-import { mergeConversationPages } from '../lib/conversationsView';
+import {
+  mergeConversationPages,
+  reconcileConversationIdentities,
+} from '../lib/conversationsView';
 import type { ConversationPage, ConversationStatus, ConversationSummary } from '../lib/clientApi';
 
 /** Mesmo envelope `{ status, body }` que `runSsePoller` grava em cada frame `data:` — ver `useSessionsList.ts` (M2). */
@@ -92,9 +95,30 @@ export function useConversationsList(
     setLocalOverrides((overrides) => ({ ...overrides, [conversation.id]: conversation }));
   }, []);
 
+  /**
+   * PERFORMANCE (auditoria 2026-08-22) — cada frame do SSE passa por
+   * `JSON.parse`, então TODA conversa vira um objeto novo a cada ~2s, mesmo
+   * sem nenhuma mudança. `reconcileConversationIdentities` reaproveita a
+   * referência anterior de cada conversa cujo conteúdo não mudou; é isso que
+   * faz o `React.memo` de `ConversationListItem` valer alguma coisa (sem
+   * essa reconciliação ele nunca acertaria a comparação e a lista inteira
+   * seria reconstruída 30x por minuto, indefinidamente).
+   *
+   * O acumulador vive num `ref` porque precisa atravessar frames. Reconciliar
+   * é idempotente (reconciliar contra o já reconciliado devolve o mesmo
+   * array), então a dupla execução do `useMemo` em StrictMode é inofensiva.
+   */
+  const stableLivePageRef = useRef<ConversationSummary[]>([]);
   const livePage = useMemo(() => {
-    if (!data || data.status !== 200) return [];
-    return data.body.conversations;
+    if (!data || data.status !== 200) {
+      stableLivePageRef.current = [];
+      return stableLivePageRef.current;
+    }
+    stableLivePageRef.current = reconcileConversationIdentities(
+      stableLivePageRef.current,
+      data.body.conversations,
+    );
+    return stableLivePageRef.current;
   }, [data]);
 
   const liveCursor = data && data.status === 200 ? data.body.nextCursor : undefined;

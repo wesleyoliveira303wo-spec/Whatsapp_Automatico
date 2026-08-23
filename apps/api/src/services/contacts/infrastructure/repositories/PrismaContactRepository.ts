@@ -9,6 +9,19 @@ import {
   CreateContactData,
   ListContactsOptions,
 } from '../../domain/repositories/ContactRepository';
+import { ContactPhoneAlreadyExistsError } from '../../domain/errors/ContactPhoneAlreadyExistsError';
+
+/** Código do Postgres/Prisma para violação de constraint única (P2002). */
+const PRISMA_UNIQUE_VIOLATION_CODE = 'P2002';
+
+function isPrismaUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === PRISMA_UNIQUE_VIOLATION_CODE
+  );
+}
 
 /** Shape mínimo lido do banco — mesmo racional dos demais repositórios Prisma deste projeto. */
 interface ContactRow {
@@ -40,6 +53,8 @@ interface ConversationSummaryRow {
   id: string;
   sessionName: string;
   lastMessageAt: Date | null;
+  /** Padronização de exibição de contato (2026-08-20) — apelido do WhatsApp daquela conversa. */
+  contactName: string | null;
 }
 
 /**
@@ -56,6 +71,7 @@ function toListItem(
     lastConversationId: lastConversation?.id,
     lastConversationSessionName: lastConversation?.sessionName,
     lastActivityAt: lastConversation?.lastMessageAt ?? undefined,
+    lastConversationContactName: lastConversation?.contactName ?? undefined,
   };
 }
 
@@ -170,6 +186,9 @@ export class PrismaContactRepository implements ContactRepository {
               ],
             }
           : {}),
+        ...(options.status === 'with_conversation' ? { conversations: { some: {} } } : {}),
+        ...(options.status === 'without_conversation' ? { conversations: { none: {} } } : {}),
+        ...(options.status === 'opted_out' ? { optOutAt: { not: null } } : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: options.limit + 1,
@@ -178,7 +197,7 @@ export class PrismaContactRepository implements ContactRepository {
         conversations: {
           orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
           take: 1,
-          select: { id: true, sessionName: true, lastMessageAt: true },
+          select: { id: true, sessionName: true, lastMessageAt: true, contactName: true },
         },
       },
     });
@@ -197,13 +216,32 @@ export class PrismaContactRepository implements ContactRepository {
    * banco para um número que já é conhecido).
    */
   async countStats(tenantId: string): Promise<ContactStats> {
-    const [total, withConversation] = await Promise.all([
+    const [total, withConversation, optedOut, bySourceRows] = await Promise.all([
       this.prisma.whatsAppContact.count({ where: { tenantId } }),
       this.prisma.whatsAppContact.count({
         where: { tenantId, conversations: { some: {} } },
       }),
+      this.prisma.whatsAppContact.count({ where: { tenantId, optOutAt: { not: null } } }),
+      this.prisma.whatsAppContact.groupBy({
+        by: ['source'],
+        where: { tenantId },
+        _count: { _all: true },
+      }),
     ]);
-    return { total, withConversation, withoutConversation: total - withConversation };
+
+    const bySource: Record<ContactSource, number> = { whatsapp: 0, import: 0, manual: 0 };
+    for (const row of bySourceRows) {
+      const source = SOURCE_FROM_PRISMA[row.source];
+      if (source) bySource[source] = row._count._all;
+    }
+
+    return {
+      total,
+      withConversation,
+      withoutConversation: total - withConversation,
+      optedOut,
+      bySource,
+    };
   }
 
   /**
@@ -226,5 +264,55 @@ export class PrismaContactRepository implements ContactRepository {
       return undefined;
     }
     return this.findById(tenantId, contactId);
+  }
+
+  async findManyByPhones(tenantId: string, phonesE164: string[]): Promise<Contact[]> {
+    if (phonesE164.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.whatsAppContact.findMany({
+      where: { tenantId, phoneE164: { in: phonesE164 } },
+    });
+    return rows.map(toDomain);
+  }
+
+  /**
+   * `updateMany` escopado por `(id, tenantId)` (defesa em profundidade contra
+   * IDOR, mesmo padrão de sempre) seguido de um `findById` — não dá para usar
+   * `update` direto (que exige `where: { id }` único, sem o `tenantId` no
+   * mesmo filtro). Violação da constraint única `(tenantId, phoneE164)`
+   * (editar para um telefone que já é de outro contato) vira
+   * `ContactPhoneAlreadyExistsError`.
+   */
+  async update(
+    tenantId: string,
+    contactId: string,
+    data: { name?: string; phoneE164?: string },
+  ): Promise<Contact | undefined> {
+    try {
+      const { count } = await this.prisma.whatsAppContact.updateMany({
+        where: { id: contactId, tenantId },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.phoneE164 !== undefined ? { phoneE164: data.phoneE164 } : {}),
+        },
+      });
+      if (count === 0) {
+        return undefined;
+      }
+    } catch (error) {
+      if (isPrismaUniqueViolation(error) && data.phoneE164) {
+        throw new ContactPhoneAlreadyExistsError(data.phoneE164);
+      }
+      throw error;
+    }
+    return this.findById(tenantId, contactId);
+  }
+
+  async deleteById(tenantId: string, contactId: string): Promise<boolean> {
+    const { count } = await this.prisma.whatsAppContact.deleteMany({
+      where: { id: contactId, tenantId },
+    });
+    return count > 0;
   }
 }

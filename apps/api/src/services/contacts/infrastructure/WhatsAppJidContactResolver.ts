@@ -57,4 +57,13 @@ export class WhatsAppJidContactResolver implements ContactResolver {
       return undefined;
     }
   }
+
+  /**
+   * Ver docstring do método na porta (`ContactResolver.saveName`) — PROPAGA
+   * erros de propósito (ação humana explícita), diferente de
+   * `resolveByWhatsAppJid`.
+   */
+  async saveName(tenantId: string, contactId: string, name: string): Promise<void> {
+    await this.contactRepository.update(tenantId, contactId, { name });
+  }
 }

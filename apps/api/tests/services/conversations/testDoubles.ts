@@ -416,7 +416,10 @@ export class FakeAiRateLimiter implements AiRateLimiter {
  */
 export class FakeContactResolver implements ContactResolver {
   readonly calls: Array<{ tenantId: string; contactJid: string }> = [];
+  /** Retrofit visual 2026-08-18 — chamadas a `saveName` (botão "Salvar contato"). */
+  readonly saveNameCalls: Array<{ tenantId: string; contactId: string; name: string }> = [];
   private contactId: string | undefined = 'contact-1';
+  private saveNameError: Error | undefined;
 
   async resolveByWhatsAppJid(tenantId: string, contactJid: string): Promise<string | undefined> {
     this.calls.push({ tenantId, contactJid });
@@ -424,6 +427,13 @@ export class FakeContactResolver implements ContactResolver {
       return undefined;
     }
     return this.contactId;
+  }
+
+  async saveName(tenantId: string, contactId: string, name: string): Promise<void> {
+    this.saveNameCalls.push({ tenantId, contactId, name });
+    if (this.saveNameError) {
+      throw this.saveNameError;
+    }
   }
 
   /** Helper de teste: simula um endereço sem identidade resolvível. */
@@ -434,6 +444,11 @@ export class FakeContactResolver implements ContactResolver {
   /** Helper de teste: fixa o id devolvido, para asserções de vínculo. */
   setContactId(contactId: string): void {
     this.contactId = contactId;
+  }
+
+  /** Helper de teste: faz `saveName` propagar um erro — `ConversationsService.saveContactFromConversation` deve deixá-lo subir. */
+  setSaveNameError(error: Error): void {
+    this.saveNameError = error;
   }
 }
 

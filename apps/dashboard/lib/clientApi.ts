@@ -474,6 +474,13 @@ export interface Contact {
   lastConversationId?: string;
   lastConversationSessionName?: string;
   lastActivityAt?: string;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — apelido do WhatsApp
+   * capturado na conversa mais recente desta pessoa, quando houver. Só usado
+   * como complemento (nunca substituto) do telefone num contato ainda sem
+   * `name` salvo — ver `formatPersonLabel`.
+   */
+  lastConversationContactName?: string;
 }
 
 /** Contagens da base do tenant — cards do topo da tela de Contatos. */
@@ -481,6 +488,10 @@ export interface ContactStats {
   total: number;
   withConversation: number;
   withoutConversation: number;
+  /** Aditivo (2026-08-17) — quantos contatos estão em opt-out agora. */
+  optedOut: number;
+  /** Aditivo (2026-08-18) — contagem por origem, para "Principais fontes". */
+  bySource: { whatsapp: number; import: number; manual: number };
 }
 
 /** Contagens da base. Exige `contact:read`. */
@@ -493,18 +504,23 @@ export interface ContactPage {
   nextCursor?: string;
 }
 
+/** Espelha `ContactStatusFilter` (`apps/api`) — as abas da tela de Contatos. */
+export type ContactStatusFilter = 'with_conversation' | 'without_conversation' | 'opted_out';
+
 /** Lista os contatos do tenant, paginado por cursor. Exige `contact:read` (operator+). */
 export function fetchContacts(
   options: {
     limit?: number;
     cursor?: string;
     search?: string;
+    status?: ContactStatusFilter;
   } = {},
 ): Promise<ContactPage> {
   const params = new URLSearchParams();
   if (options.limit !== undefined) params.set('limit', String(options.limit));
   if (options.cursor) params.set('cursor', options.cursor);
   if (options.search) params.set('search', options.search);
+  if (options.status) params.set('status', options.status);
   const query = params.toString();
   return request(`/api/contacts${query ? `?${query}` : ''}`);
 }
@@ -560,6 +576,34 @@ export function optInContact(contactId: string): Promise<{ contact: Contact }> {
   return request(`/api/contacts/${encodeURIComponent(contactId)}/opt-in`, { method: 'POST' });
 }
 
+// --- CRUD de Contatos (Reorganização Contatos/Campanhas, 2026-08-17) ---
+// A tela de Contatos vira um CRM de verdade: criar/editar/remover um contato
+// manualmente. Exige `contact:manage`.
+
+/** Cria um contato manualmente. Se o telefone já existir, devolve o contato como está (`wasCreated: false`) — nunca sobrescreve um nome já definido. */
+export function createContact(input: {
+  phone: string;
+  name?: string;
+}): Promise<{ contact: Contact; wasCreated: boolean }> {
+  return request('/api/contacts', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Edita nome e/ou telefone de um contato existente. */
+export function updateContact(
+  contactId: string,
+  input: { name?: string; phone?: string },
+): Promise<{ contact: Contact }> {
+  return request(`/api/contacts/${encodeURIComponent(contactId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Remove um contato definitivamente (não apaga o histórico de conversa). */
+export async function deleteContact(contactId: string): Promise<void> {
+  await request(`/api/contacts/${encodeURIComponent(contactId)}`, { method: 'DELETE' });
+}
+
 // --- Campanhas (Fase L, Bloco L3) ---
 // Só CRIA e CALCULA quem receberia — NUNCA envia nenhuma mensagem. O envio
 // real (fila + ritmo + disjuntor de segurança) é trabalho de um bloco
@@ -568,15 +612,26 @@ export function optInContact(contactId: string): Promise<{ contact: Contact }> {
 export type CampaignStatus =
   'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
 
+/** Categorias de mídia suportadas para o anexo de campanha (Fase L, Bloco L8) — mesmo vocabulário do envio de mídia numa conversa, exceto `text`/`sticker`. */
+export type CampaignMediaContentType = 'image' | 'audio' | 'video' | 'document';
+
 export interface Campaign {
   id: string;
   tenantId: string;
   sessionName: string;
   name: string;
+  /** Texto livre opcional (Reorganização Contatos/Campanhas, 2026-08-17) — só para o operador se orientar. */
+  description?: string;
   messageTemplate: string;
   status: CampaignStatus;
   /** Fase L, Bloco L4 — só relevante quando `status === 'paused'` (motivo da pausa automática, ex.: teto diário/disjuntor de segurança). */
   pausedReason?: string;
+  /** Fase L, Bloco L8 — metadados do anexo (sem o binário; ver `campaignMediaUrl` para exibir/baixar). `undefined` = campanha só de texto. */
+  media?: {
+    contentType: CampaignMediaContentType;
+    mimeType: string;
+    fileName?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -591,18 +646,62 @@ export interface CampaignRecipientSummary {
   skipReasons: Partial<Record<CampaignSkipReason, number>>;
 }
 
+/** Um destinatário bruto vindo de planilha ou digitado manualmente — origens B/C (Reorganização 2026-08-17). */
+export interface RawPhoneRecipient {
+  rawPhone: string;
+  name?: string;
+}
+
 /**
  * Cria a campanha e materializa os destinatários (aplica as três regras de
  * supressão: opt-out, conversa ativa com humano, contatado há menos de 7
- * dias por outra campanha). Exige `campaign:manage` (administrator+).
+ * dias por outra campanha). Combina três origens: `contactIds` (Contatos
+ * salvos), `phoneRecipients` (planilha + números colados, já combinados pela
+ * UI). Exige `campaign:manage` (administrator+).
  */
 export function createCampaign(input: {
   sessionName: string;
   name: string;
+  description?: string;
   messageTemplate: string;
   contactIds: string[];
+  phoneRecipients: RawPhoneRecipient[];
 }): Promise<{ campaign: Campaign; summary: CampaignRecipientSummary }> {
   return request('/api/campaigns', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Motivo pelo qual uma linha da planilha de destinatários foi rejeitada — espelha `InvalidImportRowReason` (`apps/api`). */
+export type RecipientsCsvInvalidRowReason = 'missing_phone' | 'invalid_phone' | 'duplicate_in_file';
+
+export interface RecipientsCsvInvalidRow {
+  rowNumber: number;
+  reason: RecipientsCsvInvalidRowReason;
+  rawPhone?: string;
+}
+
+export interface ParseRecipientsCsvResult {
+  totalRows: number;
+  recipients: RawPhoneRecipient[];
+  invalid: RecipientsCsvInvalidRow[];
+}
+
+/**
+ * Envia o TEXTO CRU de uma planilha `.csv` de destinatários de campanha —
+ * SÓ PARSEIA, nunca persiste nada (nem campanha, nem Contato). Exige
+ * `campaign:manage`. Mesmo padrão de `importContacts` (corpo não é JSON).
+ */
+export async function parseRecipientsCsv(csvText: string): Promise<ParseRecipientsCsvResult> {
+  const response = await fetch('/api/campaigns/parse-recipients-csv', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/csv' },
+    body: csvText,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new ClientApiError(response.status, body);
+  }
+  return body as ParseRecipientsCsvResult;
 }
 
 export interface CampaignPage {
@@ -612,13 +711,36 @@ export interface CampaignPage {
 
 /** Lista campanhas do tenant, paginado por cursor. Exige `campaign:read` (operator+). */
 export function fetchCampaigns(
-  options: { limit?: number; cursor?: string } = {},
+  options: { limit?: number; cursor?: string; sessionName?: string } = {},
 ): Promise<CampaignPage> {
   const params = new URLSearchParams();
   if (options.limit) params.set('limit', String(options.limit));
   if (options.cursor) params.set('cursor', options.cursor);
+  if (options.sessionName) params.set('sessionName', options.sessionName);
   const query = params.toString();
   return request(`/api/campaigns${query ? `?${query}` : ''}`);
+}
+
+/** Visão geral de campanhas de uma sessão (retrofit visual 2026-08-18) — cards do topo + donut "Status das campanhas". */
+export interface CampaignSessionOverview {
+  totalCampaigns: number;
+  statusCounts: Record<CampaignStatus, number>;
+  totalSent: number;
+  totalReplied: number;
+  responseRate?: number;
+  trends: {
+    campaignsDeltaPct?: number;
+    messagesSentDeltaPct?: number;
+    repliesDeltaPct?: number;
+    responseRateDeltaPct?: number;
+  };
+}
+
+/** Exige `campaign:read`. */
+export function fetchCampaignsOverview(sessionName: string): Promise<{
+  overview: CampaignSessionOverview;
+}> {
+  return request(`/api/campaigns/overview?sessionName=${encodeURIComponent(sessionName)}`);
 }
 
 /** Detalhe de uma campanha (campanha + resumo de destinatários). Exige `campaign:read`. */
@@ -636,7 +758,23 @@ export interface CampaignRecipient {
   id: string;
   tenantId: string;
   campaignId: string;
-  contactId: string;
+  /** Ausente para um destinatário "solto" (sem Contato) — ver `phoneE164`/`name`. */
+  contactId?: string;
+  /** Só presente quando `contactId` é ausente — o telefone de quem não tem Contato salvo. */
+  phoneE164?: string;
+  /** Nome trazido pela planilha/lista manual — só existe junto de `phoneE164`. */
+  name?: string;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — quando `contactId` é
+   * definido, o Contato salvo (nome, se houver, e telefone) + o apelido do
+   * WhatsApp da conversa vinculada, resolvidos em lote pela API. `undefined`
+   * para um destinatário "solto" (ver `phoneE164`/`name` acima).
+   */
+  contact?: {
+    name?: string;
+    phoneE164: string;
+    nickname?: string;
+  };
   status: CampaignRecipientStatus;
   skipReason?: string;
   errorMessage?: string;
@@ -681,6 +819,27 @@ export function cancelCampaign(campaignId: string): Promise<{ campaign: Campaign
   return request(`/api/campaigns/${encodeURIComponent(campaignId)}/cancel`, { method: 'POST' });
 }
 
+/**
+ * Reabre uma campanha `completed`/`cancelled` (retrofit 2026-08-18 — "não
+ * existe nenhum botão onde podemos reiniciar ou refazer uma campanha").
+ * Devolve destinatários que FALHARAM (ex.: instabilidade momentânea da
+ * conexão do WhatsApp) para pendente e reagenda o envio — nunca reenvia a
+ * quem foi suprimido por opt-out/conversa ativa/contatado recentemente.
+ * Exige `campaign:manage`.
+ */
+export function reopenCampaign(campaignId: string): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/reopen`, { method: 'POST' });
+}
+
+/**
+ * Remove a campanha definitivamente (retrofit visual 2026-08-18, menu "⋮"
+ * da lista). Exige `campaign:manage`. A API recusa (400) campanhas
+ * `running` — pause ou cancele antes.
+ */
+export async function deleteCampaign(campaignId: string): Promise<void> {
+  await request(`/api/campaigns/${encodeURIComponent(campaignId)}`, { method: 'DELETE' });
+}
+
 // --- Fase L, Bloco L7 — métricas de campanha ---
 
 /** Espelha `CampaignLinkedConversationStage` (`apps/api`). */
@@ -713,6 +872,51 @@ export interface CampaignMetrics {
 /** Métricas de uma campanha. Exige `campaign:read`. */
 export function fetchCampaignMetrics(campaignId: string): Promise<{ metrics: CampaignMetrics }> {
   return request(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`);
+}
+
+// --- Mídia de campanha (Fase L, Bloco L8) ---
+
+/**
+ * Anexa (ou substitui) a mídia de uma campanha `draft`. Mesmo padrão de
+ * `sendConversationMedia`: corpo é o ARQUIVO BRUTO (não JSON), categoria/nome
+ * viajam em headers `x-media-*`. Sem legenda separada — a legenda É o
+ * `messageTemplate` já cadastrado. Exige `campaign:manage`.
+ */
+export async function attachCampaignMedia(
+  campaignId: string,
+  file: File,
+  contentType: CampaignMediaContentType,
+): Promise<{ campaign: Campaign }> {
+  const headers: Record<string, string> = {
+    'content-type': file.type || 'application/octet-stream',
+    'x-media-content-type': contentType,
+    'x-media-filename': file.name,
+  };
+  const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/media`, {
+    method: 'POST',
+    headers,
+    body: file,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new ClientApiError(response.status, body);
+  }
+  return body as { campaign: Campaign };
+}
+
+/** Remove a mídia anexada a uma campanha `draft`. Exige `campaign:manage`. */
+export function removeCampaignMedia(campaignId: string): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/media`, { method: 'DELETE' });
+}
+
+/**
+ * URL de preview/download do anexo — usada direto como `src` de `<img>` (ou
+ * `href` de link, para documento/vídeo/áudio). O proxy do BFF (`GET
+ * /api/campaigns/:id/media`) já repassa o `Content-Type` real do arquivo.
+ */
+export function campaignMediaUrl(campaignId: string): string {
+  return `/api/campaigns/${encodeURIComponent(campaignId)}/media`;
 }
 
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
@@ -784,6 +988,25 @@ export interface ConversationSummary {
   contactJid: string;
   /** Nome de exibição do WhatsApp (`pushName`, Milestone 6, Bloco M6H-2b). Ausente = usa `formatContactJid(contactJid)` como fallback. */
   contactName?: string;
+  /**
+   * Identidade durável da pessoa (Fase L, Bloco L1) — `id` de um `Contact`
+   * salvo na aba Contatos. `undefined` até o vínculo acontecer (automático,
+   * quando o `contactJid` tem telefone real; ou manual, via o botão "Salvar
+   * contato" do painel de contexto, retrofit visual 2026-08-18). Ausente
+   * permanentemente para conversas `@lid` (endereço de privacidade sem
+   * telefone algum a derivar).
+   */
+  contactId?: string;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — nome que um humano
+   * salvou para esta pessoa na aba Contatos (`WhatsAppContact.name`),
+   * resolvido a partir de `contactId`. `undefined` sem `contactId`, ou com um
+   * Contato ainda sem nome salvo (a maioria — criados automaticamente pelo
+   * WhatsApp). É este campo, e só ele, que autoriza `formatContactDisplayName`
+   * a mostrar UM nome sozinho — sem ele, a UI sempre mostra telefone + apelido
+   * do WhatsApp (`contactName`, quando houver).
+   */
+  savedContactName?: string;
   status: ConversationStatus;
   /** Dono do atendimento (M5D). Ausente = ninguém assumiu. */
   assignedToUserId?: string;
@@ -898,7 +1121,19 @@ export interface AiInteractionSummary {
   id: string;
   tenantId: string;
   conversationId: string;
-  /** Fase 1, Bloco F1.4 — id da `Message` INBOUND que originou esta interação (gravado direto em `record()`, não mais via `linkMessage()` posterior). */
+  /**
+   * CAMPO DE DUPLO PROPÓSITO no backend (achado 2026-08-18, corrigindo a nota
+   * antiga deste comentário — o comentário anterior dizia que `linkMessage()`
+   * não sobrescrevia mais este campo; isso está errado, `OutboundCommandConsumer`
+   * ainda chama `linkMessage()` normalmente). Ao ser gravado (`record()`),
+   * aponta para a `Message` INBOUND que originou a geração (Fase 1, F1.4);
+   * DEPOIS de um envio outbound bem-sucedido, `linkMessage()` (Bloco 3b/4)
+   * REESCREVE este mesmo campo para apontar à `Message` OUTBOUND enviada.
+   * Nunca confiar neste valor para inferir "isto é uma pergunta do cliente"
+   * sem saber qual dos dois estados vale no momento — ver o guard em
+   * `MessageTimeline.tsx` (nunca aplica o selo "Gerada por IA" a uma
+   * mensagem inbound, mesmo que o id bata).
+   */
   messageId?: string;
   provider: string;
   model?: string;
@@ -1083,6 +1318,22 @@ export function setConversationExcludedFromPipeline(
   return request(`/api/conversations/${encodeURIComponent(conversationId)}/exclude-from-pipeline`, {
     method: 'POST',
     body: JSON.stringify({ excluded }),
+  });
+}
+
+/**
+ * Botão "Salvar contato" do painel de contexto (retrofit visual 2026-08-18):
+ * salva (ou renomeia) o `Contact` desta conversa na aba Contatos, sem sair da
+ * tela. `name` é opcional — omitido, o contato é salvo/vinculado sem nome.
+ * A API responde 422 quando não há telefone real a derivar (conversa `@lid`).
+ */
+export function saveConversationContact(
+  conversationId: string,
+  name?: string,
+): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/save-contact`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
   });
 }
 

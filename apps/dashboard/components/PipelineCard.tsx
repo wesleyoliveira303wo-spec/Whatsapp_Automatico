@@ -1,9 +1,17 @@
 import Link from 'next/link';
-import type { DragEvent } from 'react';
+import { memo, type DragEvent } from 'react';
 import { Bot, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatContactDisplayName, formatElapsedDays } from '@/lib/formatters';
+import {
+  formatContactDisplayNameParts,
+  formatElapsedDays,
+  formatPipelineColumnLabel,
+  PIPELINE_COLUMN_ORDER,
+  NOT_CLIENT_COLUMN,
+  type PipelineColumnKey,
+} from '@/lib/formatters';
 import ContactAvatar from './ContactAvatar';
+import DisplayNameParts from './DisplayNameParts';
 import TagChip from './TagChip';
 import type { ConversationSummary } from '@/lib/clientApi';
 
@@ -13,6 +21,14 @@ interface PipelineCardProps {
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: (event: DragEvent<HTMLDivElement>) => void;
   dragging?: boolean;
+  /**
+   * Alternativa por teclado/clique ao arrasto (achado de auditoria de
+   * acessibilidade 2026-08-22 — Web Interface Guidelines: gestos precisam
+   * de alternativa por toque/clique e teclado). Um `<select>` nativo é
+   * sempre operável por teclado (setas + Enter) e por leitor de tela, sem
+   * exigir nenhuma biblioteca nova.
+   */
+  onMoveToColumn: (column: PipelineColumnKey) => void;
 }
 
 /**
@@ -40,13 +56,17 @@ interface PipelineCardProps {
  * saiu — o mockup não a tem. Sem sombra (Design System: cards são
  * fundo+borda, nunca `shadow`).
  */
-export default function PipelineCard({
+function PipelineCard({
   conversation,
   onDragStart,
   onDragEnd,
   dragging = false,
+  onMoveToColumn,
 }: PipelineCardProps): JSX.Element {
   const classificadoPorHumano = conversation.stageSetBy === 'human';
+  const currentColumn: PipelineColumnKey = conversation.excludedFromPipeline
+    ? NOT_CLIENT_COLUMN
+    : conversation.stage;
 
   return (
     <div
@@ -64,10 +84,21 @@ export default function PipelineCard({
           sessionName={conversation.sessionName}
           contactJid={conversation.contactJid}
           contactName={conversation.contactName}
+          savedContactName={conversation.savedContactName}
           className="h-7 w-7 text-[11px]"
+          // CORREÇÃO 2026-08-18: mesmo motivo de `ConversationListItem` — o
+          // board pode ter muitos cards simultâneos, cada um buscando foto ao
+          // vivo martelava o socket do Baileys sem parar.
+          fetchLive={false}
         />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-          {formatContactDisplayName(conversation.contactJid, conversation.contactName)}
+          <DisplayNameParts
+            {...formatContactDisplayNameParts(
+              conversation.contactJid,
+              conversation.contactName,
+              conversation.savedContactName,
+            )}
+          />
         </span>
         <span
           className="shrink-0 text-muted-foreground"
@@ -94,19 +125,65 @@ export default function PipelineCard({
         </div>
       )}
 
-      <div className="mt-[9px] flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">
+      <div className="mt-[9px] flex items-center justify-between gap-2">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
           {conversation.excludedFromPipeline
             ? 'IA desligada'
             : `${formatElapsedDays(conversation.stageUpdatedAt)} neste estágio`}
         </span>
-        <Link
-          href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
-          className="text-[11px] font-semibold text-primary hover:text-primary/80"
-        >
-          Ver conversa <span aria-hidden="true">›</span>
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <select
+            aria-label="Mover conversa para outro estágio do Pipeline"
+            title="Mover para outro estágio"
+            value=""
+            onChange={(event) => {
+              const target = event.target.value as PipelineColumnKey | '';
+              event.target.value = '';
+              if (target) onMoveToColumn(target);
+            }}
+            className="rounded-md border border-border bg-transparent px-1 py-0.5 text-[10.5px] text-muted-foreground outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <option value="" disabled>
+              Mover…
+            </option>
+            {PIPELINE_COLUMN_ORDER.filter((column) => column !== currentColumn).map((column) => (
+              <option key={column} value={column}>
+                {formatPipelineColumnLabel(column)}
+              </option>
+            ))}
+          </select>
+          <Link
+            href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
+            className="text-[11px] font-semibold text-primary hover:text-primary/80"
+          >
+            Ver conversa <span aria-hidden="true">›</span>
+          </Link>
+        </div>
       </div>
     </div>
   );
 }
+
+/**
+ * PERFORMANCE (auditoria 2026-08-22) — o board reagrupa e re-renderiza a cada
+ * `dragEnter` durante o arrasto, e cada card monta um `ContactAvatar`, N
+ * `TagChip` e um `<select>` com uma `<option>` por coluna. Sem memo, arrastar
+ * um card reconciliava TODOS os cards do quadro várias vezes por segundo.
+ *
+ * O comparador ignora deliberadamente as três props de callback: as closures
+ * são recriadas a cada render de `PipelineColumn` (são geradas dentro de um
+ * `.map`), mas TODAS delegam para o mesmo `moveConversation`/`setDraggedId`
+ * estáveis do `PipelineBoard`, que leem o estado atual por `ref` — nunca por
+ * closure. Ou seja, uma closure "velha" é funcionalmente idêntica à nova, e
+ * compará-las por referência só produziria falso negativo.
+ *
+ * `conversation` é comparado por REFERÊNCIA de propósito: o hook cria um
+ * objeto novo exatamente quando aquela conversa muda (`applyLocalUpdate` faz
+ * `map` preservando os itens intactos), então a identidade já é o sinal certo
+ * — comparação profunda seria custo sem ganho.
+ */
+export default memo(
+  PipelineCard,
+  (prev, next) =>
+    prev.conversation === next.conversation && prev.dragging === next.dragging,
+);

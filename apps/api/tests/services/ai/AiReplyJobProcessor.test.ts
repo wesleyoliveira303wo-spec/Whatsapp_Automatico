@@ -64,7 +64,7 @@ function buildMessage(overrides: Partial<Message> & Pick<Message, 'id' | 'occurr
 
 function buildSut(
   historyLimit?: number,
-  options: { sleepCalls?: number[] } = {},
+  options: { sleepCalls?: number[]; now?: () => Date; handoffNoticeRepeatAfterMs?: number } = {},
 ): {
   processor: AiReplyJobProcessor;
   conversationRepository: FakeConversationRepository;
@@ -108,6 +108,8 @@ function buildSut(
           undefined,
           undefined,
           sleepFn,
+          options.handoffNoticeRepeatAfterMs,
+          options.now,
         )
       : new AiReplyJobProcessor(
           conversationRepository,
@@ -121,6 +123,8 @@ function buildSut(
           undefined,
           undefined,
           sleepFn,
+          options.handoffNoticeRepeatAfterMs,
+          options.now,
         );
 
   return {
@@ -274,16 +278,53 @@ describe('AiReplyJobProcessor', () => {
         {
           tenantId: TENANT_ID,
           conversationId: CONVERSATION_ID,
-          idempotencyKey: `${recorded.id}:1`,
+          idempotencyKey: `${recorded.id}-p1`,
           content: 'O valor do serviço é R$ 150.',
         },
         {
           tenantId: TENANT_ID,
           conversationId: CONVERSATION_ID,
-          idempotencyKey: `${recorded.id}:2`,
+          idempotencyKey: `${recorded.id}-p2`,
           content: 'Posso agendar para você?',
         },
       ]);
+    });
+
+    /**
+     * TRAVA DE REGRESSÃO (2026-08-21) — bug MEDIDO em produção que fez a IA
+     * responder SEMPRE com um balão só, silenciosamente, por semanas.
+     *
+     * O BullMQ recusa um `jobId` customizado que contenha `:`, a menos que ele
+     * tenha exatamente 3 partes (`job.js`, `validateOptions`: "Custom Id cannot
+     * contain :"). A chave dos parágrafos 2+ era `<uuid>:<índice>` — 2 partes —
+     * então `queue.add()` LANÇAVA no 2º balão, derrubando o job `ai-reply`
+     * inteiro; o 3º nunca era tentado e o cliente só recebia o 1º parágrafo.
+     *
+     * Este teste existe porque o `FakeOutboundMessageDispatcher` NÃO valida
+     * `jobId` como o BullMQ real — a suíte inteira passava verde com o bug em
+     * produção. A regra é travada aqui de forma explícita, sem depender de
+     * Redis: nenhuma chave de idempotência pode conter `:`.
+     */
+    it('nenhuma idempotencyKey de parágrafo contém ":" (o BullMQ recusa esse jobId)', async () => {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut();
+      conversationRepository.seed(buildConversation());
+      aiProviderFactory.provider.setNextResult({
+        content: 'Primeira.\nSegunda.\nTerceira.\nQuarta.',
+        model: 'claude-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      await processor.process(buildJobData());
+
+      const chaves = outboundDispatcher.dispatchCalls
+        .map((call) => call.idempotencyKey)
+        .filter((key): key is string => Boolean(key));
+
+      expect(chaves).toHaveLength(3);
+      for (const chave of chaves) {
+        expect(chave).not.toContain(':');
+      }
     });
 
     it('espera paragraphDelayMs entre cada envio, mas não antes do primeiro nem depois do último', async () => {
@@ -672,9 +713,12 @@ describe('AiReplyJobProcessor', () => {
       expect(updated?.escalatedAt).toBeInstanceOf(Date);
     });
 
-    it('NÃO repete o aviso ao cliente quando a conversa já está escalada (bug real: mesma desculpa várias vezes seguidas)', async () => {
+    it('NÃO repete o aviso ao cliente quando a conversa foi escalada RECENTEMENTE (bug real: mesma desculpa várias vezes seguidas)', async () => {
+      // CORREÇÃO 2026-08-18: `now` fixo, 1h depois de `escalatedAt` — dentro
+      // da janela padrão de 6h (`DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS`),
+      // então a supressão ainda vale.
       const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
-        buildSut();
+        buildSut(undefined, { now: () => new Date('2026-08-14T20:00:00Z') });
       // Conversa que JÁ pediu ajuda humana e ninguém assumiu — `escalatedAt`
       // preenchido é exatamente o registro de "o cliente já foi avisado".
       conversationRepository.seed(
@@ -687,6 +731,41 @@ describe('AiReplyJobProcessor', () => {
       await processor.process(buildJobData());
 
       expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
+
+    it('VOLTA a avisar o cliente quando a última escalada foi há mais que a janela (achado real: cliente esquecido numa escalada de 11 dias)', async () => {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut(undefined, { now: () => new Date('2026-08-15T02:00:00Z') }); // 7h depois — passou da janela de 6h.
+      conversationRepository.seed(
+        buildConversation({ status: 'bot', escalatedAt: new Date('2026-08-14T19:00:00Z') }),
+      );
+      aiProviderFactory.provider.setNextError(
+        new Error('Gemini API respondeu 429: RESOURCE_EXHAUSTED'),
+      );
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+      expect(outboundDispatcher.dispatchCalls[0].content).toContain('encaminhando');
+    });
+
+    it('respeita uma janela customizada (handoffNoticeRepeatAfterMs)', async () => {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut(undefined, {
+          now: () => new Date('2026-08-14T19:05:00Z'), // 5 min depois
+          handoffNoticeRepeatAfterMs: 60_000, // janela de só 1 min
+        });
+      conversationRepository.seed(
+        buildConversation({ status: 'bot', escalatedAt: new Date('2026-08-14T19:00:00Z') }),
+      );
+      aiProviderFactory.provider.setNextError(
+        new Error('Gemini API respondeu 429: RESOURCE_EXHAUSTED'),
+      );
+
+      await processor.process(buildJobData());
+
+      // 5 minutos já passou da janela customizada de 1 minuto — avisa de novo.
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
     });
 
     it('mesmo suprimindo o aviso, continua sinalizando para humano (o alerta da Dashboard não pode sumir)', async () => {

@@ -84,4 +84,25 @@ describe('ContactAvatar (Milestone 6, Bloco M6H-2b)', () => {
 
     expect(await screen.findByText('MS')).toBeInTheDocument();
   });
+
+  describe('fetchLive={false} (correção 2026-08-18 — listas não martelam mais o socket)', () => {
+    it('NUNCA chama fetchContactAvatar, mesmo que uma foto real esteja disponível', async () => {
+      (clientApi.fetchContactAvatar as jest.Mock).mockResolvedValue({
+        avatarUrl: 'https://pps.whatsapp.net/fake-avatar.jpg',
+      });
+
+      render(
+        <ContactAvatar
+          sessionName="vendas"
+          contactJid="5511999999999@s.whatsapp.net"
+          contactName="Maria Silva"
+          fetchLive={false}
+        />,
+      );
+
+      expect(await screen.findByText('MS')).toBeInTheDocument();
+      expect(screen.queryByRole('img')).not.toBeInTheDocument();
+      expect(clientApi.fetchContactAvatar).not.toHaveBeenCalled();
+    });
+  });
 });

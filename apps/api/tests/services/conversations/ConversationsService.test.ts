@@ -7,7 +7,8 @@ import { ConversationNotHumanError } from '../../../src/services/conversations/d
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../auth/testDoubles';
-import { FakeConversationRepository, FakeMessageRepository } from './testDoubles';
+import { FakeConversationRepository, FakeMessageRepository, FakeContactResolver } from './testDoubles';
+import { ConversationContactUnavailableError } from '../../../src/services/conversations/domain/errors/ConversationContactUnavailableError';
 import { FakeOutboundMessageDispatcher } from '../whatsapp/infrastructure/FakeOutboundMessageDispatcher';
 import { FakeMediaDownloader } from '../whatsapp/infrastructure/FakeMediaDownloader';
 import { FakeMediaSender } from '../whatsapp/infrastructure/FakeMediaSender';
@@ -57,6 +58,7 @@ function buildService(): {
   outboundDispatcher: FakeOutboundMessageDispatcher;
   mediaDownloader: FakeMediaDownloader;
   mediaSender: FakeMediaSender;
+  contactResolver: FakeContactResolver;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
@@ -65,6 +67,7 @@ function buildService(): {
   const outboundDispatcher = new FakeOutboundMessageDispatcher();
   const mediaDownloader = new FakeMediaDownloader();
   const mediaSender = new FakeMediaSender();
+  const contactResolver = new FakeContactResolver();
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: 'hash-qualquer' });
   const service = new ConversationsService(
     conversationRepository,
@@ -75,6 +78,8 @@ function buildService(): {
     outboundDispatcher,
     mediaDownloader,
     mediaSender,
+    undefined,
+    contactResolver,
   );
   return {
     service,
@@ -85,6 +90,7 @@ function buildService(): {
     outboundDispatcher,
     mediaDownloader,
     mediaSender,
+    contactResolver,
   };
 }
 
@@ -915,6 +921,121 @@ describe('ConversationsService', () => {
       await expect(
         service.setExcludedFromPipeline('tenant-inexistente', 'conversation-1', true),
       ).rejects.toThrow(TenantNotFoundError);
+    });
+  });
+
+  describe('saveContactFromConversation() — retrofit visual 2026-08-18 (botão "Salvar contato")', () => {
+    it('quando a conversa já tem contactId, só grava o nome (não chama resolveByWhatsAppJid)', async () => {
+      const { service, conversationRepository, contactResolver } = buildService();
+      conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+      const result = await service.saveContactFromConversation(
+        'tenant-1',
+        'conversation-1',
+        'Maria Costa',
+      );
+
+      expect(result.contactId).toBe('contact-99');
+      expect(contactResolver.calls).toEqual([]);
+      expect(contactResolver.saveNameCalls).toEqual([
+        { tenantId: 'tenant-1', contactId: 'contact-99', name: 'Maria Costa' },
+      ]);
+    });
+
+    it('quando a conversa ainda não tem contactId, resolve e LIGA a conversa ao contato', async () => {
+      const { service, conversationRepository, contactResolver } = buildService();
+      contactResolver.setContactId('contact-novo');
+      conversationRepository.seed(
+        buildConversation({ contactId: undefined, contactJid: '5511999999999@s.whatsapp.net' }),
+      );
+
+      const result = await service.saveContactFromConversation(
+        'tenant-1',
+        'conversation-1',
+        'Maria Costa',
+      );
+
+      expect(result.contactId).toBe('contact-novo');
+      expect(contactResolver.calls).toEqual([
+        { tenantId: 'tenant-1', contactJid: '5511999999999@s.whatsapp.net' },
+      ]);
+    });
+
+    it('salva sem nome (name ausente é válido) — não chama saveName', async () => {
+      const { service, conversationRepository, contactResolver } = buildService();
+      conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+      await service.saveContactFromConversation('tenant-1', 'conversation-1', undefined);
+
+      expect(contactResolver.saveNameCalls).toEqual([]);
+    });
+
+    it('lança ConversationContactUnavailableError quando não há telefone a derivar (@lid)', async () => {
+      const { service, conversationRepository, contactResolver } = buildService();
+      contactResolver.setUnresolvable();
+      conversationRepository.seed(
+        buildConversation({ contactId: undefined, contactJid: '225236742053984@lid' }),
+      );
+
+      await expect(
+        service.saveContactFromConversation('tenant-1', 'conversation-1', 'Maria'),
+      ).rejects.toBeInstanceOf(ConversationContactUnavailableError);
+    });
+
+    it('audita conversation.contact_saved', async () => {
+      const { service, conversationRepository, auditLogRepository } = buildService();
+      conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+
+      await service.saveContactFromConversation('tenant-1', 'conversation-1', 'Maria Costa', {
+        userId: 'op-1',
+        canResumeAny: true,
+      });
+
+      expect(
+        auditLogRepository
+          .all()
+          .some(
+            (e) =>
+              e.action === 'conversation.contact_saved' &&
+              e.actorUserId === 'op-1' &&
+              e.targetId === 'conversation-1',
+          ),
+      ).toBe(true);
+    });
+
+    it('lança ConversationNotFoundError quando a conversa não existe', async () => {
+      const { service } = buildService();
+
+      await expect(
+        service.saveContactFromConversation('tenant-1', 'conversation-inexistente', 'Maria'),
+      ).rejects.toBeInstanceOf(ConversationNotFoundError);
+    });
+
+    it('lança ConversationNotFoundError (IDOR) quando a conversa é de OUTRO tenant', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(buildConversation({ tenantId: 'tenant-2' }));
+
+      await expect(
+        service.saveContactFromConversation('tenant-1', 'conversation-1', 'Maria'),
+      ).rejects.toBeInstanceOf(ConversationNotFoundError);
+    });
+
+    it('lança TenantNotFoundError quando o tenant não existe', async () => {
+      const { service } = buildService();
+
+      await expect(
+        service.saveContactFromConversation('tenant-inexistente', 'conversation-1', 'Maria'),
+      ).rejects.toBeInstanceOf(TenantNotFoundError);
+    });
+
+    it('propaga erro se saveName falhar (o operador precisa ver a falha)', async () => {
+      const { service, conversationRepository, contactResolver } = buildService();
+      conversationRepository.seed(buildConversation({ contactId: 'contact-99' }));
+      contactResolver.setSaveNameError(new Error('falha de banco'));
+
+      await expect(
+        service.saveContactFromConversation('tenant-1', 'conversation-1', 'Maria'),
+      ).rejects.toThrow('falha de banco');
     });
   });
 

@@ -78,25 +78,39 @@ interface WhatsAppConversationRow {
   aiSummaryMessageCount: number;
   createdAt: Date;
   updatedAt: Date;
-  /** Redesign 2026-08-05 (R4) — presente só quando a query usa `CONVERSATION_TAGS_INCLUDE` (ver abaixo). */
+  /** Redesign 2026-08-05 (R4) — presente só quando a query usa `CONVERSATION_INCLUDE` (ver abaixo). */
   conversationTags: Array<{ tag: { id: string; name: string; color: string } }>;
+  /**
+   * Padronização de exibição de contato (2026-08-20) — presente só quando a
+   * query usa `CONVERSATION_INCLUDE`. `null` tanto para `contactId` ausente
+   * quanto para um `WhatsAppContact` ainda sem nome salvo — os dois casos
+   * mapeiam para `savedContactName: undefined` (ver `toDomain`).
+   */
+  contact: { name: string | null } | null;
 }
 
 /**
- * Redesign 2026-08-05 (R4) — `include` compartilhado pelas 3 queries que
- * devolvem uma `Conversation` completa diretamente (`upsert`/`findUnique`/
- * `findMany`); os demais métodos de escrita (`updateStatus`,
- * `flagNeedsHumanAttention`, `markAsRead`, `updateStage`,
+ * Redesign 2026-08-05 (R4), estendido em 2026-08-20 — `include` compartilhado
+ * pelas 3 queries que devolvem uma `Conversation` completa diretamente
+ * (`upsert`/`findUnique`/`findMany`); os demais métodos de escrita
+ * (`updateStatus`, `flagNeedsHumanAttention`, `markAsRead`, `updateStage`,
  * `setExcludedFromPipeline`) fazem `updateMany` + `this.findById(...)`, e
  * herdam o `include` de `findById` sem precisar declarar de novo.
  * `color` chega em MAIÚSCULO (enum Prisma `TagColor`) — `toDomain` faz
  * `.toLowerCase()` para casar com a união literal do Domain
  * (`services/tags/domain/entities/Tag.ts`), sem `services/conversations`
  * precisar importar nada de `services/tags`.
+ *
+ * `contact: { select: { name: true } }` (2026-08-20) resolve
+ * `savedContactName` pelo relacionamento já existente (`WhatsAppConversation.
+ * contact`, Fase L Bloco L1) — sem consulta extra, o Prisma resolve como join
+ * lateral igual já faz para `conversationTags`. Só `name` é selecionado: o
+ * binário/demais colunas do contato nunca precisam sair daqui.
  */
-const CONVERSATION_TAGS_INCLUDE = {
+const CONVERSATION_INCLUDE = {
   include: {
     conversationTags: { include: { tag: { select: { id: true, name: true, color: true } } } },
+    contact: { select: { name: true } },
   },
 } as const;
 
@@ -108,6 +122,7 @@ function toDomain(row: WhatsAppConversationRow): Conversation {
     contactJid: row.contactJid,
     contactName: row.contactName ?? undefined,
     contactId: row.contactId ?? undefined,
+    savedContactName: row.contact?.name ?? undefined,
     status: STATUS_TO_DOMAIN[row.status],
     assignedToUserId: row.assignedToUserId ?? undefined,
     escalatedAt: row.escalatedAt ?? undefined,
@@ -166,6 +181,13 @@ export class PrismaConversationRepository implements ConversationRepository {
    * a conversa deve refletir o mais recente. Quando `create.contactName` é
    * `undefined` (mensagem sem nome), o `update` NÃO toca a coluna — nunca
    * apaga um nome já salvo por falta de nome numa mensagem posterior.
+   *
+   * `contactId`/`stage`/`stageSetBy` (Fase L, Bloco L5) só têm efeito na
+   * CRIAÇÃO — `undefined` (o único chamador de sempre, `MessageIngestionService`,
+   * nunca os define) faz o Prisma usar os defaults de coluna (`null`/`NEW`/
+   * `AI`), idêntico ao comportamento anterior a este bloco. É
+   * `WhatsAppCampaignMessageSender` (primeiro contato de campanha) quem passa
+   * `contactId`/`stage: 'contacted'` explicitamente.
    */
   async upsertByTenantSessionAndContact(
     tenantId: string,
@@ -181,12 +203,15 @@ export class PrismaConversationRepository implements ConversationRepository {
         sessionName,
         contactJid,
         contactName: create.contactName,
+        contactId: create.contactId,
         status: STATUS_TO_PRISMA[create.status],
+        stage: create.stage ? STAGE_TO_PRISMA[create.stage] : undefined,
+        stageSetBy: create.stageSetBy ? STAGE_SET_BY_TO_PRISMA[create.stageSetBy] : undefined,
         createdAt: create.createdAt,
         updatedAt: create.updatedAt,
       },
       update: create.contactName ? { contactName: create.contactName } : {},
-      ...CONVERSATION_TAGS_INCLUDE,
+      ...CONVERSATION_INCLUDE,
     });
 
     return toDomain(row);
@@ -200,7 +225,7 @@ export class PrismaConversationRepository implements ConversationRepository {
   async findById(id: string): Promise<Conversation | undefined> {
     const row = await this.prisma.whatsAppConversation.findUnique({
       where: { id },
-      ...CONVERSATION_TAGS_INCLUDE,
+      ...CONVERSATION_INCLUDE,
     });
     return row ? toDomain(row) : undefined;
   }
@@ -218,7 +243,7 @@ export class PrismaConversationRepository implements ConversationRepository {
   ): Promise<Conversation | undefined> {
     const row = await this.prisma.whatsAppConversation.findFirst({
       where: { tenantId, sessionName, contactId },
-      ...CONVERSATION_TAGS_INCLUDE,
+      ...CONVERSATION_INCLUDE,
     });
     return row ? toDomain(row) : undefined;
   }
@@ -320,7 +345,7 @@ export class PrismaConversationRepository implements ConversationRepository {
       orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      ...CONVERSATION_TAGS_INCLUDE,
+      ...CONVERSATION_INCLUDE,
     });
 
     const hasMore = rows.length > limit;

@@ -97,6 +97,19 @@ class GeminiHttpError extends Error {
 /** Formato bruto (parcial) da resposta REST `generateContent` do Gemini. */
 interface GeminiPart {
   text?: string;
+  /**
+   * CORREÇÃO 2026-08-18 (achado real, grave: um cliente recebeu literalmente
+   * "\" but they already sent text, it might look stupid.\"" como resposta —
+   * um fragmento do RACIOCÍNIO INTERNO do modelo, não uma resposta de
+   * verdade). Modelos "thinking" (ligado por padrão, ver `thoughtsTokenCount`
+   * acima — deliberadamente NUNCA desligado, decisão do fundador) podem
+   * devolver, junto da resposta final, um `part` marcado `thought: true` (o
+   * "resumo do pensamento" do próprio Gemini) na mesma lista de `parts` de um
+   * candidato. Até esta correção, `content` concatenava QUALQUER `part.text`
+   * sem checar esta flag — o resumo do pensamento, quando presente, ia direto
+   * para o WhatsApp do cliente junto com a resposta real.
+   */
+  thought?: boolean;
 }
 interface GeminiCandidate {
   content?: { parts?: GeminiPart[] };
@@ -259,7 +272,11 @@ export class GeminiAiProvider implements AiProvider {
         }
 
         const data = (await response.json()) as GeminiGenerateContentResponse;
+        // CORREÇÃO 2026-08-18 — ver docstring de `GeminiPart.thought`: nunca
+        // incluir um `part` de raciocínio interno no texto enviado ao
+        // cliente, mesmo que ele venha misturado com a resposta real.
         const content = (data.candidates?.[0]?.content?.parts ?? [])
+          .filter((part) => !part.thought)
           .map((part) => part.text ?? '')
           .join('');
 

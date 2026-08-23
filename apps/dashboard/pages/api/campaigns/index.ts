@@ -12,11 +12,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session) return;
 
   if (req.method === 'GET') {
-    const { limit, cursor } = req.query;
+    const { limit, cursor, sessionName } = req.query;
     const { status: apiStatus, body } = await callCampaignsApi(session, '', {
       query: {
         limit: typeof limit === 'string' ? limit : undefined,
         cursor: typeof cursor === 'string' ? cursor : undefined,
+        sessionName: typeof sessionName === 'string' ? sessionName : undefined,
       },
     });
     res.status(apiStatus).json(body);

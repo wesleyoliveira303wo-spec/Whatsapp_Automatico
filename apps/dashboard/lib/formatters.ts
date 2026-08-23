@@ -337,52 +337,103 @@ function hasIdentifiableCharacter(value: string): boolean {
   return /[\p{L}\p{N}]/u.test(value);
 }
 
+/** Colapsa espaços internos e devolve `undefined` quando o texto não identifica ninguém (vazio ou só emoji/pontuação). */
+function normalizeIdentifiableName(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/\s+/g, ' ');
+  return normalized && hasIdentifiableCharacter(normalized) ? normalized : undefined;
+}
+
+function truncateDisplayName(value: string): string {
+  return value.length > MAX_DISPLAY_NAME_LENGTH
+    ? `${value.slice(0, MAX_DISPLAY_NAME_LENGTH - 1).trimEnd()}…`
+    : value;
+}
+
+/**
+ * `primary` é sempre o identificador (nome salvo, ou o telefone quando não
+ * há um); `secondary`, quando presente, é o apelido do WhatsApp — um
+ * complemento, nunca a fonte principal. Devolvido em partes (2026-08-21,
+ * pedido do fundador) para a UI poder estilizar o apelido menor/mais claro
+ * do que o identificador principal (`components/DisplayNameParts.tsx`), em
+ * vez de uma única string "telefone · apelido" indistinguível visualmente.
+ */
+export interface PersonDisplayParts {
+  primary: string;
+  secondary?: string;
+}
+
 /**
  * Nome de exibição do contato — a ÚNICA fonte de rótulo de contato da UI,
  * usada pela lista de Conversas, pelo card do Pipeline, pelo cabeçalho da
  * conversa e pelo painel de contexto. É por isso que padronizar aqui
  * padroniza o produto inteiro.
  *
- * CORREÇÃO 2026-08-15 (pedido do fundador: "umas com nickname, outras com
- * número incompleto, outras com um número gigantesco — nada padronizado").
- * A causa era o fallback: quando não havia `contactName`, esta função caía em
- * `formatContactJid`, que devolve os DÍGITOS CRUS (`5521988887777`, ou o LID
- * `225236742053984`). Numa base real, 34 de 51 conversas (67%) exibiam esse
- * valor cru — daí a impressão de bagunça.
+ * REGRA 2026-08-20 (pedido do fundador: "as vezes aparece numero, as vezes
+ * nickname do whatsapp, as vezes nome salvo — nada padronizado"). Antes desta
+ * rodada, `contactName` (o apelido do WhatsApp) tinha prioridade sobre o
+ * telefone — o que fazia duas pessoas com o mesmo apelido genérico ("Ana",
+ * "Loja") parecerem a mesma linha, e escondia o único dado ESTÁVEL (o
+ * telefone) sempre que havia qualquer apelido. Nova ordem, por dois eixos
+ * distintos:
  *
- * Ordem de preferência, do mais para o menos identificável:
- * 1. `contactName` (pushName do WhatsApp), quando de fato identifica alguém;
- * 2. o telefone FORMATADO (`+55 21 98888-7777`), nunca os dígitos crus;
- * 3. `PRIVATE_CONTACT_LABEL`, para LID — não existe telefone a mostrar.
+ * 1. `savedContactName` (o nome que um humano salvou na aba Contatos) — só
+ *    ele aparece sozinho, é a única fonte que representa uma decisão humana
+ *    de identidade.
+ * 2. Sem nome salvo: o telefone formatado é OBRIGATÓRIO (nunca omitido), com
+ *    o apelido do WhatsApp ao lado, se houver — não pode substituir o
+ *    telefone, só complementar.
+ * 3. `PRIVATE_CONTACT_LABEL`, para LID sem apelido — não existe telefone a
+ *    mostrar; com apelido, o apelido sozinho já identifica melhor que o
+ *    rótulo genérico.
  *
- * Espaços internos são colapsados e o nome é truncado, para que toda linha da
- * lista tenha a mesma altura independente do que o contato escolheu como nome.
+ * Espaços internos são colapsados e cada parte é truncada independentemente,
+ * para que toda linha da lista tenha a mesma altura independente do que foi
+ * escolhido.
  */
-export function formatContactDisplayName(contactJid: string, contactName?: string): string {
-  const normalized = contactName?.trim().replace(/\s+/g, ' ');
-
-  if (normalized && hasIdentifiableCharacter(normalized)) {
-    return normalized.length > MAX_DISPLAY_NAME_LENGTH
-      ? `${normalized.slice(0, MAX_DISPLAY_NAME_LENGTH - 1).trimEnd()}…`
-      : normalized;
+export function formatContactDisplayNameParts(
+  contactJid: string,
+  contactName?: string,
+  savedContactName?: string,
+): PersonDisplayParts {
+  const saved = normalizeIdentifiableName(savedContactName);
+  if (saved) {
+    return { primary: truncateDisplayName(saved) };
   }
 
-  // Sem nome utilizável: o número formatado identifica melhor que o cru.
-  // `formatPhoneNumber` já trata o LID, mas devolve um rótulo pensado para um
-  // campo de NÚMERO ("Número privado (WhatsApp)"); como NOME, o rótulo curto
-  // abaixo lê melhor numa lista.
+  const nickname = normalizeIdentifiableName(contactName);
+
+  // LID: não existe telefone a exibir — o apelido (se houver) já é o melhor
+  // identificador disponível, sem um rótulo genérico ao lado dele.
   if (contactJid.endsWith('@lid')) {
-    return PRIVATE_CONTACT_LABEL;
+    return { primary: nickname ? truncateDisplayName(nickname) : PRIVATE_CONTACT_LABEL };
   }
-  return formatPhoneNumber(contactJid);
+
+  const phoneLabel = formatPhoneNumber(contactJid);
+  return nickname
+    ? { primary: phoneLabel, secondary: truncateDisplayName(nickname) }
+    : { primary: phoneLabel };
+}
+
+/** Versão em texto único de `formatContactDisplayNameParts` — para contextos sem estilização (aria-label, título de janela, diálogo). */
+export function formatContactDisplayName(
+  contactJid: string,
+  contactName?: string,
+  savedContactName?: string,
+): string {
+  const { primary, secondary } = formatContactDisplayNameParts(contactJid, contactName, savedContactName);
+  return secondary ? `${primary} · ${secondary}` : primary;
 }
 
 /**
  * Iniciais para o avatar-fallback (círculo com texto) quando não há foto de
- * perfil (Milestone 6, Bloco M6H-2b): 1-2 letras do `contactName`, se
- * houver (ex.: "Maria Silva" → "MS", "Loja" → "L"); senão os últimos 2
- * dígitos do número — mesmo fallback usado antes deste bloco, preservado
- * para contatos sem nome capturado.
+ * perfil (Milestone 6, Bloco M6H-2b): 1-2 letras do nome, se houver (ex.:
+ * "Maria Silva" → "MS", "Loja" → "L"); senão os últimos 2 dígitos do número —
+ * mesmo fallback usado antes deste bloco, preservado para contatos sem nome
+ * capturado.
+ *
+ * REGRA 2026-08-20 — mesma prioridade de `formatContactDisplayName`:
+ * `savedContactName` (nome salvo na aba Contatos) vence `contactName`
+ * (apelido do WhatsApp), que por sua vez vence o número.
  *
  * CORREÇÃO 2026-08-15: `word[0]` quebrava nomes que começam com emoji ou
  * qualquer caractere fora do plano básico (um emoji ocupa DOIS índices em
@@ -394,9 +445,13 @@ export function formatContactDisplayName(contactJid: string, contactName?: strin
  * dígito não vira inicial — cai no número, para o avatar nunca ficar com um
  * símbolo solto sem significado.
  */
-export function formatContactInitials(contactJid: string, contactName?: string): string {
-  const trimmed = contactName?.trim();
-  if (!trimmed || !hasIdentifiableCharacter(trimmed)) {
+export function formatContactInitials(
+  contactJid: string,
+  contactName?: string,
+  savedContactName?: string,
+): string {
+  const trimmed = normalizeIdentifiableName(savedContactName) ?? normalizeIdentifiableName(contactName);
+  if (!trimmed) {
     return formatContactJid(contactJid).slice(-2);
   }
   const words = trimmed.split(/\s+/).filter(Boolean);
@@ -462,6 +517,43 @@ export function formatPhoneNumber(contactJid: string): string {
       ? `${line.slice(0, 5)}-${line.slice(5)}`
       : `${line.slice(0, 4)}-${line.slice(4)}`;
   return `+55 ${ddd} ${lineFormatted}`;
+}
+
+/**
+ * Rótulo de identidade de uma PESSOA a partir de um telefone E.164 puro (sem
+ * JID do WhatsApp) — usado pela aba Contatos e pela tela de Campanhas, onde
+ * não há `contactJid` (a fonte é `WhatsAppContact`/`CampaignRecipient`, não
+ * `WhatsAppConversation`). Mesma regra e mesma ordem de prioridade de
+ * `formatContactDisplayName` (2026-08-20): `savedName` sozinho quando
+ * presente; sem nome salvo, o telefone formatado é obrigatório, com o
+ * apelido do WhatsApp ao lado (`nickname`, quando a busca conseguiu
+ * resolvê-lo a partir de uma conversa vinculada) — nunca o contrário.
+ */
+export function formatPersonLabelParts(params: {
+  phoneE164: string;
+  savedName?: string;
+  nickname?: string;
+}): PersonDisplayParts {
+  const saved = normalizeIdentifiableName(params.savedName);
+  if (saved) {
+    return { primary: truncateDisplayName(saved) };
+  }
+
+  const nickname = normalizeIdentifiableName(params.nickname);
+  const phoneLabel = formatPhoneNumber(params.phoneE164);
+  return nickname
+    ? { primary: phoneLabel, secondary: truncateDisplayName(nickname) }
+    : { primary: phoneLabel };
+}
+
+/** Versão em texto único de `formatPersonLabelParts` — para contextos sem estilização (aria-label, diálogo). */
+export function formatPersonLabel(params: {
+  phoneE164: string;
+  savedName?: string;
+  nickname?: string;
+}): string {
+  const { primary, secondary } = formatPersonLabelParts(params);
+  return secondary ? `${primary} · ${secondary}` : primary;
 }
 
 /**

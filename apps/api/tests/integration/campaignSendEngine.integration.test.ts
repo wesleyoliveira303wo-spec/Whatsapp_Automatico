@@ -163,6 +163,66 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
     expect(sentToday).toBe(1);
   });
 
+  it('resetFailedRecipientsToPending (retrofit 2026-08-18 — reabrir campanha) devolve só FAILED, nunca SKIPPED', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha reabertura',
+      messageTemplate: 'Oi',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: 'contact-falhou-1', status: 'pending' },
+      { contactId: 'contact-falhou-2', status: 'pending' },
+      { contactId: 'contact-enviado', status: 'pending' },
+      { contactId: 'contact-opt-out', status: 'skipped', skipReason: 'opt_out' },
+    ]);
+    const pendentes = await campaignRepository.listPendingRecipients(tenantId, campanha.id);
+    const falhou1 = pendentes.find((r) => r.contactId === 'contact-falhou-1')!.id;
+    const falhou2 = pendentes.find((r) => r.contactId === 'contact-falhou-2')!.id;
+    const enviado = pendentes.find((r) => r.contactId === 'contact-enviado')!.id;
+
+    await campaignRepository.markRecipientFailed(tenantId, falhou1, {
+      attemptedAt: new Date(),
+      errorMessage: 'WhatsAppNotConnectedError',
+    });
+    await campaignRepository.markRecipientFailed(tenantId, falhou2, {
+      attemptedAt: new Date(),
+      errorMessage: 'timeout',
+    });
+    await campaignRepository.markRecipientSent(tenantId, enviado, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-x',
+    });
+
+    const resetCount = await campaignRepository.resetFailedRecipientsToPending(
+      tenantId,
+      campanha.id,
+    );
+    expect(resetCount).toBe(2);
+
+    const aindaPendentes = await campaignRepository.listPendingRecipients(tenantId, campanha.id);
+    expect(aindaPendentes.map((r) => r.contactId).sort()).toEqual([
+      'contact-falhou-1',
+      'contact-falhou-2',
+    ]);
+    const falhou1Depois = await campaignRepository.findRecipientById(tenantId, falhou1);
+    expect(falhou1Depois?.errorMessage).toBeUndefined();
+    // SENT e SKIPPED continuam intocados — reabrir nunca burla opt-out nem desfaz um envio real.
+    const enviadoDepois = await campaignRepository.findRecipientById(tenantId, enviado);
+    expect(enviadoDepois?.status).toBe('sent');
+    const optOutDepois = (await campaignRepository.listRecipients(tenantId, campanha.id, {
+      limit: 10,
+      status: 'skipped',
+    })).recipients;
+    expect(optOutDepois).toHaveLength(1);
+    expect(optOutDepois[0].skipReason).toBe('opt_out');
+  });
+
   it('listRecentOutcomes ordena por attemptedAt DESC e ignora PENDING/SKIPPED', async () => {
     if (!databaseAvailable) {
       console.warn('Postgres indisponível — pulando teste de integração real.');
@@ -459,5 +519,95 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
     const metrics = await campaignRepository.getMetrics(tenantId, 'campanha-fantasma');
 
     expect(metrics).toBeUndefined();
+  });
+
+  // --- Padronização de exibição de contato (2026-08-20) ---
+
+  it('listRecipients resolve `contact` (nome salvo + telefone + apelido do WhatsApp) em lote, contra o banco real', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const contatoComNome = await contactRepository.findOrCreateByPhone({
+      tenantId,
+      phoneE164: '5521900000301',
+      name: 'Maria Salva',
+      source: 'manual',
+    });
+    const contatoSemNome = await contactRepository.findOrCreateByPhone({
+      tenantId,
+      phoneE164: '5521900000302',
+      source: 'whatsapp',
+    });
+    await conversationRepository.upsertByTenantSessionAndContact(
+      tenantId,
+      'sessao-a',
+      '5521900000302@s.whatsapp.net',
+      {
+        id: 'conversa-contact-info-sem-nome',
+        tenantId,
+        sessionName: 'sessao-a',
+        contactJid: '5521900000302@s.whatsapp.net',
+        contactName: 'Apelido do WhatsApp',
+        status: 'bot',
+        unreadCount: 0,
+        stage: 'new',
+        stageSetBy: 'ai',
+        stageUpdatedAt: new Date(),
+        excludedFromPipeline: false,
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    );
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha exibição de contato',
+      messageTemplate: 'Oi',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: contatoComNome.id, status: 'pending' },
+      { contactId: contatoSemNome.id, status: 'pending' },
+      { phoneE164: '5521900000399', name: 'Nome da planilha', status: 'pending' },
+    ]);
+
+    const pendentes = await campaignRepository.listPendingRecipients(tenantId, campanha.id);
+    const semNomeRecipient = pendentes.find((r) => r.contactId === contatoSemNome.id)!;
+    // Só um destinatário com CONVERSA VINCULADA tem apelido a resolver — mesmo
+    // caminho real (o `conversationId` só existe depois de um envio).
+    await campaignRepository.markRecipientSent(tenantId, semNomeRecipient.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-contact-info-sem-nome',
+    });
+
+    const { recipients } = await campaignRepository.listRecipients(tenantId, campanha.id, {
+      limit: 10,
+    });
+
+    const comNome = recipients.find((r) => r.contactId === contatoComNome.id);
+    const semNome = recipients.find((r) => r.contactId === contatoSemNome.id);
+    const solto = recipients.find((r) => r.phoneE164 === '5521900000399');
+
+    // Contato com nome salvo: `contact.name` presente, sem apelido (nunca
+    // enviado, sem conversa vinculada).
+    expect(comNome?.contact).toEqual({
+      name: 'Maria Salva',
+      phoneE164: '5521900000301',
+      nickname: undefined,
+    });
+    // Contato SEM nome salvo, mas com conversa vinculada: `contact.name`
+    // ausente, `contact.nickname` resolvido da conversa — é este par que
+    // corrige o bug original (mostrava o `contactId` cru).
+    expect(semNome?.contact).toEqual({
+      name: undefined,
+      phoneE164: '5521900000302',
+      nickname: 'Apelido do WhatsApp',
+    });
+    // Destinatário "solto" (planilha, sem Contato): nunca ganha `contact`.
+    expect(solto?.contact).toBeUndefined();
+    expect(solto?.name).toBe('Nome da planilha');
   });
 });

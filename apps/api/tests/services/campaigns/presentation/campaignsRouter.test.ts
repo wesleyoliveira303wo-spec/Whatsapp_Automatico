@@ -89,6 +89,49 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
 
       expect(response.status).toBe(200);
     });
+
+    it('filtra por sessionName do lado do servidor', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'vendas', name: 'A' });
+      campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'suporte', name: 'B' });
+
+      const response = await request(app).get(`${basePath('tenant-1')}?sessionName=vendas`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaigns).toHaveLength(1);
+      expect(response.body.campaigns[0].name).toBe('A');
+    });
+  });
+
+  describe('GET /overview (campaign:read, retrofit visual 2026-08-18)', () => {
+    it('devolve a visão geral da sessão pedida (200)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'running' });
+
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/overview?sessionName=vendas`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.overview).toMatchObject({
+        totalCampaigns: 1,
+        statusCounts: { running: 1 },
+      });
+    });
+
+    it('sem sessionName: 400', async () => {
+      const { app } = buildApp(person('operator'));
+      const response = await request(app).get(`${basePath('tenant-1')}/overview`);
+      expect(response.status).toBe(400);
+    });
+
+    it('read_only NÃO pode consultar (403)', async () => {
+      const { app } = buildApp(person('read_only'));
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/overview?sessionName=vendas`,
+      );
+      expect(response.status).toBe(403);
+    });
   });
 
   describe('POST / (campaign:manage)', () => {
@@ -453,6 +496,310 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/cancel`);
 
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe('POST /:campaignId/reopen (campaign:manage, retrofit 2026-08-18)', () => {
+    it('administrator reabre uma campanha COMPLETED com destinatário FAILED (200, volta a running)', async () => {
+      const { app, campaigns, dispatcher } = buildApp(person('administrator'), {
+        withDispatcher: true,
+      });
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+      campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-1',
+        status: 'failed',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/reopen`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.status).toBe('running');
+      expect(dispatcher!.scheduled).toHaveLength(1);
+    });
+
+    it('administrator reabre uma campanha CANCELLED (200)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'), { withDispatcher: true });
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'cancelled',
+      });
+      campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-1',
+        status: 'failed',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/reopen`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.status).toBe('running');
+    });
+
+    it('operator NÃO pode reabrir (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'), { withDispatcher: true });
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/reopen`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('campanha RUNNING: 400 (só completed/cancelled reabrem)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'), { withDispatcher: true });
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/reopen`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_campaign_transition');
+    });
+
+    it('sem motor de envio configurado (modo degradado): 503', async () => {
+      const { app, campaigns } = buildApp(person('administrator')); // sem withDispatcher
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/reopen`);
+
+      expect(response.status).toBe(503);
+    });
+
+    it('404 para campanha inexistente', async () => {
+      const { app } = buildApp(person('administrator'), { withDispatcher: true });
+
+      const response = await request(app).post(
+        `${basePath('tenant-1')}/campanha-fantasma/reopen`,
+      );
+
+      expect(response.status).toBe(404);
+    });
+
+    it('IDOR: campanha de OUTRO tenant devolve 404, não reabre', async () => {
+      const { app, campaigns } = buildApp(person('administrator'), { withDispatcher: true });
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-2',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/reopen`);
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe('DELETE /:campaignId (campaign:manage, retrofit visual 2026-08-18)', () => {
+    it('administrator apaga uma campanha DRAFT (204)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${campaignId}`);
+
+      expect(response.status).toBe(204);
+      const getResponse = await request(app).get(`${basePath('tenant-1')}/${campaignId}`);
+      expect(getResponse.status).toBe(404);
+    });
+
+    it('operator NÃO pode apagar (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${campaignId}`);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('campanha RUNNING: 400 (precisa pausar/cancelar antes)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${campaignId}`);
+
+      expect(response.status).toBe(400);
+    });
+
+    it('404 para campanha inexistente', async () => {
+      const { app } = buildApp(person('administrator'));
+      const response = await request(app).delete(`${basePath('tenant-1')}/campanha-fantasma`);
+      expect(response.status).toBe(404);
+    });
+
+    it('IDOR: campanha de OUTRO tenant devolve 404, não apaga', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${campaignId}`);
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  // --- Fase L, Bloco L8 (mídia na campanha) ---
+
+  describe('POST /:campaignId/media (campaign:manage)', () => {
+    it('administrator anexa mídia a uma campanha DRAFT (200, Campaign devolvida com media)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${campaignId}/media`)
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .set('x-media-filename', 'promo.jpg')
+        .send(Buffer.from('bytes-da-imagem'));
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.media).toEqual({
+        contentType: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'promo.jpg',
+      });
+    });
+
+    it('operator NÃO pode anexar mídia (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${campaignId}/media`)
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(403);
+    });
+
+    it('sem x-media-content-type: 400', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${campaignId}/media`)
+        .set('content-type', 'image/jpeg')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(400);
+    });
+
+    it('campanha RUNNING: 400 (só DRAFT pode ter mídia anexada/trocada)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${campaignId}/media`)
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(400);
+    });
+
+    it('IDOR: campanha de OUTRO tenant devolve 404, não anexa', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${campaignId}/media`)
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe('DELETE /:campaignId/media (campaign:manage)', () => {
+    it('administrator remove a mídia anexada (200, media volta a undefined)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      await campaigns.attachMedia('tenant-1', campaignId, {
+        contentType: 'image',
+        buffer: Buffer.from('bytes'),
+        mimeType: 'image/jpeg',
+      });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${campaignId}/media`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign.media).toBeUndefined();
+    });
+
+    it('operator NÃO pode remover mídia (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).delete(`${basePath('tenant-1')}/${campaignId}/media`);
+
+      expect(response.status).toBe(403);
+    });
+  });
+
+  describe('GET /:campaignId/media (campaign:read)', () => {
+    it('operator lê o binário anexado (200, Content-Type do arquivo)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      await campaigns.attachMedia('tenant-1', campaignId, {
+        contentType: 'image',
+        buffer: Buffer.from('bytes-da-imagem'),
+        mimeType: 'image/jpeg',
+        fileName: 'promo.jpg',
+      });
+
+      const response = await request(app).get(`${basePath('tenant-1')}/${campaignId}/media`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toBe('image/jpeg');
+      expect(response.body).toEqual(Buffer.from('bytes-da-imagem'));
+    });
+
+    it('campanha sem mídia: 404', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app).get(`${basePath('tenant-1')}/${campaignId}/media`);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('IDOR: campanha de OUTRO tenant devolve 404', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+      await campaigns.attachMedia('tenant-2', campaignId, {
+        contentType: 'image',
+        buffer: Buffer.from('bytes'),
+        mimeType: 'image/jpeg',
+      });
+
+      const response = await request(app).get(`${basePath('tenant-1')}/${campaignId}/media`);
+
+      expect(response.status).toBe(404);
     });
   });
 });

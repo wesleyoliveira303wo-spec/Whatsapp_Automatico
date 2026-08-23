@@ -379,7 +379,21 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
 
       // Fase L, Bloco L3 — campanhas: CRUD autocontido sobre Postgres, sem
       // fila (este bloco não envia nada), mesmo racional de Contatos acima.
-      const degradedCampaigns = createCampaignsComposition(prisma, logger);
+      // `ContactLookupImpl` (Reorganização Contatos/Campanhas, 2026-08-17):
+      // não depende de Redis/`WhatsAppConnectionRegistry`, então pode ser
+      // ligado aqui mesmo no modo degradado — planilha/lista manual já
+      // reconhecem Contatos existentes mesmo sem a fila de envio.
+      const { ContactLookupImpl: DegradedContactLookupImpl } = await import(
+        './services/contacts/infrastructure/ContactLookupImpl'
+      );
+      const degradedContactLookup = new DegradedContactLookupImpl(
+        degradedContacts.contactRepository,
+      );
+      const degradedCampaigns = createCampaignsComposition(
+        prisma,
+        logger,
+        degradedContactLookup,
+      );
       app.use('/api/tenants/:tenantId/campaigns', authenticate, degradedCampaigns.campaignsRouter);
       app.use('/api/tenants/:tenantId/campaigns', degradedCampaigns.campaignsErrorHandler);
 
@@ -440,6 +454,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       messageRepository,
       messageIngestionService,
       conversationsService,
+      agentMediaCache,
       aiReplyQueue,
     } = createConversationsComposition(prisma, aiReplyProducerConnection, logger);
 
@@ -594,7 +609,13 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // Fase L, Bloco L3 — campanhas: TENANT-WIDE na URL (mesmo racional de
     // Contatos acima). RBAC POR ROTA (campaign:read na leitura,
     // campaign:manage na criação/materialização/start/pause/cancel).
-    const campaigns = createCampaignsComposition(prisma, logger);
+    // `ContactLookupImpl` (Reorganização Contatos/Campanhas, 2026-08-17) é
+    // quem permite um telefone de planilha/lista manual "virar" um
+    // destinatário vinculado a um Contato JÁ existente, sem nunca criar um
+    // Contato novo a partir de uma campanha (ver docstring do port).
+    const { ContactLookupImpl } = await import('./services/contacts/infrastructure/ContactLookupImpl');
+    const contactLookup = new ContactLookupImpl(contacts.contactRepository);
+    const campaigns = createCampaignsComposition(prisma, logger, contactLookup);
     app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);
     app.use('/api/tenants/:tenantId/campaigns', campaigns.campaignsErrorHandler);
 
@@ -608,21 +629,35 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       new CampaignReplyTrackerImpl(campaigns.campaignRepository, logger),
     );
 
-    // Fase L, Bloco L4 — liga o motor de envio: `WhatsAppCampaignMessageSender`
+    // Fase L, Blocos L4/L5 — liga o motor de envio: `WhatsAppCampaignMessageSender`
     // (implementação real do port `CampaignMessageSender`, precisa de
     // `registry`+`conversationRepository`+`messageRepository`, todos só
     // disponíveis aqui) + `Worker` consumidor da fila `campaign-send`, com a
     // MESMA disciplina de conexão dedicada já usada para `outboundWorker`
     // acima (D19 — nunca reaproveitar uma conexão de produtor para um
-    // `Worker`, que exige `maxRetriesPerRequest: null`).
+    // `Worker`, que exige `maxRetriesPerRequest: null`). `ContactPhoneLookupImpl`
+    // (Bloco L5) é quem permite o PRIMEIRO envio a um Contato salvo que ainda
+    // não tem conversa nesta sessão (reengajamento continua resolvendo pelo
+    // `contactJid` da conversa já existente, sem precisar dele).
     const campaignSendConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
     const { WhatsAppCampaignMessageSender } =
       await import('./services/whatsapp/infrastructure/WhatsAppCampaignMessageSender');
+    const { ContactPhoneLookupImpl } =
+      await import('./services/contacts/infrastructure/ContactPhoneLookupImpl');
+    const contactPhoneLookup = new ContactPhoneLookupImpl(contacts.contactRepository);
     const campaignMessageSender = new WhatsAppCampaignMessageSender(
       registry,
       conversationRepository,
       messageRepository,
       logger,
+      {},
+      contactPhoneLookup,
+      // CORREÇÃO 2026-08-20 (bug real, achado no primeiro disparo de
+      // campanha com imagem) — MESMA instância usada por `conversationsService`
+      // (ver docstring de `agentMediaCache` em `ConversationsComposition`),
+      // senão a prévia da mídia enviada por campanha nunca aparece na
+      // Dashboard.
+      agentMediaCache,
     );
     const campaignSendWorker = wireCampaignSendEngine(
       campaigns,

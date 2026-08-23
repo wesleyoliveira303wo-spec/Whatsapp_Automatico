@@ -512,6 +512,9 @@ model Campaign {
   tenantId        String         @map("tenant_id")
   sessionName     String         @map("session_name")
   name            String
+  /// Reorganização Contatos/Campanhas (2026-08-17): texto livre opcional,
+  /// só para o operador se orientar na lista — nunca lido por nenhuma regra.
+  description     String?        @db.Text
   messageTemplate String         @db.Text @map("message_template")
   status          CampaignStatus @default(DRAFT)
   scheduledFor    DateTime?      @map("scheduled_for")
@@ -521,6 +524,22 @@ model Campaign {
   sendWindowEnd   String?        @map("send_window_end")
   pausedReason    String?        @map("paused_reason")
   createdByUserId String?        @map("created_by_user_id")
+  /// Fase L, Bloco L8 (2026-08-20) — mídia OPCIONAL anexada ao disparo (imagem/
+  /// vídeo/documento). `mediaContent` guarda o BINÁRIO em `bytea` — decisão
+  /// deliberada de manter tudo em Postgres, sem storage de arquivo/volume novo
+  /// (mesma filosofia "tudo em Postgres" já usada no projeto; o teto de
+  /// tamanho — `MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES`, `CampaignService` — mantém
+  /// isso barato mesmo para uma campanha rodando por dias). As quatro colunas
+  /// nascem juntas ou vazias juntas — nunca uma sem a outra (garantido pela
+  /// aplicação, não por CHECK: `attachMedia`/`removeMedia` sempre gravam/
+  /// limpam as quatro de uma vez). NUNCA incluído no `select` default das
+  /// leituras normais (`findById`/`listByTenant`) — só o binário entraria
+  /// inteiro em toda resposta JSON de lista/detalhe; ver `CAMPAIGN_SELECT` em
+  /// `PrismaCampaignRepository`.
+  mediaContent     Bytes?                      @map("media_content")
+  mediaMimeType    String?                     @map("media_mime_type")
+  mediaFileName    String?                     @map("media_file_name")
+  mediaContentType WhatsAppMessageContentType? @map("media_content_type")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
@@ -558,11 +577,27 @@ enum CampaignRecipientStatus {
 /// SEM relação Prisma para `WhatsAppContact`/`WhatsAppConversation` — mesmo
 /// padrão de baixo acoplamento entre bounded contexts já usado em
 /// `AuditLog`/`ContactConsentEvent` (o id fica gravado, sem FK).
+///
+/// Reorganização Contatos/Campanhas (2026-08-17): `contactId` deixou de ser
+/// obrigatório. Um destinatário vindo de planilha/lista colada que NÃO
+/// corresponde a nenhum `WhatsAppContact` já existente nasce só com
+/// `phoneE164`/`name` (um "retrato" no momento da criação — nunca força a
+/// criação de um Contato no CRM). Quando o telefone já é um contato
+/// conhecido, `contactId` é preenchido (mesmo comportamento de antes) e
+/// `phoneE164`/`name` ficam vazios — a aplicação (`CampaignService`) garante
+/// que toda linha tem UM dos dois, nunca nenhum (reforçado pelo `CHECK` no
+/// banco, ver migration).
 model CampaignRecipient {
   id             String                  @id @default(uuid())
   tenantId       String                  @map("tenant_id")
   campaignId     String                  @map("campaign_id")
-  contactId      String                  @map("contact_id")
+  contactId      String?                 @map("contact_id")
+  /// Só preenchido quando `contactId` é nulo — o número "bruto" (já
+  /// normalizado, `normalizePhoneToE164`) de quem não tem Contato salvo.
+  phoneE164      String?                 @map("phone_e164")
+  /// Nome opcional trazido pela planilha/lista manual (coluna "nome" do CSV,
+  /// ou digitado junto do número) — só existe junto de `phoneE164`.
+  name           String?
   status         CampaignRecipientStatus @default(PENDING)
   skipReason     String?                 @map("skip_reason")
   errorMessage   String?                 @db.Text @map("error_message")
@@ -582,8 +617,14 @@ model CampaignRecipient {
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   /// Idempotência, camada 1: materializar a mesma campanha duas vezes nunca
-  /// duplica um destinatário (`createMany({ skipDuplicates: true })`).
+  /// duplica um destinatário (`createMany({ skipDuplicates: true })`). Postgres
+  /// trata múltiplos `NULL` como distintos nesta constraint — inofensivo,
+  /// porque linhas sem `contactId` já chegam deduplicadas por `phoneE164`
+  /// (ver `@@unique` abaixo) antes de `createRecipients` ser chamado.
   @@unique([campaignId, contactId])
+  /// Mesma idempotência para o caminho sem Contato (planilha/manual):
+  /// mesmo `phoneE164` na mesma campanha nunca duplica.
+  @@unique([campaignId, phoneE164])
   @@index([tenantId, campaignId, status])
   /// Suporta a regra de supressão "contatado por OUTRA campanha há menos de
   /// 7 dias" — busca por `(tenantId, contactId, status, sentAt)` sem varrer a
