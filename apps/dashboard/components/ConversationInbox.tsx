@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { MessageCircle, Search } from 'lucide-react';
 import ConversationFilterTabs, { type ConversationFilterValue } from './ConversationFilterTabs';
 import ConversationListItem from './ConversationListItem';
@@ -199,14 +200,25 @@ export default function ConversationInbox({
                   />
                 </div>
               ) : (
-                visibleConversations.map((conversation) => (
-                  <ConversationListItem
-                    key={conversation.id}
-                    conversation={conversation}
-                    active={conversation.id === selectedConversationId}
-                    aiEnabled={aiEnabled}
-                  />
-                ))
+                /*
+                  Onda 2 do redesign (2026-08-23) — `initial={false}` evita
+                  animar as 50+ linhas de uma vez ao ABRIR a tela (só
+                  entradas GENUÍNAS depois disso disparam `initial`→`animate`
+                  em `ConversationListItem`, nunca a carga inicial). Sem
+                  `AnimatePresence`, o `exit` declarado em cada linha nunca
+                  rodaria — React desmontaria o nó instantaneamente antes do
+                  framer-motion ter chance de animar a saída.
+                */
+                <AnimatePresence initial={false}>
+                  {visibleConversations.map((conversation) => (
+                    <ConversationListItem
+                      key={conversation.id}
+                      conversation={conversation}
+                      active={conversation.id === selectedConversationId}
+                      aiEnabled={aiEnabled}
+                    />
+                  ))}
+                </AnimatePresence>
               )}
               {/*
                 Auditoria 2026-08-22: este botão era escondido enquanto havia

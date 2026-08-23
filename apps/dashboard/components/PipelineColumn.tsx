@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
   formatPipelineColumnLabel,
@@ -88,23 +89,36 @@ function PipelineColumn({
           {conversations.length}
         </span>
       </div>
+      {/*
+        Onda 2 do redesign (2026-08-23) — o board nunca teve NENHUM feedback
+        de movimento: soltar um card fazia ele "saltar" instantaneamente para
+        a posição nova, sem transição alguma (achado direto do pedido do
+        fundador — "anime minha ferramenta"). `AnimatePresence
+        mode="popLayout"` é o modo do framer-motion feito para listas: tira o
+        card que está SAINDO do fluxo normal (`position: absolute` durante a
+        saída) para os irmãos já reflowarem suavemente por baixo, em vez do
+        salto brusco que `mode="sync"` (o padrão) causaria. Ver `PipelineCard`
+        para o `layout`/`initial`/`animate`/`exit` de cada card.
+      */}
       <div
         className="fx-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2"
         style={{ minHeight: '4rem' }}
       >
-        {conversations.map((conversation) => (
-          <PipelineCard
-            key={conversation.id}
-            conversation={conversation}
-            dragging={draggedId === conversation.id}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'move';
-              onDragStart(conversation.id);
-            }}
-            onDragEnd={onDragEnd}
-            onMoveToColumn={(targetColumn) => onMoveCard(conversation.id, targetColumn)}
-          />
-        ))}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {conversations.map((conversation) => (
+            <PipelineCard
+              key={conversation.id}
+              conversation={conversation}
+              dragging={draggedId === conversation.id}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                onDragStart(conversation.id);
+              }}
+              onDragEnd={onDragEnd}
+              onMoveToColumn={(targetColumn) => onMoveCard(conversation.id, targetColumn)}
+            />
+          ))}
+        </AnimatePresence>
         {conversations.length === 0 && (
           <p className="px-2.5 py-5 text-center text-xs text-muted-foreground">Nenhum card aqui</p>
         )}

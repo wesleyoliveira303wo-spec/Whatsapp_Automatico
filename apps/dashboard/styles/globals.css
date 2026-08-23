@@ -145,7 +145,21 @@
     --warning-foreground: 222.2 47.4% 11.2%;
     --warning-emphasis: 36 90% 55%;
 
-    --destructive-emphasis: 3 55% 42%;
+    /*
+     * ONDA 2 DO REDESIGN (2026-08-23) — bug real medido: este valor era
+     * IDÊNTICO a `--destructive` (linha 132), copiado como placeholder sem
+     * o mesmo tratamento que `--success-emphasis`/`--warning-emphasis`
+     * receberam acima. A diferença: o tom base de `--destructive` no escuro
+     * já é escuro por si (42% de luminosidade), então reaproveitá-lo como
+     * "emphasis" (texto sobre selo translúcido) reprovava WCAG AA a
+     * 2.78:1 contra `--card` (mínimo 4.5:1) — script de auditoria de
+     * contraste (fórmula de luminância relativa padrão) confirmou a régua.
+     * `success`/`warning` não precisaram de ajuste porque SEUS tons base no
+     * escuro já nascem claros (45%/55% de luminosidade); vermelho não.
+     * 62% de luminosidade (mesmo matiz/saturação) mede 5,41:1 — AA com
+     * folga, sem mudar a identidade da cor.
+     */
+    --destructive-emphasis: 3 55% 62%;
   }
 }
 
@@ -186,4 +200,25 @@
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+/*
+ * Onda 2 do redesign (2026-08-23) — interruptor GLOBAL de
+ * `prefers-reduced-motion` para toda transição/animação puramente CSS
+ * (Tailwind `transition-*`, `tailwindcss-animate` `animate-in`/`animate-out`
+ * do Dialog/Toast, hover/press de botão e card). Cobre o que `MotionConfig`
+ * (`pages/_app.tsx`) NÃO alcança — aquele só neutraliza `motion.*` do
+ * framer-motion. Abordagem padrão (quase zerar duração/distância em vez de
+ * remover por completo): preserva a MUDANÇA DE ESTADO em si — o usuário
+ * ainda vê o antes/depois, só sem o movimento entre eles.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -40,7 +40,15 @@ export default function WhatsAppAccountCard({
 }: WhatsAppAccountCardProps): JSX.Element {
   return (
     <Link href={`/sessions/${encodeURIComponent(session.sessionName)}`} className="group block">
-      <Card className="flex h-full flex-col gap-4 p-5 transition hover:border-primary hover:shadow-md">
+      {/*
+        Onda 2 do redesign (2026-08-23) — `hover:-translate-y-0.5` soma um
+        leve "levantar" ao border+shadow que já existiam, reforçando que o
+        card inteiro é clicável (link para a sessão). `active:translate-y-0`
+        cancela o levante no clique, para não "flutuar" durante o próprio
+        toque. `duration-200` explícito — sem isso herdaria o `duration-150`
+        default do Tailwind, curto demais para um movimento de 2px perceptível.
+      */}
+      <Card className="flex h-full flex-col gap-4 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary hover:shadow-md active:translate-y-0">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             {session.phoneNumber ? (

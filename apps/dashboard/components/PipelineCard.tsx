@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { memo, type DragEvent } from 'react';
+import { forwardRef, memo, useEffect, useRef, type DragEvent, type Ref } from 'react';
+import { motion } from 'framer-motion';
 import { Bot, ChevronDown, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -56,23 +57,72 @@ interface PipelineCardProps {
  * saiu — o mockup não a tem. Sem sombra (Design System: cards são
  * fundo+borda, nunca `shadow`).
  */
-function PipelineCard({
-  conversation,
-  onDragStart,
-  onDragEnd,
-  dragging = false,
-  onMoveToColumn,
-}: PipelineCardProps): JSX.Element {
+/**
+ * Onda 2 do redesign (2026-08-23) — `forwardRef` (não existia antes desta
+ * rodada) é exigido pelo `AnimatePresence` de `PipelineColumn`: ela gerencia
+ * a animação de saída dos filhos anexando uma `ref` ao elemento direto que
+ * renderiza dentro dela (`<PipelineCard>`) para saber quando o nó real já
+ * saiu do DOM. Sem `forwardRef`, o React emitia
+ * "Function components cannot be given refs" — confirmado no console dos
+ * testes — e a animação de saída silenciosamente não funcionava (a falha é
+ * SILENCIOSA porque `AnimatePresence` degrada para "sem exit" em vez de
+ * quebrar a tela, então só o warning denunciava o problema).
+ */
+function PipelineCardImpl(
+  { conversation, onDragStart, onDragEnd, dragging = false, onMoveToColumn }: PipelineCardProps,
+  forwardedRef: Ref<HTMLDivElement>,
+): JSX.Element {
   const classificadoPorHumano = conversation.stageSetBy === 'human';
   const currentColumn: PipelineColumnKey = conversation.excludedFromPipeline
     ? NOT_CLIENT_COLUMN
     : conversation.stage;
 
+  /**
+   * `motion.div` REDEFINE `onDragStart`/`onDragEnd` para o próprio sistema
+   * de gestos por ponteiro do framer-motion (assinatura incompatível com o
+   * `DragEvent` nativo do HTML5, confirmado pelo `tsc`: espera `(event:
+   * MouseEvent | TouchEvent | PointerEvent, info: PanInfo)`). Em vez de um
+   * cast às cegas torcendo pra funcionar em runtime, os listeners nativos
+   * são anexados por `ref` + `addEventListener('dragstart'/'dragend', ...)`
+   * — DOM puro, sem intermediação nenhuma do framer-motion, então o
+   * comportamento é IDÊNTICO ao `<div draggable>` de antes desta rodada, e o
+   * `drag`/pointer do framer-motion nunca é sequer tocado (nem `drag` nem
+   * `whileDrag` estão presentes neste componente). Usa a MESMA ref recebida
+   * de `AnimatePresence` (não uma segunda ref própria) — um único nó DOM,
+   * duas razões de precisar dele.
+   */
+  const dragTargetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = dragTargetRef.current;
+    if (!node) return;
+    const handleDragStart = (event: globalThis.DragEvent): void =>
+      onDragStart(event as unknown as DragEvent<HTMLDivElement>);
+    const handleDragEnd = (event: globalThis.DragEvent): void =>
+      onDragEnd(event as unknown as DragEvent<HTMLDivElement>);
+    node.addEventListener('dragstart', handleDragStart);
+    node.addEventListener('dragend', handleDragEnd);
+    return () => {
+      node.removeEventListener('dragstart', handleDragStart);
+      node.removeEventListener('dragend', handleDragEnd);
+    };
+  }, [onDragStart, onDragEnd]);
+
   return (
-    <div
+    <motion.div
+      ref={mergeRefs(dragTargetRef, forwardedRef)}
       draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      // Onda 2 do redesign (2026-08-23) — `layout` faz o framer-motion animar
+      // a POSIÇÃO do card sempre que ela muda entre renders (reordenar dentro
+      // da coluna, quando `stageUpdatedAt` põe o card recém-tocado no topo);
+      // `initial`/`animate`/`exit` cobrem o card aparecendo/saindo de uma
+      // coluna (mudança de estágio) — sem `AnimatePresence` em
+      // `PipelineColumn`, `exit` seria ignorado e o card sumiria sem
+      // transição.
+      layout
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
       className={cn(
         // `group`: sustenta o `group-hover`/`group-focus-within` do seletor
         // "Mover…" na última linha (Onda 1 do redesign).
@@ -205,9 +255,22 @@ function PipelineCard({
           </Link>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
+
+/** Combina duas refs (a interna de drag + a que `AnimatePresence` injeta) num único callback ref — nenhuma lib nova, padrão React comum para este exato cenário. */
+function mergeRefs<T>(...refs: Array<Ref<T> | undefined>): (node: T | null) => void {
+  return (node) => {
+    for (const ref of refs) {
+      if (!ref) continue;
+      if (typeof ref === 'function') ref(node);
+      else (ref as React.MutableRefObject<T | null>).current = node;
+    }
+  };
+}
+
+const PipelineCard = forwardRef(PipelineCardImpl);
 
 /**
  * PERFORMANCE (auditoria 2026-08-22) — o board reagrupa e re-renderiza a cada

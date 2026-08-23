@@ -18,9 +18,19 @@ import { cn } from '@/lib/utils';
  * `asChild` (via `@radix-ui/react-slot`) permite renderizar as classes do
  * Button em outro elemento (ex.: um `<Link>` do Next.js) sem aninhar
  * `<button><a>...</a></button>` — padrão Radix, não deste projeto.
+ *
+ * Onda 2 do redesign (2026-08-23) — `active:scale-[0.98]` dá feedback tátil
+ * de "pressionado" (o botão mais usado do produto inteiro, então é o maior
+ * ganho de sensação profissional por linha de código escrita). CSS puro, não
+ * `framer-motion`: um botão é um elemento nativo com estado binário
+ * (pressionado/solto), sem necessidade de orquestração via JS — a mesma
+ * filosofia de "CSS quando basta, framer-motion só quando agrega" usada no
+ * resto desta rodada. `transition-[color,...]` explícito (nunca
+ * `transition: all`, Web Interface Guidelines) — `transform` entrou na
+ * lista só para cobrir o novo `active:scale`.
  */
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-[color,background-color,border-color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100',
   {
     variants: {
       variant: {

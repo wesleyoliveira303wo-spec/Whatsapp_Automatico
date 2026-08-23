@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { memo } from 'react';
+import { forwardRef, memo, type Ref } from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
   formatConversationTimestamp,
@@ -40,28 +41,51 @@ interface ConversationListItemProps {
  * que já vem no DTO — funciona mesmo antes/depois do filtro server-side
  * (M6H-2), já que cada linha sempre sabe a própria sessão.
  */
-function ConversationListItem({
-  conversation,
-  active = false,
-  aiEnabled = true,
-}: ConversationListItemProps): JSX.Element {
+/**
+ * Onda 2 do redesign (2026-08-23) — `forwardRef` existe só para
+ * `AnimatePresence` (montada em `ConversationInbox`) conseguir gerenciar a
+ * entrada/saída desta linha; mesmo racional/mesma correção de
+ * `PipelineCard.tsx` (sem isso, React emite "Function components cannot be
+ * given refs" e a animação de saída falha em silêncio).
+ */
+function ConversationListItemImpl(
+  { conversation, active = false, aiEnabled = true }: ConversationListItemProps,
+  forwardedRef: Ref<HTMLDivElement>,
+): JSX.Element {
   // Reforma do escalonamento (2026-07-25): "aguardando atendente" = a IA
   // pediu atenção humana (`escalatedAt` definido) — a conversa pode continuar
   // em `status: 'bot'` nesse caso, a IA segue respondendo até alguém assumir.
   const waitingForHuman = Boolean(conversation.escalatedAt);
 
   return (
-    <Link
-      href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
-      className={cn(
-        'relative flex gap-[11px] rounded-lg py-[11px] pl-3 pr-[11px] transition-colors',
-        active
-          ? 'bg-muted'
-          : waitingForHuman
-            ? 'bg-warning/5 hover:bg-warning/10'
-            : 'hover:bg-muted',
-      )}
+    <motion.div
+      ref={forwardedRef}
+      layout="position"
+      // Só a ENTRADA (`initial`→`animate`) é acionada aqui — dispara uma vez
+      // por MONTAGEM do componente, nunca em re-render de props (mudar
+      // `unreadCount`/`lastMessagePreview` não reaplica `initial`). Como a
+      // reconciliação de identidade da Onda 1
+      // (`reconcileConversationIdentities`) preserva a referência de toda
+      // conversa que não mudou, só uma conversa GENUINAMENTE nova desmonta
+      // e remonta — a lista inteira não "pisca" a cada poll do SSE (~2s).
+      // `layout="position"` (não `layout` puro) anima só a POSIÇÃO Y, nunca
+      // largura/altura — evita esticar a linha durante o reflow.
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
     >
+      <Link
+        href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
+        className={cn(
+          'relative flex gap-[11px] rounded-lg py-[11px] pl-3 pr-[11px] transition-colors',
+          active
+            ? 'bg-muted'
+            : waitingForHuman
+              ? 'bg-warning/5 hover:bg-warning/10'
+              : 'hover:bg-muted',
+        )}
+      >
       {active && (
         <span
           className="absolute left-[3px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary"
@@ -190,9 +214,12 @@ function ConversationListItem({
           )}
         </div>
       </div>
-    </Link>
+      </Link>
+    </motion.div>
   );
 }
+
+const ConversationListItem = forwardRef(ConversationListItemImpl);
 
 /**
  * PERFORMANCE (auditoria 2026-08-22) — esta é a linha mais cara do produto em
