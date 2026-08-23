@@ -705,8 +705,7 @@ export default function CampaignDetailPanel({
                     <p className="truncate text-[11.5px] text-muted-foreground">
                       {recipient.sentAt && `Enviado em ${formatDateTime(recipient.sentAt)}`}
                       {recipient.sentAt && recipient.repliedAt && ' · '}
-                      {recipient.repliedAt &&
-                        `Respondeu em ${formatDateTime(recipient.repliedAt)}`}
+                      {recipient.repliedAt && `Respondeu em ${formatDateTime(recipient.repliedAt)}`}
                     </p>
                   )}
                 </TableCell>

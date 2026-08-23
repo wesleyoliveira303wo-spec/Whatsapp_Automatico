@@ -36,18 +36,12 @@ describe('AiInteractionPanel', () => {
 
   it('mostra mensagem de lista vazia quando não há interações', () => {
     render(<AiInteractionPanel interactions={[]} errorMessage={null} onRetry={jest.fn()} />);
-    expect(
-      screen.getByText('Nenhuma interacao de IA nesta conversa ainda.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Nenhuma interacao de IA nesta conversa ainda.')).toBeInTheDocument();
   });
 
   it('lista as interações quando há dados', () => {
     render(
-      <AiInteractionPanel
-        interactions={[interaction()]}
-        errorMessage={null}
-        onRetry={jest.fn()}
-      />,
+      <AiInteractionPanel interactions={[interaction()]} errorMessage={null} onRetry={jest.fn()} />,
     );
     expect(screen.getByText(/gemini/i)).toBeInTheDocument();
   });

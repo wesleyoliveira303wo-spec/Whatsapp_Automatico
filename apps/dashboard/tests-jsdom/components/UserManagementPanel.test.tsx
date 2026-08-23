@@ -78,7 +78,9 @@ describe('UserManagementPanel', () => {
     render(<UserManagementPanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('Não foi possível concluir a ação. Tente novamente.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Não foi possível concluir a ação. Tente novamente.'),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByText('Nenhum usuário ainda.')).not.toBeInTheDocument();
 

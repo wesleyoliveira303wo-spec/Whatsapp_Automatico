@@ -138,7 +138,9 @@ describe('AuditLogPanel (Fase 1, Bloco F1.5)', () => {
     render(<AuditLogPanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('Não foi possível carregar a auditoria. Tente novamente.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Não foi possível carregar a auditoria. Tente novamente.'),
+      ).toBeInTheDocument();
     });
     expect(screen.queryByText('Nenhum evento de auditoria ainda.')).not.toBeInTheDocument();
 
@@ -165,7 +167,9 @@ describe('AuditLogPanel (Fase 1, Bloco F1.5)', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Não foi possível carregar a auditoria. Tente novamente.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Não foi possível carregar a auditoria. Tente novamente.'),
+      ).toBeInTheDocument();
     });
     expect(table().getByText('Login')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();

@@ -146,9 +146,7 @@ describe('QuickRepliesPanel (Fase 1, Bloco F1.9)', () => {
     await waitFor(() => {
       expect(screen.getByText('Falha ao carregar as respostas rápidas.')).toBeInTheDocument();
     });
-    expect(
-      screen.queryByText('Nenhuma resposta rápida cadastrada ainda.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Nenhuma resposta rápida cadastrada ainda.')).not.toBeInTheDocument();
 
     (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValueOnce({
       quickReplies: [quickReply()],

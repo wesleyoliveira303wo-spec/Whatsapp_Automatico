@@ -116,7 +116,9 @@ describe('TagsPanel (Redesign 2026-08-05, R4)', () => {
   it('erro de uma AÇÃO sobre dados já carregados vira banner discreto — a lista continua visível', async () => {
     const { ClientApiError } = jest.requireActual('../../lib/clientApi');
     (clientApi.fetchTags as jest.Mock).mockResolvedValue({ tags: [tag()] });
-    (clientApi.deleteTag as jest.Mock).mockRejectedValue(new ClientApiError(403, { error: 'forbidden' }));
+    (clientApi.deleteTag as jest.Mock).mockRejectedValue(
+      new ClientApiError(403, { error: 'forbidden' }),
+    );
 
     render(<TagsPanel sessionName="vendas" />);
     await waitFor(() => expect(screen.getByText('VIP')).toBeInTheDocument());
