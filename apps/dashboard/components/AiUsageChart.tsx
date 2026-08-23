@@ -76,8 +76,8 @@ export default function AiUsageChart({ points, errorMessage }: AiUsageChartProps
             dot={{ r: 2.5, stroke: 'none', fill: CHART_COLORS.primary }}
             activeDot={false}
             isAnimationActive
-              animationDuration={650}
-              animationEasing="ease-out"
+            animationDuration={650}
+            animationEasing="ease-out"
           />
         </AreaChart>
       </ResponsiveContainer>

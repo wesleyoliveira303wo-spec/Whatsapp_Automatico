@@ -92,9 +92,13 @@ export default function SessionStabilityChart({
           margin={{ top: 3, right: 3, bottom: 3, left: 3 }}
           barCategoryGap="18%"
         >
-          <Bar dataKey="disconnected" shape={StabilityBar} isAnimationActive
-              animationDuration={650}
-              animationEasing="ease-out" />
+          <Bar
+            dataKey="disconnected"
+            shape={StabilityBar}
+            isAnimationActive
+            animationDuration={650}
+            animationEasing="ease-out"
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>

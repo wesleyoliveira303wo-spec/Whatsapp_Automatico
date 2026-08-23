@@ -43,7 +43,7 @@ export default function WhatsAppAccountCard({
   return (
     <motion.div variants={fadeInUp}>
       <Link href={`/sessions/${encodeURIComponent(session.sessionName)}`} className="group block">
-      {/*
+        {/*
         Onda 2 do redesign (2026-08-23) — `hover:-translate-y-0.5` soma um
         leve "levantar" ao border+shadow que já existiam, reforçando que o
         card inteiro é clicável (link para a sessão). `active:translate-y-0`
@@ -51,55 +51,55 @@ export default function WhatsAppAccountCard({
         toque. `duration-200` explícito — sem isso herdaria o `duration-150`
         default do Tailwind, curto demais para um movimento de 2px perceptível.
       */}
-      <Card className="flex h-full flex-col gap-4 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary hover:shadow-md active:translate-y-0">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {session.phoneNumber ? (
-              <ContactAvatar
-                sessionName={session.sessionName}
-                contactJid={`${session.phoneNumber}@s.whatsapp.net`}
-                className="h-11 w-11 text-sm"
-              />
-            ) : (
-              <div
-                className={cn(
-                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
-                  AVATAR_TINT[session.status],
-                )}
-              >
-                <Smartphone className="h-5 w-5" aria-hidden="true" />
+        <Card className="flex h-full flex-col gap-4 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary hover:shadow-md active:translate-y-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {session.phoneNumber ? (
+                <ContactAvatar
+                  sessionName={session.sessionName}
+                  contactJid={`${session.phoneNumber}@s.whatsapp.net`}
+                  className="h-11 w-11 text-sm"
+                />
+              ) : (
+                <div
+                  className={cn(
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                    AVATAR_TINT[session.status],
+                  )}
+                >
+                  <Smartphone className="h-5 w-5" aria-hidden="true" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 truncate font-semibold text-foreground">
+                  <StatusDot status={session.status} />
+                  {session.sessionName}
+                </p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {session.phoneNumber ?? 'Número ainda não vinculado'}
+                </p>
               </div>
-            )}
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 truncate font-semibold text-foreground">
-                <StatusDot status={session.status} />
-                {session.sessionName}
-              </p>
-              <p className="truncate text-sm text-muted-foreground">
-                {session.phoneNumber ?? 'Número ainda não vinculado'}
-              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {waitingCount > 0 && (
+                <span
+                  className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-xs font-semibold text-destructive-foreground"
+                  title={`${waitingCount} conversa(s) aguardando atendimento humano`}
+                >
+                  {waitingCount}
+                </span>
+              )}
+              <StatusBadge status={session.status} />
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {waitingCount > 0 && (
-              <span
-                className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-xs font-semibold text-destructive-foreground"
-                title={`${waitingCount} conversa(s) aguardando atendimento humano`}
-              >
-                {waitingCount}
-              </span>
-            )}
-            <StatusBadge status={session.status} />
-          </div>
-        </div>
 
-        <div className="mt-auto flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-          <span>Última atividade: {formatDateTime(session.lastSeen)}</span>
-          <span className="flex items-center gap-0.5 text-primary opacity-0 transition-opacity group-hover:opacity-100">
-            Gerenciar
-            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
-        </div>
+          <div className="mt-auto flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+            <span>Última atividade: {formatDateTime(session.lastSeen)}</span>
+            <span className="flex items-center gap-0.5 text-primary opacity-0 transition-opacity group-hover:opacity-100">
+              Gerenciar
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+          </div>
         </Card>
       </Link>
     </motion.div>

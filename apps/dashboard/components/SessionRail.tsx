@@ -142,7 +142,9 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
               aria-label={label}
               className={cn(
                 'relative flex h-[38px] w-[38px] items-center justify-center rounded-[11px] transition-colors',
-                isActive ? 'text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                isActive
+                  ? 'text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
               {/*

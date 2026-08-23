@@ -24,9 +24,7 @@ describe('AnimatedNumber', () => {
   });
 
   it('formata com separador de milhar quando o formatador pede', () => {
-    render(
-      <AnimatedNumber value={5000} format={(v) => Math.round(v).toLocaleString('pt-BR')} />,
-    );
+    render(<AnimatedNumber value={5000} format={(v) => Math.round(v).toLocaleString('pt-BR')} />);
     expect(screen.getByText('5.000')).toBeInTheDocument();
   });
 

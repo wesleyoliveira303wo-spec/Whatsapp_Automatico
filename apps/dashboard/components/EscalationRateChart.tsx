@@ -63,8 +63,8 @@ export default function EscalationRateChart({
             dot={{ r: 2.5, stroke: 'none', fill: CHART_COLORS.warning }}
             activeDot={false}
             isAnimationActive
-              animationDuration={650}
-              animationEasing="ease-out"
+            animationDuration={650}
+            animationEasing="ease-out"
           />
         </AreaChart>
       </ResponsiveContainer>
