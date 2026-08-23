@@ -914,6 +914,15 @@ model WhatsAppConversation {
   /// para frente" com o mesmo custo para servir `ORDER BY ... DESC`, então a
   /// direção declarada aqui não importa para este propósito.
   @@index([tenantId, sessionName, lastMessageAt])
+  /// Onda 3 do redesign (2026-08-23) — cobre `findAllByTenant({needsHumanAttention:
+  /// true})`, usada por `useWaitingForHuman` (badge "aguardando atendente" da
+  /// Sidebar): filtra `tenant_id + escalated_at IS NOT NULL` SEM `session_name`
+  /// (é tenant-wide de propósito, soma todas as sessões) — o índice acima não
+  /// serve aqui porque `session_name` no meio do composto quebra o prefixo.
+  /// Montada duas vezes por página (`pages/index.tsx` e `SessionRail.tsx`,
+  /// cada uma com seu próprio polling de ~5s), então é consulta de alta
+  /// frequência sem cobertura até esta migration.
+  @@index([tenantId, escalatedAt])
   /// Fase L, Bloco L1 — suporta "todas as conversas desta pessoa", que é o
   /// ganho central da identidade: cruzar as sessões de um mesmo tenant.
   @@index([contactId])

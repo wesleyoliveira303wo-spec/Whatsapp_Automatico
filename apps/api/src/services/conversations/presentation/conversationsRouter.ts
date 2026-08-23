@@ -165,6 +165,7 @@ export function createConversationsRouter(conversationsService: ConversationsSer
 
   router.get(
     '/',
+    requirePermission('conversation:read'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(tenantIdParamSchema, req.params, res);
       if (!params) return;
@@ -178,14 +179,19 @@ export function createConversationsRouter(conversationsService: ConversationsSer
 
   /**
    * `GET .../conversations/:conversationId` — Fase 1, Bloco F1.10 (estabilidade
-   * para beta). Sem `requirePermission` explícito — mesma régua já aplicada a
-   * `GET /` e `GET /:conversationId/messages` (leitura, não posse/escrita).
-   * `ConversationsService.getConversation` já valida tenant ownership antes
-   * de devolver; `ConversationNotFoundError` vira 404 via
+   * para beta). `ConversationsService.getConversation` já valida tenant
+   * ownership antes de devolver; `ConversationNotFoundError` vira 404 via
    * `conversationsErrorHandler` (mesmo tratamento dos demais métodos).
+   * `requirePermission` explícito (Onda 3 do redesign, 2026-08-23) — defesa
+   * em profundidade: as 8 rotas de escrita deste arquivo sempre declararam
+   * permissão, as 4 de leitura confiavam só no `authenticate` do mount.
+   * Comportamento hoje é IDÊNTICO (todo cargo, inclusive `read_only`, já tem
+   * `conversation:read`) — protege contra um cargo futuro que não devesse
+   * herdar acesso de leitura por omissão.
    */
   router.get(
     '/:conversationId',
+    requirePermission('conversation:read'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(
         tenantIdParamSchema.merge(conversationIdParamSchema),
@@ -204,6 +210,7 @@ export function createConversationsRouter(conversationsService: ConversationsSer
 
   router.get(
     '/:conversationId/messages',
+    requirePermission('conversation:read'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(
         tenantIdParamSchema.merge(conversationIdParamSchema),
@@ -228,10 +235,9 @@ export function createConversationsRouter(conversationsService: ConversationsSer
    * Streaming binário de verdade (`res.setHeader` + `res.send(Buffer)`),
    * NUNCA base64 embutido em JSON — primeiro endpoint deste projeto a
    * devolver um binário puro (todo outro endpoint devolve `res.json(...)`).
-   * Sem `requirePermission` explícito — mesma régua já aplicada a `GET /` e
-   * `GET /:conversationId/messages`: qualquer principal autenticado que já
-   * pode ver a mensagem (texto) pode ver sua mídia; não é uma ação de
-   * escrita/posse que justifique uma permissão própria.
+   * `requirePermission('conversation:read')` (Onda 3, mesma régua acima):
+   * qualquer principal que já pode ver a mensagem (texto) pode ver sua
+   * mídia; não é ação de escrita/posse que justifique permissão própria.
    * `Cache-Control: private, max-age=3600`: o binário de uma mídia já
    * recebida nunca muda (é imutável por natureza — mesmo arquivo, mesma
    * `mediaKeyEncrypted`), então o navegador pode cachear com segurança;
@@ -240,6 +246,7 @@ export function createConversationsRouter(conversationsService: ConversationsSer
    */
   router.get(
     '/:conversationId/messages/:messageId/media',
+    requirePermission('conversation:read'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(
         tenantIdParamSchema.merge(conversationIdParamSchema).merge(messageIdParamSchema),

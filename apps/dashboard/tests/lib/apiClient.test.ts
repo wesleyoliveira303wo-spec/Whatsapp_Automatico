@@ -113,5 +113,34 @@ describe('apiClient', () => {
       expect(headers.Authorization).toBe('Bearer acc-123');
       expect(headers['X-API-Key']).toBeUndefined();
     });
+
+    /**
+     * Onda 3 do redesign (2026-08-23) — trava de regressão do bug real que
+     * já quebrou este cliente uma vez: a imagem Docker da API ficou
+     * defasada (Onda 1) e todo endpoint respondeu HTML de 404 em vez de
+     * JSON — `JSON.parse` lançava e cada rota `pages/api/*` dependia do
+     * catch-all genérico do Next.js para não expor um 500 opaco. Agora o
+     * contrato normal (`{status, body}`, nunca lança) é preservado mesmo
+     * neste caso.
+     */
+    it('resposta upstream que não é JSON valido vira {status, body} estruturado, nunca lança', async () => {
+      mockFetchOnce(404, undefined, '<!DOCTYPE html><html>Not Found</html>');
+
+      const result = await callApi(SESSION, '');
+
+      expect(result.status).toBe(404);
+      expect(result.body).toEqual({
+        error: 'upstream_invalid_response',
+        message: 'A API respondeu algo que não é JSON válido.',
+      });
+    });
+
+    it('resposta upstream 200 com corpo não-JSON usa 502 (a API disse sucesso mas não entregou nada usável)', async () => {
+      mockFetchOnce(200, undefined, 'nao e json');
+
+      const result = await callApi(SESSION, '');
+
+      expect(result.status).toBe(502);
+    });
   });
 });

@@ -5,6 +5,7 @@ import { Instrument_Sans } from 'next/font/google';
 import { MotionConfig } from 'framer-motion';
 import { BRAND, pageTitle } from '@/lib/brand';
 import { Toaster } from '@/components/ui/toaster';
+import AppErrorBoundary from '@/components/AppErrorBoundary';
 
 /**
  * Reskin 2026-08-06 — Design System §3 (processo externo "Claude Design")
@@ -47,8 +48,18 @@ export default function MyApp({ Component, pageProps }: AppProps): JSX.Element {
         (ver também a regra equivalente em CSS puro, `globals.css`, para as
         transições que não passam por framer-motion).
       */}
+      {/*
+        Onda 3 do redesign (2026-08-23) — rede de segurança FINAL. `SessionLayout`
+        já tem seu próprio `AppErrorBoundary` em volta do conteúdo (raio de dano
+        menor: cabeçalho/rail sobrevivem a uma tela quebrada); este aqui cobre o
+        resto — Workspace, login, troca de senha, ou uma quebra no PRÓPRIO
+        `SessionLayout` (cabeçalho/rail). Sem este nível, essas páginas ficavam
+        sem nenhuma proteção contra tela branca.
+      */}
       <MotionConfig reducedMotion="user">
-        <Component {...pageProps} />
+        <AppErrorBoundary>
+          <Component {...pageProps} />
+        </AppErrorBoundary>
       </MotionConfig>
       {/*
         Milestone 6, Bloco M6C-3 — fila global de toasts (Radix Toast).

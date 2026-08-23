@@ -97,7 +97,44 @@ export function createApiClient(resource: string): ApiClient {
     // `204 No Content` (disconnect/remove) nao tem corpo — `response.json()`
     // lancaria em cima de um body vazio; `text()` primeiro evita isso.
     const text = await response.text();
-    const body = text ? (JSON.parse(text) as T) : (undefined as T);
+
+    /**
+     * Onda 3 do redesign (2026-08-23) — antes disto, um `text` que nao era
+     * JSON valido (a API respondendo HTML de erro de gateway, um proxy fora
+     * do ar, um 404 de infra em vez de aplicacao — exatamente o que
+     * aconteceu de verdade na Onda 1, quando a imagem Docker da API ficou
+     * defasada e todo endpoint de campanhas virou "SyntaxError: Unexpected
+     * token '<'") fazia `JSON.parse` LANCAR. A excecao nao lancada aqui
+     * propagava para fora de `createApiClient`, e cada uma das dezenas de
+     * rotas `pages/api/*` que chamam isto (`res.status(apiStatus).json(body)`,
+     * sempre o MESMO padrao) dependia do catch-all generico do Next.js para
+     * nao derrubar o processo — o resultado no browser era um 500 opaco
+     * ("Internal Server Error", sem nenhuma pista do que houve).
+     *
+     * O contrato deste cliente e devolver SEMPRE `{status, body}` — a propria
+     * docstring de `ApiResponse` diz que 4xx/5xx sao resultado valido, nao
+     * excecao. Uma resposta upstream que nao e JSON e a MESMA classe de
+     * problema, so que descoberta um passo antes — por isso vira `body`
+     * estruturado em vez de excecao: cada rota `pages/api/*` continua
+     * funcionando SEM nenhuma mudanca (o `res.status(status).json(body)` de
+     * sempre), e agora devolve um erro que diz a causa real, nao um crash.
+     */
+    let body: T;
+    if (!text) {
+      body = undefined as T;
+    } else {
+      try {
+        body = JSON.parse(text) as T;
+      } catch {
+        return {
+          status: status >= 400 ? status : 502,
+          body: {
+            error: 'upstream_invalid_response',
+            message: 'A API respondeu algo que não é JSON válido.',
+          } as T,
+        };
+      }
+    }
 
     return { status, body };
   };

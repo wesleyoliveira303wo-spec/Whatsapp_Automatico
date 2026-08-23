@@ -129,7 +129,16 @@ export function createAuthenticate(
   };
 }
 
+/**
+ * Onda 3 do redesign (2026-08-23) — antes falhava ABERTO: sem `:tenantId` no
+ * path, a checagem devolvia `true` (liberava). Hoje é seguro na prática
+ * porque todo mount de `authenticate` (ver `index.ts`) vive sob
+ * `/api/tenants/:tenantId/...`, então `req.params.tenantId` está sempre
+ * presente — mas uma rota nova montada sem esse prefixo herdaria acesso
+ * cross-tenant por omissão, em vez de ser barrada por padrão. Corrigido para
+ * falhar FECHADO: exige o parâmetro presente E igual ao tenant da API key.
+ */
 function tenantMatches(req: Request, principalTenantId: string): boolean {
   const tenantIdFromPath = req.params.tenantId;
-  return tenantIdFromPath === undefined || tenantIdFromPath === principalTenantId;
+  return tenantIdFromPath !== undefined && tenantIdFromPath === principalTenantId;
 }

@@ -141,4 +141,27 @@ describe('createAuthenticate (Milestone 5, Bloco M5D)', () => {
 
     expect(statusMock).toHaveBeenCalledWith(403);
   });
+
+  /**
+   * Onda 3 do redesign (2026-08-23) — trava de regressão: `tenantMatches`
+   * falhava ABERTO quando a rota não tinha `:tenantId` no path (devolvia
+   * `true`, liberava). Hoje é inofensivo porque todo mount de `authenticate`
+   * vive sob `/api/tenants/:tenantId/...`, mas uma rota futura montada sem
+   * esse prefixo herdaria acesso cross-tenant por omissão em vez de ser
+   * barrada por padrão. Este teste prova o comportamento seguro (fail-closed)
+   * diretamente, sem depender de nenhuma rota real ficar mal configurada.
+   */
+  it('[IDOR] sem :tenantId no path -> 403, nunca libera por omissão (fail-closed)', async () => {
+    const { authenticate, access } = build();
+    const token = access.issue({ userId: 'u1', tenantId: 'tenant-1', role: 'operator' });
+    const req = makeReq({ authorization: `Bearer ${token}` }, {});
+    const { res, statusMock } = fakeRes();
+    const next = jest.fn();
+
+    authenticate(req, res, next);
+    await flush();
+
+    expect(statusMock).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
 });

@@ -70,7 +70,34 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   const text = await response.text();
-  const body = text ? JSON.parse(text) : undefined;
+
+  /**
+   * Onda 3 do redesign (2026-08-23) — este é o `JSON.parse` que roda no
+   * NAVEGADOR, direto na frente de quem usa o produto: se o BFF (`pages/api/*`)
+   * responder algo que não é JSON — uma página de erro HTML do próprio
+   * Next.js (ex.: um erro lançado ANTES de qualquer `res.json()`, como um
+   * middleware quebrado), um timeout de proxy, um 502 do Nginx em produção —
+   * o `SyntaxError` daqui não era capturado em lugar nenhum: virava uma
+   * promise rejeitada sem tratamento, ou — pior — quebrava o componente que
+   * chamou `await request(...)` de dentro de um handler de clique/efeito.
+   * Convertido em `ClientApiError` (o mesmo tipo que TODO componente já
+   * trata para status 4xx/5xx — nenhuma tela precisa aprender um caso novo)
+   * com um corpo que descreve o problema em vez de deixar a exceção crua
+   * subir.
+   */
+  let body: unknown;
+  if (!text) {
+    body = undefined;
+  } else {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new ClientApiError(response.status >= 400 ? response.status : 502, {
+        error: 'invalid_response',
+        message: 'O servidor respondeu algo que não é JSON válido.',
+      });
+    }
+  }
 
   if (!response.ok) {
     throw new ClientApiError(response.status, body);

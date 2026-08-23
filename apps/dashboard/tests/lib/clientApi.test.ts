@@ -122,4 +122,22 @@ describe('clientApi (M2, Fase 4 — cliente do browser para as rotas BFF)', () =
     });
     await expect(fetchSessions()).rejects.toBeInstanceOf(ClientApiError);
   });
+
+  /**
+   * Onda 3 do redesign (2026-08-23) — trava de regressão: este é o
+   * `JSON.parse` que roda no NAVEGADOR (diferente do de `apiClient.test.ts`,
+   * que roda no servidor). Uma resposta do BFF que não é JSON válido (página
+   * de erro HTML do próprio Next.js, timeout de proxy) antes derrubava a
+   * chamada com um `SyntaxError` cru, não tratado por nenhum componente —
+   * agora vira o mesmo `ClientApiError` que toda tela já sabe exibir.
+   */
+  it('resposta do BFF que não é JSON válido vira ClientApiError, nunca SyntaxError cru', async () => {
+    mockFetchOnce(500, undefined, '<!DOCTYPE html><html>Internal Server Error</html>');
+
+    await expect(fetchSessions()).rejects.toBeInstanceOf(ClientApiError);
+    await expect(fetchSessions()).rejects.toMatchObject({
+      status: 500,
+      body: { error: 'invalid_response' },
+    });
+  });
 });

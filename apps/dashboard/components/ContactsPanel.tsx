@@ -6,7 +6,6 @@ import AnimatedNumber from '@/components/ui/animated-number';
 import {
   MessageSquare,
   Users,
-  History,
   Clock,
   UserX,
   MoreVertical,
@@ -521,7 +520,7 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
           variants={staggerContainer}
           initial="hidden"
           animate="visible"
-          className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5"
+          className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4"
         >
           <StatCard
             icon={Users}
@@ -551,7 +550,6 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
             numericValue={stats?.optedOut}
             tone="destructive"
           />
-          <StatCard icon={History} label="Última atualização" value="Agora" tone="primary" />
         </motion.div>
 
         <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
