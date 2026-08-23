@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { fadeInUp } from '@/lib/motion';
 import { Smartphone, ChevronRight } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import StatusDot from './StatusDot';
@@ -39,7 +41,8 @@ export default function WhatsAppAccountCard({
   waitingCount = 0,
 }: WhatsAppAccountCardProps): JSX.Element {
   return (
-    <Link href={`/sessions/${encodeURIComponent(session.sessionName)}`} className="group block">
+    <motion.div variants={fadeInUp}>
+      <Link href={`/sessions/${encodeURIComponent(session.sessionName)}`} className="group block">
       {/*
         Onda 2 do redesign (2026-08-23) — `hover:-translate-y-0.5` soma um
         leve "levantar" ao border+shadow que já existiam, reforçando que o
@@ -97,7 +100,8 @@ export default function WhatsAppAccountCard({
             <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
           </span>
         </div>
-      </Card>
-    </Link>
+        </Card>
+      </Link>
+    </motion.div>
   );
 }

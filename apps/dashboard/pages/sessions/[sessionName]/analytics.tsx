@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
+import { motion } from 'framer-motion';
+import { staggerContainer } from '@/lib/motion';
 import SessionLayout from '@/components/SessionLayout';
 import AnalyticsRangePicker from '@/components/AnalyticsRangePicker';
 import MetricCard from '@/components/MetricCard';
@@ -99,7 +101,21 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
             <AnalyticsRangePicker value={range} onChange={setRange} />
           </div>
 
-          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/*
+            Onda 2 do redesign (2026-08-23) — a faixa de indicadores entra em
+            cascata (`staggerContainer`), e cada número CONTA até o valor
+            (`numericValue`+`formatValue` em cada `MetricCard`). É a primeira
+            coisa que se vê ao abrir Analytics, então é onde a animação tem
+            mais alcance. `formatValue` reusa os MESMOS formatadores do texto
+            estático (`formatCount`/`formatCostUsd`), garantindo que o último
+            quadro da contagem seja idêntico ao valor final.
+          */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3"
+          >
             {/*
               Onda 1 do redesign (2026-08-22) — números para humanos:
               - o custo era despejado cru ("US$ 0.00000000", 8 casas do
@@ -125,18 +141,22 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
             <MetricCard
               label="Interações de IA"
               value={totalInteractions !== null ? formatCount(totalInteractions) : '…'}
+              numericValue={totalInteractions ?? undefined}
+              formatValue={(current) => formatCount(Math.round(current))}
               hint="Respostas geradas pela IA no período"
             />
             <MetricCard
               label="Mensagens (entrada + saída)"
               value={totalMessages !== null ? formatCount(totalMessages) : '…'}
+              numericValue={totalMessages ?? undefined}
+              formatValue={(current) => formatCount(Math.round(current))}
               hint={
                 inboundCount !== null && outboundCount !== null
                   ? `${formatCount(inboundCount)} recebidas · ${formatCount(outboundCount)} enviadas`
                   : undefined
               }
             />
-          </div>
+          </motion.div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <ChartCard

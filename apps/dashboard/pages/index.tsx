@@ -1,5 +1,7 @@
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
+import { motion } from 'framer-motion';
+import { staggerContainer } from '@/lib/motion';
 import { Plus, Smartphone } from 'lucide-react';
 import Header from '@/components/Header';
 import ConnectWhatsAppDialog from '@/components/ConnectWhatsAppDialog';
@@ -107,7 +109,17 @@ export default function Home({ tenantId }: HomeProps): JSX.Element {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          /*
+            Onda 2 do redesign (2026-08-23) — o Workspace é a PRIMEIRA tela
+            depois do login; os cards entrando em cascata é a primeira
+            impressão de movimento do produto inteiro. Ver `lib/motion.ts`.
+          */
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          >
             {sessions.map((session) => (
               <WhatsAppAccountCard
                 key={session.id}
@@ -115,7 +127,7 @@ export default function Home({ tenantId }: HomeProps): JSX.Element {
                 waitingCount={countBySession[session.sessionName] ?? 0}
               />
             ))}
-          </div>
+          </motion.div>
         )}
       </main>
     </div>

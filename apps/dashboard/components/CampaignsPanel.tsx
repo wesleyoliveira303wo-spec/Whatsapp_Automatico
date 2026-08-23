@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { fadeInUp, staggerContainer } from '@/lib/motion';
+import AnimatedNumber from '@/components/ui/animated-number';
 import {
   Megaphone,
   Send,
@@ -190,20 +193,37 @@ interface StatCardProps {
   label: string;
   value: string;
   deltaPct?: number;
+  /** Onda 2 do redesign (2026-08-23) — quando presente, o card CONTA até o número (ver `MetricCard`, mesmo padrão). */
+  numericValue?: number;
+  /** Formata cada quadro da contagem; precisa devolver exatamente `value` no valor final. */
+  formatValue?: (current: number) => string;
 }
 
-function StatCard({ icon: Icon, label, value, deltaPct }: StatCardProps): JSX.Element {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  deltaPct,
+  numericValue,
+  formatValue,
+}: StatCardProps): JSX.Element {
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3.5">
+    <motion.div variants={fadeInUp} className="rounded-lg border border-border bg-card px-4 py-3.5">
       <div className="mb-2 flex items-center gap-2.5">
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" aria-hidden="true" />
         </div>
         <p className="text-[12.5px] text-muted-foreground">{label}</p>
       </div>
-      <p className="text-[22px] font-semibold leading-tight text-foreground">{value}</p>
+      <p className="text-[22px] font-semibold leading-tight tabular-nums text-foreground">
+        {numericValue !== undefined ? (
+          <AnimatedNumber value={numericValue} format={formatValue} />
+        ) : (
+          value
+        )}
+      </p>
       <TrendBadge deltaPct={deltaPct} />
-    </div>
+    </motion.div>
   );
 }
 
@@ -479,7 +499,11 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
 
       <div className="flex flex-col gap-5 xl:flex-row">
         <div className="min-w-0 flex-1">
-          <div
+          {/* Onda 2 do redesign (2026-08-23) — faixa de indicadores em cascata, cada número contando até o valor. */}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
             className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4"
             data-testid="campaigns-stat-cards"
           >
@@ -487,18 +511,23 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
               icon={Megaphone}
               label="Total de campanhas"
               value={overview ? String(overview.totalCampaigns) : '—'}
+              numericValue={overview?.totalCampaigns}
               deltaPct={overview?.trends.campaignsDeltaPct}
             />
             <StatCard
               icon={Send}
               label="Mensagens enviadas"
               value={overview ? overview.totalSent.toLocaleString('pt-BR') : '—'}
+              numericValue={overview?.totalSent}
+              formatValue={(current) => Math.round(current).toLocaleString('pt-BR')}
               deltaPct={overview?.trends.messagesSentDeltaPct}
             />
             <StatCard
               icon={MessageSquare}
               label="Respostas"
               value={overview ? overview.totalReplied.toLocaleString('pt-BR') : '—'}
+              numericValue={overview?.totalReplied}
+              formatValue={(current) => Math.round(current).toLocaleString('pt-BR')}
               deltaPct={overview?.trends.repliesDeltaPct}
             />
             <StatCard
@@ -507,9 +536,11 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
               value={
                 overview?.responseRate !== undefined ? formatPercent(overview.responseRate) : '—'
               }
+              numericValue={overview?.responseRate}
+              formatValue={formatPercent}
               deltaPct={overview?.trends.responseRateDeltaPct}
             />
-          </div>
+          </motion.div>
 
           <div className="mb-4 flex flex-wrap items-center gap-2.5">
             <div className="relative min-w-[220px] flex-1">

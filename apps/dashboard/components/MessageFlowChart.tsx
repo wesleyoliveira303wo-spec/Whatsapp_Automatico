@@ -65,13 +65,17 @@ export default function MessageFlowChart({
               dataKey="inbound"
               fill={CHART_COLORS.primary}
               radius={[2, 2, 0, 0]}
-              isAnimationActive={false}
+              isAnimationActive
+              animationDuration={650}
+              animationEasing="ease-out"
             />
             <Bar
               dataKey="outbound"
               fill={CHART_COLORS.primaryFaint}
               radius={[2, 2, 0, 0]}
-              isAnimationActive={false}
+              isAnimationActive
+              animationDuration={650}
+              animationEasing="ease-out"
             />
           </BarChart>
         </ResponsiveContainer>

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { fadeInUp, staggerContainer } from '@/lib/motion';
+import AnimatedNumber from '@/components/ui/animated-number';
 import {
   MessageSquare,
   Users,
@@ -190,6 +193,8 @@ interface StatCardProps {
   label: string;
   value: string;
   tone: 'primary' | 'success' | 'warning' | 'destructive';
+  /** Onda 2 do redesign (2026-08-23) — quando presente, o card CONTA até o número (ver `MetricCard`, mesmo padrão). */
+  numericValue?: number;
 }
 
 const TONE_CLASSES: Record<StatCardProps['tone'], string> = {
@@ -200,9 +205,12 @@ const TONE_CLASSES: Record<StatCardProps['tone'], string> = {
 };
 
 /** Card de contagem do topo — `value` já formatado (o card não sabe de números). */
-function StatCard({ icon: Icon, label, value, tone }: StatCardProps): JSX.Element {
+function StatCard({ icon: Icon, label, value, tone, numericValue }: StatCardProps): JSX.Element {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+    <motion.div
+      variants={fadeInUp}
+      className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
+    >
       <div
         className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-lg', TONE_CLASSES[tone])}
       >
@@ -210,9 +218,11 @@ function StatCard({ icon: Icon, label, value, tone }: StatCardProps): JSX.Elemen
       </div>
       <div className="min-w-0">
         <p className="truncate text-[12px] text-muted-foreground">{label}</p>
-        <p className="text-[18px] font-semibold leading-tight text-foreground">{value}</p>
+        <p className="text-[18px] font-semibold leading-tight tabular-nums text-foreground">
+          {numericValue !== undefined ? <AnimatedNumber value={numericValue} /> : value}
+        </p>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -506,33 +516,43 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
   return (
     <div className="flex flex-col gap-5 xl:flex-row">
       <div className="min-w-0 flex-1">
-        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {/* Onda 2 do redesign (2026-08-23) — faixa de indicadores em cascata, cada número contando até o valor. */}
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+          className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5"
+        >
           <StatCard
             icon={Users}
             label="Total de contatos"
             value={stats ? String(stats.total) : '—'}
+            numericValue={stats?.total}
             tone="primary"
           />
           <StatCard
             icon={MessageSquare}
             label="Com conversa"
             value={stats ? String(stats.withConversation) : '—'}
+            numericValue={stats?.withConversation}
             tone="success"
           />
           <StatCard
             icon={Clock}
             label="Sem conversa"
             value={stats ? String(stats.withoutConversation) : '—'}
+            numericValue={stats?.withoutConversation}
             tone="warning"
           />
           <StatCard
             icon={UserX}
             label="Opt-outs"
             value={stats ? String(stats.optedOut) : '—'}
+            numericValue={stats?.optedOut}
             tone="destructive"
           />
           <StatCard icon={History} label="Última atualização" value="Agora" tone="primary" />
-        </div>
+        </motion.div>
 
         <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
           <Input

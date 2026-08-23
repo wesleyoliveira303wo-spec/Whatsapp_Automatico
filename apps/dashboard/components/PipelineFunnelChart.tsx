@@ -76,7 +76,9 @@ export default function PipelineFunnelChart({
             dataKey="count"
             radius={5}
             background={{ fill: CHART_COLORS.muted, radius: 5 }}
-            isAnimationActive={false}
+            isAnimationActive
+              animationDuration={650}
+              animationEasing="ease-out"
           >
             {data.map((_, index) => (
               <Cell key={index} fill={CHART_COLORS.primary} fillOpacity={0.85 - index * 0.09} />

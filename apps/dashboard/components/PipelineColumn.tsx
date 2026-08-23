@@ -1,5 +1,6 @@
 import { memo } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { staggerContainerFast } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import {
   formatPipelineColumnLabel,
@@ -100,7 +101,20 @@ function PipelineColumn({
         salto brusco que `mode="sync"` (o padrão) causaria. Ver `PipelineCard`
         para o `layout`/`initial`/`animate`/`exit` de cada card.
       */}
-      <div
+      {/*
+        `variants`+`initial="hidden"`/`animate="visible"` no CONTÊINER: é o
+        que faz os cards da coluna aparecerem em cascata ao abrir o Pipeline
+        (cada um ~18ms depois do anterior), em vez de a tela inteira surgir
+        pronta de uma vez. O card filho não declara `variants` próprio — ele
+        já tem `initial`/`animate` explícitos, e o framer-motion só orquestra
+        por cascata os filhos que herdam variantes por NOME; aqui o efeito de
+        cascata vem do `delayChildren`/`staggerChildren` aplicado ao subir a
+        árvore. Ver `lib/motion.ts` para os valores e o porquê de cada um.
+      */}
+      <motion.div
+        variants={staggerContainerFast}
+        initial="hidden"
+        animate="visible"
         className="fx-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2"
         style={{ minHeight: '4rem' }}
       >
@@ -122,7 +136,7 @@ function PipelineColumn({
         {conversations.length === 0 && (
           <p className="px-2.5 py-5 text-center text-xs text-muted-foreground">Nenhum card aqui</p>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

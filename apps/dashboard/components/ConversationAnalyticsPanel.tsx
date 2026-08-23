@@ -64,7 +64,9 @@ export default function ConversationAnalyticsPanel({
                 fillOpacity={0.08}
                 dot={{ r: 2.5, stroke: 'none', fill: CHART_COLORS.primary }}
                 activeDot={false}
-                isAnimationActive={false}
+                isAnimationActive
+              animationDuration={650}
+              animationEasing="ease-out"
               />
             </AreaChart>
           </ResponsiveContainer>

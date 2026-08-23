@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { motion } from 'framer-motion';
 import { MessageSquare, Brain, BarChart3, Kanban, Contact, Send } from 'lucide-react';
 import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
@@ -141,14 +142,40 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
               aria-label={label}
               className={cn(
                 'relative flex h-[38px] w-[38px] items-center justify-center rounded-[11px] transition-colors',
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                isActive ? 'text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
+              {/*
+                Onda 2 do redesign (2026-08-23) — o realce do item ativo era
+                uma classe estática (`bg-primary/10`), então trocar de tela
+                fazia o fundo simplesmente pular de um ícone para outro. Com
+                `layoutId` compartilhado, o framer-motion entende que é o
+                MESMO elemento mudando de lugar e o desliza entre os itens —
+                é a mesma técnica usada por Linear/Vercel na navegação
+                lateral, e o efeito mais reconhecível de "produto bem
+                acabado" por unidade de esforço.
+
+                Fica atrás do ícone (`-z-10` + `absolute inset-0`), nunca
+                envolvendo-o: assim o ícone não é remontado durante a
+                transição e o texto/acessibilidade seguem intactos.
+              */}
+              {isActive && (
+                <motion.span
+                  layoutId="rail-active-indicator"
+                  className="absolute inset-0 -z-10 rounded-[11px] bg-primary/10"
+                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                  aria-hidden="true"
+                />
+              )}
               <Icon className="h-[19px] w-[19px]" aria-hidden="true" />
               {label === 'Conversas' && waitingHere > 0 && (
-                <span
+                <motion.span
+                  // Entra "pulsando" uma vez: é um alerta (alguém esperando
+                  // atendimento humano), então aparecer sem nenhum movimento
+                  // fazia o sinal passar despercebido no canto do ícone.
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 18 }}
                   className="absolute right-[5px] top-[5px] inline-flex h-2 w-2 rounded-full bg-destructive"
                   title={`${waitingHere} conversa(s) aguardando atendimento humano`}
                 />
