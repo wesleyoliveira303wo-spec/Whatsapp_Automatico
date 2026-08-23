@@ -24,11 +24,11 @@ describe('EscalationRateChart (Fase 1, Bloco F1.6 - jsdom)', () => {
     expect(screen.getByText('Falha ao carregar os dados de analytics.')).toBeInTheDocument();
   });
 
-  it('estado de loading: mostra o texto de carregamento', () => {
-    render(
+  it('estado de loading: mostra um skeleton do tamanho do gráfico (sem CLS)', () => {
+    const { container } = render(
       <EscalationRateChart points={null} errorMessage={null} from="2026-07-01" to="2026-07-10" />,
     );
-    expect(screen.getByText(/Carregando taxa de escalonamento/)).toBeInTheDocument();
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('estado vazio: mostra o empty state', () => {

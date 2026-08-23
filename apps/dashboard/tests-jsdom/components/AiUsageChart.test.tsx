@@ -33,9 +33,9 @@ describe('AiUsageChart (Milestone 4, Bloco M4E - jsdom)', () => {
     expect(screen.getByText('Falha ao carregar os dados de analytics.')).toBeInTheDocument();
   });
 
-  it('estado de loading: mostra o texto de carregamento', () => {
-    render(<AiUsageChart points={null} errorMessage={null} />);
-    expect(screen.getByText(/Carregando uso de IA/)).toBeInTheDocument();
+  it('estado de loading: mostra um skeleton do tamanho do gráfico (sem CLS)', () => {
+    const { container } = render(<AiUsageChart points={null} errorMessage={null} />);
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('estado vazio: mostra o empty state', () => {

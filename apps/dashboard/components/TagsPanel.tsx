@@ -7,6 +7,8 @@ import { tagSwatchClassName, tagBadgeClassName } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 
 interface TagsPanelProps {
   sessionName: string;
@@ -60,7 +62,15 @@ function ColorSwatchPicker({ value, onChange }: ColorSwatchPickerProps): JSX.Ele
  * (`tag:manage`).
  */
 export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element {
-  const { tags, loading, errorMessage: loadError, create, update, remove } = useTags(sessionName);
+  const {
+    tags,
+    loading,
+    errorMessage: loadError,
+    refresh,
+    create,
+    update,
+    remove,
+  } = useTags(sessionName);
 
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState<TagColor>('gray');
@@ -153,12 +163,27 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
         </Button>
       </form>
 
-      {(panelError ?? loadError) && (
-        <p className="mb-3.5 text-sm text-destructive">{panelError ?? loadError}</p>
-      )}
+      {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
 
+      {/*
+        Onda 1 do redesign (2026-08-22) — antes, uma falha no carregamento
+        INICIAL deixava `loading=false` e `tags=[]` ao mesmo tempo, então a
+        tela mostrava o banner de erro (`loadError`, misturado com
+        `panelError` acima) E "Nenhuma tag cadastrada ainda." juntos —
+        contradição visual. Agora o carregamento inicial tem seu PRÓPRIO
+        branch de erro (`ErrorState` com retry de verdade via
+        `refresh()`), distinto do banner de ação (`panelError`, que
+        continua só acima do formulário — erro de criar/editar/remover não é
+        "não há conteúdo para mostrar").
+      */}
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando tags…</p>
+        <div className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card">
+          <Skeleton className="h-11 w-full" />
+          <Skeleton className="h-11 w-full" />
+          <Skeleton className="h-11 w-full" />
+        </div>
+      ) : loadError ? (
+        <ErrorState description={loadError} onRetry={refresh} />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {tags.length === 0 && (

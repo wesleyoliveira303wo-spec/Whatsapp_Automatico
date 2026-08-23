@@ -3,7 +3,7 @@
  * + filtro por ação + "Carregar mais"), mesma casca de `UserManagementPanel`
  * mas sem formulário de criação.
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AuditLogPanel from '../../components/AuditLogPanel';
 import * as clientApi from '../../lib/clientApi';
@@ -124,6 +124,51 @@ describe('AuditLogPanel (Fase 1, Bloco F1.5)', () => {
     await waitFor(() => {
       expect(screen.getByText('Sem permissão para ver a auditoria.')).toBeInTheDocument();
     });
+  });
+
+  /**
+   * Onda 1 do redesign (2026-08-22) — antes desta rodada, uma falha SEM
+   * nenhum dado carregado mostrava o erro e "Nenhum evento de auditoria
+   * ainda." ao mesmo tempo (contradição). Trava de regressão: o erro vira
+   * `ErrorState` com retry de verdade (respeitando o filtro selecionado).
+   */
+  it('erro de carregamento inicial (sem nenhum dado) vira ErrorState com retry, nunca a mensagem de lista vazia', async () => {
+    (clientApi.fetchAuditLogs as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+
+    render(<AuditLogPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Não foi possível carregar a auditoria. Tente novamente.')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Nenhum evento de auditoria ainda.')).not.toBeInTheDocument();
+
+    (clientApi.fetchAuditLogs as jest.Mock).mockResolvedValueOnce({
+      entries: [entry()],
+      nextCursor: undefined,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(await screen.findByText('Login')).toBeInTheDocument();
+  });
+
+  it('erro ao trocar de filtro com dado antigo ainda em tela vira banner discreto — a lista antiga continua visível', async () => {
+    (clientApi.fetchAuditLogs as jest.Mock)
+      .mockResolvedValueOnce({ entries: [entry()], nextCursor: undefined })
+      .mockRejectedValueOnce(new Error('offline'));
+
+    render(<AuditLogPanel />);
+    const table = (): ReturnType<typeof within> => within(screen.getByRole('table'));
+    await waitFor(() => expect(table().getByText('Login')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText('Filtrar por ação'), {
+      target: { value: 'auth.logout' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Não foi possível carregar a auditoria. Tente novamente.')).toBeInTheDocument();
+    });
+    expect(table().getByText('Login')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
   });
 
   it('exibe o alvo (targetType + targetId) quando presente, e travessão quando ausente', async () => {

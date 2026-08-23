@@ -3,6 +3,8 @@ import { toAiUsageChartPoints } from '@/lib/analyticsView';
 import { CHART_COLORS } from '@/lib/chartTheme';
 import ChartTooltip from './ChartTooltip';
 import { formatCostUsd } from '@/lib/formatters';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { AiUsagePoint } from '@/lib/clientApi';
 
 interface AiUsageChartProps {
@@ -22,12 +24,22 @@ interface AiUsageChartProps {
  * estética "sparkline" pixel a pixel em vez de reinterpretar como um
  * gráfico cheio.
  */
+/**
+ * Onda 1 do redesign (2026-08-22) — contrato de 4 estados
+ * (`PRODUCT_PRINCIPLES.md` §3): loading vira `Skeleton` do MESMO tamanho do
+ * gráfico real (`h-[120px]`, evita CLS quando o dado chega) em vez de texto
+ * solto; erro vira `ErrorState` (mesmo componente usado no resto do
+ * produto). `onRetry` fica de fora de propósito — `useAiUsageAnalytics` não
+ * expõe uma função de refetch hoje (só refaz a busca quando `range`/
+ * `sessionName` mudam); `ErrorState` já suporta mostrar só a mensagem sem
+ * botão quando `onRetry` está ausente, então nada foi inventado.
+ */
 export default function AiUsageChart({ points, errorMessage }: AiUsageChartProps): JSX.Element {
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState className="min-h-[120px] p-4" description={errorMessage} />;
   }
   if (points === null) {
-    return <p className="text-sm text-muted-foreground">Carregando uso de IA…</p>;
+    return <Skeleton className="h-[120px] w-full rounded-md" />;
   }
   if (points.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhuma interação de IA no período.</p>;

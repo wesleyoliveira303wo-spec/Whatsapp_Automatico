@@ -29,6 +29,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
 import ErrorState from '@/components/states/ErrorState';
 import {
   Dialog,
@@ -668,34 +676,50 @@ export default function CampaignDetailPanel({
           </span>
         )}
       </div>
+      {/*
+        Onda 1 do redesign (2026-08-22) — era uma lista de `<div>`s sem
+        nenhum cabeçalho de coluna (um leitor de tela nunca sabia que a 2ª
+        "coluna" era status). Migrada para `<table>` de verdade via o
+        primitivo unificado (`ui/table.tsx`) — mesmo padrão agora usado por
+        `UserManagementPanel`/`AuditLogPanel`/`CampaignsPanel`. Sem menu
+        suspenso em nenhuma linha aqui (destinatário é só leitura), então
+        `overflow-hidden` no container é seguro (arredonda os cantos sem
+        risco do bug de clipping das outras tabelas).
+      */}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {recipients.map((recipient, index) => (
-          <div
-            key={recipient.id}
-            className={`flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] ${
-              index < recipients.length - 1 ? 'border-b border-border/70' : ''
-            }`}
-          >
-            <div className="min-w-0">
-              <p className="truncate text-foreground">
-                <DisplayNameParts {...partsForRecipient(recipient)} />
-              </p>
-              {(recipient.sentAt || recipient.repliedAt) && (
-                <p className="truncate text-[11.5px] text-muted-foreground">
-                  {recipient.sentAt && `Enviado em ${formatDateTime(recipient.sentAt)}`}
-                  {recipient.sentAt && recipient.repliedAt && ' · '}
-                  {recipient.repliedAt && `Respondeu em ${formatDateTime(recipient.repliedAt)}`}
-                </p>
-              )}
-            </div>
-            <span className="shrink-0 text-right text-muted-foreground">
-              {RECIPIENT_STATUS_LABELS[recipient.status]}
-              {recipient.skipReason &&
-                ` · ${SKIP_REASON_LABELS[recipient.skipReason as CampaignSkipReason] ?? recipient.skipReason}`}
-              {recipient.errorMessage && ` · ${recipient.errorMessage}`}
-            </span>
-          </div>
-        ))}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="px-4">Destinatário</TableHead>
+              <TableHead className="px-4 text-right">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {recipients.map((recipient) => (
+              <TableRow key={recipient.id}>
+                <TableCell className="px-4 align-top">
+                  <p className="truncate text-[13px] text-foreground">
+                    <DisplayNameParts {...partsForRecipient(recipient)} />
+                  </p>
+                  {(recipient.sentAt || recipient.repliedAt) && (
+                    <p className="truncate text-[11.5px] text-muted-foreground">
+                      {recipient.sentAt && `Enviado em ${formatDateTime(recipient.sentAt)}`}
+                      {recipient.sentAt && recipient.repliedAt && ' · '}
+                      {recipient.repliedAt &&
+                        `Respondeu em ${formatDateTime(recipient.repliedAt)}`}
+                    </p>
+                  )}
+                </TableCell>
+                <TableCell className="px-4 align-top text-right text-[13px] text-muted-foreground">
+                  {RECIPIENT_STATUS_LABELS[recipient.status]}
+                  {recipient.skipReason &&
+                    ` · ${SKIP_REASON_LABELS[recipient.skipReason as CampaignSkipReason] ?? recipient.skipReason}`}
+                  {recipient.errorMessage && ` · ${recipient.errorMessage}`}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
       {recipientsCursor && (
         <div className="mt-3 flex justify-center">

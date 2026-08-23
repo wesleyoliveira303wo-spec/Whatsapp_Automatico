@@ -130,6 +130,58 @@ describe('QuickRepliesPanel (Fase 1, Bloco F1.9)', () => {
     });
   });
 
+  /**
+   * Onda 1 do redesign (2026-08-22) — antes desta rodada, uma falha no
+   * carregamento INICIAL deixava `loading=false`/`quickReplies=[]` ao mesmo
+   * tempo, e a tela mostrava CONTRADITORIAMENTE o banner de erro e "Nenhuma
+   * resposta rápida cadastrada ainda." juntos. Trava de regressão: sem
+   * nenhum dado carregado, o erro vira um `ErrorState` de verdade (com
+   * retry), NUNCA o texto de lista vazia.
+   */
+  it('erro de carregamento inicial (sem nenhum dado) vira ErrorState com retry, nunca a mensagem de lista vazia', async () => {
+    (clientApi.fetchQuickReplies as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+
+    render(<QuickRepliesPanel sessionName="vendas" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Falha ao carregar as respostas rápidas.')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText('Nenhuma resposta rápida cadastrada ainda.'),
+    ).not.toBeInTheDocument();
+
+    (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValueOnce({
+      quickReplies: [quickReply()],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(await screen.findByText('Bom dia! Como posso ajudar?')).toBeInTheDocument();
+  });
+
+  it('erro de uma AÇÃO sobre dados já carregados vira banner discreto — a lista continua visível', async () => {
+    const { ClientApiError } = jest.requireActual('../../lib/clientApi');
+    (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValue({ quickReplies: [quickReply()] });
+    (clientApi.deleteQuickReply as jest.Mock).mockRejectedValue(
+      new ClientApiError(403, { error: 'forbidden' }),
+    );
+
+    render(<QuickRepliesPanel sessionName="vendas" />);
+    await waitFor(() =>
+      expect(screen.getByText('Bom dia! Como posso ajudar?')).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Seu cargo não permite gerenciar respostas rápidas.'),
+      ).toBeInTheDocument();
+    });
+    // A linha continua na tela — erro de ação não substitui o conteúdo já carregado.
+    expect(screen.getByText('Bom dia! Como posso ajudar?')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
+  });
+
   it('mostra mensagem de erro amigável em caso de 403 ao criar', async () => {
     const { ClientApiError } = jest.requireActual('../../lib/clientApi');
     (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValue({ quickReplies: [] });

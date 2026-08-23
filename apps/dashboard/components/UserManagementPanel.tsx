@@ -13,6 +13,8 @@ import {
 } from '@/lib/clientApi';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import {
   Table,
   TableHeader,
@@ -292,35 +294,60 @@ export default function UserManagementPanel(): JSX.Element {
         {createdNotice && <p className="w-full text-xs text-success">{createdNotice}</p>}
       </form>
 
-      {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
+      {/*
+        Onda 1 do redesign (2026-08-22) — `panelError` sempre serviu a DOIS
+        papeis (erro de carregamento inicial E erro de uma ação de linha,
+        ex.: suspender/trocar cargo), e antes o banner aparecia sozinho
+        acima da tabela em AMBOS os casos — numa falha de carregamento, a
+        tabela renderizava vazia por baixo ("Nenhum usuário ainda."),
+        contradizendo a mensagem de erro logo acima. Agora: falha no
+        carregamento inicial (`users.length === 0`, nada real para mostrar)
+        vira um `ErrorState` de verdade com retry (`load`); falha de uma
+        AÇÃO sobre dados já carregados continua um banner discreto acima da
+        tabela, que segue visível — é exatamente essa distinção que já
+        existe em `TagsPanel.tsx`/`QuickRepliesPanel.tsx`, só que lá com dois
+        estados de erro separados em vez de um só reaproveitado.
+      */}
+      {panelError && users.length > 0 && (
+        <p className="mb-3.5 text-sm text-destructive">{panelError}</p>
+      )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando usuários…</p>
+        <div className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card">
+          <Skeleton className="h-11 w-full" />
+          <Skeleton className="h-11 w-full" />
+          <Skeleton className="h-11 w-full" />
+        </div>
+      ) : panelError && users.length === 0 ? (
+        <ErrorState description={panelError} onRetry={() => void load()} />
       ) : (
-        <div className="fx-scroll overflow-x-auto rounded-lg border border-border bg-card">
+        /*
+          SEM `overflow-x-auto` (auditoria 2026-08-22, achado real: comparar
+          este primitivo contra a fonte oficial do shadcn/ui via MCP revelou
+          um wrapper `overflow-auto` embutido — medido ao vivo, cortava o
+          menu "..." de `RowActionsMenu` (`wrapperBottom: 498, menuBottom:
+          524`). Corrigido no PRIMITIVO (`ui/table.tsx`) e aqui: mesma classe
+          de bug, mesma causa raiz e mesma correção já aplicadas em
+          `CampaignsPanel` (2026-08-18/21) — nenhum ancestral do menu declara
+          `overflow` diferente de `visible`. `min-w` sem wrapper de rolagem:
+          a página (`fx-scroll h-full overflow-y-auto` em `settings.tsx`) é
+          quem rola, se algum dia a tabela precisar de mais espaço do que os
+          840px do container.
+        */
+        <div className="rounded-lg border border-border bg-card">
           <Table className="min-w-[560px]">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 px-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  E-mail
-                </TableHead>
-                <TableHead className="h-9 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Cargo
-                </TableHead>
-                <TableHead className="h-9 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Status
-                </TableHead>
-                <TableHead className="h-9 w-[90px] px-4" />
+              <TableRow>
+                <TableHead className="px-4">E-mail</TableHead>
+                <TableHead>Cargo</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[90px] px-4" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.map((user) => (
-                <TableRow
-                  key={user.id}
-                  data-testid={`user-row-${user.email}`}
-                  className="hover:bg-transparent"
-                >
-                  <TableCell className="px-4 py-[11px] text-[13px] font-medium text-foreground">
+                <TableRow key={user.id} data-testid={`user-row-${user.email}`}>
+                  <TableCell className="px-4 text-[13px] font-medium text-foreground">
                     {user.email}
                     {user.mustChangePassword && (
                       <span className="ml-2 inline-flex h-[19px] items-center rounded-[5px] bg-warning/[.13] px-1.5 text-[10.5px] font-semibold text-warning-emphasis">
@@ -328,7 +355,7 @@ export default function UserManagementPanel(): JSX.Element {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="px-2 py-[11px]">
+                  <TableCell>
                     {user.role === 'owner' ? (
                       <span className="text-[13px] text-foreground-secondary">
                         {ROLE_LABELS.owner}
@@ -354,7 +381,7 @@ export default function UserManagementPanel(): JSX.Element {
                       </select>
                     )}
                   </TableCell>
-                  <TableCell className="px-2 py-[11px]">
+                  <TableCell>
                     <span
                       className={cn(
                         'inline-flex items-center gap-[5px] text-[11.5px] font-semibold',
@@ -370,7 +397,7 @@ export default function UserManagementPanel(): JSX.Element {
                       {user.status === 'active' ? 'Ativo' : 'Suspenso'}
                     </span>
                   </TableCell>
-                  <TableCell className="px-4 py-[11px]">
+                  <TableCell className="px-4">
                     {user.role !== 'owner' &&
                       (resetUserId === user.id ? (
                         <div className="flex items-center gap-1">

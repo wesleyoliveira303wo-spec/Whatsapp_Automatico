@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchHistory } from '@/lib/clientApi';
 import {
   formatDateTime,
@@ -7,6 +7,8 @@ import {
   formatStatusLabel,
 } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { WhatsAppSessionEvent } from '@/lib/clientApi';
 
 interface HistoryListProps {
@@ -29,9 +31,16 @@ interface HistoryListProps {
 export default function HistoryList({ sessionName, limit = 20 }: HistoryListProps): JSX.Element {
   const [events, setEvents] = useState<WhatsAppSessionEvent[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Onda 1 do redesign (2026-08-22) — `onRetry` do `ErrorState` precisa de
+  // uma ação real: como este componente já possui seu próprio fetch
+  // autocontido (sem hook externo), bastou um contador que força o
+  // `useEffect` a rodar de novo — mesmo padrão de `reloadToken` já usado em
+  // `usePipelineConversations`/`useConversationsList`.
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setErrorMessage(null);
     fetchHistory(sessionName, limit)
       .then(({ events: fetched }) => {
         if (!cancelled) setEvents(fetched);
@@ -42,14 +51,22 @@ export default function HistoryList({ sessionName, limit = 20 }: HistoryListProp
     return () => {
       cancelled = true;
     };
-  }, [sessionName, limit]);
+  }, [sessionName, limit, retryToken]);
+
+  const retry = useCallback(() => setRetryToken((token) => token + 1), []);
 
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState description={errorMessage} onRetry={retry} className="p-4" />;
   }
 
   if (events === null) {
-    return <p className="text-sm text-muted-foreground">Carregando histórico…</p>;
+    return (
+      <div className="flex flex-col gap-0">
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-9 w-full" />
+      </div>
+    );
   }
 
   if (events.length === 0) {

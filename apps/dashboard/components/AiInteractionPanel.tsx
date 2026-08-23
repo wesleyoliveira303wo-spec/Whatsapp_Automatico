@@ -1,4 +1,6 @@
 import AiInteractionRow from './AiInteractionRow';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { AiInteractionSummary } from '@/lib/clientApi';
 
 interface AiInteractionPanelProps {
@@ -19,23 +21,26 @@ export default function AiInteractionPanel({
   errorMessage,
   onRetry,
 }: AiInteractionPanelProps): JSX.Element {
+  /**
+   * Onda 1 do redesign (2026-08-22) — o botão "Tentar novamente" era
+   * reimplementado à mão aqui (borda/hover/padding próprios) em vez de usar
+   * `ErrorState`, que já resolve exatamente isso (`onRetry` já chegava como
+   * prop, só não estava conectado ao componente certo). Skeleton com 3
+   * linhas na altura real de `AiInteractionRow` (~36px, texto de 12.5px +
+   * 11.5px empilhados).
+   */
   if (errorMessage) {
-    return (
-      <div className="flex flex-col items-start gap-2">
-        <p className="text-sm text-destructive">{errorMessage}</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-        >
-          Tentar novamente
-        </button>
-      </div>
-    );
+    return <ErrorState description={errorMessage} onRetry={onRetry} className="p-4" />;
   }
 
   if (interactions === null) {
-    return <p className="text-sm text-muted-foreground">Carregando interacoes…</p>;
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Skeleton className="h-9 w-full rounded-lg" />
+        <Skeleton className="h-9 w-full rounded-lg" />
+        <Skeleton className="h-9 w-full rounded-lg" />
+      </div>
+    );
   }
 
   if (interactions.length === 0) {

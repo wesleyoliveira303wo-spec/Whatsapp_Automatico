@@ -4,6 +4,8 @@ import { useQuickReplies } from '@/hooks/useQuickReplies';
 import { ClientApiError } from '@/lib/clientApi';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import { cn } from '@/lib/utils';
 
 interface QuickRepliesPanelProps {
@@ -42,6 +44,7 @@ export default function QuickRepliesPanel({ sessionName }: QuickRepliesPanelProp
     quickReplies,
     loading,
     errorMessage: loadError,
+    refresh,
     create,
     update,
     remove,
@@ -133,12 +136,17 @@ export default function QuickRepliesPanel({ sessionName }: QuickRepliesPanelProp
         </Button>
       </form>
 
-      {(panelError ?? loadError) && (
-        <p className="mb-3.5 text-sm text-destructive">{panelError ?? loadError}</p>
-      )}
+      {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
 
+      {/* Onda 1 do redesign (2026-08-22) — mesma correção de `TagsPanel.tsx`: erro de carregamento inicial ganha seu próprio `ErrorState` com retry, distinto do banner de ação. */}
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando respostas rápidas…</p>
+        <div className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card">
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : loadError ? (
+        <ErrorState description={loadError} onRetry={refresh} />
       ) : (
         <div className="overflow-hidden rounded-lg border border-border bg-card">
           {quickReplies.length === 0 && (

@@ -5,6 +5,8 @@ import {
   zeroEscalationRatePoint,
 } from '@/lib/analyticsView';
 import { CHART_COLORS } from '@/lib/chartTheme';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { EscalationRatePoint } from '@/lib/clientApi';
 
 interface EscalationRateChartProps {
@@ -29,11 +31,12 @@ export default function EscalationRateChart({
   from,
   to,
 }: EscalationRateChartProps): JSX.Element {
+  // Onda 1 do redesign (2026-08-22) — contrato de 4 estados, ver docstring equivalente em `AiUsageChart.tsx`.
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState className="min-h-[120px] p-4" description={errorMessage} />;
   }
   if (points === null) {
-    return <p className="text-sm text-muted-foreground">Carregando taxa de escalonamento…</p>;
+    return <Skeleton className="h-[120px] w-full rounded-md" />;
   }
   if (points.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhuma conversa nova no período.</p>;

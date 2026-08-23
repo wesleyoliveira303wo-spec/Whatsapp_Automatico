@@ -1,6 +1,8 @@
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Cell, LabelList } from 'recharts';
 import { formatConversationStageLabel } from '@/lib/formatters';
 import { CHART_COLORS } from '@/lib/chartTheme';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { PipelineFunnelCounts, ConversationStage } from '@/lib/clientApi';
 
 interface PipelineFunnelChartProps {
@@ -33,11 +35,12 @@ export default function PipelineFunnelChart({
   funnel,
   errorMessage,
 }: PipelineFunnelChartProps): JSX.Element {
+  // Onda 1 do redesign (2026-08-22) — contrato de 4 estados, ver docstring equivalente em `AiUsageChart.tsx`.
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState className="min-h-[190px] p-4" description={errorMessage} />;
   }
   if (funnel === null) {
-    return <p className="text-sm text-muted-foreground">Carregando funil do Pipeline…</p>;
+    return <Skeleton className="h-[190px] w-full rounded-md" />;
   }
 
   const total = STAGE_ORDER.reduce((sum, stage) => sum + funnel[stage], 0);

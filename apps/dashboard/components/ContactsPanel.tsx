@@ -643,7 +643,21 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
           />
         ) : (
           <div className="overflow-visible rounded-lg border border-border bg-card">
-            <div className="flex items-center gap-3 border-b border-border/70 px-4 py-2.5 text-[12px] font-medium text-muted-foreground">
+            {/*
+              Onda 1 do redesign (2026-08-22) — tipografia do cabeçalho
+              alinhada ao mesmo padrão agora usado por toda tabela do
+              produto (11px/uppercase/semibold, Design System §6), SEM
+              trocar a estrutura por `<table>`. Diferente de
+              `CampaignsPanel`/`CampaignDetailPanel`, esta lista usa larguras
+              FIXAS por "coluna" (`w-[165px]` etc., não `auto`/`fr`) — nunca
+              teve o bug real de desalinhamento que motivou a migração das
+              outras duas, e a colapsagem responsiva por breakpoint (telefone
+              reaparece dentro da célula de nome em telas estreitas) é mais
+              natural em flex do que em `<table>`. Reestruturar sem um
+              defeito real a corrigir só arriscaria os testes existentes
+              (865 linhas, padrão responsivo já validado) sem ganho.
+            */}
+            <div className="flex items-center gap-3 border-b border-border/70 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {canManage && (
                 <input
                   type="checkbox"

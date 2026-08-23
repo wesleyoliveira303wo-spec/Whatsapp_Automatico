@@ -1,5 +1,7 @@
 import { ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { CHART_COLORS } from '@/lib/chartTheme';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { NewConversationsPoint, ConversationStatusCounts } from '@/lib/clientApi';
 
 interface ConversationAnalyticsPanelProps {
@@ -28,11 +30,21 @@ export default function ConversationAnalyticsPanel({
   statusCounts,
   errorMessage,
 }: ConversationAnalyticsPanelProps): JSX.Element {
+  // Onda 1 do redesign (2026-08-22) — contrato de 4 estados, ver docstring equivalente em `AiUsageChart.tsx`.
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState className="min-h-[100px] p-4" description={errorMessage} />;
   }
   if (newConversations === null || statusCounts === null) {
-    return <p className="text-sm text-muted-foreground">Carregando conversas…</p>;
+    // Reproduz a forma real (gráfico + legenda de 2 chips) para não pular de tamanho quando o dado chega.
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-[100px] w-full rounded-md" />
+        <div className="flex flex-wrap gap-3.5">
+          <Skeleton className="h-[18px] w-32 rounded-full" />
+          <Skeleton className="h-[18px] w-40 rounded-full" />
+        </div>
+      </div>
+    );
   }
 
   return (

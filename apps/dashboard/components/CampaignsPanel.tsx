@@ -44,6 +44,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
 import ErrorState from '@/components/states/ErrorState';
@@ -669,23 +677,21 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                 bastou nunca declarar `overflow` nenhum no container: numa
                 tabela real, o alinhamento não depende disso.
               */}
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-b border-border/70 text-[12px] font-medium text-muted-foreground">
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Campanha</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Status</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Progresso</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Destinatários</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Enviados</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Respostas</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-medium">Criada em</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 text-right font-medium">
-                        Ações
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pagedRows.map(({ campaign, summary, metrics }, index) => {
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Campanha</TableHead>
+                      <TableHead className="px-4">Status</TableHead>
+                      <TableHead className="px-4">Progresso</TableHead>
+                      <TableHead className="px-4">Destinatários</TableHead>
+                      <TableHead className="px-4">Enviados</TableHead>
+                      <TableHead className="px-4">Respostas</TableHead>
+                      <TableHead className="px-4">Criada em</TableHead>
+                      <TableHead className="px-4 text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedRows.map(({ campaign, summary, metrics }) => {
                       const sentPlusReplied = metrics ? metrics.sent + metrics.replied : 0;
                       const progressPct =
                         summary && summary.total > 0
@@ -705,13 +711,8 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                         (metrics?.failed ?? 0) > 0;
 
                       return (
-                        <tr
-                          key={campaign.id}
-                          className={cn(
-                            index < pagedRows.length - 1 && 'border-b border-border/70',
-                          )}
-                        >
-                          <td className="max-w-0 px-4 py-3 align-top">
+                        <TableRow key={campaign.id}>
+                          <TableCell className="max-w-0 px-4 py-3 align-top">
                             <div className="flex min-w-0 items-center gap-2.5">
                               <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                                 <Megaphone className="h-4 w-4" aria-hidden="true" />
@@ -725,9 +726,9 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                 </p>
                               </div>
                             </div>
-                          </td>
+                          </TableCell>
 
-                          <td className="whitespace-nowrap px-4 py-3 align-top">
+                          <TableCell className="whitespace-nowrap px-4 py-3 align-top">
                             <Badge variant={STATUS_BADGE_VARIANT[campaign.status]}>
                               <span
                                 className={cn(
@@ -737,9 +738,9 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                               />
                               {STATUS_LABELS[campaign.status]}
                             </Badge>
-                          </td>
+                          </TableCell>
 
-                          <td className="px-4 py-3 align-top">
+                          <TableCell className="px-4 py-3 align-top">
                             <div className="w-24">
                               <div className="mb-1 flex items-center justify-between text-[12px] text-foreground">
                                 <span>{progressPct}%</span>
@@ -751,22 +752,22 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                 />
                               </div>
                             </div>
-                          </td>
+                          </TableCell>
 
-                          <td className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
+                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
                             {summary?.total ?? '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
                             {metrics ? sentPlusReplied : '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
                             {metrics?.replied ?? '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 align-top text-[12.5px] text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[12.5px] text-muted-foreground">
                             {formatDateTime(campaign.createdAt)}
-                          </td>
+                          </TableCell>
 
-                          <td className="whitespace-nowrap px-4 py-3 align-top">
+                          <TableCell className="whitespace-nowrap px-4 py-3 align-top">
                             <div className="flex shrink-0 items-center justify-end gap-1">
                               {canPause ? (
                                 <Button
@@ -873,12 +874,12 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                 )}
                               </div>
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
 
               {filteredRows.length > 0 && (

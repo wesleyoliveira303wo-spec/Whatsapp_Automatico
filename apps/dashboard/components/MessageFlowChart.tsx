@@ -2,6 +2,8 @@ import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis } from 'recharts';
 import { fillMissingDays, zeroMessageFlowPoint } from '@/lib/analyticsView';
 import { CHART_COLORS } from '@/lib/chartTheme';
 import ChartTooltip from './ChartTooltip';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { MessageFlowPoint } from '@/lib/clientApi';
 
 interface MessageFlowChartProps {
@@ -28,11 +30,12 @@ export default function MessageFlowChart({
   from,
   to,
 }: MessageFlowChartProps): JSX.Element {
+  // Onda 1 do redesign (2026-08-22) — contrato de 4 estados, ver docstring equivalente em `AiUsageChart.tsx`.
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState className="min-h-[120px] p-4" description={errorMessage} />;
   }
   if (points === null) {
-    return <p className="text-sm text-muted-foreground">Carregando fluxo de mensagens…</p>;
+    return <Skeleton className="h-[120px] w-full rounded-md" />;
   }
   if (points.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhuma mensagem no período.</p>;

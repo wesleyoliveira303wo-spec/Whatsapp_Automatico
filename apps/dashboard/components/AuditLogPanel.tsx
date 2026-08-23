@@ -8,7 +8,8 @@ import {
   TableHead,
   TableCell,
 } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 
 /**
  * Mesma casca visual dos outros campos de Configurações — `<select>` nativo
@@ -153,51 +154,44 @@ export default function AuditLogPanel(): JSX.Element {
         </select>
       </div>
 
-      {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
+      {/* Onda 1 do redesign (2026-08-22) — mesma correção de `UserManagementPanel.tsx`: falha SEM nenhum dado para mostrar vira `ErrorState` com retry; falha com dado antigo ainda em tela (ex.: troca de filtro que falhou) continua um banner discreto. */}
+      {panelError && entries.length > 0 && (
+        <p className="mb-3.5 text-sm text-destructive">{panelError}</p>
+      )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando auditoria…</p>
+        <div className="flex flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : panelError && entries.length === 0 ? (
+        <ErrorState description={panelError} onRetry={() => void load(actionFilter)} />
       ) : (
-        <div className="fx-scroll overflow-x-auto rounded-lg border border-border bg-card">
+        /* SEM `overflow-x-auto` — ver docstring equivalente em `UserManagementPanel.tsx` (mesmo achado/correção). */
+        <div className="rounded-lg border border-border bg-card">
           <Table className="min-w-[520px]">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 w-[130px] px-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Quando
-                </TableHead>
-                <TableHead className="h-9 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Ação
-                </TableHead>
-                <TableHead className="h-9 w-[200px] px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Usuário
-                </TableHead>
-                <TableHead className="h-9 px-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Alvo
-                </TableHead>
+              <TableRow>
+                <TableHead className="w-[130px] px-4">Quando</TableHead>
+                <TableHead>Ação</TableHead>
+                <TableHead className="w-[200px]">Usuário</TableHead>
+                <TableHead className="px-4">Alvo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {entries.map((entry) => (
-                <TableRow
-                  key={entry.id}
-                  data-testid={`audit-log-row-${entry.id}`}
-                  className="hover:bg-transparent"
-                >
-                  <TableCell className="whitespace-nowrap px-4 py-[11px] text-[12.5px] text-muted-foreground">
+                <TableRow key={entry.id} data-testid={`audit-log-row-${entry.id}`}>
+                  <TableCell className="whitespace-nowrap px-4 text-muted-foreground">
                     {formatOccurredAt(entry.occurredAt)}
                   </TableCell>
-                  <TableCell
-                    className={cn(
-                      'px-2 py-[11px] text-[12.5px]',
-                      actionTextClassName(entry.action),
-                    )}
-                  >
+                  <TableCell className={actionTextClassName(entry.action)}>
                     {actionLabelFor(entry.action)}
                   </TableCell>
-                  <TableCell className="px-2 py-[11px] text-[12.5px] text-muted-foreground">
+                  <TableCell className="text-muted-foreground">
                     {entry.actorUserId ?? '—'}
                   </TableCell>
-                  <TableCell className="px-4 py-[11px] text-[12.5px] text-muted-foreground">
+                  <TableCell className="px-4 text-muted-foreground">
                     {entry.targetType
                       ? `${entry.targetType}${entry.targetId ? ` · ${entry.targetId}` : ''}`
                       : '—'}

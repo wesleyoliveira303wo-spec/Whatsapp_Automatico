@@ -8,6 +8,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import { cn } from '@/lib/utils';
 import AiProfileQuizWizard from '@/components/AiProfileQuizWizard';
 import AiProfileFaqDialog from '@/components/AiProfileFaqDialog';
@@ -237,19 +239,27 @@ export default function AiProfilePanel({ sessionName }: AiProfilePanelProps): JS
     [],
   );
 
+  /**
+   * Onda 1 do redesign (2026-08-22) — mesma peça já existia aqui (`loadError`
+   * já era separado de `saveError`, diferente de `TagsPanel`/
+   * `QuickRepliesPanel`/`UserManagementPanel`/`AuditLogPanel` que precisaram
+   * dessa separação nesta rodada), só reimplementava o botão "Tentar de
+   * novo" à mão em vez de usar `ErrorState`. Skeleton reproduz a forma geral
+   * do formulário (pílula de abas + textarea grande + rodapé de ação) para
+   * não pular de tamanho quando o dado chega.
+   */
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Carregando…</p>;
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-9 w-48 rounded-[10px]" />
+        <Skeleton className="h-64 w-full rounded-lg" />
+        <Skeleton className="h-9 w-32 rounded-lg" />
+      </div>
+    );
   }
 
   if (loadError) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm text-destructive">{loadError}</p>
-        <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
-          Tentar de novo
-        </Button>
-      </div>
-    );
+    return <ErrorState description={loadError} onRetry={() => void load()} />;
   }
 
   return (

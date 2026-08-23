@@ -1,6 +1,8 @@
 import { ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { fillMissingDays, formatChartDateLabel } from '@/lib/analyticsView';
 import { CHART_COLORS } from '@/lib/chartTheme';
+import { Skeleton } from '@/components/ui/skeleton';
+import ErrorState from '@/components/states/ErrorState';
 import type { SessionStabilityPoint } from '@/lib/clientApi';
 
 interface SessionStabilityChartProps {
@@ -69,11 +71,12 @@ export default function SessionStabilityChart({
   from,
   to,
 }: SessionStabilityChartProps): JSX.Element {
+  // Onda 1 do redesign (2026-08-22) — contrato de 4 estados, ver docstring equivalente em `AiUsageChart.tsx`.
   if (errorMessage) {
-    return <p className="text-sm text-destructive">{errorMessage}</p>;
+    return <ErrorState className="min-h-[100px] p-4" description={errorMessage} />;
   }
   if (points === null) {
-    return <p className="text-sm text-muted-foreground">Carregando estabilidade da sessão…</p>;
+    return <Skeleton className="h-[100px] w-full rounded-md" />;
   }
   if (points.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhuma transição de status no período.</p>;

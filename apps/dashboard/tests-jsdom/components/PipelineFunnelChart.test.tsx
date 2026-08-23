@@ -27,9 +27,9 @@ describe('PipelineFunnelChart (Fase 1, Bloco F1.6 - jsdom)', () => {
     expect(screen.getByText('Falha ao carregar os dados de analytics.')).toBeInTheDocument();
   });
 
-  it('estado de loading: mostra o texto de carregamento', () => {
-    render(<PipelineFunnelChart funnel={null} errorMessage={null} />);
-    expect(screen.getByText(/Carregando funil do Pipeline/)).toBeInTheDocument();
+  it('estado de loading: mostra um skeleton do tamanho do gráfico (sem CLS)', () => {
+    const { container } = render(<PipelineFunnelChart funnel={null} errorMessage={null} />);
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('estado vazio: mostra o empty state quando todos os estagios sao zero', () => {
