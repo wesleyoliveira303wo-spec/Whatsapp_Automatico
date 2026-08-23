@@ -489,9 +489,49 @@ export function formatConversationTimestamp(iso: string | undefined): string {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(date);
 }
 
-/** Custo em USD para exibicao: `costUsd` chega como string decimal exata (nunca number — Bloco 3b); exibe com prefixo e sem cortar precisao. */
+/**
+ * Custo em USD para EXIBICAO — Onda 1 do redesign (2026-08-22).
+ *
+ * `costUsd` chega como string decimal exata de ate 8 casas (`Decimal(12,8)`,
+ * restricao D46: nunca vira `number` no caminho de dados, para nao perder
+ * precisao em soma). Ate aqui a UI despejava essa string crua, produzindo
+ * "US$ 0.00000000" em destaque de 25px num card de Analytics — precisao de
+ * banco de dados exposta como se fosse informacao de negocio.
+ *
+ * Regras, todas verificadas contra o significado real do numero:
+ * - zero exato -> "US$ 0,00" (nao ha custo, e isso e uma informacao boa)
+ * - maior que zero e menor que um centavo -> "menos de US$ 0,01" (dizer
+ *   "US$ 0,00" seria MENTIRA: houve custo, so nao chega a um centavo)
+ * - o resto -> moeda pt-BR normal ("US$ 1.234,56")
+ *
+ * O valor exato nao se perde: `formatCostUsdExact` continua disponivel para
+ * `title`/tooltip de quem precisa auditar o centavo.
+ */
 export function formatCostUsd(costUsd: string): string {
+  const value = Number(costUsd);
+  if (!Number.isFinite(value)) return formatCostUsdExact(costUsd);
+  if (value === 0) return 'US$ 0,00';
+  if (value < 0.01) return 'menos de US$ 0,01';
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/** Valor decimal exato, sem arredondamento — para `title`/tooltip, nunca para o destaque visual. */
+export function formatCostUsdExact(costUsd: string): string {
   return `US$ ${costUsd}`;
+}
+
+/**
+ * Contagem inteira para exibicao — separador de milhar pt-BR (Onda 1 do
+ * redesign). "1234 interações" vira "1.234 interações"; abaixo de mil o
+ * resultado e identico ao anterior, entao nenhuma tela regride.
+ */
+export function formatCount(value: number): string {
+  return new Intl.NumberFormat('pt-BR').format(value);
 }
 
 /**

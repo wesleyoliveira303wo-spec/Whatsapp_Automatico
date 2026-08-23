@@ -12,6 +12,7 @@ import PipelineFunnelChart from '@/components/PipelineFunnelChart';
 import EscalationRateChart from '@/components/EscalationRateChart';
 import SessionStabilityChart from '@/components/SessionStabilityChart';
 import { requireProtectedPageSession } from '@/lib/auth';
+import { formatCostUsd, formatCostUsdExact, formatCount } from '@/lib/formatters';
 import {
   useAiUsageAnalytics,
   useMessagesAnalytics,
@@ -99,22 +100,39 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
           </div>
 
           <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/*
+              Onda 1 do redesign (2026-08-22) — números para humanos:
+              - o custo era despejado cru ("US$ 0.00000000", 8 casas do
+                `Decimal(12,8)` em destaque de 25px); o valor exato migrou
+                para o `title`, onde ele serve para auditoria sem ocupar a
+                hierarquia visual;
+              - o card "Interações de IA" carregava a dica "String decimal
+                exata, sem arredondamento" — nota de implementação, e ainda
+                por cima no card errado (ali o número é uma contagem
+                inteira, não um decimal);
+              - contagens passam por `formatCount` (separador de milhar).
+            */}
             <MetricCard
               label="Custo de IA no período"
-              value={totalCost !== null ? `US$ ${totalCost}` : '…'}
-              hint={totalInteractions !== null ? `${totalInteractions} interações` : undefined}
+              value={totalCost !== null ? formatCostUsd(totalCost) : '…'}
+              exactValue={totalCost !== null ? formatCostUsdExact(totalCost) : undefined}
+              hint={
+                totalInteractions !== null
+                  ? `${formatCount(totalInteractions)} ${totalInteractions === 1 ? 'interação' : 'interações'}`
+                  : undefined
+              }
             />
             <MetricCard
               label="Interações de IA"
-              value={totalInteractions !== null ? String(totalInteractions) : '…'}
-              hint="String decimal exata, sem arredondamento"
+              value={totalInteractions !== null ? formatCount(totalInteractions) : '…'}
+              hint="Respostas geradas pela IA no período"
             />
             <MetricCard
               label="Mensagens (entrada + saída)"
-              value={totalMessages !== null ? String(totalMessages) : '…'}
+              value={totalMessages !== null ? formatCount(totalMessages) : '…'}
               hint={
                 inboundCount !== null && outboundCount !== null
-                  ? `${inboundCount} recebidas · ${outboundCount} enviadas`
+                  ? `${formatCount(inboundCount)} recebidas · ${formatCount(outboundCount)} enviadas`
                   : undefined
               }
             />

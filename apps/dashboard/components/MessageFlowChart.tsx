@@ -1,6 +1,7 @@
-import { ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, Tooltip, XAxis } from 'recharts';
 import { fillMissingDays, zeroMessageFlowPoint } from '@/lib/analyticsView';
 import { CHART_COLORS } from '@/lib/chartTheme';
+import ChartTooltip from './ChartTooltip';
 import type { MessageFlowPoint } from '@/lib/clientApi';
 
 interface MessageFlowChartProps {
@@ -40,28 +41,65 @@ export default function MessageFlowChart({
   const data = fillMissingDays(points, from, to, zeroMessageFlowPoint);
 
   return (
-    <div className="h-[120px] w-full" data-testid="message-flow-chart">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          margin={{ top: 3, right: 3, bottom: 3, left: 3 }}
-          barGap={2}
-          barCategoryGap="18%"
-        >
-          <Bar
-            dataKey="inbound"
-            fill={CHART_COLORS.primary}
-            radius={[2, 2, 0, 0]}
-            isAnimationActive={false}
+    <div data-testid="message-flow-chart">
+      <div className="h-[120px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            margin={{ top: 3, right: 3, bottom: 3, left: 3 }}
+            barGap={2}
+            barCategoryGap="18%"
+          >
+            {/* Ver nota em `AiUsageChart`: eixo oculto, existe só para o tooltip saber a data. */}
+            <XAxis dataKey="date" hide />
+            <Tooltip
+              cursor={{ fill: CHART_COLORS.muted }}
+              content={
+                <ChartTooltip seriesLabels={{ inbound: 'Recebidas', outbound: 'Enviadas' }} />
+              }
+            />
+            <Bar
+              dataKey="inbound"
+              fill={CHART_COLORS.primary}
+              radius={[2, 2, 0, 0]}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="outbound"
+              fill={CHART_COLORS.primaryFaint}
+              radius={[2, 2, 0, 0]}
+              isAnimationActive={false}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {/*
+        LEGENDA (Onda 1 do redesign, 2026-08-22) — obrigatoria a partir de 2
+        series: sem ela o leitor ve duas cores de barra e nao tem como saber
+        qual e entrada e qual e saida. O subtitulo do card dizia "Entrada
+        (cliente) vs. saida (IA + humano)", mas nao MAPEIA cor -> serie, que e
+        justamente o que falta. Nao e o `<Legend>` do recharts: este segue os
+        tokens de texto do Design System (o ponto colorido carrega a
+        identidade; o texto fica em tinta neutra).
+      */}
+      <div className="mt-2.5 flex items-center gap-3.5">
+        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span
+            className="h-[7px] w-[7px] rounded-full"
+            style={{ backgroundColor: CHART_COLORS.primary }}
+            aria-hidden="true"
           />
-          <Bar
-            dataKey="outbound"
-            fill={CHART_COLORS.primaryFaint}
-            radius={[2, 2, 0, 0]}
-            isAnimationActive={false}
+          Recebidas
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span
+            className="h-[7px] w-[7px] rounded-full"
+            style={{ backgroundColor: CHART_COLORS.primaryFaint }}
+            aria-hidden="true"
           />
-        </BarChart>
-      </ResponsiveContainer>
+          Enviadas
+        </span>
+      </div>
     </div>
   );
 }

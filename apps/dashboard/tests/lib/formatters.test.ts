@@ -1,4 +1,7 @@
 import {
+  formatCostUsd,
+  formatCostUsdExact,
+  formatCount,
   formatStatusLabel,
   statusBadgeClassName,
   formatDisconnectReasonLabel,
@@ -516,5 +519,53 @@ describe('formatters (M2, Fase 4)', () => {
     it('isSameCalendarDay devolve false para entrada inválida', () => {
       expect(isSameCalendarDay('not-a-date', '2026-08-05T01:00:00.000Z')).toBe(false);
     });
+  });
+});
+
+/**
+ * Onda 1 do redesign (2026-08-22) — numeros para humanos. Ate esta rodada a
+ * tela de Analytics exibia "US$ 0.00000000" em destaque de 25px: a string
+ * decimal crua do banco (`Decimal(12,8)`) tratada como se fosse informacao
+ * de negocio.
+ */
+describe('formatCostUsd (Onda 1 do redesign)', () => {
+  it('zero exato vira "US$ 0,00" — nao a string crua de 8 casas', () => {
+    expect(formatCostUsd('0.00000000')).toBe('US$ 0,00');
+    expect(formatCostUsd('0')).toBe('US$ 0,00');
+  });
+
+  it('valor abaixo de um centavo NAO e arredondado para zero — isso seria mentira', () => {
+    // Houve custo; dizer "US$ 0,00" faria o operador acreditar que nao houve.
+    expect(formatCostUsd('0.00003421')).toBe('menos de US$ 0,01');
+    expect(formatCostUsd('0.009')).toBe('menos de US$ 0,01');
+  });
+
+  it('valor normal sai como moeda pt-BR com 2 casas', () => {
+    expect(formatCostUsd('1.23456789')).toMatch(/^US\$\s?1,23$/);
+    expect(formatCostUsd('0.01')).toMatch(/^US\$\s?0,01$/);
+  });
+
+  it('separador de milhar em valores grandes', () => {
+    expect(formatCostUsd('1234.5')).toMatch(/1\.234,50$/);
+  });
+
+  it('entrada nao numerica cai no valor exato, nunca em NaN', () => {
+    expect(formatCostUsd('nao-e-numero')).toBe('US$ nao-e-numero');
+  });
+
+  it('formatCostUsdExact preserva a precisao completa para auditoria', () => {
+    expect(formatCostUsdExact('0.00003421')).toBe('US$ 0.00003421');
+  });
+});
+
+describe('formatCount (Onda 1 do redesign)', () => {
+  it('aplica separador de milhar pt-BR', () => {
+    expect(formatCount(1234)).toBe('1.234');
+    expect(formatCount(1234567)).toBe('1.234.567');
+  });
+
+  it('abaixo de mil o resultado e identico ao anterior — nenhuma tela regride', () => {
+    expect(formatCount(0)).toBe('0');
+    expect(formatCount(42)).toBe('42');
   });
 });

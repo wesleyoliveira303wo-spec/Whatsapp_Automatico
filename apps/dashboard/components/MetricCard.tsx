@@ -4,6 +4,12 @@ interface MetricCardProps {
   label: string;
   value: string;
   hint?: string;
+  /**
+   * Valor bruto/exato por trás do `value` exibido (Onda 1 do redesign,
+   * 2026-08-22) — vai para o `title`, para quem precisa auditar a precisão
+   * completa sem que ela ocupe o destaque visual do card.
+   */
+  exactValue?: string;
 }
 
 /**
@@ -16,11 +22,19 @@ interface MetricCardProps {
  * `text-muted-foreground` puro, sem opacidade extra, igual às outras telas
  * do reskin).
  */
-export default function MetricCard({ label, value, hint }: MetricCardProps): JSX.Element {
+export default function MetricCard({
+  label,
+  value,
+  hint,
+  exactValue,
+}: MetricCardProps): JSX.Element {
   return (
     <Card className="rounded-lg px-[18px] py-4 shadow-none">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-2 text-[25px] font-semibold tabular-nums tracking-tight text-foreground">
+      <p
+        className="mt-2 text-[25px] font-semibold tabular-nums tracking-tight text-foreground"
+        title={exactValue}
+      >
         {value}
       </p>
       {hint && <p className="mt-1.5 text-[11.5px] text-muted-foreground">{hint}</p>}

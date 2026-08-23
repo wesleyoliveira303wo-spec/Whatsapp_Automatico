@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { memo, type DragEvent } from 'react';
-import { Bot, User } from 'lucide-react';
+import { Bot, ChevronDown, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   formatContactDisplayNameParts,
@@ -74,7 +74,9 @@ function PipelineCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'cursor-grab rounded-lg border border-border bg-card px-3 py-[11px] transition-colors active:cursor-grabbing',
+        // `group`: sustenta o `group-hover`/`group-focus-within` do seletor
+        // "Mover…" na última linha (Onda 1 do redesign).
+        'group cursor-grab rounded-lg border border-border bg-card px-3 py-[11px] transition-colors active:cursor-grabbing',
         'hover:border-foreground/20',
         dragging && 'opacity-40',
       )}
@@ -125,36 +127,79 @@ function PipelineCard({
         </div>
       )}
 
-      <div className="mt-[9px] flex items-center justify-between gap-2">
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+      {/*
+        ONDA 1 DO REDESIGN (2026-08-22) — esta linha concentrava dois defeitos
+        visíveis na tela real:
+
+        1. O `<select>` usava a aparência NATIVA do sistema operacional (caixa
+           cinza do Windows com seta própria) dentro de um card que o Design
+           System define como superfície limpa. `appearance-none` + tokens do
+           DS + um chevron desenhado resolvem isso SEM trocar o controle: um
+           `<select>` nativo é operável por teclado e leitor de tela de graça,
+           e trocá-lo por um menu customizado significaria reimplementar essa
+           acessibilidade à mão — perder o que a auditoria acabou de ganhar.
+
+        2. O tempo no estágio aparecia cortado ("há 4 di…", "IA de…") porque
+           três elementos disputavam a mesma linha estreita de 268px — e numa
+           coluna com barra de rolagem sobrava ainda menos. As duas ações
+           (mover / abrir) saíram do FLUXO da linha: ficam `absolute`,
+           invisíveis em repouso, e aparecem no hover do card ou quando algo
+           dentro dele recebe foco (`group-focus-within`). Só `opacity-0` não
+           bastava — um elemento transparente continua reservando largura.
+           Continuam SEMPRE no DOM e focáveis: diferente de `hidden`,
+           `opacity` não tira da ordem de tabulação nem do leitor de tela, e o
+           `focus-within` traz o bloco de volta à vista ao chegar por Tab.
+      */}
+      <div className="relative mt-[9px] flex items-center justify-between gap-2">
+        {/*
+          Onda 1 do redesign — o rótulo era "há 4 dias neste estágio" e vinha
+          cortado ao meio ("há 4 d…") em TODO card: 268px de coluna não
+          comportam esse texto mais o seletor mais o link. "neste estágio"
+          era redundante — o card já vive dentro da coluna do estágio, e o
+          `title` guarda a frase completa para quem passar o mouse.
+        */}
+        <span
+          className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+          title={
+            conversation.excludedFromPipeline
+              ? 'A IA não responde automaticamente nesta conversa'
+              : `${formatElapsedDays(conversation.stageUpdatedAt)} neste estágio`
+          }
+        >
           {conversation.excludedFromPipeline
             ? 'IA desligada'
-            : `${formatElapsedDays(conversation.stageUpdatedAt)} neste estágio`}
+            : formatElapsedDays(conversation.stageUpdatedAt)}
         </span>
-        <div className="flex shrink-0 items-center gap-2">
-          <select
-            aria-label="Mover conversa para outro estágio do Pipeline"
-            title="Mover para outro estágio"
-            value=""
-            onChange={(event) => {
-              const target = event.target.value as PipelineColumnKey | '';
-              event.target.value = '';
-              if (target) onMoveToColumn(target);
-            }}
-            className="rounded-md border border-border bg-transparent px-1 py-0.5 text-[10.5px] text-muted-foreground outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            <option value="" disabled>
-              Mover…
-            </option>
-            {PIPELINE_COLUMN_ORDER.filter((column) => column !== currentColumn).map((column) => (
-              <option key={column} value={column}>
-                {formatPipelineColumnLabel(column)}
+        <div className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-1.5 rounded-md bg-card pl-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          <div className="relative">
+            <select
+              aria-label="Mover conversa para outro estágio do Pipeline"
+              title="Mover para outro estágio"
+              value=""
+              onChange={(event) => {
+                const target = event.target.value as PipelineColumnKey | '';
+                event.target.value = '';
+                if (target) onMoveToColumn(target);
+              }}
+              className="cursor-pointer appearance-none rounded-md border border-border bg-card py-0.5 pl-[7px] pr-[18px] text-[10.5px] font-medium text-foreground-secondary outline-none transition-colors hover:border-foreground/25 hover:bg-muted focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
+            >
+              <option value="" disabled>
+                Mover…
               </option>
-            ))}
-          </select>
+              {PIPELINE_COLUMN_ORDER.filter((column) => column !== currentColumn).map((column) => (
+                <option key={column} value={column}>
+                  {formatPipelineColumnLabel(column)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-[5px] top-1/2 h-[11px] w-[11px] -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+          </div>
           <Link
             href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
-            className="text-[11px] font-semibold text-primary hover:text-primary/80"
+            className="rounded text-[11px] font-semibold text-primary hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           >
             Ver conversa <span aria-hidden="true">›</span>
           </Link>

@@ -143,7 +143,7 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
     });
   });
 
-  it('Fase 1, Bloco F1.7: mostra "há N dias neste estágio" com base em stageUpdatedAt', () => {
+  it('Fase 1, Bloco F1.7: mostra o tempo no estágio com base em stageUpdatedAt', () => {
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
     fiveDaysAgo.setHours(9, 0, 0, 0);
@@ -155,7 +155,13 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         onMoveToColumn={jest.fn()}
       />,
     );
-    expect(screen.getByText('há 5 dias neste estágio')).toBeInTheDocument();
+    // Onda 1 do redesign (2026-08-22): o rótulo visível encurtou para "há 5
+    // dias" — "neste estágio" era redundante (o card vive dentro da coluna do
+    // estágio) e fazia o texto ser cortado ao meio em TODO card, já que a
+    // coluna tem 268px. A frase completa continua no `title`.
+    const elapsed = screen.getByText('há 5 dias');
+    expect(elapsed).toBeInTheDocument();
+    expect(elapsed).toHaveAttribute('title', 'há 5 dias neste estágio');
   });
 
   describe('tags (reskin 2026-08-07, Design System — chip de tag no card, ausente antes)', () => {
@@ -182,8 +188,12 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
           onMoveToColumn={jest.fn()}
         />,
       );
-      // Só o `title` do ícone classificador deve sobrar — nenhum chip de tag.
-      expect(container.querySelectorAll('span[title]')).toHaveLength(1);
+      // Consulta a LINHA DE TAGS diretamente (`flex-wrap` só existe nela
+      // dentro deste card). A versão anterior contava `span[title]` esperando
+      // 1, usando "quantos títulos existem" como proxy para "não há chips" —
+      // um proxy frágil, que quebrou assim que o tempo no estágio ganhou um
+      // `title` próprio (Onda 1 do redesign) sem que nada de tags mudasse.
+      expect(container.querySelector('.flex-wrap')).toBeNull();
     });
   });
 

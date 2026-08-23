@@ -1,6 +1,8 @@
-import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, Tooltip, XAxis } from 'recharts';
 import { toAiUsageChartPoints } from '@/lib/analyticsView';
 import { CHART_COLORS } from '@/lib/chartTheme';
+import ChartTooltip from './ChartTooltip';
+import { formatCostUsd } from '@/lib/formatters';
 import type { AiUsagePoint } from '@/lib/clientApi';
 
 interface AiUsageChartProps {
@@ -37,6 +39,21 @@ export default function AiUsageChart({ points, errorMessage }: AiUsageChartProps
     <div className="h-[120px] w-full" data-testid="ai-usage-chart">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 3, right: 3, bottom: 3, left: 3 }}>
+          {/*
+            Onda 1 do redesign (2026-08-22) — `XAxis` existe apenas para dar
+            ao tooltip a data do ponto (`hide`, sem cromo visual: a estética
+            sparkline do Design System fica intacta).
+          */}
+          <XAxis dataKey="date" hide />
+          <Tooltip
+            cursor={{ stroke: CHART_COLORS.mutedForeground, strokeWidth: 1 }}
+            content={
+              <ChartTooltip
+                seriesLabels={{ costUsdNumber: 'Custo de IA' }}
+                formatValue={(value) => formatCostUsd(String(value))}
+              />
+            }
+          />
           <Area
             type="monotone"
             dataKey="costUsdNumber"
