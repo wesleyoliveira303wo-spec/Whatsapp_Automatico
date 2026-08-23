@@ -44,7 +44,11 @@ export default class AppErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // eslint-disable-next-line no-console -- única saída de diagnóstico disponível no navegador do operador; a tela nunca mostra isto.
-    console.error('[AppErrorBoundary] Erro não tratado em um componente:', error, info.componentStack);
+    console.error(
+      '[AppErrorBoundary] Erro não tratado em um componente:',
+      error,
+      info.componentStack,
+    );
   }
 
   private readonly handleRetry = (): void => {
