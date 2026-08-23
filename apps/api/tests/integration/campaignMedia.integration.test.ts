@@ -67,12 +67,20 @@ describe('Integração real — mídia de campanha (Fase L, Bloco L8)', () => {
       fileName: 'promo.jpg',
     });
 
-    expect(updated?.media).toEqual({ contentType: 'image', mimeType: 'image/jpeg', fileName: 'promo.jpg' });
+    expect(updated?.media).toEqual({
+      contentType: 'image',
+      mimeType: 'image/jpeg',
+      fileName: 'promo.jpg',
+    });
 
     const media = await campaignRepository.getMediaContent(tenantId, campaign.id);
     expect(media?.buffer).toBeInstanceOf(Buffer);
     expect(media?.buffer.equals(originalBuffer)).toBe(true);
-    expect(media).toMatchObject({ contentType: 'image', mimeType: 'image/jpeg', fileName: 'promo.jpg' });
+    expect(media).toMatchObject({
+      contentType: 'image',
+      mimeType: 'image/jpeg',
+      fileName: 'promo.jpg',
+    });
   });
 
   it('findById() e listByTenant() NUNCA incluem o binário — só os metadados de media', async () => {
@@ -97,7 +105,11 @@ describe('Integração real — mídia de campanha (Fase L, Bloco L8)', () => {
     });
 
     const found = await campaignRepository.findById(tenantId, campaign.id);
-    expect(found?.media).toEqual({ contentType: 'document', mimeType: 'application/pdf', fileName: undefined });
+    expect(found?.media).toEqual({
+      contentType: 'document',
+      mimeType: 'application/pdf',
+      fileName: undefined,
+    });
     // `Campaign` (Domain) nem declara um campo de binário — esta asserção
     // prova que nenhuma propriedade estranha ("mediaContent") vazou do
     // Prisma para o objeto devolvido ao chamador.
@@ -108,7 +120,11 @@ describe('Integração real — mídia de campanha (Fase L, Bloco L8)', () => {
       sessionName: 'integration-test-l8',
     });
     const listed = page.campaigns.find((c) => c.id === campaign.id);
-    expect(listed?.media).toEqual({ contentType: 'document', mimeType: 'application/pdf', fileName: undefined });
+    expect(listed?.media).toEqual({
+      contentType: 'document',
+      mimeType: 'application/pdf',
+      fileName: undefined,
+    });
     expect(Object.keys(listed ?? {})).not.toContain('mediaContent');
   });
 
@@ -166,7 +182,11 @@ describe('Integração real — mídia de campanha (Fase L, Bloco L8)', () => {
 
     const media = await campaignRepository.getMediaContent(tenantId, campaign.id);
     expect(media?.buffer.toString()).toBe('segundo-arquivo');
-    expect(media).toMatchObject({ contentType: 'document', mimeType: 'application/pdf', fileName: 'catalogo.pdf' });
+    expect(media).toMatchObject({
+      contentType: 'document',
+      mimeType: 'application/pdf',
+      fileName: 'catalogo.pdf',
+    });
   });
 
   it('getMediaContent devolve undefined para campanha SEM mídia (nunca lança)', async () => {

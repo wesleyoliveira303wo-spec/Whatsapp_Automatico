@@ -215,10 +215,12 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
     // SENT e SKIPPED continuam intocados — reabrir nunca burla opt-out nem desfaz um envio real.
     const enviadoDepois = await campaignRepository.findRecipientById(tenantId, enviado);
     expect(enviadoDepois?.status).toBe('sent');
-    const optOutDepois = (await campaignRepository.listRecipients(tenantId, campanha.id, {
-      limit: 10,
-      status: 'skipped',
-    })).recipients;
+    const optOutDepois = (
+      await campaignRepository.listRecipients(tenantId, campanha.id, {
+        limit: 10,
+        status: 'skipped',
+      })
+    ).recipients;
     expect(optOutDepois).toHaveLength(1);
     expect(optOutDepois[0].skipReason).toBe('opt_out');
   });

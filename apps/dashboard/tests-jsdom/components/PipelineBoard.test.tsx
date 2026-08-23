@@ -179,14 +179,7 @@ describe('PipelineBoard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
     // Pelo cabeçalho da coluna, não por texto solto — mesma desambiguação do
     // helper `findColumn` acima (os rótulos também existem como `<option>`
     // dentro do `<select>` "Mover…" de cada card).
-    for (const label of [
-      'Novo',
-      'Contatado',
-      'Negociando',
-      'Fechado',
-      'Perdido',
-      'Não cliente',
-    ]) {
+    for (const label of ['Novo', 'Contatado', 'Negociando', 'Fechado', 'Perdido', 'Não cliente']) {
       expect(screen.getByRole('heading', { name: label, level: 3 })).toBeInTheDocument();
     }
   });

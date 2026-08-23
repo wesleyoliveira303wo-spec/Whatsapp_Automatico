@@ -160,7 +160,11 @@ describe('formatters (M2, Fase 4)', () => {
 
     it('trunca um nome salvo gigante em vez de deixar a linha quebrar', () => {
       const gigante = 'A'.repeat(80);
-      const resultado = formatContactDisplayName('5511999999999@s.whatsapp.net', undefined, gigante);
+      const resultado = formatContactDisplayName(
+        '5511999999999@s.whatsapp.net',
+        undefined,
+        gigante,
+      );
 
       expect(resultado.length).toBeLessThanOrEqual(40);
       expect(resultado.endsWith('…')).toBe(true);
@@ -250,7 +254,11 @@ describe('formatters (M2, Fase 4)', () => {
   describe('formatPersonLabel (aba Contatos/Campanhas — mesma regra sobre telefone E.164 puro)', () => {
     it('usa savedName sozinho quando presente', () => {
       expect(
-        formatPersonLabel({ phoneE164: '5511999999999', savedName: 'Maria Salva', nickname: 'Apelido' }),
+        formatPersonLabel({
+          phoneE164: '5511999999999',
+          savedName: 'Maria Salva',
+          nickname: 'Apelido',
+        }),
       ).toBe('Maria Salva');
     });
 
@@ -274,12 +282,18 @@ describe('formatters (M2, Fase 4)', () => {
   describe('formatPersonLabelParts (2026-08-21 — apelido em partes, para estilização visual)', () => {
     it('savedName vira só primary, sem secondary', () => {
       expect(
-        formatPersonLabelParts({ phoneE164: '5511999999999', savedName: 'Maria Salva', nickname: 'Apelido' }),
+        formatPersonLabelParts({
+          phoneE164: '5511999999999',
+          savedName: 'Maria Salva',
+          nickname: 'Apelido',
+        }),
       ).toEqual({ primary: 'Maria Salva' });
     });
 
     it('sem savedName, telefone vira primary e o nickname vira secondary', () => {
-      expect(formatPersonLabelParts({ phoneE164: '5511999999999', nickname: 'Maria Silva' })).toEqual({
+      expect(
+        formatPersonLabelParts({ phoneE164: '5511999999999', nickname: 'Maria Silva' }),
+      ).toEqual({
         primary: '+55 11 99999-9999',
         secondary: 'Maria Silva',
       });

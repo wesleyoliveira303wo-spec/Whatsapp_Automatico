@@ -18,14 +18,14 @@ One short paragraph built on ONE real word or idea from the subject's world, and
 Sampled from the world of the footage, so page and video read as one place. Before generation the package names the palette direction from the storyboard's world; the exact token values get finalized from the approved footage after the video gate. Named roles, ready to paste into the build:
 
 ```css
-:root{
-  --canvas:#___;        /* page background, tinted toward the footage's grade, never pure black or white */
-  --panel:#___;         /* cards and raised surfaces */
-  --accent:#___;        /* the CTA and rare emphasis */
-  --accent-hover:#___;  /* the accent's hover state */
-  --accent-muted:#___;  /* the accent at whisper level: borders, glows, particles */
-  --text-secondary:#___;
-  --text-primary:#___;
+:root {
+  --canvas: #___; /* page background, tinted toward the footage's grade, never pure black or white */
+  --panel: #___; /* cards and raised surfaces */
+  --accent: #___; /* the CTA and rare emphasis */
+  --accent-hover: #___; /* the accent's hover state */
+  --accent-muted: #___; /* the accent at whisper level: borders, glows, particles */
+  --text-secondary: #___;
+  --text-primary: #___;
 }
 ```
 
@@ -37,10 +37,10 @@ A fresh display face, a quiet body face, and a mono for small labels. Never Inte
 
 One table, one row per hero band:
 
-| Band | Range (starting point) | Footage moment | Copy (verbatim) | Entrance |
-|---|---|---|---|---|
-| 1 | 0.00 to 0.14 | what the video is doing | "The exact words." | one named entrance |
-| 2 | 0.16 to 0.32 | ... | "..." | ... |
+| Band | Range (starting point) | Footage moment          | Copy (verbatim)    | Entrance           |
+| ---- | ---------------------- | ----------------------- | ------------------ | ------------------ |
+| 1    | 0.00 to 0.14           | what the video is doing | "The exact words." | one named entrance |
+| 2    | 0.16 to 0.32           | ...                     | "..."              | ...                |
 
 - **Range:** a labeled starting point in scroll progress, validated later by the flick test.
 - **Footage moment:** what the video shows while this band is on, so the layout can keep the action lane clear.

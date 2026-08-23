@@ -257,7 +257,12 @@ export interface CampaignRepository {
   attachMedia(
     tenantId: string,
     campaignId: string,
-    media: { contentType: CampaignMediaContentType; buffer: Buffer; mimeType: string; fileName?: string },
+    media: {
+      contentType: CampaignMediaContentType;
+      buffer: Buffer;
+      mimeType: string;
+      fileName?: string;
+    },
   ): Promise<Campaign | undefined>;
 
   /** Remove a mídia anexada (as quatro colunas voltam a `NULL`) — no-op silencioso se a campanha não tinha nenhuma. `undefined` se a campanha não existir/não pertencer ao tenant. */

@@ -306,7 +306,8 @@ describe('AiReplyJobProcessor', () => {
      * Redis: nenhuma chave de idempotência pode conter `:`.
      */
     it('nenhuma idempotencyKey de parágrafo contém ":" (o BullMQ recusa esse jobId)', async () => {
-      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut();
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut();
       conversationRepository.seed(buildConversation());
       aiProviderFactory.provider.setNextResult({
         content: 'Primeira.\nSegunda.\nTerceira.\nQuarta.',
@@ -717,8 +718,10 @@ describe('AiReplyJobProcessor', () => {
       // CORREÇÃO 2026-08-18: `now` fixo, 1h depois de `escalatedAt` — dentro
       // da janela padrão de 6h (`DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS`),
       // então a supressão ainda vale.
-      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
-        buildSut(undefined, { now: () => new Date('2026-08-14T20:00:00Z') });
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
+        undefined,
+        { now: () => new Date('2026-08-14T20:00:00Z') },
+      );
       // Conversa que JÁ pediu ajuda humana e ninguém assumiu — `escalatedAt`
       // preenchido é exatamente o registro de "o cliente já foi avisado".
       conversationRepository.seed(
@@ -734,8 +737,10 @@ describe('AiReplyJobProcessor', () => {
     });
 
     it('VOLTA a avisar o cliente quando a última escalada foi há mais que a janela (achado real: cliente esquecido numa escalada de 11 dias)', async () => {
-      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
-        buildSut(undefined, { now: () => new Date('2026-08-15T02:00:00Z') }); // 7h depois — passou da janela de 6h.
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
+        undefined,
+        { now: () => new Date('2026-08-15T02:00:00Z') },
+      ); // 7h depois — passou da janela de 6h.
       conversationRepository.seed(
         buildConversation({ status: 'bot', escalatedAt: new Date('2026-08-14T19:00:00Z') }),
       );
@@ -750,11 +755,13 @@ describe('AiReplyJobProcessor', () => {
     });
 
     it('respeita uma janela customizada (handoffNoticeRepeatAfterMs)', async () => {
-      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
-        buildSut(undefined, {
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
+        undefined,
+        {
           now: () => new Date('2026-08-14T19:05:00Z'), // 5 min depois
           handoffNoticeRepeatAfterMs: 60_000, // janela de só 1 min
-        });
+        },
+      );
       conversationRepository.seed(
         buildConversation({ status: 'bot', escalatedAt: new Date('2026-08-14T19:00:00Z') }),
       );

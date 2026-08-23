@@ -542,7 +542,11 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
       'devolve destinatários FAILED para pending, agenda e volta para running (%s)',
       async (status) => {
         const { service, campaigns, dispatcher } = buildSut();
-        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao', status });
+        const campaignId = campaigns.seedCampaign({
+          tenantId: 'tenant-1',
+          sessionName: 'sessao',
+          status,
+        });
         campaigns.seedRecipient({
           tenantId: 'tenant-1',
           campaignId,
@@ -605,7 +609,11 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
       'lança InvalidCampaignTransitionError para campanha %s (só completed/cancelled reabrem)',
       async (status) => {
         const { service, campaigns } = buildSut();
-        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao', status });
+        const campaignId = campaigns.seedCampaign({
+          tenantId: 'tenant-1',
+          sessionName: 'sessao',
+          status,
+        });
 
         await expect(service.reopenCampaign('tenant-1', campaignId)).rejects.toThrow(
           InvalidCampaignTransitionError,

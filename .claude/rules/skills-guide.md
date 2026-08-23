@@ -48,6 +48,7 @@ qualquer bug relatado "na tela" (console, rede, performance).
 
 Já ativo automaticamente em toda tarefa (hook `SessionStart`). Duas skills
 com relevância direta comprovada neste projeto:
+
 - `systematic-debugging` / `verification-before-completion` — mesmo
   princípio já aprendido por experiência própria (ADR #88 do `CLAUDE.md`:
   "não acumular hipóteses sem medir"). Usar deliberadamente em qualquer bug

@@ -31,14 +31,22 @@ The video element ships with `preload="none"` and no `src`. The ring is an SVG c
 ```html
 <video id="hero" preload="none" muted playsinline aria-hidden="true" tabindex="-1"></video>
 <svg class="ring" viewBox="0 0 48 48" aria-hidden="true">
-  <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="3"
-          stroke-dasharray="126" style="stroke-dashoffset:var(--ld,126)"/>
+  <circle
+    cx="24"
+    cy="24"
+    r="20"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="3"
+    stroke-dasharray="126"
+    style="stroke-dashoffset:var(--ld,126)"
+  />
 </svg>
 ```
 
 ```js
 const VIDEO_URL = 'assets/hero-scrub.mp4';
-const VIDEO_BYTES = 14476000;   // hardcode the real byte size: the fallback when Content-Length is missing
+const VIDEO_BYTES = 14476000; // hardcode the real byte size: the fallback when Content-Length is missing
 const ring = document.querySelector('.ring');
 const posterLayer = document.querySelector('.poster');
 
@@ -55,7 +63,7 @@ const posterImg = new Image();
 posterImg.onload = startBlobFetch;
 posterImg.onerror = startBlobFetch;
 posterImg.src = 'assets/hero-poster.jpg';
-setTimeout(startBlobFetch, 4000);   // safety: a hung poster never blocks the video forever
+setTimeout(startBlobFetch, 4000); // safety: a hung poster never blocks the video forever
 
 async function loadHeroBlob() {
   const ctrl = new AbortController();
@@ -65,18 +73,20 @@ async function loadHeroBlob() {
   const total = Number(res.headers.get('Content-Length')) || VIDEO_BYTES;
   const reader = res.body.getReader();
   const chunks = [];
-  let got = 0, lastRing = 0;
+  let got = 0,
+    lastRing = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    clearTimeout(watchdog);                        // re-arm on every chunk:
-    watchdog = setTimeout(() => ctrl.abort(), 20000);   // 20s with no progress aborts the stream
+    clearTimeout(watchdog); // re-arm on every chunk:
+    watchdog = setTimeout(() => ctrl.abort(), 20000); // 20s with no progress aborts the stream
     chunks.push(value);
     got += value.length;
     const frac = Math.min(1, got / total);
     const now = performance.now();
-    if (now - lastRing > 100 || frac === 1) {      // throttled to 100ms, but the terminal
-      lastRing = now;                              // write always lands so the ring completes
+    if (now - lastRing > 100 || frac === 1) {
+      // throttled to 100ms, but the terminal
+      lastRing = now; // write always lands so the ring completes
       ring.style.setProperty('--ld', Math.round(126 * (1 - frac)));
     }
   }
@@ -84,15 +94,19 @@ async function loadHeroBlob() {
   ring.style.setProperty('--ld', 0);
   video.src = URL.createObjectURL(new Blob(chunks));
   video.load();
-  video.addEventListener('canplay', () => {
-    requestSeek(heroProgress() * video.duration);  // land on the current scroll position
-    stage.classList.add('video-ready');            // CSS fades the video in over the poster
-  }, { once: true });
+  video.addEventListener(
+    'canplay',
+    () => {
+      requestSeek(heroProgress() * video.duration); // land on the current scroll position
+      stage.classList.add('video-ready'); // CSS fades the video in over the poster
+    },
+    { once: true },
+  );
 }
 
 function failVideo() {
-  ring.replaceWith(makeScrollChevron());  // an honest scroll cue, never a stuck ring
-  stage.classList.add('video-failed');    // still-image fallbacks carry the full journey
+  ring.replaceWith(makeScrollChevron()); // an honest scroll cue, never a stuck ring
+  stage.classList.add('video-failed'); // still-image fallbacks carry the full journey
 }
 ```
 
@@ -105,20 +119,20 @@ The trade this pattern buys: even a chained journey weighing a dozen MB streams 
 Never write scroll position straight into `currentTime`; ease toward it. The loop must go idle when converged and when the hero is off-screen. Loops that free-run from page load waste battery and mark the build as amateur.
 
 ```js
-let target = 0;      // 0..1, set by the scroll handler
-let shown = 0;       // what we are displaying
+let target = 0; // 0..1, set by the scroll handler
+let shown = 0; // what we are displaying
 let rafId = null;
 let lastTick = 0;
 
 function tick(now) {
-  const dt = Math.min(100, now - (lastTick || now));   // ms since last frame, capped
+  const dt = Math.min(100, now - (lastTick || now)); // ms since last frame, capped
   lastTick = now;
-  const k = 0.16;    // smoothing per 60fps frame; a starting point, tune by feel while scrubbing
+  const k = 0.16; // smoothing per 60fps frame; a starting point, tune by feel while scrubbing
   shown += (target - shown) * (1 - Math.pow(1 - k, dt / 16.667));
   if (Math.abs(target - shown) < 0.0005) {
     shown = target;
     rafId = null;
-    lastTick = 0;                     // converged: rest
+    lastTick = 0; // converged: rest
   } else {
     rafId = requestAnimationFrame(tick);
   }
@@ -127,7 +141,7 @@ function tick(now) {
 }
 
 function onScroll() {
-  target = heroProgress();            // 0..1 through the pinned hero
+  target = heroProgress(); // 0..1 through the pinned hero
   if (rafId === null && heroOnScreen) rafId = requestAnimationFrame(tick);
 }
 ```
@@ -146,7 +160,10 @@ let pendingTime = null;
 
 function requestSeek(t) {
   if (!video.duration) return;
-  if (seekBusy) { pendingTime = t; return; }   // coalesce: keep only newest
+  if (seekBusy) {
+    pendingTime = t;
+    return;
+  } // coalesce: keep only newest
   seekBusy = true;
   video.currentTime = t;
 }
@@ -156,11 +173,12 @@ video.addEventListener('seeked', () => {
   if (pendingTime !== null) {
     const t = pendingTime;
     pendingTime = null;
-    requestSeek(t);                            // exactly one follow-up
+    requestSeek(t); // exactly one follow-up
   }
 });
 
-video.addEventListener('error', () => {        // the deadlock escape
+video.addEventListener('error', () => {
+  // the deadlock escape
   seekBusy = false;
   pendingTime = null;
 });
@@ -180,8 +198,8 @@ let lastLabel = '';
 let lastLabelAt = 0;
 
 function updateLabel(text, now) {
-  if (now - lastLabelAt < 100) return;   // ~10Hz
-  if (text === lastLabel) return;        // only on change
+  if (now - lastLabelAt < 100) return; // ~10Hz
+  if (text === lastLabel) return; // only on change
   lastLabel = text;
   lastLabelAt = now;
   labelEl.textContent = text;
@@ -229,9 +247,10 @@ The harness is a small loop run on the page through the browser tool (or pasted 
 async function flick(step, count) {
   for (let i = 0; i < count; i++) {
     window.scrollBy(0, step);
-    await new Promise(r => setTimeout(r, 400));   // a beat between flicks, like a real reader
-    const bands = [...document.querySelectorAll('.band')]
-      .map((b, n) => n + ':' + getComputedStyle(b).opacity);
+    await new Promise((r) => setTimeout(r, 400)); // a beat between flicks, like a real reader
+    const bands = [...document.querySelectorAll('.band')].map(
+      (b, n) => n + ':' + getComputedStyle(b).opacity,
+    );
     console.log('y=' + Math.round(scrollY), bands.join('  '));
   }
 }
@@ -246,13 +265,34 @@ Law 10 in `prompt-laws.md`: live video behind type is a moving background you do
 **1. The global base scrim.** One soft radial darkening (a scrim is a translucent dark layer) over the whole video, always on, so no frame is ever raw behind the page:
 
 ```css
-.scrim{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 120% 90% at 50% 45%,rgba(10,10,18,0) 35%,rgba(10,10,18,.62) 100%)}
+.scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 120% 90% at 50% 45%,
+    rgba(10, 10, 18, 0) 35%,
+    rgba(10, 10, 18, 0.62) 100%
+  );
+}
 ```
 
 **2. The per-band scrim.** Each band's `::before` carries a radial scrim that rides the band's JS-driven opacity and deepens with the band's `--k` progress variable, so the footage dims exactly while that band's text is on and nowhere else. Dim, never flatten: the gradient dies out by 76 percent so the corners stay live. The working shape:
 
 ```css
-.band::before{content:"";position:absolute;inset:-4%;pointer-events:none;opacity:calc(.25 + .75*var(--k,1));background:radial-gradient(ellipse 74% 62% at 50% 50%,rgba(5,5,10,.66) 0%,rgba(5,5,10,.44) 46%,rgba(5,5,10,0) 76%)}
+.band::before {
+  content: '';
+  position: absolute;
+  inset: -4%;
+  pointer-events: none;
+  opacity: calc(0.25 + 0.75 * var(--k, 1));
+  background: radial-gradient(
+    ellipse 74% 62% at 50% 50%,
+    rgba(5, 5, 10, 0.66) 0%,
+    rgba(5, 5, 10, 0.44) 46%,
+    rgba(5, 5, 10, 0) 76%
+  );
+}
 ```
 
 Tune the peak alpha per band against that band's actual frames. The proven range: 0.62 for quiet beats up to 0.72 for the hook. These peak alphas are also the constants to nudge when the user asks for the footage to read brighter.
@@ -262,15 +302,28 @@ Tune the peak alpha per band against that band's actual frames. The proven range
 **3. The text-shadow token.** Three layers (a tight edge, a mid glow, a wide falloff), applied to every hero band and turned off on buttons, where a shadowed label reads as grime:
 
 ```css
-:root{--tshadow:0 1px 2px rgba(5,5,10,.95),0 3px 12px rgba(5,5,10,.78),0 10px 44px rgba(5,5,10,.8)}
-.band{text-shadow:var(--tshadow)}
-.band .btn{text-shadow:none}
+:root {
+  --tshadow:
+    0 1px 2px rgba(5, 5, 10, 0.95), 0 3px 12px rgba(5, 5, 10, 0.78), 0 10px 44px rgba(5, 5, 10, 0.8);
+}
+.band {
+  text-shadow: var(--tshadow);
+}
+.band .btn {
+  text-shadow: none;
+}
 ```
 
 **4. The chip scrim for small text.** HUD lines, readouts, and small labels over footage do not get the big radial. They get a chip, a small blurred backing pill:
 
 ```css
-.chip{background:rgba(8,8,15,.55);border:1px solid rgba(96,96,126,.3);border-radius:10px;backdrop-filter:blur(10px);text-shadow:0 1px 3px rgba(5,5,10,.85)}
+.chip {
+  background: rgba(8, 8, 15, 0.55);
+  border: 1px solid rgba(96, 96, 126, 0.3);
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  text-shadow: 0 1px 3px rgba(5, 5, 10, 0.85);
+}
 ```
 
 **The worst-frame audit (what makes the system honest).** Extract each band's frames, canvas-sample the pixels under the text zone WITH the scrim applied, and require worst-pixel contrast of at least 3.5:1 for every band. Well-tuned bands land well clear of that floor. Tune scrim alphas against the worst frame, never the average. The average frame lies; the worst frame is the one a visitor will be mid-read on.
@@ -291,18 +344,22 @@ async function auditFrame(src, zone, scrimAlpha, textColor) {
   c.drawImage(img, 0, 0);
   const d = c.getImageData(zone.x, zone.y, zone.w, zone.h).data;
   const lum = ([r, g, b]) => {
-    const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const f = (v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
-  const scrim = [5, 5, 10];                      // the scrim's base color
+  const scrim = [5, 5, 10]; // the scrim's base color
   let worst = 0;
   for (let i = 0; i < d.length; i += 4) {
-    const px = [0, 1, 2].map(j => d[i + j] * (1 - scrimAlpha) + scrim[j] * scrimAlpha);
-    worst = Math.max(worst, lum(px));            // lightest pixel, the worst case for light text
+    const px = [0, 1, 2].map((j) => d[i + j] * (1 - scrimAlpha) + scrim[j] * scrimAlpha);
+    worst = Math.max(worst, lum(px)); // lightest pixel, the worst case for light text
   }
   const lt = lum(textColor);
-  const hi = Math.max(lt, worst), lo = Math.min(lt, worst);
-  return (hi + 0.05) / (lo + 0.05);              // must be at least 3.5
+  const hi = Math.max(lt, worst),
+    lo = Math.min(lt, worst);
+  return (hi + 0.05) / (lo + 0.05); // must be at least 3.5
 }
 ```
 
@@ -334,9 +391,15 @@ Wrap a visually-hidden span holding the full sentence for screen readers, plus a
 **(a) Scatter.** Per-character fly-in from seeded random offsets; echoes ink gathering, particles assembling, debris settling. Each `.c` gets `--th` (a random threshold, 0 to 0.55) and `--jx`/`--jy`/`--jr` jitter values:
 
 ```css
-.c{--kc:clamp(0,(var(--k,0) - var(--th,0))*2.6,1);opacity:var(--kc);
-   transform:translate(calc((1 - var(--kc))*var(--jx,0px)),calc((1 - var(--kc))*var(--jy,0px)))
-             rotate(calc((1 - var(--kc))*var(--jr,0deg)))}
+.c {
+  --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 2.6, 1);
+  opacity: var(--kc);
+  transform: translate(
+      calc((1 - var(--kc)) * var(--jx, 0px)),
+      calc((1 - var(--kc)) * var(--jy, 0px))
+    )
+    rotate(calc((1 - var(--kc)) * var(--jr, 0deg)));
+}
 ```
 
 **(b) Grid snap-align.** Characters slide horizontally into place in reading order. Same CSS as scatter with horizontal-only jitter, but the threshold is ordered instead of random: `--th: charIndex / total * spread + rng() * 0.06`, so the spread value controls how long the stagger runs.
@@ -346,11 +409,17 @@ Wrap a visually-hidden span holding the full sentence for screen readers, plus a
 **(d) Word-punch with overshoot.** Echoes an impact landing. Word-level pop (`--kc`) and a slower settle (`--ks`); the word scales past 1 and eases back:
 
 ```css
-.w{--kc:clamp(0,(var(--k,0) - var(--th,0))*3,1);
-   --ks:clamp(0,(var(--k,0) - var(--th,0) - var(--sd,.1))*var(--ss,3.2),1);
-   opacity:var(--kc);
-   transform:scale(calc(0.6 + (0.4 + var(--ov,.12))*var(--kc) - var(--ov,.12)*var(--ks)))}
-.w.em{--ov:0.24;--sd:0.16;--ss:2.6}
+.w {
+  --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 3, 1);
+  --ks: clamp(0, (var(--k, 0) - var(--th, 0) - var(--sd, 0.1)) * var(--ss, 3.2), 1);
+  opacity: var(--kc);
+  transform: scale(calc(0.6 + (0.4 + var(--ov, 0.12)) * var(--kc) - var(--ov, 0.12) * var(--ks)));
+}
+.w.em {
+  --ov: 0.24;
+  --sd: 0.16;
+  --ss: 2.6;
+}
 ```
 
 Emphasized words (`.em`) get the bigger overshoot with the later, slower settle, so they hang in the overshoot a beat longer.
@@ -360,8 +429,11 @@ Emphasized words (`.em`) get the bigger overshoot with the later, slower settle,
 **(f) Drift-down.** Echoes a fall or a pour. Each word starts above its resting spot and drifts down into place:
 
 ```css
-.w{--kc:clamp(0,(var(--k,0) - var(--th,0))*2.8,1);opacity:var(--kc);
-   transform:translateY(calc((1 - var(--kc))*-24px))}
+.w {
+  --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 2.8, 1);
+  opacity: var(--kc);
+  transform: translateY(calc((1 - var(--kc)) * -24px));
+}
 ```
 
 **(g) Approach-from-depth.** Echoes a tunnel or a forward push. The line starts slightly small and grows into place as if approaching the camera: `transform: scale(calc(0.82 + 0.18 * var(--kc)))` with opacity riding `--kc`. Stack a static-blur soft copy under it (the blur-to-sharp pattern) when the approach should also sharpen.
@@ -392,29 +464,37 @@ const GATES = [
   '(orientation: portrait) and (max-width: 1024px)',
   '(orientation: portrait) and (pointer: coarse)',
   '(orientation: landscape) and (pointer: coarse) and (max-height: 560px)',
-  '(prefers-reduced-motion: reduce)'
+  '(prefers-reduced-motion: reduce)',
 ];
 let scrubOn = false;
-function enableScrub(){
-  if (scrubOn) return; scrubOn = true;
-  initHeroOnce();                       // wrap the poster paint and the startBlobFetch flow from the Blob loader section above in one run-once function; this call is that wrapper
-  addEventListener('scroll', onScroll, {passive:true});
-  bands.forEach(b => { b.op = -1; b.k = -1 });   // reset caches so stale pinned styles get rewritten
-  unpinFinalStates();                   // undo whatever pinToFinalStates applied, so lines, counters, and holds go back to being scroll-driven
+function enableScrub() {
+  if (scrubOn) return;
+  scrubOn = true;
+  initHeroOnce(); // wrap the poster paint and the startBlobFetch flow from the Blob loader section above in one run-once function; this call is that wrapper
+  addEventListener('scroll', onScroll, { passive: true });
+  bands.forEach((b) => {
+    b.op = -1;
+    b.k = -1;
+  }); // reset caches so stale pinned styles get rewritten
+  unpinFinalStates(); // undo whatever pinToFinalStates applied, so lines, counters, and holds go back to being scroll-driven
   updateCaptions(heroProgress());
-  onScroll();                           // re-seek the video to the current scroll position; without this the frame sits stale until the user scrolls
+  onScroll(); // re-seek the video to the current scroll position; without this the frame sits stale until the user scrolls
 }
-function disableScrub(){
-  if (!scrubOn) return; scrubOn = false;
+function disableScrub() {
+  if (!scrubOn) return;
+  scrubOn = false;
   removeEventListener('scroll', onScroll);
-  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
 }
-function applyHeroMode(){
-  if (GATES.some(q => matchMedia(q).matches)) disableScrub();
+function applyHeroMode() {
+  if (GATES.some((q) => matchMedia(q).matches)) disableScrub();
   else enableScrub();
 }
-const MQLS = GATES.map(q => matchMedia(q));   // keep the query lists referenced; unreferenced ones have historically lost their listeners in old browsers
-MQLS.forEach(m => m.addEventListener('change', applyHeroMode));
+const MQLS = GATES.map((q) => matchMedia(q)); // keep the query lists referenced; unreferenced ones have historically lost their listeners in old browsers
+MQLS.forEach((m) => m.addEventListener('change', applyHeroMode));
 applyHeroMode();
 ```
 
@@ -423,7 +503,13 @@ All five strings must be character-for-character identical in both places, and t
 A related guard for scrub-capable screens that are merely short (a shallow desktop window, not a phone): keep the scrub but hide whatever small scroll-driven overlays the page has (cues, readouts, tickers), which have no room. An example with one build's class names; use your own:
 
 ```css
-@media (max-height:560px){.cue,.hud,.feed{display:none}}
+@media (max-height: 560px) {
+  .cue,
+  .hud,
+  .feed {
+    display: none;
+  }
+}
 ```
 
 The static hero is a designed layout, not a fallback apology: the poster or ending frame composed with the captions visible. A mobile decision is made consciously per project. Static hero is the default. Consider a cover-cropped mobile scrub only when all three hold: the encoded video is small (under about 8 MB), the composition still reads when cover-cropped to portrait (the action lane survives the crop), and the result is verified on a real phone. When any of the three fails, ship the static hero proudly.
@@ -463,9 +549,10 @@ The hold is an example, not a law. Any interaction works if it enacts the brand'
 - Reduced motion is honored LIVE, in BOTH directions. Listen for the media query's change event. On a flip in, pin every scroll-drawn element to its final drawn state and stop the JS drives: self-drawing lines finish, counters jump to their targets, hold interactions complete. On a flip back out, re-arm the scrub through the same gate function the five queries use, so the caches reset and the captions recompute instead of staying pinned. And undo everything pinToFinalStates applied: remove the pinned classes or inline styles from the drawn lines, the counters, and the hold interactions, so the scroll drives own them again. Re-arming the hero while leaving the rest of the page pinned is the half-fix that looks done and is not.
 
 ```js
-matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', e => {
-  if (e.matches) pinToFinalStates();   // lines drawn, counters at target, holds done, drives stopped
-  else applyHeroMode();                // motion is back: re-arm the scrub, never leave the pins behind
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => {
+  if (e.matches)
+    pinToFinalStates(); // lines drawn, counters at target, holds done, drives stopped
+  else applyHeroMode(); // motion is back: re-arm the scrub, never leave the pins behind
 });
 ```
 

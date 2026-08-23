@@ -349,7 +349,12 @@ describe('WhatsAppCampaignMessageSender (Fase L, Bloco L4)', () => {
         'default',
         { phoneE164: '5511988887777', name: 'Fulano' },
         'Confira nossa promoção!',
-        { contentType: 'image', buffer: Buffer.from('bytes-da-imagem'), mimeType: 'image/jpeg', fileName: 'promo.jpg' },
+        {
+          contentType: 'image',
+          buffer: Buffer.from('bytes-da-imagem'),
+          mimeType: 'image/jpeg',
+          fileName: 'promo.jpg',
+        },
       );
 
       expect(result.ok).toBe(true);
@@ -369,7 +374,11 @@ describe('WhatsAppCampaignMessageSender (Fase L, Bloco L4)', () => {
       ]);
 
       const conversation = await conversationRepository.findById(result.conversationId!);
-      const messages = await messageRepository.listRecentByConversation('tenant-1', conversation!.id, 10);
+      const messages = await messageRepository.listRecentByConversation(
+        'tenant-1',
+        conversation!.id,
+        10,
+      );
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         direction: 'outbound',
@@ -388,7 +397,11 @@ describe('WhatsAppCampaignMessageSender (Fase L, Bloco L4)', () => {
         'default',
         { contactId: 'contact-1' },
         'Segue o catálogo',
-        { contentType: 'document', buffer: Buffer.from('bytes-do-pdf'), mimeType: 'application/pdf' },
+        {
+          contentType: 'document',
+          buffer: Buffer.from('bytes-do-pdf'),
+          mimeType: 'application/pdf',
+        },
       );
 
       expect(result).toEqual({ ok: true, conversationId: 'conversation-1' });
@@ -463,7 +476,9 @@ describe('WhatsAppCampaignMessageSender (Fase L, Bloco L4)', () => {
 
     it('reengajamento é sempre tentado primeiro: mesmo com phoneE164 presente, uma conversa já existente vence', async () => {
       const { sender, providerFactory, conversationRepository } = buildSut();
-      conversationRepository.seed(buildConversation({ contactJid: '5511999999999@s.whatsapp.net' }));
+      conversationRepository.seed(
+        buildConversation({ contactJid: '5511999999999@s.whatsapp.net' }),
+      );
 
       const result = await sender.send(
         'tenant-1',

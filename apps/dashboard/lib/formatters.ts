@@ -420,7 +420,11 @@ export function formatContactDisplayName(
   contactName?: string,
   savedContactName?: string,
 ): string {
-  const { primary, secondary } = formatContactDisplayNameParts(contactJid, contactName, savedContactName);
+  const { primary, secondary } = formatContactDisplayNameParts(
+    contactJid,
+    contactName,
+    savedContactName,
+  );
   return secondary ? `${primary} · ${secondary}` : primary;
 }
 
@@ -450,7 +454,8 @@ export function formatContactInitials(
   contactName?: string,
   savedContactName?: string,
 ): string {
-  const trimmed = normalizeIdentifiableName(savedContactName) ?? normalizeIdentifiableName(contactName);
+  const trimmed =
+    normalizeIdentifiableName(savedContactName) ?? normalizeIdentifiableName(contactName);
   if (!trimmed) {
     return formatContactJid(contactJid).slice(-2);
   }

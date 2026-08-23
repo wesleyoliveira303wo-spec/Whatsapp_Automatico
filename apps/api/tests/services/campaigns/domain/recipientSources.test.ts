@@ -19,9 +19,7 @@ describe('parseRecipientsCsv (Reorganização Contatos/Campanhas, 2026-08-17)', 
     const csv = 'telefone\n123\n65988887777';
     const result = parseRecipientsCsv(csv);
     expect(result.recipients).toEqual([{ rawPhone: '5565988887777', name: undefined }]);
-    expect(result.invalid).toEqual([
-      { rowNumber: 1, reason: 'invalid_phone', rawPhone: '123' },
-    ]);
+    expect(result.invalid).toEqual([{ rowNumber: 1, reason: 'invalid_phone', rawPhone: '123' }]);
   });
 
   it('sem coluna de telefone reconhecível: nada é importado', () => {

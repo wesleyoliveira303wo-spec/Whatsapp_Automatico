@@ -344,7 +344,9 @@ export default function CampaignDetailPanel({
         <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
           {campaign.name}
         </h1>
-        <Badge variant={STATUS_BADGE_VARIANT[campaign.status]}>{STATUS_LABELS[campaign.status]}</Badge>
+        <Badge variant={STATUS_BADGE_VARIANT[campaign.status]}>
+          {STATUS_LABELS[campaign.status]}
+        </Badge>
       </div>
       <p className="mb-1 text-[13px] text-muted-foreground">
         Criada em {formatDateTime(campaign.createdAt)}

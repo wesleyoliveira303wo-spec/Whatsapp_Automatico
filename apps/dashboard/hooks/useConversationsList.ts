@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEventSource } from './useEventSource';
 import { fetchConversations } from '../lib/clientApi';
-import {
-  mergeConversationPages,
-  reconcileConversationIdentities,
-} from '../lib/conversationsView';
+import { mergeConversationPages, reconcileConversationIdentities } from '../lib/conversationsView';
 import type { ConversationPage, ConversationStatus, ConversationSummary } from '../lib/clientApi';
 
 /** Mesmo envelope `{ status, body }` que `runSsePoller` grava em cada frame `data:` — ver `useSessionsList.ts` (M2). */

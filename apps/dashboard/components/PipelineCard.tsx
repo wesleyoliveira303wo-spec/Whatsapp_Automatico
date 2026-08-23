@@ -184,6 +184,5 @@ function PipelineCard({
  */
 export default memo(
   PipelineCard,
-  (prev, next) =>
-    prev.conversation === next.conversation && prev.dragging === next.dragging,
+  (prev, next) => prev.conversation === next.conversation && prev.dragging === next.dragging,
 );

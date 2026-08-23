@@ -105,7 +105,9 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
 
     it('com nome salvo, mostra só o nome mesmo com apelido do WhatsApp disponível', async () => {
       (clientApi.fetchContacts as jest.Mock).mockResolvedValue({
-        contacts: [contact({ name: 'Maria Salva', lastConversationContactName: 'Apelido WhatsApp' })],
+        contacts: [
+          contact({ name: 'Maria Salva', lastConversationContactName: 'Apelido WhatsApp' }),
+        ],
       });
 
       render(<ContactsPanel canManage={false} />);
@@ -417,7 +419,10 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
 
       await waitFor(() => {
-        expect(clientApi.createContact).toHaveBeenCalledWith({ phone: '65988887777', name: 'Novo' });
+        expect(clientApi.createContact).toHaveBeenCalledWith({
+          phone: '65988887777',
+          name: 'Novo',
+        });
       });
     });
 

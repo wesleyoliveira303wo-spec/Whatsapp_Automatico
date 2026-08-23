@@ -201,7 +201,14 @@ describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
         name: 'Mover conversa para outro estágio do Pipeline',
       });
       const optionLabels = Array.from(select.querySelectorAll('option')).map((o) => o.textContent);
-      expect(optionLabels).toEqual(['Mover…', 'Não cliente', 'Novo', 'Contatado', 'Fechado', 'Perdido']);
+      expect(optionLabels).toEqual([
+        'Mover…',
+        'Não cliente',
+        'Novo',
+        'Contatado',
+        'Fechado',
+        'Perdido',
+      ]);
     });
 
     it('chamar onMoveToColumn com o estágio escolhido ao mudar o select', () => {

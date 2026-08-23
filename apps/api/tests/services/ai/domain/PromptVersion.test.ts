@@ -146,7 +146,9 @@ describe('v3 (2026-08-20 — desperta interesse + resposta em blocos)', () => {
   // tratou como fim de papo, repetindo o mesmo argumento sem nenhuma pergunta.
   it('trata resposta curta e sem entusiasmo como sinal de conduzir, nunca como fim de conversa', () => {
     const prompt = PROMPT_VERSIONS.v3.systemPrompt;
-    expect(prompt).toMatch(/não é fim de conversa, é sinal de que ele está esperando você conduzir/i);
+    expect(prompt).toMatch(
+      /não é fim de conversa, é sinal de que ele está esperando você conduzir/i,
+    );
     expect(prompt).toMatch(/nunca\s+repita o argumento que você já deu/i);
   });
 

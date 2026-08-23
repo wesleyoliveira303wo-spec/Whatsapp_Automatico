@@ -32,12 +32,14 @@ Resolver o problema de pequenas/médias empresas que atendem clientes pelo Whats
 Confirmado por leitura de código + rotas + testes passando + dados reais no banco.
 
 **WhatsApp / Sessões**
+
 - Conectar via QR Code, múltiplas sessões por tenant, reconexão automática, restauração de sessões ao reiniciar a API.
 - Recebimento e envio de texto e mídia (imagem/áudio/vídeo/documento), com download sob demanda (nunca persiste mídia recebida em disco) e envio síncrono de mídia pelo operador/campanha.
 - Filtros na origem: grupos (`@g.us`), canais (`@newsletter`), broadcasts/Status (`@broadcast`) e respostas/reações a Status nunca viram conversa.
 - Botão liga/desliga a IA por sessão (não afeta a conexão nem o recebimento).
 
 **IA / Atendimento**
+
 - 4 versões de prompt registradas em código (`v1`–`v4`), cada uma imutável — trocar é só a env var `AI_PROMPT_VERSION` + restart do worker, sem deploy de código.
 - Base de Conhecimento por sessão (texto livre, "Cérebro da IA"), com modo Assistente Guiado (quiz) e botão de cadastrar FAQ manual.
 - Agrupamento de mensagens em rajada (várias mensagens seguidas do cliente viram uma resposta só).
@@ -48,12 +50,14 @@ Confirmado por leitura de código + rotas + testes passando + dados reais no ban
 - Custo de IA rastreado por interação (`AiInteraction.costUsd`).
 
 **Conversas**
+
 - Inbox estilo WhatsApp Web/Telegram, tempo real via polling.
 - Pipeline Kanban (5 estágios), drag-and-drop, IA reclassifica só pra frente (nunca regride um card corrigido manualmente).
 - Tags, resumo de conversa sob demanda pela IA, indicador de não lidas.
 - Marcar conversa como "não é cliente" (exclui do Pipeline/funil comercial sem apagar histórico).
 
 **Contatos**
+
 - `WhatsAppContact` — identidade DURÁVEL por telefone (E.164, normalizado, com regra do 9º dígito), por TENANT (não por sessão — cruza WhatsApps diferentes da mesma empresa).
 - Backfill automático a partir de conversas existentes; vínculo automático (nunca sobrescreve nome já salvo).
 - Importação por CSV (permanente, cria `WhatsAppContact` de verdade) — rota `POST /contacts/import`.
@@ -61,6 +65,7 @@ Confirmado por leitura de código + rotas + testes passando + dados reais no ban
 - Tela "Contatos" no rail principal, com estatísticas, seleção em lote, "abrir conversa".
 
 **Campanhas**
+
 - `Campaign`/`CampaignRecipient`, máquina de estados completa (draft→running→paused/completed/cancelled), supressão automática (opt-out, conversa ativa com humano NA MESMA SESSÃO, contatado recentemente por outra campanha na mesma sessão).
 - Motor de envio real: fila dedicada, ritmo configurável (intervalo+jitter+janela de horário+teto diário), pausar/retomar/cancelar/reabrir, disjuntor de segurança automático por taxa de falha.
 - Dois caminhos de envio: reengajamento (contato que já tem conversa) e primeiro contato frio (cria a conversa, `stage: contacted`) — risco aceito conscientemente pelo fundador.
@@ -69,6 +74,7 @@ Confirmado por leitura de código + rotas + testes passando + dados reais no ban
 - Métricas: taxa de resposta, tempo até 1ª resposta, funil de estágio das conversas vinculadas, custo de IA, taxa de conversão.
 
 **Outros**
+
 - RBAC completo (5 papéis, permissões por rota), auditoria append-only, multiusuário por tenant.
 - Respostas rápidas (templates) por sessão.
 - Analytics: uso de IA, fluxo de mensagens, funil de Pipeline, taxa de escalonamento, estabilidade de sessão, analytics de campanha.
@@ -76,23 +82,23 @@ Confirmado por leitura de código + rotas + testes passando + dados reais no ban
 
 ## 5. CAMPANHAS E DISPAROS — ESTADO REAL
 
-| Item | Estado |
-|---|---|
-| Criar campanha (contatos salvos, CSV, colar números) | 🟢 Implementado e testado |
-| Supressão automática (opt-out/conversa ativa/recontato) | 🟢 Implementado, escopado por sessão, testado contra Postgres real |
-| Envio de texto | 🟢 Implementado, **validado com envio real** (múltiplos testes) |
-| Envio de mídia (imagem/vídeo/documento) | 🟢 Implementado, **validado com 1 envio real de imagem** — teve um bug de prévia na Dashboard (corrigido, não revalidado após a correção) |
-| Reengajamento (contato com conversa existente) | 🟢 Implementado e validado com envio real |
-| Primeiro contato frio (sem conversa prévia) | 🟢 Implementado, validado com 1 envio real |
-| Pausar/retomar/cancelar/reabrir | 🟢 Implementado, testado (não validado extensivamente em uso real) |
-| Ritmo (intervalo+jitter+janela de horário+teto diário) | 🟢 Implementado, **nunca testado com volume real** (todas as campanhas reais tiveram 1-2 destinatários) |
-| Disjuntor de segurança (taxa de falha) | 🟢 Implementado e testado, **nunca disparou em uso real** |
-| Métricas de campanha | 🟢 Implementado, testado, com pouquíssimo dado real para validar visualmente |
-| Agendamento (`SCHEDULED`) | 🔴 Campo existe no schema, **zero código lê/usa isso** — não implementado |
-| Segmentação por tag/estágio na criação | 🔴 Não existe |
-| Múltiplas sessões por campanha | 🔴 Não existe (uma campanha é sempre de UMA sessão) |
-| Sequências de follow-up automáticas | 🔴 Não existe |
-| Teto diário por sessão (entre campanhas diferentes) | 🔴 Hoje é só por campanha individual |
+| Item                                                    | Estado                                                                                                                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Criar campanha (contatos salvos, CSV, colar números)    | 🟢 Implementado e testado                                                                                                                 |
+| Supressão automática (opt-out/conversa ativa/recontato) | 🟢 Implementado, escopado por sessão, testado contra Postgres real                                                                        |
+| Envio de texto                                          | 🟢 Implementado, **validado com envio real** (múltiplos testes)                                                                           |
+| Envio de mídia (imagem/vídeo/documento)                 | 🟢 Implementado, **validado com 1 envio real de imagem** — teve um bug de prévia na Dashboard (corrigido, não revalidado após a correção) |
+| Reengajamento (contato com conversa existente)          | 🟢 Implementado e validado com envio real                                                                                                 |
+| Primeiro contato frio (sem conversa prévia)             | 🟢 Implementado, validado com 1 envio real                                                                                                |
+| Pausar/retomar/cancelar/reabrir                         | 🟢 Implementado, testado (não validado extensivamente em uso real)                                                                        |
+| Ritmo (intervalo+jitter+janela de horário+teto diário)  | 🟢 Implementado, **nunca testado com volume real** (todas as campanhas reais tiveram 1-2 destinatários)                                   |
+| Disjuntor de segurança (taxa de falha)                  | 🟢 Implementado e testado, **nunca disparou em uso real**                                                                                 |
+| Métricas de campanha                                    | 🟢 Implementado, testado, com pouquíssimo dado real para validar visualmente                                                              |
+| Agendamento (`SCHEDULED`)                               | 🔴 Campo existe no schema, **zero código lê/usa isso** — não implementado                                                                 |
+| Segmentação por tag/estágio na criação                  | 🔴 Não existe                                                                                                                             |
+| Múltiplas sessões por campanha                          | 🔴 Não existe (uma campanha é sempre de UMA sessão)                                                                                       |
+| Sequências de follow-up automáticas                     | 🔴 Não existe                                                                                                                             |
+| Teto diário por sessão (entre campanhas diferentes)     | 🔴 Hoje é só por campanha individual                                                                                                      |
 
 **Risco real e não resolvido:** o teto grátis do Gemini não sustenta uma campanha com resposta concentrada — se muitos leads responderem ao mesmo tempo, a IA pode esgotar a cota do dia. Rate limit por conversa/sessão dá uma rede de segurança parcial, mas não é a solução completa.
 

@@ -363,9 +363,7 @@ describe('contactsRouter (Fase L, Bloco L1b)', () => {
 
     it('operator NÃO pode criar contato manualmente (403)', async () => {
       const { app } = buildApp(person('operator'));
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({ phone: '65988887777' });
+      const response = await request(app).post(basePath('tenant-1')).send({ phone: '65988887777' });
       expect(response.status).toBe(403);
     });
   });

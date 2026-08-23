@@ -46,7 +46,8 @@ export default function SaveContactButton({
   const [name, setName] = useState(conversation.savedContactName ?? conversation.contactName ?? '');
   const [pending, setPending] = useState(false);
 
-  const canDeriveContact = Boolean(conversation.contactId) || !conversation.contactJid.endsWith('@lid');
+  const canDeriveContact =
+    Boolean(conversation.contactId) || !conversation.contactJid.endsWith('@lid');
   if (!canDeriveContact) {
     return null;
   }

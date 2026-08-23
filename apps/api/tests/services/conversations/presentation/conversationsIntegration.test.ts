@@ -9,7 +9,11 @@ import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLo
 import { FakeApiKeyHasher } from '../../../shared/security/FakeApiKeyHasher';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../../auth/testDoubles';
-import { FakeConversationRepository, FakeMessageRepository, FakeContactResolver } from '../testDoubles';
+import {
+  FakeConversationRepository,
+  FakeMessageRepository,
+  FakeContactResolver,
+} from '../testDoubles';
 import { FakeMediaSender } from '../../whatsapp/infrastructure/FakeMediaSender';
 import { Conversation } from '../../../../src/services/conversations/domain/entities/Conversation';
 import { UserRole } from '../../../../src/services/auth/domain/entities/User';

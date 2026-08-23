@@ -168,7 +168,10 @@ describe('SaveContactButton (retrofit visual 2026-08-18)', () => {
   it('conversa @lid SEM contactId: o botão não é renderizado (sem telefone a derivar)', () => {
     render(
       <SaveContactButton
-        conversation={buildConversation({ contactId: undefined, contactJid: '225236742053984@lid' })}
+        conversation={buildConversation({
+          contactId: undefined,
+          contactJid: '225236742053984@lid',
+        })}
         onUpdated={onUpdated}
       />,
     );

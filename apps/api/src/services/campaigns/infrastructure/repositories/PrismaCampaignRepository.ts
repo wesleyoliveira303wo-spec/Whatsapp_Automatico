@@ -423,7 +423,9 @@ export class PrismaCampaignRepository implements CampaignRepository {
     const hasMore = rows.length > options.limit;
     const page = hasMore ? rows.slice(0, options.limit) : rows;
 
-    const contactIds = [...new Set(page.map((row) => row.contactId).filter((id): id is string => Boolean(id)))];
+    const contactIds = [
+      ...new Set(page.map((row) => row.contactId).filter((id): id is string => Boolean(id))),
+    ];
     const conversationIds = [
       ...new Set(page.map((row) => row.conversationId).filter((id): id is string => Boolean(id))),
     ];
@@ -455,7 +457,9 @@ export class PrismaCampaignRepository implements CampaignRepository {
           ? {
               name: contact.name ?? undefined,
               phoneE164: contact.phoneE164,
-              nickname: row.conversationId ? nicknameByConversationId.get(row.conversationId) : undefined,
+              nickname: row.conversationId
+                ? nicknameByConversationId.get(row.conversationId)
+                : undefined,
             }
           : undefined;
         return recipientToDomain(row, contactInfo);
@@ -575,7 +579,9 @@ export class PrismaCampaignRepository implements CampaignRepository {
   }
 
   async deleteById(tenantId: string, campaignId: string): Promise<boolean> {
-    const { count } = await this.prisma.campaign.deleteMany({ where: { id: campaignId, tenantId } });
+    const { count } = await this.prisma.campaign.deleteMany({
+      where: { id: campaignId, tenantId },
+    });
     return count > 0;
   }
 
@@ -788,7 +794,11 @@ export class PrismaCampaignRepository implements CampaignRepository {
         where: { ...campaignScope, createdAt: { gte: previousMonthStart, lt: currentMonthStart } },
       }),
       this.prisma.campaignRecipient.count({
-        where: { ...recipientScope, status: { in: ['SENT', 'REPLIED'] }, sentAt: { gte: currentMonthStart } },
+        where: {
+          ...recipientScope,
+          status: { in: ['SENT', 'REPLIED'] },
+          sentAt: { gte: currentMonthStart },
+        },
       }),
       this.prisma.campaignRecipient.count({
         where: {

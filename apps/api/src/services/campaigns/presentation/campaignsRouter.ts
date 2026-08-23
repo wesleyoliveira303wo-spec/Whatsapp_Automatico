@@ -139,10 +139,7 @@ export function createCampaignsRouter(campaignService: CampaignService): Router 
       const query = validateOrRespond(sessionOverviewQuerySchema, req.query, res);
       if (!query) return;
 
-      const overview = await campaignService.getSessionOverview(
-        params.tenantId,
-        query.sessionName,
-      );
+      const overview = await campaignService.getSessionOverview(params.tenantId, query.sessionName);
       res.status(200).json({ overview });
     }),
   );
@@ -381,12 +378,16 @@ export function createCampaignsRouter(campaignService: CampaignService): Router 
         return;
       }
 
-      const campaign = await campaignService.attachCampaignMedia(params.tenantId, params.campaignId, {
-        contentType: headers['x-media-content-type'],
-        buffer: req.body,
-        mimeType: headers['content-type'],
-        fileName: headers['x-media-filename'],
-      });
+      const campaign = await campaignService.attachCampaignMedia(
+        params.tenantId,
+        params.campaignId,
+        {
+          contentType: headers['x-media-content-type'],
+          buffer: req.body,
+          mimeType: headers['content-type'],
+          fileName: headers['x-media-filename'],
+        },
+      );
       res.status(200).json({ campaign });
     }),
   );
@@ -403,7 +404,10 @@ export function createCampaignsRouter(campaignService: CampaignService): Router 
       );
       if (!params) return;
 
-      const campaign = await campaignService.removeCampaignMedia(params.tenantId, params.campaignId);
+      const campaign = await campaignService.removeCampaignMedia(
+        params.tenantId,
+        params.campaignId,
+      );
       res.status(200).json({ campaign });
     }),
   );

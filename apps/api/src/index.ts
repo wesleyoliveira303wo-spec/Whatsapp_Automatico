@@ -383,17 +383,12 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       // não depende de Redis/`WhatsAppConnectionRegistry`, então pode ser
       // ligado aqui mesmo no modo degradado — planilha/lista manual já
       // reconhecem Contatos existentes mesmo sem a fila de envio.
-      const { ContactLookupImpl: DegradedContactLookupImpl } = await import(
-        './services/contacts/infrastructure/ContactLookupImpl'
-      );
+      const { ContactLookupImpl: DegradedContactLookupImpl } =
+        await import('./services/contacts/infrastructure/ContactLookupImpl');
       const degradedContactLookup = new DegradedContactLookupImpl(
         degradedContacts.contactRepository,
       );
-      const degradedCampaigns = createCampaignsComposition(
-        prisma,
-        logger,
-        degradedContactLookup,
-      );
+      const degradedCampaigns = createCampaignsComposition(prisma, logger, degradedContactLookup);
       app.use('/api/tenants/:tenantId/campaigns', authenticate, degradedCampaigns.campaignsRouter);
       app.use('/api/tenants/:tenantId/campaigns', degradedCampaigns.campaignsErrorHandler);
 
@@ -613,7 +608,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // quem permite um telefone de planilha/lista manual "virar" um
     // destinatário vinculado a um Contato JÁ existente, sem nunca criar um
     // Contato novo a partir de uma campanha (ver docstring do port).
-    const { ContactLookupImpl } = await import('./services/contacts/infrastructure/ContactLookupImpl');
+    const { ContactLookupImpl } =
+      await import('./services/contacts/infrastructure/ContactLookupImpl');
     const contactLookup = new ContactLookupImpl(contacts.contactRepository);
     const campaigns = createCampaignsComposition(prisma, logger, contactLookup);
     app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);

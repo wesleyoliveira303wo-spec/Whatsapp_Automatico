@@ -21,7 +21,10 @@ interface DisplayNamePartsProps {
  * `<p>`/`<span>`/`<h2>` com as classes de tamanho/peso/truncate de sempre, e
  * este componente só entra como filho.
  */
-export default function DisplayNameParts({ primary, secondary }: DisplayNamePartsProps): JSX.Element {
+export default function DisplayNameParts({
+  primary,
+  secondary,
+}: DisplayNamePartsProps): JSX.Element {
   return (
     <>
       {/* `primary` também sai num `<span>` próprio (não como texto solto) —

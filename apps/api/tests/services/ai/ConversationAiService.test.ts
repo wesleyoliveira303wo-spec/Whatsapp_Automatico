@@ -786,7 +786,11 @@ describe('ConversationAiService', () => {
           buildImageMessage({
             id: 'm-do-cliente',
             direction: 'inbound',
-            media: { mimeType: 'image/jpeg', url: 'https://cliente.enc', mediaKeyEncrypted: 'enc:1' },
+            media: {
+              mimeType: 'image/jpeg',
+              url: 'https://cliente.enc',
+              mediaKeyEncrypted: 'enc:1',
+            },
           }),
           buildImageMessage({
             id: 'm-nossa-resposta',

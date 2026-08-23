@@ -269,7 +269,11 @@ export default function CampaignCreateForm({
       // uma falha de anexo nunca deve parecer que a criação inteira falhou.
       if (mediaFile) {
         try {
-          await attachCampaignMedia(response.campaign.id, mediaFile, mediaContentTypeFor(mediaFile));
+          await attachCampaignMedia(
+            response.campaign.id,
+            mediaFile,
+            mediaContentTypeFor(mediaFile),
+          );
         } catch (mediaUploadError) {
           setMediaError(mediaErrorMessageFor(mediaUploadError));
         }
@@ -290,8 +294,8 @@ export default function CampaignCreateForm({
         <h2 className="text-[16px] font-semibold text-foreground">Campanha criada</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
           A campanha foi calculada — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
-          disparar de verdade, abra a campanha e use &quot;Iniciar envio&quot; (que pede
-          confirmação separada).
+          disparar de verdade, abra a campanha e use &quot;Iniciar envio&quot; (que pede confirmação
+          separada).
         </p>
 
         {mediaError && (
@@ -323,7 +327,9 @@ export default function CampaignCreateForm({
                 {(Object.keys(result.summary.skipReasons) as CampaignSkipReason[]).map((reason) => (
                   <li key={reason} className="list-disc">
                     {SKIP_REASON_LABELS[reason]}:{' '}
-                    <strong className="text-foreground">{result.summary.skipReasons[reason]}</strong>
+                    <strong className="text-foreground">
+                      {result.summary.skipReasons[reason]}
+                    </strong>
                   </li>
                 ))}
               </ul>
@@ -390,7 +396,8 @@ export default function CampaignCreateForm({
           {/* Origem A: contatos salvos */}
           <div>
             <p className="text-[13px] font-medium text-foreground">
-              Contatos salvos {selectedContacts.size > 0 && `(${selectedContacts.size} selecionado(s))`}
+              Contatos salvos{' '}
+              {selectedContacts.size > 0 && `(${selectedContacts.size} selecionado(s))`}
             </p>
             <Input
               value={contactSearch}
@@ -523,7 +530,8 @@ export default function CampaignCreateForm({
             quando há anexo (um envio só, nunca dois). */}
         <div className="mt-4">
           <p className="text-[13px] font-medium text-foreground">
-            Anexo <span className="text-muted-foreground">(opcional — imagem, vídeo ou documento)</span>
+            Anexo{' '}
+            <span className="text-muted-foreground">(opcional — imagem, vídeo ou documento)</span>
           </p>
           <input
             ref={mediaInputRef}
@@ -537,7 +545,9 @@ export default function CampaignCreateForm({
               <div className="flex min-w-0 items-center gap-2">
                 <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium text-foreground">{mediaFile.name}</p>
+                  <p className="truncate text-[13px] font-medium text-foreground">
+                    {mediaFile.name}
+                  </p>
                   <p className="text-[12px] text-muted-foreground">
                     {mediaContentTypeFor(mediaFile)} · {Math.round(mediaFile.size / 1024)}KB
                   </p>
@@ -598,14 +608,18 @@ export default function CampaignCreateForm({
         </dl>
         <p className="mt-3 rounded-lg bg-muted/40 px-3 py-2.5 text-[12px] leading-[1.5] text-muted-foreground">
           Este número é uma prévia. Ao confirmar, a campanha é criada (como rascunho, sem enviar
-          nada) e o servidor calcula a contagem REAL — descontando quem pediu opt-out, quem já
-          está em atendimento humano e quem foi contatado por outra campanha há menos de 7 dias.
-          Você ainda precisará abrir a campanha e confirmar &quot;Iniciar envio&quot; separadamente
-          para disparar de verdade.
+          nada) e o servidor calcula a contagem REAL — descontando quem pediu opt-out, quem já está
+          em atendimento humano e quem foi contatado por outra campanha há menos de 7 dias. Você
+          ainda precisará abrir a campanha e confirmar &quot;Iniciar envio&quot; separadamente para
+          disparar de verdade.
         </p>
         {errorMessage && <p className="mt-2 text-[12.5px] text-destructive">{errorMessage}</p>}
         <div className="mt-4 flex items-center gap-2">
-          <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || submitting}>
+          <Button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit || submitting}
+          >
             {submitting ? 'Criando…' : 'Criar campanha (rascunho)'}
           </Button>
           {onClose && (

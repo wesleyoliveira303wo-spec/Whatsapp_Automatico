@@ -524,7 +524,10 @@ export class CampaignService {
       throw new InvalidCampaignTransitionError(campaign.status, 'attach_media');
     }
     if (media.buffer.byteLength > MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES) {
-      throw new CampaignMediaTooLargeError(media.buffer.byteLength, MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES);
+      throw new CampaignMediaTooLargeError(
+        media.buffer.byteLength,
+        MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES,
+      );
     }
     if (isDeclaredMediaCategoryImplausible(media.contentType, media.buffer)) {
       const detected = sniffMediaCategory(media.buffer) ?? 'desconhecida';

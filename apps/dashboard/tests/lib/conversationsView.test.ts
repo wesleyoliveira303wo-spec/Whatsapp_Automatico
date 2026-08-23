@@ -184,7 +184,9 @@ describe('reconcileConversationIdentities (performance, auditoria 2026-08-22)', 
   });
 
   it('detecta mudanca de tag (unico campo nao escalar da interface)', () => {
-    const previous = [buildConversation('a', { tags: [{ id: 't1', name: 'VIP', color: 'green' }] })];
+    const previous = [
+      buildConversation('a', { tags: [{ id: 't1', name: 'VIP', color: 'green' }] }),
+    ];
     const next = [buildConversation('a', { tags: [{ id: 't1', name: 'VIP+', color: 'green' }] })];
 
     expect(reconcileConversationIdentities(previous, next)[0]).toBe(next[0]);

@@ -104,7 +104,9 @@ describe('MessageTimeline (Milestone 6, Bloco M6E-2)', () => {
       // do cliente (achado real: um áudio recebido marcado como "gerado pela IA").
       render(
         <MessageTimeline
-          messages={[buildMessage({ id: 'm1', direction: 'inbound', content: 'Pergunta do cliente' })]}
+          messages={[
+            buildMessage({ id: 'm1', direction: 'inbound', content: 'Pergunta do cliente' }),
+          ]}
           interactions={[buildInteraction({ messageId: 'm1' })]}
           errorMessage={null}
           onRetry={jest.fn()}

@@ -7,7 +7,11 @@ import { ConversationNotHumanError } from '../../../src/services/conversations/d
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../auth/testDoubles';
-import { FakeConversationRepository, FakeMessageRepository, FakeContactResolver } from './testDoubles';
+import {
+  FakeConversationRepository,
+  FakeMessageRepository,
+  FakeContactResolver,
+} from './testDoubles';
 import { ConversationContactUnavailableError } from '../../../src/services/conversations/domain/errors/ConversationContactUnavailableError';
 import { FakeOutboundMessageDispatcher } from '../whatsapp/infrastructure/FakeOutboundMessageDispatcher';
 import { FakeMediaDownloader } from '../whatsapp/infrastructure/FakeMediaDownloader';

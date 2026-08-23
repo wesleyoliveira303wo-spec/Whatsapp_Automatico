@@ -283,7 +283,12 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
         {
           ...SAMPLE_ROW,
           conversations: [
-            { id: 'conv-1', sessionName: 'vendas', lastMessageAt: null, contactName: 'Apelido WhatsApp' },
+            {
+              id: 'conv-1',
+              sessionName: 'vendas',
+              lastMessageAt: null,
+              contactName: 'Apelido WhatsApp',
+            },
           ],
         },
       ]);

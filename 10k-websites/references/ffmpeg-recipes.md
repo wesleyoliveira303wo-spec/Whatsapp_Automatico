@@ -94,6 +94,7 @@ Set `-crf` from the compression fork above: 18 as the normal starting point, har
 **Fallback when the raws are unavailable:** encode every segment with IDENTICAL parameters (the scrub encode above: same codec, resolution, frame rate, pixel format, `-g 8`), then concatenate losslessly with the concat demuxer:
 
 `concat-list.txt`:
+
 ```
 file 'seg1-scrub.mp4'
 file 'seg2-scrub.mp4'

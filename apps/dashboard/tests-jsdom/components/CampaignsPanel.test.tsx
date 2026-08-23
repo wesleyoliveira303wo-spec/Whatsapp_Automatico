@@ -42,7 +42,9 @@ function campaign(over: Partial<clientApi.Campaign> = {}): clientApi.Campaign {
   };
 }
 
-function overview(over: Partial<clientApi.CampaignSessionOverview> = {}): clientApi.CampaignSessionOverview {
+function overview(
+  over: Partial<clientApi.CampaignSessionOverview> = {},
+): clientApi.CampaignSessionOverview {
   return {
     totalCampaigns: 1,
     statusCounts: { draft: 0, scheduled: 0, running: 0, paused: 0, completed: 1, cancelled: 0 },
@@ -100,7 +102,9 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
     expect(screen.getByText('Campanhas')).toBeInTheDocument();
     expect(
-      screen.getByText('Envie mensagens para seus contatos e acompanhe os resultados em tempo real.'),
+      screen.getByText(
+        'Envie mensagens para seus contatos e acompanhe os resultados em tempo real.',
+      ),
     ).toBeInTheDocument();
 
     const statCards = within(screen.getByTestId('campaigns-stat-cards'));
@@ -155,7 +159,9 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
     await renderPanel();
     await waitFor(() => {
-      expect(within(screen.getByTestId('campaigns-table')).getByText('Boas-vindas')).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('campaigns-table')).getByText('Boas-vindas'),
+      ).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByPlaceholderText('Buscar campanha por nome…'), {

@@ -17,8 +17,18 @@ import {
 } from 'lucide-react';
 
 import { useContacts } from '@/hooks/useContacts';
-import { ClientApiError, type Contact, type ContactImportReport, type ContactStatusFilter } from '@/lib/clientApi';
-import { formatPhoneNumber, formatPersonLabel, formatPersonLabelParts, formatDateTime } from '@/lib/formatters';
+import {
+  ClientApiError,
+  type Contact,
+  type ContactImportReport,
+  type ContactStatusFilter,
+} from '@/lib/clientApi';
+import {
+  formatPhoneNumber,
+  formatPersonLabel,
+  formatPersonLabelParts,
+  formatDateTime,
+} from '@/lib/formatters';
 import DisplayNameParts from '@/components/DisplayNameParts';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
@@ -118,7 +128,8 @@ function ContactAvatar({ contact }: { contact: Contact }): JSX.Element {
   // apelido" — dividir esse texto por espaço geraria iniciais sem sentido a
   // partir do "+55"/DDD). Mesma prioridade de `labelFor`: nome salvo > apelido
   // do WhatsApp > telefone.
-  const initialsSource = contact.name ?? contact.lastConversationContactName ?? formatPhoneNumber(contact.phoneE164);
+  const initialsSource =
+    contact.name ?? contact.lastConversationContactName ?? formatPhoneNumber(contact.phoneE164);
   const palette = AVATAR_PALETTE[hashString(contact.id) % AVATAR_PALETTE.length];
   return (
     <div
@@ -193,10 +204,7 @@ function StatCard({ icon: Icon, label, value, tone }: StatCardProps): JSX.Elemen
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
       <div
-        className={cn(
-          'grid h-9 w-9 shrink-0 place-items-center rounded-lg',
-          TONE_CLASSES[tone],
-        )}
+        className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-lg', TONE_CLASSES[tone])}
       >
         <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
       </div>
@@ -422,7 +430,10 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
     setBulkActionPending(true);
     try {
       await Promise.all(Array.from(selectedIds).map((id) => optOut(id)));
-      toast({ variant: 'success', title: `${selectedIds.size} contato(s) marcado(s) como opt-out` });
+      toast({
+        variant: 'success',
+        title: `${selectedIds.size} contato(s) marcado(s) como opt-out`,
+      });
       setSelectedIds(new Set());
     } catch {
       toast({ variant: 'destructive', title: 'Alguns contatos não puderam ser atualizados' });
@@ -717,7 +728,9 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                         size="icon"
                         className="h-8 w-8 shrink-0"
                         aria-label="Mais ações"
-                        onClick={() => setOpenMenuId((current) => (current === contact.id ? null : contact.id))}
+                        onClick={() =>
+                          setOpenMenuId((current) => (current === contact.id ? null : contact.id))
+                        }
                       >
                         <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
                       </Button>
@@ -880,7 +893,8 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                   <span className="h-2.5 w-2.5 shrink-0 rounded-[3px] bg-warning" />
                   <span className="text-foreground">Sem conversa</span>
                   <span className="ml-auto text-muted-foreground">
-                    {percentOf(stats.withoutConversation, stats.total)}% ({stats.withoutConversation})
+                    {percentOf(stats.withoutConversation, stats.total)}% (
+                    {stats.withoutConversation})
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">

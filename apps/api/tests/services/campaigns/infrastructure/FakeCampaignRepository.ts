@@ -106,9 +106,7 @@ export class FakeCampaignRepository implements CampaignRepository {
       const existing = [...this.recipients.values()].find(
         (row) =>
           row.campaignId === campaignId &&
-          (draft.contactId
-            ? row.contactId === draft.contactId
-            : row.phoneE164 === draft.phoneE164),
+          (draft.contactId ? row.contactId === draft.contactId : row.phoneE164 === draft.phoneE164),
       );
       if (existing) continue; // skipDuplicates
       const id = `recipient-${this.nextRecipientId++}`;
@@ -522,7 +520,9 @@ export class FakeCampaignRepository implements CampaignRepository {
       statusCounts[campaign.status] += 1;
     }
 
-    const totalSent = recipients.filter((r) => r.status === 'sent' || r.status === 'replied').length;
+    const totalSent = recipients.filter(
+      (r) => r.status === 'sent' || r.status === 'replied',
+    ).length;
     const totalReplied = recipients.filter((r) => r.status === 'replied').length;
 
     const now = FIXED_NOW;
@@ -531,12 +531,15 @@ export class FakeCampaignRepository implements CampaignRepository {
     const inRange = (date: Date | undefined, start: Date, end?: Date): boolean =>
       Boolean(date && date >= start && (!end || date < end));
 
-    const campaignsThisMonth = campaigns.filter((c) => inRange(c.createdAt, currentMonthStart)).length;
+    const campaignsThisMonth = campaigns.filter((c) =>
+      inRange(c.createdAt, currentMonthStart),
+    ).length;
     const campaignsLastMonth = campaigns.filter((c) =>
       inRange(c.createdAt, previousMonthStart, currentMonthStart),
     ).length;
     const sentThisMonth = recipients.filter(
-      (r) => (r.status === 'sent' || r.status === 'replied') && inRange(r.sentAt, currentMonthStart),
+      (r) =>
+        (r.status === 'sent' || r.status === 'replied') && inRange(r.sentAt, currentMonthStart),
     ).length;
     const sentLastMonth = recipients.filter(
       (r) =>

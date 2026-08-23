@@ -244,7 +244,14 @@ export class WhatsAppCampaignMessageSender implements CampaignMessageSender {
       content,
       contentType: media?.contentType ?? 'text',
       ...(media
-        ? { media: { mimeType: media.mimeType, url: '', mediaKeyEncrypted: '', fileName: media.fileName } }
+        ? {
+            media: {
+              mimeType: media.mimeType,
+              url: '',
+              mediaKeyEncrypted: '',
+              fileName: media.fileName,
+            },
+          }
         : {}),
       occurredAt: new Date(),
     });

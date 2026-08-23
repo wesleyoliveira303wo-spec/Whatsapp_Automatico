@@ -167,7 +167,11 @@ export default function ContactFormDialog({
               Cancelar
             </Button>
           </DialogClose>
-          <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || submitting}>
+          <Button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit || submitting}
+          >
             {submitting ? 'Salvando…' : isEdit ? 'Salvar' : 'Adicionar'}
           </Button>
         </DialogFooter>

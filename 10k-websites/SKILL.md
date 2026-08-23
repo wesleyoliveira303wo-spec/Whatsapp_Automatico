@@ -56,13 +56,14 @@ Assume nothing about what is already set up. Some users arrive with Higgsfield c
 3. **Install the automatic things yourself** (ask once, then do them): ffmpeg (Windows `winget install ffmpeg`, Mac `brew install ffmpeg`) and Node.js (winget/brew, or nodejs.org if those fail). Verify each by running it after install.
 4. **Higgsfield, the one manual step of setup.** Have the user create a free account at higgsfield.ai (the free trial is the right start; the honest-costs talk covers it). Then connect it as a custom connector, which is a set of clicks only the user can do. Give them the exact path and then wait: in Claude Code, the plus button, then Connectors, then Manage connectors, then Add, then Add custom connector. Name it Higgsfield, paste this URL: `https://mcp.higgsfield.ai/mcp`, click Add, then Connect. Their browser opens to Higgsfield; they sign in once and click Allow, and the connector needs no app restart. Then wait with a clickable check-in: one option, "Done, check it," to click when they have finished. When they click it, VERIFY: the Higgsfield tools respond and a balance call returns their credits. If the tools do not appear right after connecting, one full close-and-reopen of the app loads the fresh connector: have them return to this same chat and check again. If the check still fails, help them retrace the clicks instead of moving on. Once verified, give the honest-costs talk (see `references/deploy.md`).
 5. **Declare setup complete** with the checklist all ✓. If the whole process ever needs an app restart, it happens in Phase 10 when hosting connects, and even there only sometimes. The Phase 1 close-and-reopen for Higgsfield is a rare contingency, not part of the plan.
-Hosting and domains never come up in this phase. Not in the checklist, not in the costs talk, not as a heads-up. Every hosting question, including whether the user wants a custom domain, belongs to Phase 10, where it is asked at the moment it matters. After the checklist is complete, go straight to the creative work.
+   Hosting and domains never come up in this phase. Not in the checklist, not in the costs talk, not as a heads-up. Every hosting question, including whether the user wants a custom domain, belongs to Phase 10, where it is asked at the moment it matters. After the checklist is complete, go straight to the creative work.
 
 **The wizard's rule, always:** one step at a time, in order, and no step is complete until you have verified it with your own check. A user saying "done" is the signal to verify, not the verification.
 
 ## Phase 2: The design conversation
 
 Ask the user, in plain words, one at a time, each through the clickable-choice question tool (offer the likely answers as options; Other catches everything else):
+
 1. What are we working with, and who is it for? Four honest branches, and the answer sets the visuals plan:
    - **A real thing with its own photos:** a real product photo can be the video's starting frame.
    - **An invented brand:** generate everything, and the footer discloses the brand is fictional.
@@ -79,6 +80,7 @@ With the conversation answered, research the niche's real customers before desig
 The method: use web search to read real reviews and forum threads in the niche. A handful of sources is enough. Collect the exact recurring phrases for the pains, the outcomes people want, and the objections that stop them. If web access is unavailable, ask the user to paste a few real reviews into the chat or name the objections they hear most often.
 
 Use what you find three ways:
+
 - **Write the site's copy in the buyers' own words.** Their phrasing for the pain, their phrasing for the outcome. One placement rule earned in a real build: when the site's subject is a person (the owner, the maker, the chef, the artist), the hero introduces them in their own confident voice, and the buyers' pain language does its work in the sections below. A pain hook as the opening words over someone's face reads as someone else's complaint, and users reject it.
 - **Structure the whole page to funnel toward ONE call to action.** Every section earns the next scroll toward it.
 - **Include the trust furniture that converts:** proof, clear steps, answers to the real objections you found, and one final form.
@@ -86,6 +88,7 @@ Use what you find three ways:
 Beautiful is the entry fee. Converting is the $10,000.
 
 Then do the designer's work yourself and present it back simply, research findings first, proposal second, in one message when the flow suits it:
+
 - **Propose two or three hero concepts** that obey every law in `references/prompt-laws.md`. For each, one plain sentence of what the visitor sees as they scroll and what the final resting frame is. Recommend one. One honest line belongs beside the concepts: phone visitors see a beautifully designed still image instead of the scrolling video, which plays on laptops and desktops. Said here, as a design fact, it never has to interrupt a money moment later.
 - **Derive the brand around the chosen concept:** a name if one is needed, a palette of three to five colors pulled from the world of the footage itself so page and video read as one world, and fonts with real character: a display face, a body face, usually a mono for small labels. Never Inter or Roboto as display, and pick faces from the brand's own world rather than a habitual default.
 - **Plan the layout from the footage's composition:** decide where the action lives in frame and place captions and story in the empty space around it, keeping the action lane clear.
@@ -94,6 +97,7 @@ Then do the designer's work yourself and present it back simply, research findin
 ## Phase 4: Choose the depth tier
 
 Bigger in scope, not more complicated. Pick per project and tell the user what each costs:
+
 - **Tier 1, the single journey:** one 6-second generated shot scrubbed by scroll, captions in the negative space, the page settles at the composed ending. The proven default; start here unless the concept demands more.
 - **Tier 2, the chained journey (15 to 20 seconds of scroll):** multiple segments chained by extracting the final frame of clip N and using it as the start image of clip N+1, joined into one continuous long scrub. Each segment gets its own gate and its own cheap re-roll. This is how "zoom into the building, through the rooms" journeys are made. Recipe in `references/prompt-laws.md` and `references/ffmpeg-recipes.md`. Runs through the full Creative Director's Loop in Phase 5 before any generation.
 - **Tier 3, the choreographed site:** the video is DESIGNED for the page before generation. Shots planned with lulls and negative space where headlines will land, moments the page's text and effects sync to. The storyboard and the sitemap are written together. Also runs through the full Creative Director's Loop in Phase 5.
