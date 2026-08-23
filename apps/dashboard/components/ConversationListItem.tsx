@@ -86,72 +86,73 @@ function ConversationListItemImpl(
               : 'hover:bg-muted',
         )}
       >
-      {active && (
-        <span
-          className="absolute left-[3px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary"
-          aria-hidden="true"
-        />
-      )}
-      <ContactAvatar
-        sessionName={conversation.sessionName}
-        contactJid={conversation.contactJid}
-        contactName={conversation.contactName}
-        savedContactName={conversation.savedContactName}
-        waitingForHuman={waitingForHuman}
-        className="h-[38px] w-[38px] text-[13px]"
-        // CORREÇÃO 2026-08-18: a lista tem uma linha por conversa — buscar
-        // foto ao vivo para cada uma martelava o socket do Baileys sem
-        // parar (achado real de produção, contribuiu para falhas de envio).
-        // Só iniciais aqui; a foto de verdade continua no cabeçalho da
-        // conversa aberta (`ConversationContextPanel`), onde é só 1 contato.
-        fetchLive={false}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <p className="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-tight text-foreground">
-            <DisplayNameParts
-              {...formatContactDisplayNameParts(
-                conversation.contactJid,
-                conversation.contactName,
-                conversation.savedContactName,
-              )}
-            />
-          </p>
+        {active && (
           <span
-            className={cn(
-              'shrink-0 text-[10.5px] font-semibold',
-              !aiEnabled
-                ? 'text-destructive'
-                : conversation.status === 'human'
-                  ? 'text-warning-emphasis'
-                  : 'text-success-emphasis',
-            )}
-          >
-            {!aiEnabled ? 'IA desativada' : conversation.status === 'human' ? 'Humano' : 'Bot'}
-          </span>
-          <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
-            {formatConversationTimestamp(conversation.lastMessageAt ?? conversation.createdAt)}
-          </span>
-        </div>
-        <div className="mt-[3px] flex items-center gap-2">
-          {/* Reskin 2026-08-06 (Design System, tela Conversas) — a prévia SEMPRE
+            className="absolute left-[3px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary"
+            aria-hidden="true"
+          />
+        )}
+        <ContactAvatar
+          sessionName={conversation.sessionName}
+          contactJid={conversation.contactJid}
+          contactName={conversation.contactName}
+          savedContactName={conversation.savedContactName}
+          waitingForHuman={waitingForHuman}
+          className="h-[38px] w-[38px] text-[13px]"
+          // CORREÇÃO 2026-08-18: a lista tem uma linha por conversa — buscar
+          // foto ao vivo para cada uma martelava o socket do Baileys sem
+          // parar (achado real de produção, contribuiu para falhas de envio).
+          // Só iniciais aqui; a foto de verdade continua no cabeçalho da
+          // conversa aberta (`ConversationContextPanel`), onde é só 1 contato.
+          fetchLive={false}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <p className="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-tight text-foreground">
+              <DisplayNameParts
+                {...formatContactDisplayNameParts(
+                  conversation.contactJid,
+                  conversation.contactName,
+                  conversation.savedContactName,
+                )}
+              />
+            </p>
+            <span
+              className={cn(
+                'shrink-0 text-[10.5px] font-semibold',
+                !aiEnabled
+                  ? 'text-destructive'
+                  : conversation.status === 'human'
+                    ? 'text-warning-emphasis'
+                    : 'text-success-emphasis',
+              )}
+            >
+              {!aiEnabled ? 'IA desativada' : conversation.status === 'human' ? 'Humano' : 'Bot'}
+            </span>
+            <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
+              {formatConversationTimestamp(conversation.lastMessageAt ?? conversation.createdAt)}
+            </span>
+          </div>
+          <div className="mt-[3px] flex items-center gap-2">
+            {/* Reskin 2026-08-06 (Design System, tela Conversas) — a prévia SEMPRE
               mostra a última mensagem real (ou o rótulo de status na ausência
               dela), mesmo numa conversa aguardando atendente: o mockup nunca
               sobrepõe esse texto, o sinal de escalonamento já é comunicado
               pelo ponto no avatar + pelo selo abaixo. */}
-          <p className="min-w-0 flex-1 truncate text-[12.5px] leading-[1.35] text-muted-foreground">
-            {conversation.lastMessagePreview || formatConversationStatusLabel(conversation.status)}
-          </p>
-          {conversation.unreadCount > 0 && (
-            <span
-              className="grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground"
-              title={`${conversation.unreadCount} mensagem(ns) não lida(s)`}
-            >
-              {conversation.unreadCount}
-            </span>
-          )}
-        </div>
-        {/*
+            <p className="min-w-0 flex-1 truncate text-[12.5px] leading-[1.35] text-muted-foreground">
+              {conversation.lastMessagePreview ||
+                formatConversationStatusLabel(conversation.status)}
+            </p>
+            {conversation.unreadCount > 0 && (
+              <span
+                className="grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground"
+                title={`${conversation.unreadCount} mensagem(ns) não lida(s)`}
+              >
+                {conversation.unreadCount}
+              </span>
+            )}
+          </div>
+          {/*
           ONDA 1 DO REDESIGN (2026-08-22) — altura de linha constante (regra
           do próprio Design System, §1: "Ritmo previsível... o olho aprende o
           padrão uma vez"). Esta faixa (selo de estágio + tags) só renderizava
@@ -162,58 +163,58 @@ function ConversationListItemImpl(
           conteúdo — uma linha "Novo" sem tag fica só um pouco de respiro em
           branco, não uma linha mais curta.
         */}
-        <div className="mt-[7px] flex h-5 flex-nowrap items-center gap-[5px] overflow-hidden">
-          {/* Selos de Pipeline — só um é exibido por vez:
+          <div className="mt-[7px] flex h-5 flex-nowrap items-center gap-[5px] overflow-hidden">
+            {/* Selos de Pipeline — só um é exibido por vez:
               - "Aguardando atendente" (reforma do escalonamento): a IA pediu ajuda humana.
               - "Não cliente" (ADR #96): conversa excluída do funil comercial.
               - Estágio atual (ADR #84): estágio do funil quando dentro do pipeline.
                 "Novo" (default) é omitido — não agrega informação, toda conversa
                 começa aí. Os terminais "Fechado"/"Perdido" recebem cores distintas
                 para reconhecimento imediato. */}
-          {waitingForHuman ? (
-            <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/[.13] px-[7px] text-[11px] font-semibold text-warning-emphasis">
-              <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
-              Aguardando atendente
-            </span>
-          ) : conversation.excludedFromPipeline ? (
-            <span
-              className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-dashed border-muted-foreground/40 px-[7px] text-[11px] font-medium text-muted-foreground"
-              title="Marcada como Não cliente no Pipeline — a IA não responde aqui."
-            >
-              <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
-              Não cliente
-            </span>
-          ) : conversation.stage !== 'new' ? (
-            <span
-              className={cn(
-                'inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-[7px] text-[11px] font-semibold',
-                conversation.stage === 'contacted' && 'bg-muted text-muted-foreground',
-                conversation.stage === 'negotiating' && 'bg-warning/[.12] text-warning-emphasis',
-                conversation.stage === 'closed_won' && 'bg-success/[.12] text-success-emphasis',
-                conversation.stage === 'closed_lost' &&
-                  'bg-destructive/10 text-destructive-emphasis',
-              )}
-              title={`Estágio no Pipeline: ${formatConversationStageLabel(conversation.stage)}`}
-            >
-              <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
-              {formatConversationStageLabel(conversation.stage)}
-            </span>
-          ) : null}
-          {conversation.tags.slice(0, MAX_LIST_TAGS).map((tag) => (
-            <TagChip
-              key={tag.id}
-              name={tag.name}
-              color={tag.color}
-              className="h-5 shrink-0 px-[7px] text-[11px] font-medium"
-            />
-          ))}
-          {conversation.tags.length > MAX_LIST_TAGS && (
-            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
-              +{conversation.tags.length - MAX_LIST_TAGS}
-            </span>
-          )}
+            {waitingForHuman ? (
+              <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/[.13] px-[7px] text-[11px] font-semibold text-warning-emphasis">
+                <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
+                Aguardando atendente
+              </span>
+            ) : conversation.excludedFromPipeline ? (
+              <span
+                className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-dashed border-muted-foreground/40 px-[7px] text-[11px] font-medium text-muted-foreground"
+                title="Marcada como Não cliente no Pipeline — a IA não responde aqui."
+              >
+                <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
+                Não cliente
+              </span>
+            ) : conversation.stage !== 'new' ? (
+              <span
+                className={cn(
+                  'inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-[7px] text-[11px] font-semibold',
+                  conversation.stage === 'contacted' && 'bg-muted text-muted-foreground',
+                  conversation.stage === 'negotiating' && 'bg-warning/[.12] text-warning-emphasis',
+                  conversation.stage === 'closed_won' && 'bg-success/[.12] text-success-emphasis',
+                  conversation.stage === 'closed_lost' &&
+                    'bg-destructive/10 text-destructive-emphasis',
+                )}
+                title={`Estágio no Pipeline: ${formatConversationStageLabel(conversation.stage)}`}
+              >
+                <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-current opacity-85" />
+                {formatConversationStageLabel(conversation.stage)}
+              </span>
+            ) : null}
+            {conversation.tags.slice(0, MAX_LIST_TAGS).map((tag) => (
+              <TagChip
+                key={tag.id}
+                name={tag.name}
+                color={tag.color}
+                className="h-5 shrink-0 px-[7px] text-[11px] font-medium"
+              />
+            ))}
+            {conversation.tags.length > MAX_LIST_TAGS && (
+              <span className="shrink-0 text-[11px] font-medium text-muted-foreground">
+                +{conversation.tags.length - MAX_LIST_TAGS}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
       </Link>
     </motion.div>
   );
