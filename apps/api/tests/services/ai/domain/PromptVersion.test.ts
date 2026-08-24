@@ -683,7 +683,9 @@ describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro
   });
 
   it('v8 não tinha nenhuma instrução para a ausência do bloco de identidade — o gap real', () => {
-    expect(PROMPT_VERSIONS.v8.systemPrompt).not.toMatch(/SUA IDENTIDADE E SEU CATÁLOGO VÊM EXCLUSIVAMENTE/i);
+    expect(PROMPT_VERSIONS.v8.systemPrompt).not.toMatch(
+      /SUA IDENTIDADE E SEU CATÁLOGO VÊM EXCLUSIVAMENTE/i,
+    );
   });
 
   it('define identidade/catálogo como vindos exclusivamente do bloco "# Informações da empresa"', () => {
@@ -703,7 +705,9 @@ describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro
 
   it('mesmo sem empresa cadastrada, a fase de descoberta continua (cumprimentar e perguntar o nome da pessoa)', () => {
     const prompt = PROMPT_VERSIONS.v9.systemPrompt;
-    expect(prompt).toMatch(/Continue cumprimentando normalmente e pode perguntar o nome da pessoa/i);
+    expect(prompt).toMatch(
+      /Continue cumprimentando normalmente e pode perguntar o nome da pessoa/i,
+    );
     expect(prompt).toMatch(/ainda\s+estou me organizando por aqui, mas já te escuto/i);
   });
 
@@ -722,7 +726,9 @@ describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro
 
   it('mantém tudo o que v8 já garantia: explorar antes de escalar, ritmo, distinção de origem, formato', () => {
     const prompt = PROMPT_VERSIONS.v9.systemPrompt;
-    expect(prompt).toMatch(/VOCÊ CONDUZ A CONVERSA INTEIRA — da apresentação até o cliente estar convencido a contratar/i);
+    expect(prompt).toMatch(
+      /VOCÊ CONDUZ A CONVERSA INTEIRA — da apresentação até o cliente estar convencido a contratar/i,
+    );
     expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
     expect(prompt).toMatch(/CASO 1 — O CLIENTE PROCUROU VOCÊ/i);
     expect(prompt).toMatch(/CASO 2 — VOCÊ PROCUROU O CLIENTE/i);
@@ -743,8 +749,12 @@ describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro
 
   it('a closingDirective traz os DOIS exemplos (com e sem empresa cadastrada), sem inventar nome no segundo', () => {
     const directive = PROMPT_VERSIONS.v9.closingDirective!;
-    expect(directive).toMatch(/quando NÃO há nenhuma empresa cadastrada ainda \(sem inventar nome\)/i);
-    expect(directive).toContain('Ainda estou me organizando por aqui, mas já te escuto. Como posso te chamar?');
+    expect(directive).toMatch(
+      /quando NÃO há nenhuma empresa cadastrada ainda \(sem inventar nome\)/i,
+    );
+    expect(directive).toContain(
+      'Ainda estou me organizando por aqui, mas já te escuto. Como posso te chamar?',
+    );
   });
 
   it('não cola um nome real de tenant nos exemplos — o produto é multi-tenant', () => {
