@@ -202,7 +202,7 @@ export class ConversationsService {
     await this.outboundMessageDispatcher.dispatch({
       tenantId,
       conversationId,
-      content,
+      content: [content],
       idempotencyKey: randomUUID(),
     });
     await this.audit(tenantId, actor.userId, 'conversation.agent_message', conversationId, meta);

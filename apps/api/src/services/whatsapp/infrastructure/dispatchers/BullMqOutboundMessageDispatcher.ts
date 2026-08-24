@@ -39,10 +39,14 @@ export class BullMqOutboundMessageDispatcher implements OutboundMessageDispatche
     const jobId = command.aiInteractionId ?? command.idempotencyKey;
 
     // DEFESA EM PROFUNDIDADE (2026-08-21): o BullMQ recusa um `jobId` com `:`
-    // que não tenha exatamente 3 partes (`job.js`, `validateOptions`), e essa
-    // exceção derruba o job de IA inteiro — foi assim que os balões 2+ de toda
-    // resposta sumiram em silêncio por semanas. O `throw` daqui é MUITO mais
-    // legível que o "Custom Id cannot contain :" da lib, e aponta o culpado.
+    // que não tenha exatamente 3 partes (`job.js`, `validateOptions`). Esse
+    // exato bug já derrubou o job de IA inteiro no passado (histórico: um
+    // esquema antigo de `jobId` por parágrafo usava `-p<índice>` por causa
+    // disso — substituído na Onda 3 do redesign, 2026-08-24, por um único
+    // job carregando todos os parágrafos, ver `OutboundMessageCommand.content`).
+    // Guarda mantida como defesa em profundidade para qualquer `idempotencyKey`
+    // futura que venha a conter `:`. O `throw` daqui é MUITO mais legível que
+    // o "Custom Id cannot contain :" da lib, e aponta o culpado.
     if (jobId?.includes(':') && jobId.split(':').length !== 3) {
       throw new Error(
         `jobId inválido para o BullMQ (contém ":" e não tem 3 partes): "${jobId}". ` +

@@ -31,7 +31,30 @@
 export interface OutboundMessageCommand {
   tenantId: string;
   conversationId: string;
-  content: string;
+  /**
+   * Onda 3 do redesign (2026-08-24) — CAUSA RAIZ MEDIDA de um bug real
+   * relatado pelo fundador ("o último balão vira o primeiro"): até esta
+   * rodada, uma resposta de IA em N parágrafos virava N jobs INDEPENDENTES
+   * nesta fila (`AiReplyJobProcessor` despachava um por um, com sleep entre
+   * cada). Medido em produção (logs reais + reprodução isolada contra o
+   * Redis real): mesmo com a fila configurada para `concurrency: 1` e sem
+   * nenhum `delay` explícito, os jobs de uma mesma rajada eram processados
+   * fora de ordem — em alguns casos um job simplesmente não deixava
+   * nenhum rastro de log na aplicação (`OutboundCommandConsumer.consume()`
+   * nunca executava de forma observável) mesmo o BullMQ registrando-o como
+   * concluído, evidência de uma corrida real entre jobs concorrentes da
+   * MESMA rajada — não uma falha de prompt nem do laço de despacho (ambos
+   * confirmados corretos, na ordem certa, antes desta medição).
+   *
+   * A correção estrutural: uma resposta inteira (todos os parágrafos) vira
+   * UM ÚNICO job. `OutboundCommandConsumer` envia cada item desta lista
+   * SEQUENCIALMENTE, dentro da mesma execução — elimina de vez a
+   * possibilidade de corrida entre parágrafos da mesma resposta, porque não
+   * existem mais jobs independentes concorrendo entre si. Mensagens de
+   * fluxo humano (operador, aviso de handoff) continuam funcionando
+   * normalmente como uma lista de 1 item.
+   */
+  content: string[];
   /**
    * Id da `AiInteraction` que originou este envio (fluxo da IA, Bloco 4).
    * OPCIONAL desde a feature de resposta pelo operador (N2): mensagens de

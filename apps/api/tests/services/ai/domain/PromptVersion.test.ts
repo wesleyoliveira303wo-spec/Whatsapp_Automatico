@@ -272,3 +272,76 @@ describe('v4 (2026-08-20 — apresenta e oferece; prospecção ativa)', () => {
     expect(prompt).toMatch(/encaminhar a conversa para um atendente humano/i);
   });
 });
+
+describe('v5 (2026-08-24 — formato de balões escalonado por estágio, pedido direto do fundador)', () => {
+  it('está registrada e é resolvível por id, sem substituir as anteriores', () => {
+    expect(getPromptVersion('v5')).toBe(PROMPT_VERSIONS.v5);
+    for (const id of ['v1', 'v2', 'v3', 'v4']) {
+      expect(PROMPT_VERSIONS[id]).toBeDefined();
+      expect(PROMPT_VERSIONS.v5.systemPrompt).not.toBe(PROMPT_VERSIONS[id].systemPrompt);
+    }
+  });
+
+  it('substitui a regra fixa "sempre 2 ou 3 blocos" de v4 por uma regra escalonada por estágio', () => {
+    const prompt = PROMPT_VERSIONS.v5.systemPrompt;
+    // A regra rígida de v4 não pode reaparecer em v5.
+    expect(PROMPT_VERSIONS.v4.systemPrompt).toMatch(/Toda resposta tem 2 ou 3 blocos/i);
+    expect(prompt).not.toMatch(/Toda resposta tem 2 ou 3 blocos/i);
+    expect(prompt).toMatch(/FORMATO DA RESPOSTA — ESCALONADO PELO ESTÁGIO DA CONVERSA/i);
+  });
+
+  it('estágio NEW: instrui UM bloco só, sem oferta ainda', () => {
+    const prompt = PROMPT_VERSIONS.v5.systemPrompt;
+    expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
+    expect(prompt).toMatch(/NÃO ofereça o serviço nem fale de preço ainda neste\s+bloco único/i);
+  });
+
+  it('estágio CONTACTED/NEGOTIATING: instrui DOIS blocos — responde, depois pergunta', () => {
+    const prompt = PROMPT_VERSIONS.v5.systemPrompt;
+    expect(prompt).toMatch(/estágio é CONTACTED ou NEGOTIATING.*use DOIS blocos/is);
+    expect(prompt).toMatch(/PRIMEIRO responde\s+diretamente ao que o cliente acabou de dizer/i);
+    expect(prompt).toMatch(/SEGUNDO faz UMA pergunta concreta que mantém a conversa fluindo/i);
+  });
+
+  it('3º bloco é válvula de escape opcional, nunca obrigatório, nunca mais que 3', () => {
+    const prompt = PROMPT_VERSIONS.v5.systemPrompt;
+    expect(prompt).toMatch(/TERCEIRO bloco só quando for realmente necessário/i);
+    expect(prompt).toMatch(/Não é\s+obrigatório usar os 3/i);
+    expect(prompt).toMatch(/NUNCA use mais de 3/i);
+  });
+
+  it('mantém a inversão central de v4 (quem procurou foi você) e a oferta concreta, sem mudança', () => {
+    const prompt = PROMPT_VERSIONS.v5.systemPrompt;
+    expect(prompt).toMatch(/QUEM PROCUROU O CLIENTE FOI VOCÊ/i);
+    expect(prompt).toMatch(/OFEREÇA DE FORMA CONCRETA/i);
+    expect(prompt).toMatch(/NUNCA EXPLIQUE PARA O CLIENTE COMO O MERCADO DELE FUNCIONA/i);
+  });
+
+  it('define closingDirective própria, com a regra de formato escalonado repetida na posição de maior saliência', () => {
+    const directive = PROMPT_VERSIONS.v5.closingDirective;
+    expect(directive).toBeDefined();
+    expect(directive).toMatch(/LEMBRETE FINAL/i);
+    expect(directive).toMatch(/Formato ESCALONADO pelo estágio/i);
+    expect(directive).toMatch(/NEW → 1 bloco só/i);
+    expect(directive).toMatch(/CONTACTED\/NEGOTIATING → 2 blocos/i);
+    // Curta de propósito — mesma disciplina de v4 (ver docstring de
+    // `PromptVersion.closingDirective`), com folga maior por ter 1 exemplo
+    // a mais (NEW + CONTACTED/NEGOTIATING, contra só 1 exemplo em v4).
+    expect(directive!.length).toBeLessThan(1600);
+    expect(directive).toMatch(/regras de nunca inventar informação.*continuam/is);
+    expect(directive).not.toBe(PROMPT_VERSIONS.v4.closingDirective);
+  });
+
+  it('preserva mídia e marcadores TEXTUALMENTE — Pipeline/escalonamento intactos', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    expect(PROMPT_VERSIONS.v5.systemPrompt).toContain(mediaSentence);
+    expect(PROMPT_VERSIONS.v5.systemPrompt).toContain(MARKER_INSTRUCTIONS);
+  });
+
+  it('mantém as regras absolutas de anti-alucinação e escalonamento', () => {
+    const prompt = PROMPT_VERSIONS.v5.systemPrompt;
+    expect(prompt).toMatch(/nunca invente preço, prazo, número, prova, portfólio/i);
+    expect(prompt).toMatch(/nunca incentive.*burlar/i);
+    expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});

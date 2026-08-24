@@ -9,7 +9,7 @@ import { FakeConversationRepository, FakeMessageRepository } from '../conversati
 import { FakeAiInteractionRepository } from '../ai/infrastructure/FakeAiInteractionRepository';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 
-function buildSut(): {
+function buildSut(options: { sleepCalls?: number[] } = {}): {
   consumer: OutboundCommandConsumer;
   providerFactory: FakeWhatsAppProviderFactory;
   conversationRepository: FakeConversationRepository;
@@ -25,12 +25,23 @@ function buildSut(): {
   const messageRepository = new FakeMessageRepository();
   const aiInteractionRepository = new FakeAiInteractionRepository();
 
+  // Onda 3 do redesign (2026-08-24) — `sleepFn` fake, sem espera real, só
+  // registra os `ms` pedidos em `options.sleepCalls` quando o teste quiser
+  // inspecioná-los (a pausa entre parágrafos migrou de `AiReplyJobProcessor`
+  // para cá, ver docstring de `OutboundMessageCommand.content`).
+  const sleepFn = (ms: number): Promise<void> => {
+    options.sleepCalls?.push(ms);
+    return Promise.resolve();
+  };
+
   const consumer = new OutboundCommandConsumer(
     registry,
     conversationRepository,
     messageRepository,
     aiInteractionRepository,
     logger,
+    undefined,
+    sleepFn,
   );
 
   return {
@@ -66,7 +77,7 @@ function buildCommand(overrides: Partial<OutboundMessageCommand> = {}): Outbound
     tenantId: 'tenant-1',
     conversationId: 'conversation-1',
     aiInteractionId: 'ai-interaction-1',
-    content: 'Olá! Como posso ajudar?',
+    content: ['Olá! Como posso ajudar?'],
     ...overrides,
   };
 }
@@ -112,6 +123,72 @@ describe('OutboundCommandConsumer', () => {
       expect(aiInteractionRepository.linkMessageCalls).toEqual([
         { interactionId: 'ai-interaction-42', messageId: created.id },
       ]);
+    });
+  });
+
+  /**
+   * Onda 3 do redesign (2026-08-24) — CORREÇÃO ESTRUTURAL de um bug real
+   * medido em produção ("o último balão vira o primeiro"): a pausa entre
+   * parágrafos e o envio sequencial migraram de `AiReplyJobProcessor` (um
+   * job/dispatch por parágrafo, sujeito a corrida entre jobs concorrentes da
+   * mesma rajada) para AQUI — um único `consume()` envia todos os itens de
+   * `command.content` em sequência, dentro da mesma execução, eliminando de
+   * vez a possibilidade de corrida entre parágrafos da mesma resposta.
+   */
+  describe('consume() — múltiplos parágrafos (content: string[])', () => {
+    it('envia cada item na ordem, com pausa entre eles (nunca antes do primeiro)', async () => {
+      const sleepCalls: number[] = [];
+      const { consumer, providerFactory, conversationRepository } = buildSut({ sleepCalls });
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(
+        buildCommand({ content: ['Oi! Tudo bem?', 'O valor é R$ 150.', 'Posso agendar?'] }),
+      );
+
+      const [provider] = providerFactory.getCreatedProviders();
+      expect(provider.sendMessageCalls).toEqual([
+        { to: '5511999999999@s.whatsapp.net', content: 'Oi! Tudo bem?' },
+        { to: '5511999999999@s.whatsapp.net', content: 'O valor é R$ 150.' },
+        { to: '5511999999999@s.whatsapp.net', content: 'Posso agendar?' },
+      ]);
+      // 3 parágrafos → 2 pausas (entre 1º-2º e 2º-3º), nunca antes do 1º.
+      expect(sleepCalls).toHaveLength(2);
+    });
+
+    it('cria uma Message por parágrafo, cada uma com seu próprio conteúdo', async () => {
+      const { consumer, conversationRepository, messageRepository } = buildSut();
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(buildCommand({ content: ['Primeira.', 'Segunda.'] }));
+
+      const created = messageRepository.getAll();
+      expect(created).toHaveLength(2);
+      expect(created.map((m) => m.content)).toEqual(['Primeira.', 'Segunda.']);
+    });
+
+    it('vincula o AiInteraction só à PRIMEIRA Message (nunca repete o vínculo por parágrafo)', async () => {
+      const { consumer, conversationRepository, messageRepository, aiInteractionRepository } =
+        buildSut();
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(
+        buildCommand({ aiInteractionId: 'ai-interaction-42', content: ['Primeira.', 'Segunda.'] }),
+      );
+
+      const [first] = messageRepository.getAll();
+      expect(aiInteractionRepository.linkMessageCalls).toEqual([
+        { interactionId: 'ai-interaction-42', messageId: first.id },
+      ]);
+    });
+
+    it('resposta de um parágrafo só: sem nenhuma pausa (comportamento pré-existente preservado)', async () => {
+      const sleepCalls: number[] = [];
+      const { consumer, conversationRepository } = buildSut({ sleepCalls });
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(buildCommand({ content: ['Corte custa R$ 50.'] }));
+
+      expect(sleepCalls).toHaveLength(0);
     });
   });
 

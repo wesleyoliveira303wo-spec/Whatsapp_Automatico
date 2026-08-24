@@ -64,7 +64,7 @@ function buildMessage(overrides: Partial<Message> & Pick<Message, 'id' | 'occurr
 
 function buildSut(
   historyLimit?: number,
-  options: { sleepCalls?: number[]; now?: () => Date; handoffNoticeRepeatAfterMs?: number } = {},
+  options: { now?: () => Date; handoffNoticeRepeatAfterMs?: number } = {},
 ): {
   processor: AiReplyJobProcessor;
   conversationRepository: FakeConversationRepository;
@@ -86,14 +86,11 @@ function buildSut(
     new PromptBuilder(),
     aiInteractionRepository,
   );
-  // Fase 1 (2026-08-07, divisão em parágrafos): `sleepFn` fake, sem espera
-  // real — só registra os `ms` pedidos em `options.sleepCalls`, quando o
-  // teste quiser inspecioná-los. `paragraphDelayMs` continua o default real
-  // (não é o que está sob teste na maioria dos casos, só o NÚMERO de pausas).
-  const sleepFn = (ms: number): Promise<void> => {
-    options.sleepCalls?.push(ms);
-    return Promise.resolve();
-  };
+  // Onda 3 do redesign (2026-08-24) — `paragraphDelayMs`/`sleepFn` saíram
+  // desta classe: a pausa entre parágrafos agora vive em
+  // `OutboundCommandConsumer` (que envia cada item de `content: string[]`
+  // sequencialmente), não mais aqui — esta classe despacha um ÚNICO comando
+  // por resposta, sem nenhum sleep próprio.
   const processor =
     historyLimit === undefined
       ? new AiReplyJobProcessor(
@@ -106,8 +103,6 @@ function buildSut(
           aiBusinessProfileRepository,
           undefined,
           undefined,
-          undefined,
-          sleepFn,
           options.handoffNoticeRepeatAfterMs,
           options.now,
         )
@@ -121,8 +116,6 @@ function buildSut(
           aiBusinessProfileRepository,
           historyLimit,
           undefined,
-          undefined,
-          sleepFn,
           options.handoffNoticeRepeatAfterMs,
           options.now,
         );
@@ -198,7 +191,7 @@ describe('AiReplyJobProcessor', () => {
           tenantId: TENANT_ID,
           conversationId: CONVERSATION_ID,
           aiInteractionId: recorded.id,
-          content: 'Olá, tudo bem?',
+          content: ['Olá, tudo bem?'],
         },
       ]);
     });
@@ -249,7 +242,23 @@ describe('AiReplyJobProcessor', () => {
   });
 
   describe('process() — divisão em parágrafos (Fase 1, 2026-08-07: um parágrafo por mensagem)', () => {
-    it('resposta com vários parágrafos: um dispatch por parágrafo, na ordem, só o primeiro com aiInteractionId', async () => {
+    /**
+     * Onda 3 do redesign (2026-08-24) — CORREÇÃO ESTRUTURAL de um bug real
+     * medido em produção ("o último balão vira o primeiro"): antes desta
+     * rodada, cada parágrafo virava um `dispatch()`/job INDEPENDENTE (com
+     * `idempotencyKey` `<id>-p1`/`<id>-p2` e um sleep entre cada um). Medido
+     * contra o Redis real que isso causava uma corrida entre os jobs da
+     * MESMA rajada — ver docstring de `OutboundMessageCommand.content`. Um
+     * único `dispatch()` agora carrega TODOS os parágrafos
+     * (`content: string[]`); é `OutboundCommandConsumer` quem envia cada um
+     * sequencialmente, dentro da MESMA execução — sem mais jobs concorrentes
+     * por resposta, então sem mais corrida possível. Os testes antigos que
+     * verificavam N dispatches/pausas/idempotencyKeys por parágrafo (`-p1`/
+     * `-p2`, contagem de `sleepFn`) deixaram de fazer sentido para esta
+     * classe — a pausa entre parágrafos agora é testada em
+     * `OutboundCommandConsumer.test.ts`.
+     */
+    it('resposta com vários parágrafos: UM único dispatch carregando todos, na ordem, com aiInteractionId', async () => {
       const {
         processor,
         conversationRepository,
@@ -273,86 +282,14 @@ describe('AiReplyJobProcessor', () => {
           tenantId: TENANT_ID,
           conversationId: CONVERSATION_ID,
           aiInteractionId: recorded.id,
-          content: 'Oi! Tudo bem?',
-        },
-        {
-          tenantId: TENANT_ID,
-          conversationId: CONVERSATION_ID,
-          idempotencyKey: `${recorded.id}-p1`,
-          content: 'O valor do serviço é R$ 150.',
-        },
-        {
-          tenantId: TENANT_ID,
-          conversationId: CONVERSATION_ID,
-          idempotencyKey: `${recorded.id}-p2`,
-          content: 'Posso agendar para você?',
+          content: ['Oi! Tudo bem?', 'O valor do serviço é R$ 150.', 'Posso agendar para você?'],
         },
       ]);
     });
 
-    /**
-     * TRAVA DE REGRESSÃO (2026-08-21) — bug MEDIDO em produção que fez a IA
-     * responder SEMPRE com um balão só, silenciosamente, por semanas.
-     *
-     * O BullMQ recusa um `jobId` customizado que contenha `:`, a menos que ele
-     * tenha exatamente 3 partes (`job.js`, `validateOptions`: "Custom Id cannot
-     * contain :"). A chave dos parágrafos 2+ era `<uuid>:<índice>` — 2 partes —
-     * então `queue.add()` LANÇAVA no 2º balão, derrubando o job `ai-reply`
-     * inteiro; o 3º nunca era tentado e o cliente só recebia o 1º parágrafo.
-     *
-     * Este teste existe porque o `FakeOutboundMessageDispatcher` NÃO valida
-     * `jobId` como o BullMQ real — a suíte inteira passava verde com o bug em
-     * produção. A regra é travada aqui de forma explícita, sem depender de
-     * Redis: nenhuma chave de idempotência pode conter `:`.
-     */
-    it('nenhuma idempotencyKey de parágrafo contém ":" (o BullMQ recusa esse jobId)', async () => {
+    it('resposta de um parágrafo só: dispatch com array de um item', async () => {
       const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } =
         buildSut();
-      conversationRepository.seed(buildConversation());
-      aiProviderFactory.provider.setNextResult({
-        content: 'Primeira.\nSegunda.\nTerceira.\nQuarta.',
-        model: 'claude-x',
-        tokensInput: 5,
-        tokensOutput: 5,
-      });
-
-      await processor.process(buildJobData());
-
-      const chaves = outboundDispatcher.dispatchCalls
-        .map((call) => call.idempotencyKey)
-        .filter((key): key is string => Boolean(key));
-
-      expect(chaves).toHaveLength(3);
-      for (const chave of chaves) {
-        expect(chave).not.toContain(':');
-      }
-    });
-
-    it('espera paragraphDelayMs entre cada envio, mas não antes do primeiro nem depois do último', async () => {
-      const sleepCalls: number[] = [];
-      const { processor, conversationRepository, aiProviderFactory } = buildSut(undefined, {
-        sleepCalls,
-      });
-      conversationRepository.seed(buildConversation());
-      aiProviderFactory.provider.setNextResult({
-        content: 'Primeira.\nSegunda.\nTerceira.',
-        model: 'claude-x',
-        tokensInput: 5,
-        tokensOutput: 5,
-      });
-
-      await processor.process(buildJobData());
-
-      // 3 parágrafos → 2 pausas (entre 1º-2º e 2º-3º), nunca antes do 1º.
-      expect(sleepCalls).toHaveLength(2);
-    });
-
-    it('resposta de um parágrafo só: continua um único dispatch, sem nenhuma pausa (comportamento pré-existente preservado)', async () => {
-      const sleepCalls: number[] = [];
-      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
-        undefined,
-        { sleepCalls },
-      );
       conversationRepository.seed(buildConversation());
       aiProviderFactory.provider.setNextResult({
         content: 'Corte custa R$ 50.',
@@ -364,7 +301,7 @@ describe('AiReplyJobProcessor', () => {
       await processor.process(buildJobData());
 
       expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
-      expect(sleepCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls[0].content).toEqual(['Corte custa R$ 50.']);
     });
   });
 
@@ -384,9 +321,9 @@ describe('AiReplyJobProcessor', () => {
 
       // A mensagem enviada NÃO contém o marcador.
       expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
-      expect(outboundDispatcher.dispatchCalls[0].content).toBe(
+      expect(outboundDispatcher.dispatchCalls[0].content).toEqual([
         'Vou te encaminhar para um atendente.',
-      );
+      ]);
       // A conversa continua em 'bot' — só sinalizada como precisando de atenção.
       const updated = await conversationRepository.findById(CONVERSATION_ID);
       expect(updated?.status).toBe('bot');
@@ -676,7 +613,7 @@ describe('AiReplyJobProcessor', () => {
 
       // Em vez de silêncio, o cliente recebe um aviso de encaminhamento.
       expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
-      expect(outboundDispatcher.dispatchCalls[0].content).toContain('encaminhando');
+      expect(outboundDispatcher.dispatchCalls[0].content[0]).toContain('encaminhando');
       // A mensagem do sistema usa idempotencyKey (não aiInteractionId).
       expect(outboundDispatcher.dispatchCalls[0].idempotencyKey).toBeDefined();
       expect(outboundDispatcher.dispatchCalls[0].aiInteractionId).toBeUndefined();
@@ -705,7 +642,7 @@ describe('AiReplyJobProcessor', () => {
       await processor.process(buildJobData());
 
       expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
-      expect(outboundDispatcher.dispatchCalls[0].content).toContain('encaminhando');
+      expect(outboundDispatcher.dispatchCalls[0].content[0]).toContain('encaminhando');
       expect(aiInteractionRepository.getAll()).toHaveLength(1);
       expect(aiInteractionRepository.getAll()[0].status).toBe('provider_error');
       const updated = await conversationRepository.findById(CONVERSATION_ID);
@@ -751,7 +688,7 @@ describe('AiReplyJobProcessor', () => {
       await processor.process(buildJobData());
 
       expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
-      expect(outboundDispatcher.dispatchCalls[0].content).toContain('encaminhando');
+      expect(outboundDispatcher.dispatchCalls[0].content[0]).toContain('encaminhando');
     });
 
     it('respeita uma janela customizada (handoffNoticeRepeatAfterMs)', async () => {
@@ -828,9 +765,9 @@ describe('AiReplyJobProcessor', () => {
 
       await processor.process(buildJobData());
 
-      expect(outboundDispatcher.dispatchCalls[0].content).toBe(
+      expect(outboundDispatcher.dispatchCalls[0].content).toEqual([
         'Legal, qual seria o melhor horário pra você?',
-      );
+      ]);
       const updated = await conversationRepository.findById(CONVERSATION_ID);
       expect(updated?.stage).toBe('negotiating');
       expect(updated?.stageSetBy).toBe('ai');

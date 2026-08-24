@@ -5,6 +5,25 @@ import { MessageRepository } from '../../conversations/domain/repositories/Messa
 import { AiInteractionRepository } from '../../ai/domain/repositories/AiInteractionRepository';
 import { Logger } from '../../../shared/domain/Logger';
 
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Pausa entre o envio de cada parágrafo de uma resposta dividida em várias
+ * mensagens (ver `splitReplyIntoParagraphs`, `services/ai`) — sem ela, os
+ * balões chegariam praticamente simultâneos no WhatsApp do cliente, o que
+ * não lê como alguém digitando e ainda corre o risco de parecer um disparo
+ * em massa. 900ms é uma pausa perceptível mas curta — não uma escolha
+ * validada por dado real. Movida para cá (Onda 3 do redesign, 2026-08-24) —
+ * antes vivia em `AiReplyJobProcessor`, pausando ENTRE jobs independentes da
+ * fila; agora pausa entre envios DENTRO da mesma execução de um único job
+ * (ver docstring de `OutboundMessageCommand.content` para o porquê).
+ */
+const DEFAULT_PARAGRAPH_DELAY_MS = 900;
+
 /**
  * Consome a fila `whatsapp-outbound` e entrega, de fato, a mensagem via
  * WhatsApp — Milestone 3, Bloco 4 (ADR #54, decisão 3). Instanciado
@@ -27,7 +46,10 @@ import { Logger } from '../../../shared/domain/Logger';
  * 2. Resolve o `SessionManager` da sessão via
  *    `WhatsAppConnectionRegistry.getOrCreate(tenantId, sessionName)` —
  *    seguro aqui porque este processo é o único dono dos sockets (ADR #54).
- * 3. Chama `sessionManager.sendMessage(contactJid, command.content)`.
+ * 3. Para CADA item de `command.content` (Onda 3 do redesign, 2026-08-24 —
+ *    ver docstring de `OutboundMessageCommand.content`), NA ORDEM, com uma
+ *    pausa (`paragraphDelayMs`) antes de cada item além do primeiro: chama
+ *    `sessionManager.sendMessage(contactJid, content)`.
  *
  * DECISÃO D4 (levantamento arquitetural do Bloco 4) — comportamento quando a
  * sessão não está viva NESTE processo (ex.: API acabou de reiniciar e
@@ -74,6 +96,8 @@ export class OutboundCommandConsumer {
     private readonly messageRepository: MessageRepository,
     private readonly aiInteractionRepository: AiInteractionRepository,
     private readonly logger: Logger,
+    private readonly paragraphDelayMs: number = DEFAULT_PARAGRAPH_DELAY_MS,
+    private readonly sleepFn: (ms: number) => Promise<void> = defaultSleep,
   ) {}
 
   async consume(command: OutboundMessageCommand): Promise<void> {
@@ -91,28 +115,42 @@ export class OutboundCommandConsumer {
       conversation.tenantId,
       conversation.sessionName,
     );
-    await sessionManager.sendMessage(conversation.contactJid, command.content);
 
-    const message = await this.messageRepository.create({
-      tenantId: command.tenantId,
-      conversationId: command.conversationId,
-      direction: 'outbound',
-      content: command.content,
-      // Fase 1, Bloco F1.1 (ADR #90): todo envio outbound (IA ou operador
-      // humano) continua sendo texto nesta rodada — envio de mídia PELO
-      // operador é F1.3, ainda não implementado. Hardcoded, não herdado de
-      // `command`, porque `OutboundMessageCommand` ainda não carrega tipo de
-      // conteúdo (extensão natural quando F1.3 chegar).
-      contentType: 'text',
-      occurredAt: new Date(),
-    });
+    // Onda 3 do redesign (2026-08-24) — envia CADA item de `command.content`
+    // sequencialmente, dentro desta mesma execução (nunca mais um job por
+    // parágrafo — ver docstring de `OutboundMessageCommand.content` para a
+    // causa raiz medida do bug que isso corrige). `linkMessage` só no
+    // PRIMEIRO envio (mesmo comportamento de antes, quando só o primeiro
+    // comando carregava `aiInteractionId`) — é o vínculo 1:1 com a
+    // `AiInteraction` de origem, não faz sentido repetir por parágrafo.
+    for (let index = 0; index < command.content.length; index += 1) {
+      if (index > 0) {
+        await this.sleepFn(this.paragraphDelayMs);
+      }
+      const content = command.content[index];
+      await sessionManager.sendMessage(conversation.contactJid, content);
 
-    // `linkMessage` só faz sentido no fluxo da IA (há uma `AiInteraction` para
-    // vincular à `Message` enviada). Mensagens do operador (N2) não têm
-    // `aiInteractionId` — a `Message` outbound é criada normalmente (aparece na
-    // timeline), mas não há interação de IA a vincular.
-    if (command.aiInteractionId) {
-      await this.aiInteractionRepository.linkMessage(command.aiInteractionId, message.id);
+      const message = await this.messageRepository.create({
+        tenantId: command.tenantId,
+        conversationId: command.conversationId,
+        direction: 'outbound',
+        content,
+        // Fase 1, Bloco F1.1 (ADR #90): todo envio outbound (IA ou operador
+        // humano) continua sendo texto nesta rodada — envio de mídia PELO
+        // operador é F1.3, ainda não implementado. Hardcoded, não herdado de
+        // `command`, porque `OutboundMessageCommand` ainda não carrega tipo de
+        // conteúdo (extensão natural quando F1.3 chegar).
+        contentType: 'text',
+        occurredAt: new Date(),
+      });
+
+      // `linkMessage` só faz sentido no fluxo da IA (há uma `AiInteraction`
+      // para vincular à `Message` enviada). Mensagens do operador (N2) não
+      // têm `aiInteractionId` — a `Message` outbound é criada normalmente
+      // (aparece na timeline), mas não há interação de IA a vincular.
+      if (index === 0 && command.aiInteractionId) {
+        await this.aiInteractionRepository.linkMessage(command.aiInteractionId, message.id);
+      }
     }
   }
 }

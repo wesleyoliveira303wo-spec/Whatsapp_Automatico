@@ -14,12 +14,6 @@ import { splitReplyIntoParagraphs } from '../domain/messageSplitting';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
 import { ConversationAiService } from './ConversationAiService';
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 /**
  * Mensagem enviada ao cliente quando a IA NÃO conseguiu gerar uma resposta
  * enviável (resposta vazia, reprovada na validação, ou erro do provider) —
@@ -47,17 +41,6 @@ const DEFAULT_HUMAN_HANDOFF_MESSAGE =
  * não do levantamento arquitetural (que não previu esta variável).
  */
 const DEFAULT_HISTORY_LIMIT = 20;
-
-/**
- * Pausa entre o envio de cada parágrafo de uma resposta dividida (ver
- * `splitReplyIntoParagraphs`) — sem ela, os balões chegariam praticamente
- * simultâneos no WhatsApp do cliente (a fila `whatsapp-outbound` processa um
- * job por vez, mas quase sem intervalo natural entre eles), o que não lê
- * como alguém digitando e ainda corre o risco de parecer um disparo em
- * massa. 900ms é uma pausa perceptível mas curta — não uma escolha validada
- * por dado real, mesmo status de `DEFAULT_HISTORY_LIMIT` acima.
- */
-const DEFAULT_PARAGRAPH_DELAY_MS = 900;
 
 /**
  * CORREÇÃO 2026-08-18 (achado real: cota diária grátis do Gemini esgotada —
@@ -110,11 +93,14 @@ const DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS = 6 * 60 * 60 * 1000;
  *    então esta classe não grava nada por conta própria.
  * 5. Só quando `result.status === 'success'`, divide `result.content` em
  *    parágrafos (`splitReplyIntoParagraphs`, Fase 1/2026-08-07) e despacha
- *    UM `OutboundMessageDispatcher.dispatch()` (ADR #54, decisão 1) por
- *    parágrafo, em sequência, com uma pausa curta entre eles
- *    (`paragraphDelayMs`) — só o primeiro comando carrega
- *    `result.aiInteractionId` (Bloco 4, ver `ConversationAiService`) como
- *    `aiInteractionId`. Nos caminhos `'validation_rejected'`/
+ *    UM ÚNICO `OutboundMessageDispatcher.dispatch()` (ADR #54, decisão 1)
+ *    carregando TODOS os parágrafos (`content: string[]`) — correção
+ *    estrutural da Onda 3 do redesign (2026-08-24): é
+ *    `OutboundCommandConsumer` quem envia cada parágrafo sequencialmente,
+ *    com a pausa entre eles, dentro da MESMA execução de job (nunca mais
+ *    jobs independentes por parágrafo — ver docstring de
+ *    `OutboundMessageCommand.content` para a causa raiz medida do bug que
+ *    isso corrige). Nos caminhos `'validation_rejected'`/
  *    `'provider_error'`, não há nada para enviar; a auditoria já foi
  *    gravada pelo próprio `ConversationAiService`, então esta classe só
  *    loga um aviso (nível `warn`) e retorna — não lança, não repete a
@@ -160,8 +146,6 @@ export class AiReplyJobProcessor {
     private readonly aiBusinessProfileRepository: AiBusinessProfileRepository,
     private readonly historyLimit: number = DEFAULT_HISTORY_LIMIT,
     private readonly humanHandoffMessage: string = DEFAULT_HUMAN_HANDOFF_MESSAGE,
-    private readonly paragraphDelayMs: number = DEFAULT_PARAGRAPH_DELAY_MS,
-    private readonly sleepFn: (ms: number) => Promise<void> = defaultSleep,
     // CORREÇÃO 2026-08-18 — ver docstring de `DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS`.
     private readonly handoffNoticeRepeatAfterMs: number = DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS,
     private readonly now: () => Date = () => new Date(),
@@ -295,41 +279,26 @@ export class AiReplyJobProcessor {
     }
 
     // Fase 1 (pedido do fundador, 2026-08-07): a resposta é dividida em
-    // parágrafos e enviada como VÁRIAS mensagens outbound em sequência, não
-    // um balão único de texto grande — ver docstring de
-    // `splitReplyIntoParagraphs`. Cada parágrafo vira um comando outbound
-    // distinto; só o PRIMEIRO carrega `aiInteractionId` (preserva o `jobId`
-    // de idempotência original — decisão D2 — e o vínculo 1:1 gravado por
-    // `linkMessage`, ver `OutboundCommandConsumer`). Os demais usam uma
-    // `idempotencyKey` derivada e determinística (`aiInteractionId:índice`)
-    // como `jobId` próprio — nunca colide com o primeiro nem entre si.
+    // parágrafos e enviada como VÁRIAS mensagens outbound, não um balão único
+    // de texto grande — ver docstring de `splitReplyIntoParagraphs`.
+    //
+    // Onda 3 do redesign (2026-08-24) — CORREÇÃO ESTRUTURAL: até esta rodada,
+    // cada parágrafo virava um JOB INDEPENDENTE nesta fila (jobIds
+    // `aiInteractionId`/`aiInteractionId-p1`/`aiInteractionId-p2`, um `sleep`
+    // entre cada `dispatch()`). Medido em produção que isso causava uma
+    // corrida real entre os jobs da MESMA rajada — ver a docstring de
+    // `OutboundMessageCommand.content` para o detalhe completo da medição.
+    // Agora despacha UM ÚNICO comando carregando todos os parágrafos; é
+    // `OutboundCommandConsumer` quem envia cada um sequencialmente, dentro da
+    // mesma execução — sem mais jobs concorrentes por resposta, então sem
+    // mais corrida possível entre parágrafos.
     const paragraphs = splitReplyIntoParagraphs(result.content);
-    for (let index = 0; index < paragraphs.length; index += 1) {
-      if (index > 0) {
-        await this.sleepFn(this.paragraphDelayMs);
-      }
-      await this.outboundMessageDispatcher.dispatch({
-        tenantId: data.tenantId,
-        conversationId: data.conversationId,
-        content: paragraphs[index],
-        ...(index === 0
-          ? { aiInteractionId: result.aiInteractionId }
-          : // CORREÇÃO 2026-08-21 (bug MEDIDO em produção, causa do "balão
-            // único"): o separador aqui era `:`, e o BullMQ REJEITA um
-            // `jobId` customizado que contenha `:` — a menos que ele tenha
-            // exatamente 3 partes (`job.js`, `validateOptions`: "Custom Id
-            // cannot contain :", uma compatibilidade legada com repeatable
-            // jobs). `<uuid>:1` tem 2 partes, então `queue.add()` LANÇAVA no
-            // balão 2; a exceção derrubava o job `ai-reply` inteiro e o balão
-            // 3 nunca era tentado. Resultado visível: o cliente sempre
-            // recebia SÓ o primeiro parágrafo, em silêncio (o balão 1 já
-            // tinha sido enviado e gravado, então nada parecia quebrado).
-            // Por isso o `jobId` do `ai-reply` (`tenant:conversa:mensagem`)
-            // funciona: 3 partes, passa na regra por coincidência.
-            // `-p` NUNCA pode virar `:` de novo — há teste travando isso.
-            { idempotencyKey: `${result.aiInteractionId}-p${index}` }),
-      });
-    }
+    await this.outboundMessageDispatcher.dispatch({
+      tenantId: data.tenantId,
+      conversationId: data.conversationId,
+      content: paragraphs,
+      aiInteractionId: result.aiInteractionId,
+    });
 
     // Feature N2 (auto-escalonamento), reformada em 2026-07-25: a IA
     // sinalizou (marcador) que um humano deveria dar uma olhada. Depois de
@@ -389,7 +358,7 @@ export class AiReplyJobProcessor {
         tenantId,
         conversationId,
         idempotencyKey: randomUUID(),
-        content: this.humanHandoffMessage,
+        content: [this.humanHandoffMessage],
       });
     } catch (error) {
       this.logger.warn(

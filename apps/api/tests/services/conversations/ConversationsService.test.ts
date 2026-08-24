@@ -457,7 +457,7 @@ describe('ConversationsService', () => {
       expect(command).toMatchObject({
         tenantId: 'tenant-1',
         conversationId: 'conversation-1',
-        content: 'Oi, posso ajudar!',
+        content: ['Oi, posso ajudar!'],
       });
       expect(typeof command.idempotencyKey).toBe('string');
       expect(command.aiInteractionId).toBeUndefined();
