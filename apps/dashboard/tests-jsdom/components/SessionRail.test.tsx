@@ -1,9 +1,9 @@
 /**
  * Redesign 2026-08-05 (R2) — teste do `SessionRail` (sucessor do
- * `SessionSidebar`, agora um rail vertical só de ícones). Mantido neste
- * arquivo (`SessionSidebar.test.tsx`) porque o ambiente não permite
- * renomear/apagar arquivos — o componente sob teste é importado
- * diretamente de `SessionRail.tsx`.
+ * `SessionSidebar`, agora um rail vertical só de ícones). Renomeado de
+ * `SessionSidebar.test.tsx` na Onda 3 do redesign (2026-08-24, P2), junto
+ * da remoção do re-export órfão `components/SessionSidebar.tsx` — `git mv`
+ * funciona normalmente neste ambiente, confirmado nesta sessão.
  *
  * Como o rail não tem mais rótulos visíveis (só ícone + `title`/
  * `aria-label`), as asserções usam `getByLabelText`/`getByTitle` em vez de
