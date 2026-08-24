@@ -434,3 +434,122 @@ describe('v6 (2026-08-24 — reversão parcial de v4/v5: um tópico por mensagem
     expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
   });
 });
+
+/**
+ * `v7` faz a IA distinguir QUEM começou a conversa. Duas gerações de defeito,
+ * ambas verificadas no texto real das versões (ver docstring de `v7`):
+ * `v4`/`v5` afirmavam "QUEM PROCUROU O CLIENTE FOI VOCÊ" incondicionalmente
+ * (falso quando o cliente é quem chama); `v6` removeu a frase mas nunca deu
+ * um critério objetivo para o modelo saber em qual caso estava. Cada teste
+ * abaixo trava um lado da distinção — se alguém reescrever o prompt e voltar
+ * a assumir um dos dois casos, o teste diz qual comportamento real regrediu.
+ */
+describe('v7 (2026-08-24 — distingue conversa iniciada pelo cliente de conversa iniciada por campanha)', () => {
+  it('está registrada e é resolvível por id, sem substituir as anteriores', () => {
+    expect(getPromptVersion('v7')).toBe(PROMPT_VERSIONS.v7);
+    for (const id of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6']) {
+      expect(PROMPT_VERSIONS[id]).toBeDefined();
+      expect(PROMPT_VERSIONS.v7.systemPrompt).not.toBe(PROMPT_VERSIONS[id].systemPrompt);
+    }
+  });
+
+  it('não reintroduz o "QUEM PROCUROU O CLIENTE FOI VOCÊ" incondicional de v4/v5 — premissa falsa em conversa inbound', () => {
+    for (const id of ['v4', 'v5']) {
+      expect(PROMPT_VERSIONS[id].systemPrompt).toMatch(/QUEM PROCUROU O CLIENTE FOI VOCÊ/i);
+    }
+    // v6 já tinha removido a frase — o que faltava nele era o critério de
+    // decisão, coberto pelo teste seguinte.
+    expect(PROMPT_VERSIONS.v6.systemPrompt).not.toMatch(/QUEM PROCUROU O CLIENTE FOI VOCÊ/i);
+    expect(PROMPT_VERSIONS.v7.systemPrompt).not.toMatch(/QUEM PROCUROU O CLIENTE FOI VOCÊ/i);
+  });
+
+  it('supre o que faltava em v6: um critério OBJETIVO para a IA saber em qual dos dois casos está', () => {
+    // v6 mandava "entenda quem é a pessoa" sem nunca dizer como distinguir
+    // uma conversa de campanha de uma conversa que o cliente iniciou.
+    expect(PROMPT_VERSIONS.v6.systemPrompt).not.toMatch(/# Origem desta conversa/i);
+    expect(PROMPT_VERSIONS.v7.systemPrompt).toMatch(/# Origem desta conversa/i);
+  });
+
+  it('explicita os DOIS casos de origem e amarra a distinção ao bloco "# Origem desta conversa"', () => {
+    const prompt = PROMPT_VERSIONS.v7.systemPrompt;
+    expect(prompt).toMatch(/IDENTIFIQUE COMO ESTA CONVERSA COMEÇOU/i);
+    expect(prompt).toMatch(/CASO 1 — O CLIENTE PROCUROU VOCÊ/i);
+    expect(prompt).toMatch(/CASO 2 — VOCÊ PROCUROU O CLIENTE/i);
+    // É a ausência/presença do bloco de campanha que o modelo usa para decidir.
+    expect(prompt).toMatch(/NÃO existe nenhum bloco "# Origem desta conversa"/i);
+    expect(prompt).toMatch(/existe um bloco "# Origem desta conversa"/i);
+  });
+
+  it('CASO 1 (cliente chamou): descoberta primeiro — nome, ramo, segmento, intenção — antes de qualquer oferta', () => {
+    const prompt = PROMPT_VERSIONS.v7.systemPrompt;
+    expect(prompt).toMatch(/CONHEÇA A PESSOA ANTES DE OFERECER QUALQUER COISA/i);
+    expect(prompt).toMatch(/pergunte o nome dela/i);
+    expect(prompt).toMatch(/com o que ela trabalha/i);
+    expect(prompt).toMatch(/segmento específico do negócio dela/i);
+  });
+
+  it('CASO 1: proíbe explicitamente ofertar/precificar na primeira resposta de uma conversa que o cliente iniciou', () => {
+    expect(PROMPT_VERSIONS.v7.systemPrompt).toMatch(
+      /NUNCA\s+apresente o serviço, o preço ou o prazo na primeira resposta de uma conversa que o cliente iniciou/i,
+    );
+  });
+
+  it('traz exemplos concretos do tom de descoberta pedido pelo fundador', () => {
+    const prompt = PROMPT_VERSIONS.v7.systemPrompt;
+    expect(prompt).toMatch(/Qual é o seu nome\?/i);
+    expect(prompt).toMatch(/com o que você trabalha\?/i);
+    expect(prompt).toMatch(/Você já pensou na sua loja\s+aparecendo na internet\?/i);
+  });
+
+  it('não cola um nome real de tenant nos exemplos — o produto é multi-tenant', () => {
+    // O nome vem do Cérebro da IA de cada empresa; um nome real aqui seria
+    // copiado literalmente pela IA de outro tenant.
+    expect(PROMPT_VERSIONS.v7.systemPrompt).not.toMatch(/Wesley Francis/i);
+    expect(PROMPT_VERSIONS.v7.closingDirective).not.toMatch(/Wesley Francis/i);
+    expect(PROMPT_VERSIONS.v7.systemPrompt).toMatch(/\[seu nome\]/);
+  });
+
+  it('mantém o ritmo de v6 (um tópico por mensagem) — v7 muda QUANDO a oferta entra, não a velocidade', () => {
+    const prompt = PROMPT_VERSIONS.v7.systemPrompt;
+    expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
+    expect(prompt).toMatch(/RESPONDA SÓ O QUE FOI PERGUNTADO, UM TÓPICO DE CADA VEZ/i);
+    expect(prompt).toMatch(/No máximo UMA pergunta por mensagem/i);
+  });
+
+  it('mantém o formato escalonado por estágio de v5/v6', () => {
+    const prompt = PROMPT_VERSIONS.v7.systemPrompt;
+    expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
+    expect(prompt).toMatch(/estágio é CONTACTED ou NEGOTIATING/i);
+  });
+
+  it('preserva o guarda-corpo de v4 (nunca ensinar o mercado do cliente)', () => {
+    expect(PROMPT_VERSIONS.v7.systemPrompt).toMatch(
+      /NUNCA EXPLIQUE PARA O CLIENTE COMO O MERCADO DELE FUNCIONA/i,
+    );
+  });
+
+  it('a closingDirective RAMIFICA nos dois casos — afirmar só um anularia o outro, por vir depois do bloco de campanha', () => {
+    const directive = PROMPT_VERSIONS.v7.closingDirective;
+    expect(directive).toBeDefined();
+    expect(directive).toMatch(/COMO ESTA CONVERSA COMEÇOU decide sua postura/i);
+    // Os dois ramos, explicitamente presentes.
+    expect(directive).toMatch(/Se existe um bloco "# Origem desta conversa" acima/i);
+    expect(directive).toMatch(/Se esse\s+bloco NÃO existe, foi o CLIENTE que procurou/i);
+    expect(directive).toMatch(/nunca ofereça serviço nem preço antes disso/i);
+    expect(directive!.length).toBeLessThan(1800);
+    expect(directive).not.toBe(PROMPT_VERSIONS.v6.closingDirective);
+  });
+
+  it('preserva mídia e marcadores TEXTUALMENTE — Pipeline/escalonamento intactos', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    expect(PROMPT_VERSIONS.v7.systemPrompt).toContain(mediaSentence);
+    expect(PROMPT_VERSIONS.v7.systemPrompt).toContain(MARKER_INSTRUCTIONS);
+  });
+
+  it('mantém as regras absolutas de anti-alucinação e escalonamento', () => {
+    const prompt = PROMPT_VERSIONS.v7.systemPrompt;
+    expect(prompt).toMatch(/nunca invente preço, prazo, número, prova, portfólio/i);
+    expect(prompt).toMatch(/nunca incentive.*burlar/i);
+    expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});
