@@ -888,7 +888,11 @@ describe('ConversationAiService', () => {
         direction: 'inbound',
         content: '',
         contentType: 'audio',
-        media: { mimeType: 'audio/ogg; codecs=opus', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+        media: {
+          mimeType: 'audio/ogg; codecs=opus',
+          url: 'https://x.enc',
+          mediaKeyEncrypted: 'enc:abc',
+        },
         occurredAt: new Date('2026-07-10T12:00:00.000Z'),
         ...overrides,
       };
@@ -977,7 +981,9 @@ describe('ConversationAiService', () => {
     it('falha em setAudioTranscript: degrada graciosamente, resposta continua bem-sucedida', async () => {
       const { sut, aiProviderFactory, messageRepository } = buildSutWithAudioTranscript();
       await messageRepository.create(buildAudioMessage());
-      jest.spyOn(messageRepository, 'setAudioTranscript').mockRejectedValueOnce(new Error('falha simulada'));
+      jest
+        .spyOn(messageRepository, 'setAudioTranscript')
+        .mockRejectedValueOnce(new Error('falha simulada'));
       aiProviderFactory.provider.setNextResult({
         content: `Ok.\n${AUDIO_TRANSCRIPT_MARKER_PREFIX}oi tudo bem${AUDIO_TRANSCRIPT_MARKER_SUFFIX}`,
         model: 'gemini-x',
@@ -1025,9 +1031,7 @@ describe('ConversationAiService', () => {
     it('áudio JÁ transcrito não é reanexado (evita gasto de download/tokens repetido)', async () => {
       const { sut, aiProviderFactory, mediaDownloader, messageRepository } =
         buildSutWithAudioTranscript();
-      await messageRepository.create(
-        buildAudioMessage({ audioTranscript: 'já transcrito antes' }),
-      );
+      await messageRepository.create(buildAudioMessage({ audioTranscript: 'já transcrito antes' }));
 
       await sut.generateReply(
         TENANT_ID,

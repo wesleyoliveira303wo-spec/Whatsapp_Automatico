@@ -52,7 +52,11 @@ export function describeMessageContent(message: Message): string {
   // transcrito usa a transcrição real, não a descrição genérica — é isso
   // que permite a IA responder com base no conteúdo em qualquer turno
   // futuro, não só na resposta imediatamente seguinte ao áudio.
-  if (message.contentType === 'audio' && message.direction === 'inbound' && message.audioTranscript) {
+  if (
+    message.contentType === 'audio' &&
+    message.direction === 'inbound' &&
+    message.audioTranscript
+  ) {
     return `[O cliente enviou um áudio dizendo: "${message.audioTranscript}"]`;
   }
 

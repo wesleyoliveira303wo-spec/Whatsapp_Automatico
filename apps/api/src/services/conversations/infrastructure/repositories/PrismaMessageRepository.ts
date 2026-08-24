@@ -199,11 +199,7 @@ export class PrismaMessageRepository implements MessageRepository {
    * silenciosamente ignorado — quem chama trata como enriquecimento
    * auxiliar, nunca crítico.
    */
-  async setAudioTranscript(
-    tenantId: string,
-    messageId: string,
-    transcript: string,
-  ): Promise<void> {
+  async setAudioTranscript(tenantId: string, messageId: string, transcript: string): Promise<void> {
     await this.prisma.whatsAppMessage.updateMany({
       where: { tenantId, id: messageId },
       data: { audioTranscript: transcript },

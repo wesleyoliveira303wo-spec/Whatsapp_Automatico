@@ -813,7 +813,9 @@ describe('MARKER_INSTRUCTIONS — TERCEIRO marcador de transcrição de áudio (
     expect(MARKER_INSTRUCTIONS).toMatch(
       /SÓ quando você REALMENTE ouviu um áudio do cliente\s+anexado a esta chamada/i,
     );
-    expect(MARKER_INSTRUCTIONS).toMatch(/Nunca invente esse marcador quando não tiver ouvido nada de/i);
+    expect(MARKER_INSTRUCTIONS).toMatch(
+      /Nunca invente esse marcador quando não tiver ouvido nada de/i,
+    );
   });
 
   it('usa o formato de marcador esperado por extractAudioTranscript', () => {
