@@ -333,6 +333,23 @@ export class FakeMessageRepository implements MessageRepository {
   getAll(): ReadonlyArray<Message> {
     return this.messages;
   }
+
+  /**
+   * Feature de transcrição de áudio (2026-08-24, aditivo). Espelha
+   * `PrismaMessageRepository.setAudioTranscript()`: escopado por
+   * `tenantId`+`id`, silenciosamente ignora mensagem inexistente/de outro
+   * tenant (mesmo `updateMany` de zero linhas afetadas do Prisma real).
+   */
+  async setAudioTranscript(
+    tenantId: string,
+    messageId: string,
+    transcript: string,
+  ): Promise<void> {
+    const message = this.messages.find((m) => m.tenantId === tenantId && m.id === messageId);
+    if (message) {
+      message.audioTranscript = transcript;
+    }
+  }
 }
 
 /**

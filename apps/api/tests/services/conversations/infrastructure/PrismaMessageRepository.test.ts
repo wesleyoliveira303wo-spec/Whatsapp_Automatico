@@ -11,11 +11,22 @@ import { Message } from '../../../../src/services/conversations/domain/entities/
  * deste código).
  */
 function createFakePrisma(): {
-  whatsAppMessage: { create: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock };
+  whatsAppMessage: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    findFirst: jest.Mock;
+    updateMany: jest.Mock;
+  };
   whatsAppConversation: { updateMany: jest.Mock };
   $transaction: jest.Mock;
 } {
-  const whatsAppMessage = { create: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() };
+  const whatsAppMessage = {
+    create: jest.fn(),
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    // Feature de transcrição de áudio (2026-08-24) — `setAudioTranscript()`.
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+  };
   const whatsAppConversation = { updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
   const $transaction = jest.fn((operations: Promise<unknown>[]) => Promise.all(operations));
   return { whatsAppMessage, whatsAppConversation, $transaction };
@@ -35,6 +46,9 @@ const SAMPLE_ROW = {
   mediaUrl: null,
   mediaKeyEncrypted: null,
   mediaFileName: null,
+  // Feature de transcrição de áudio (2026-08-24) — `null` no caso comum
+  // (mensagem de texto, ou áudio ainda não transcrito).
+  audioTranscript: null,
   occurredAt: new Date('2026-07-10T12:00:00Z'),
 };
 
@@ -50,6 +64,7 @@ const SAMPLE_IMAGE_ROW = {
   mediaUrl: 'https://mmg.whatsapp.net/fake.enc',
   mediaKeyEncrypted: 'cifrado-base64',
   mediaFileName: null,
+  audioTranscript: null,
   occurredAt: new Date('2026-07-10T12:05:00Z'),
 };
 
@@ -433,6 +448,44 @@ describe('PrismaMessageRepository', () => {
         mediaKeyEncrypted: 'cifrado-base64',
         fileName: undefined,
       });
+    });
+
+    it('reconstrói audioTranscript quando a linha vem preenchida', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppMessage.findMany.mockResolvedValue([
+        { ...SAMPLE_ROW, contentType: 'AUDIO', audioTranscript: 'quero saber o preço do site' },
+      ]);
+      const repo = new PrismaMessageRepository(prisma as never);
+
+      const result = await repo.listRecentByConversation('tenant-1', 'conversation-1', 20);
+
+      expect(result[0].audioTranscript).toBe('quero saber o preço do site');
+    });
+  });
+
+  // Feature de transcrição de áudio (2026-08-24) — ver docstring do port
+  // `MessageRepository.setAudioTranscript`.
+  describe('setAudioTranscript()', () => {
+    it('chama prisma.whatsAppMessage.updateMany() escopado por tenantId+id, gravando o texto', async () => {
+      const prisma = createFakePrisma();
+      const repo = new PrismaMessageRepository(prisma as never);
+
+      await repo.setAudioTranscript('tenant-1', 'message-1', 'quero saber o preço do site');
+
+      expect(prisma.whatsAppMessage.updateMany).toHaveBeenCalledWith({
+        where: { tenantId: 'tenant-1', id: 'message-1' },
+        data: { audioTranscript: 'quero saber o preço do site' },
+      });
+    });
+
+    it('não lança quando zero linhas são afetadas (mensagem inexistente/de outro tenant)', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppMessage.updateMany.mockResolvedValue({ count: 0 });
+      const repo = new PrismaMessageRepository(prisma as never);
+
+      await expect(
+        repo.setAudioTranscript('tenant-1', 'message-inexistente', 'texto'),
+      ).resolves.toBeUndefined();
     });
   });
 });

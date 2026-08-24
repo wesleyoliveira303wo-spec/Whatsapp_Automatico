@@ -7,6 +7,11 @@ import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionR
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 import { FakeMediaDownloader } from '../whatsapp/infrastructure/FakeMediaDownloader';
 import { FakeCampaignOriginResolver } from './infrastructure/FakeCampaignOriginResolver';
+import { FakeMessageRepository } from '../conversations/testDoubles';
+import {
+  AUDIO_TRANSCRIPT_MARKER_PREFIX,
+  AUDIO_TRANSCRIPT_MARKER_SUFFIX,
+} from '../../../src/services/ai/domain/audioTranscriptSignal';
 
 const TENANT_ID = 'tenant-1';
 const CONVERSATION_ID = 'conversation-1';
@@ -846,6 +851,210 @@ describe('ConversationAiService', () => {
       );
 
       expect(result.status).toBe('success');
+    });
+  });
+
+  describe('feature de transcrição de áudio (2026-08-24)', () => {
+    function buildSutWithAudioTranscript(): {
+      sut: ConversationAiService;
+      aiProviderFactory: FakeAiProviderFactory;
+      mediaDownloader: FakeMediaDownloader;
+      messageRepository: FakeMessageRepository;
+    } {
+      const aiProviderFactory = new FakeAiProviderFactory();
+      const promptBuilder = new PromptBuilder();
+      const aiInteractionRepository = new FakeAiInteractionRepository();
+      const mediaDownloader = new FakeMediaDownloader();
+      const messageRepository = new FakeMessageRepository();
+      const sut = new ConversationAiService(
+        aiProviderFactory,
+        'gemini',
+        promptBuilder,
+        aiInteractionRepository,
+        undefined,
+        undefined,
+        mediaDownloader,
+        undefined,
+        messageRepository,
+      );
+      return { sut, aiProviderFactory, mediaDownloader, messageRepository };
+    }
+
+    function buildAudioMessage(overrides: Partial<Message> = {}): Message {
+      return {
+        id: 'm-audio',
+        tenantId: TENANT_ID,
+        conversationId: CONVERSATION_ID,
+        direction: 'inbound',
+        content: '',
+        contentType: 'audio',
+        media: { mimeType: 'audio/ogg; codecs=opus', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+        occurredAt: new Date('2026-07-10T12:00:00.000Z'),
+        ...overrides,
+      };
+    }
+
+    it('extrai a transcrição do marcador e persiste via MessageRepository.setAudioTranscript', async () => {
+      const { sut, aiProviderFactory, messageRepository } = buildSutWithAudioTranscript();
+      await messageRepository.create(buildAudioMessage());
+      aiProviderFactory.provider.setNextResult({
+        content:
+          'Legal! Você quer um site com carrinho de compras.\n' +
+          `${AUDIO_TRANSCRIPT_MARKER_PREFIX}Oi, eu queria um site com carrinho de compras${AUDIO_TRANSCRIPT_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 10,
+        tokensOutput: 10,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+      if (result.status === 'success') {
+        // O marcador nunca chega ao cliente.
+        expect(result.content).not.toContain(AUDIO_TRANSCRIPT_MARKER_PREFIX);
+        expect(result.content).toBe('Legal! Você quer um site com carrinho de compras.');
+      }
+      const stored = await messageRepository.findById(TENANT_ID, 'm-audio');
+      expect(stored?.audioTranscript).toBe('Oi, eu queria um site com carrinho de compras');
+    });
+
+    it('sem marcador na resposta: não chama setAudioTranscript nenhuma vez', async () => {
+      const { sut, messageRepository } = buildSutWithAudioTranscript();
+      await messageRepository.create(buildAudioMessage());
+      const setAudioTranscriptSpy = jest.spyOn(messageRepository, 'setAudioTranscript');
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(setAudioTranscriptSpy).not.toHaveBeenCalled();
+    });
+
+    it('sem MessageRepository configurado: a IA ainda "ouve" o áudio, só não persiste (degradação graciosa)', async () => {
+      const aiProviderFactory = new FakeAiProviderFactory();
+      const mediaDownloader = new FakeMediaDownloader();
+      const sut = new ConversationAiService(
+        aiProviderFactory,
+        'gemini',
+        new PromptBuilder(),
+        new FakeAiInteractionRepository(),
+        undefined,
+        undefined,
+        mediaDownloader,
+        // sem campaignOriginResolver nem messageRepository (ambos undefined)
+      );
+      aiProviderFactory.provider.setNextResult({
+        content: `Entendi.\n${AUDIO_TRANSCRIPT_MARKER_PREFIX}oi tudo bem${AUDIO_TRANSCRIPT_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+      if (result.status === 'success') {
+        expect(result.content).toBe('Entendi.');
+      }
+    });
+
+    it('falha em setAudioTranscript: degrada graciosamente, resposta continua bem-sucedida', async () => {
+      const { sut, aiProviderFactory, messageRepository } = buildSutWithAudioTranscript();
+      await messageRepository.create(buildAudioMessage());
+      jest.spyOn(messageRepository, 'setAudioTranscript').mockRejectedValueOnce(new Error('falha simulada'));
+      aiProviderFactory.provider.setNextResult({
+        content: `Ok.\n${AUDIO_TRANSCRIPT_MARKER_PREFIX}oi tudo bem${AUDIO_TRANSCRIPT_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+    });
+
+    it('resposta REPROVADA na validação: nunca persiste a transcrição (só o caminho de sucesso grava)', async () => {
+      const { sut, aiProviderFactory, messageRepository } = buildSutWithAudioTranscript();
+      await messageRepository.create(buildAudioMessage());
+      const setAudioTranscriptSpy = jest.spyOn(messageRepository, 'setAudioTranscript');
+      // Resposta que vira VAZIA depois de remover o marcador — dispara
+      // "Resposta vazia" em validateReply, sem precisar de maxReplyLength
+      // customizado.
+      aiProviderFactory.provider.setNextResult({
+        content: `${AUDIO_TRANSCRIPT_MARKER_PREFIX}oi tudo bem${AUDIO_TRANSCRIPT_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('validation_rejected');
+      expect(setAudioTranscriptSpy).not.toHaveBeenCalled();
+    });
+
+    it('áudio JÁ transcrito não é reanexado (evita gasto de download/tokens repetido)', async () => {
+      const { sut, aiProviderFactory, mediaDownloader, messageRepository } =
+        buildSutWithAudioTranscript();
+      await messageRepository.create(
+        buildAudioMessage({ audioTranscript: 'já transcrito antes' }),
+      );
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage({ audioTranscript: 'já transcrito antes' })],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(mediaDownloader.downloadCalls).toEqual([]);
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].media).toBeUndefined();
+    });
+
+    it('describeMessageContent usa a transcrição real no histórico textual em vez da descrição genérica', async () => {
+      const { sut, aiProviderFactory } = buildSutWithAudioTranscript();
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildAudioMessage({ audioTranscript: 'quero saber o preço do site' })],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].content).toBe(
+        '[O cliente enviou um áudio dizendo: "quero saber o preço do site"]',
+      );
     });
   });
 

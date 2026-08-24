@@ -5,6 +5,10 @@ import {
 } from '../../../../src/services/ai/domain/escalationSignal';
 import { STAGE_MARKER_PREFIX } from '../../../../src/services/ai/domain/stageSignal';
 import {
+  AUDIO_TRANSCRIPT_MARKER_PREFIX,
+  AUDIO_TRANSCRIPT_MARKER_SUFFIX,
+} from '../../../../src/services/ai/domain/audioTranscriptSignal';
+import {
   getPromptVersion,
   MARKER_INSTRUCTIONS,
   PROMPT_VERSIONS,
@@ -772,5 +776,73 @@ describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro
     const prompt = PROMPT_VERSIONS.v9.systemPrompt;
     expect(prompt).toMatch(/nunca incentive.*burlar/i);
     expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});
+
+/**
+ * MEDIA_INSTRUCTIONS/MARKER_INSTRUCTIONS são constantes COMPARTILHADAS por
+ * TODA versão de prompt (v1-v9) — editá-las in-place, sem criar uma versão
+ * nova, é o mecanismo correto para correção de infraestrutura (mesmo
+ * precedente já usado para o marcador de escalonamento em 2026-07-30). A
+ * causa raiz real: `MEDIA_INSTRUCTIONS` mandava a IA sempre negar que ouve
+ * áudio/vê imagem, mesmo depois de `GeminiAiProvider` (F1.2) ter passado a
+ * anexar o binário à MESMA chamada de resposta — a instrução nunca foi
+ * atualizada. Corrigida para ser condicional (confia na própria percepção
+ * do modelo) e reforçada com um TERCEIRO marcador para capturar a
+ * transcrição do que a IA realmente ouviu, sem nenhuma chamada de IA extra.
+ */
+describe('MEDIA_INSTRUCTIONS (2026-08-24 — para de negar que ouve áudio/vê imagem quando realmente anexados)', () => {
+  it('instrui a IA a confiar na própria percepção quando realmente processou o anexo', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(
+      /Quando você REALMENTE recebeu e conseguiu processar um áudio ou uma imagem/i,
+    );
+    expect(prompt).toMatch(/Nunca diga que não consegue ouvir ou visualizar/i);
+  });
+
+  it('preserva a honestidade original para quando NÃO há conteúdo perceptível (vídeo, documento, mídia antiga)', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toContain(mediaSentence);
+    expect(prompt).toMatch(/mídia antiga que já saiu de cena, vídeo, documento, figurinha/i);
+  });
+});
+
+describe('MARKER_INSTRUCTIONS — TERCEIRO marcador de transcrição de áudio (2026-08-24)', () => {
+  it('instrui a IA a incluir a transcrição SÓ quando realmente ouviu o áudio anexado', () => {
+    expect(MARKER_INSTRUCTIONS).toMatch(
+      /SÓ quando você REALMENTE ouviu um áudio do cliente\s+anexado a esta chamada/i,
+    );
+    expect(MARKER_INSTRUCTIONS).toMatch(/Nunca invente esse marcador quando não tiver ouvido nada de/i);
+  });
+
+  it('usa o formato de marcador esperado por extractAudioTranscript', () => {
+    expect(MARKER_INSTRUCTIONS).toContain(AUDIO_TRANSCRIPT_MARKER_PREFIX);
+    expect(MARKER_INSTRUCTIONS).toContain(AUDIO_TRANSCRIPT_MARKER_SUFFIX);
+  });
+
+  it('mostra um exemplo com o marcador de transcrição JUNTO do marcador de estágio (mesma lição de 2026-07-30: exemplos isolados fazem o modelo tratar marcadores como mutuamente exclusivos)', () => {
+    const exampleStart = MARKER_INSTRUCTIONS.indexOf('Exemplo — cliente manda um áudio');
+    expect(exampleStart).toBeGreaterThan(-1);
+    const example = MARKER_INSTRUCTIONS.slice(exampleStart);
+    expect(example).toContain(`${STAGE_MARKER_PREFIX}NEGOTIATING`);
+    expect(example).toContain(AUDIO_TRANSCRIPT_MARKER_PREFIX);
+  });
+
+  it('é idêntico entre todas as versões que o usam (v1-v9), preservando a garantia de não-drift', () => {
+    // Fatia pelo COMPRIMENTO exato de MARKER_INSTRUCTIONS a partir do início
+    // do bloco — não até o fim da string: `v3` anexa `V3_FORMAT_EXAMPLES`
+    // logo depois de MARKER_INSTRUCTIONS, então comparar "até o fim" quebraria
+    // só por causa desse conteúdo extra, que não é drift do próprio marcador.
+    const markerStart = 'INSTRUÇÃO OBRIGATÓRIA sobre marcadores internos';
+    const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'];
+    const blocks = versions.map((id) => {
+      const prompt = PROMPT_VERSIONS[id].systemPrompt;
+      const start = prompt.indexOf(markerStart);
+      return prompt.slice(start, start + MARKER_INSTRUCTIONS.length);
+    });
+    for (const block of blocks.slice(1)) {
+      expect(block).toBe(blocks[0]);
+    }
   });
 });

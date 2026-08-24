@@ -815,6 +815,16 @@ model WhatsAppMessage {
   /// Nome de arquivo original, quando o WhatsApp o informa (comum em
   /// mensagens de documento). `NULL` para os demais tipos/quando ausente.
   mediaFileName  String?                  @map("media_file_name")
+  /// Transcrição de um áudio INBOUND, preenchida depois da criação da linha
+  /// (feature de transcrição de áudio, 2026-08-24) — a IA transcreve o
+  /// áudio como parte da MESMA chamada multimodal que já gera a resposta
+  /// (zero chamada de IA extra), e o texto é gravado aqui via
+  /// `MessageRepository.setAudioTranscript()`. ÚNICA exceção documentada à
+  /// regra de "mensagem é registro append-only, nunca atualizado" (ver
+  /// docstring de `Message`, Domain): é enriquecimento assíncrono de uma
+  /// mensagem já existente, nunca uma correção de conteúdo. `NULL` até ser
+  /// preenchido, ou para qualquer mensagem que não seja áudio inbound.
+  audioTranscript String?                 @map("audio_transcript") @db.Text
   /// Instante de negócio (recebida/enviada) — distinto de `createdAt`
   /// (quando a linha foi persistida). Mesmo padrão de
   /// `WhatsAppSessionEvent.occurredAt`.

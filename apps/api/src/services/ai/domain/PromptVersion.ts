@@ -4,6 +4,10 @@ import {
   ESCALATION_MARKER_REQUESTED_HUMAN,
 } from './escalationSignal';
 import { STAGE_MARKER_PREFIX, STAGE_MARKER_SUFFIX } from './stageSignal';
+import {
+  AUDIO_TRANSCRIPT_MARKER_PREFIX,
+  AUDIO_TRANSCRIPT_MARKER_SUFFIX,
+} from './audioTranscriptSignal';
 
 /**
  * Uma versão de prompt de sistema, versionada em código — Milestone 3,
@@ -109,7 +113,26 @@ export const MARKER_INSTRUCTIONS =
   '"Ótimo interesse! Para fechar a contratação, vou te encaminhar para um de nossos atendentes, que vai te ' +
   'passar todos os detalhes.\\n' +
   `${STAGE_MARKER_PREFIX}NEGOTIATING${STAGE_MARKER_SUFFIX}\\n` +
-  `${ESCALATION_MARKER_REQUESTED_HUMAN}"`;
+  `${ESCALATION_MARKER_REQUESTED_HUMAN}" ` +
+  // TERCEIRO marcador, independente dos dois acima (feature de transcrição
+  // de áudio, 2026-08-24): captura em texto o que a IA realmente ouviu num
+  // áudio anexado a esta chamada — zero chamada de IA extra, é a MESMA
+  // chamada multimodal que já gera a resposta fazendo dupla função. Guarda
+  // explícita ("SÓ quando você REALMENTE ouviu") para nunca inventar uma
+  // transcrição de um áudio que só apareceu como descrição textual.
+  'TERCEIRO, e também independente dos marcadores acima: SÓ quando você REALMENTE ouviu um áudio do cliente ' +
+  'anexado a esta chamada (nunca quando só vir a descrição textual entre colchetes, sem conteúdo perceptível), ' +
+  `adicione também, em sua própria linha, o marcador ${AUDIO_TRANSCRIPT_MARKER_PREFIX}texto que você ouviu` +
+  `${AUDIO_TRANSCRIPT_MARKER_SUFFIX} com uma transcrição FIEL do que a pessoa disse — sem resumir, sem ` +
+  'corrigir, sem adicionar nada que não foi dito. Nunca invente esse marcador quando não tiver ouvido nada de ' +
+  'verdade. Exemplo — cliente manda um áudio pedindo um site com carrinho de compras, você realmente ouve e ' +
+  'responde, incluindo os TRÊS tipos de marcador juntos (aqui só o de estágio e o de transcrição, pois não há ' +
+  'escalonamento neste caso), cada um em sua própria linha: ' +
+  '"Entendi! Você quer uma loja virtual com carrinho de compras.\\n' +
+  'A gente faz esse tipo de site sim — quer que eu te explique como funciona?\\n' +
+  `${STAGE_MARKER_PREFIX}NEGOTIATING${STAGE_MARKER_SUFFIX}\\n` +
+  `${AUDIO_TRANSCRIPT_MARKER_PREFIX}Oi, eu queria um site com carrinho de compras pra minha loja` +
+  `${AUDIO_TRANSCRIPT_MARKER_SUFFIX}"`;
 
 /**
  * Exemplos do FORMATO de resposta — exclusivos de `v3`, e propositalmente
@@ -160,11 +183,26 @@ const V3_FORMAT_EXAMPLES =
   `${STAGE_MARKER_PREFIX}CONTACTED${STAGE_MARKER_SUFFIX}"`;
 
 /** Instrução de como reagir a mídia recebida — IDÊNTICA entre `v1` e `v2` (Fase 1, Bloco F1.1, ADR #90). */
+// CORREÇÃO 2026-08-24 (achado real: a IA anexa o áudio/imagem mais recente
+// do cliente à MESMA chamada que gera a resposta — Fase 1, Bloco F1.2 — e
+// portanto REALMENTE ouve/vê o conteúdo, mas esta instrução, nunca
+// atualizada desde antes daquele bloco, mandava ela negar isso sempre.
+// Reescrita para ser CONDICIONAL: confia na própria percepção do modelo (se
+// ele de fato está processando o áudio/imagem agora, ele sabe disso) em vez
+// de um sinal de código — e preserva a honestidade original para os casos
+// em que não há mesmo nada perceptível (mídia antiga, vídeo, documento,
+// figurinha, ou falha no anexo).
 const MEDIA_INSTRUCTIONS =
+  'Quando você REALMENTE recebeu e conseguiu processar um áudio ou uma imagem do cliente como anexo desta ' +
+  'chamada (você vai perceber isso porque de fato ouve o áudio ou vê a imagem — não apenas uma descrição entre ' +
+  'colchetes), responda com base no que ouviu ou viu de verdade. Nunca diga que não consegue ouvir ou visualizar ' +
+  'algo que você está processando agora. ' +
   'Quando o histórico indicar que o cliente enviou uma imagem, áudio, vídeo ou documento (mensagens entre ' +
-  'colchetes, como "[O cliente enviou um(a) imagem, sem legenda]"), nunca finja saber o conteúdo desse arquivo ' +
-  'nem invente o que ele mostra — reconheça o recebimento com honestidade (ex.: "recebi sua imagem, mas não ' +
-  'consigo visualizá-la por aqui") e peça, se necessário, que o cliente descreva em texto o que precisa. ';
+  'colchetes, como "[O cliente enviou um(a) imagem, sem legenda]") mas você NÃO tiver nenhum conteúdo ' +
+  'perceptível daquele arquivo (mídia antiga que já saiu de cena, vídeo, documento, figurinha, ou quando o ' +
+  'anexo não pôde ser processado), nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra — ' +
+  'reconheça o recebimento com honestidade (ex.: "recebi sua imagem, mas não consigo visualizá-la por aqui") e ' +
+  'peça, se necessário, que o cliente descreva em texto o que precisa. ';
 
 /**
  * Registro estático das versões de prompt existentes, indexado por `id`.

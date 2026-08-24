@@ -58,4 +58,17 @@ export interface MessageRepository {
     conversationId: string,
     limit: number,
   ): Promise<Message[]>;
+
+  /**
+   * Grava a transcrição de um áudio INBOUND numa `Message` já existente
+   * (feature de transcrição de áudio, 2026-08-24) — ver docstring de
+   * `Message.audioTranscript` para a exceção documentada à imutabilidade.
+   * Escopado por `tenantId` E `messageId` (mesma defesa em profundidade de
+   * `findById`). Silenciosamente não faz nada se a mensagem não existir ou
+   * pertencer a outro tenant — quem chama (`ConversationAiService`) trata
+   * essa escrita como auxiliar, nunca crítica (mesmo racional de
+   * `flagNeedsHumanAttention`/`incrementUnreadCount`: enriquecimento, nunca
+   * bloqueia o fluxo principal).
+   */
+  setAudioTranscript(tenantId: string, messageId: string, transcript: string): Promise<void>;
 }

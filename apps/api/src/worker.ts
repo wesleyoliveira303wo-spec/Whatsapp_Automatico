@@ -207,6 +207,9 @@ async function main(): Promise<void> {
     aiBusinessProfileRepository,
     mediaDownloader,
     campaignOriginResolver,
+    // Feature de transcrição de áudio (2026-08-24) — `messageRepository` já
+    // existe neste escopo (usado por `AiReplyJobProcessor` mais abaixo).
+    messageRepository,
   );
   const promptVersion = getPromptVersion(AI_PROMPT_VERSION ?? 'v1');
 

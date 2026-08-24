@@ -52,6 +52,7 @@ interface WhatsAppMessageRow {
   mediaUrl: string | null;
   mediaKeyEncrypted: string | null;
   mediaFileName: string | null;
+  audioTranscript: string | null;
   occurredAt: Date;
 }
 
@@ -95,6 +96,7 @@ function toDomain(row: WhatsAppMessageRow): Message {
             fileName: row.mediaFileName ?? undefined,
           }
         : undefined,
+    audioTranscript: row.audioTranscript ?? undefined,
     occurredAt: row.occurredAt,
   };
 }
@@ -187,5 +189,24 @@ export class PrismaMessageRepository implements MessageRepository {
       take: limit,
     });
     return rows.map(toDomain);
+  }
+
+  /**
+   * Feature de transcrição de áudio (2026-08-24) — ver docstring do port.
+   * `updateMany` (não `update`) escopado por `tenantId` E `id`, mesmo
+   * racional de `incrementUnreadCount`/`flagNeedsHumanAttention`: zero linhas
+   * afetadas (mensagem inexistente ou de outro tenant) não é erro, é
+   * silenciosamente ignorado — quem chama trata como enriquecimento
+   * auxiliar, nunca crítico.
+   */
+  async setAudioTranscript(
+    tenantId: string,
+    messageId: string,
+    transcript: string,
+  ): Promise<void> {
+    await this.prisma.whatsAppMessage.updateMany({
+      where: { tenantId, id: messageId },
+      data: { audioTranscript: transcript },
+    });
   }
 }

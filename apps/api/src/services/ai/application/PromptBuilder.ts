@@ -17,21 +17,26 @@ const MEDIA_CONTENT_TYPE_LABEL: Record<Exclude<Message['contentType'], 'text'>, 
 
 /**
  * Descreve o conteúdo de UMA mensagem para o histórico enviado à IA (Fase 1,
- * Bloco F1.1, ADR #90). Nenhum `AiProvider` configurado neste projeto é
- * multimodal (nem `ClaudeAiProvider` nem `GeminiAiProvider` enviam o binário
- * da mídia ao modelo) — sem esta função, uma mensagem de mídia sem legenda
+ * Bloco F1.1, ADR #90). Sem esta função, uma mensagem de mídia sem legenda
  * viraria um turno de usuário com `content: ''`, invisível para a IA (ela
  * nunca saberia que o cliente enviou algo).
  *
  * A descrição é estritamente FACTUAL ("o cliente enviou uma imagem") —
- * NUNCA inventa o que a mídia contém (não é possível saber sem visão
- * computacional, que este projeto não tem). Quando há legenda, ela é
- * preservada e anexada — é a única informação real disponível sobre o
- * conteúdo. O prompt base (`PromptVersion`) já instrui a IA a nunca inventar
+ * NUNCA inventa o que a mídia contém. Quando há legenda, ela é preservada e
+ * anexada. O prompt base (`PromptVersion`) já instrui a IA a nunca inventar
  * informação; esta função só garante que o FATO "houve um anexo" chega até
  * o modelo, para ele reagir com honestidade (ex.: "recebi seu comprovante,
  * mas não consigo abrir arquivos — pode descrever o que precisa?") em vez de
  * ignorar a mensagem ou fingir que era texto vazio.
+ *
+ * ATUALIZAÇÃO (Fase 1, Bloco F1.2 + feature de transcrição de áudio,
+ * 2026-08-24): `GeminiAiProvider` É multimodal desde F1.2 — a claim antiga
+ * de "nenhum provider é multimodal" ficou desatualizada e foi corrigida
+ * aqui. Para ÁUDIO inbound já transcrito (`message.audioTranscript`
+ * preenchido — ver `ConversationAiService`/`audioTranscriptSignal.ts`), esta
+ * função devolve a transcrição real em vez da descrição genérica: é o que
+ * faz a IA "lembrar" o conteúdo de um áudio em TODOS os turnos futuros da
+ * conversa, não só naquele em que o binário foi anexado.
  */
 /**
  * Exportada (Redesign 2026-08-05, R5) para reuso por `SummaryPromptBuilder`
@@ -42,6 +47,15 @@ export function describeMessageContent(message: Message): string {
   if (message.contentType === 'text' || !message.media) {
     return message.content;
   }
+
+  // Feature de transcrição de áudio (2026-08-24): áudio inbound já
+  // transcrito usa a transcrição real, não a descrição genérica — é isso
+  // que permite a IA responder com base no conteúdo em qualquer turno
+  // futuro, não só na resposta imediatamente seguinte ao áudio.
+  if (message.contentType === 'audio' && message.direction === 'inbound' && message.audioTranscript) {
+    return `[O cliente enviou um áudio dizendo: "${message.audioTranscript}"]`;
+  }
+
   const label = MEDIA_CONTENT_TYPE_LABEL[message.contentType];
   const caption = message.content.trim();
 

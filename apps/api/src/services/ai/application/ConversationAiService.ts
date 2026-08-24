@@ -1,4 +1,5 @@
 import { Message } from '../../conversations/domain/entities/Message';
+import { MessageRepository } from '../../conversations/domain/repositories/MessageRepository';
 import { MediaDownloader } from '../../whatsapp/domain/providers/MediaDownloader';
 import { AiInteraction } from '../domain/entities/AiInteraction';
 import { AiInteractionRepository } from '../domain/repositories/AiInteractionRepository';
@@ -13,6 +14,7 @@ import { AiProviderName } from '../domain/providers/AiProviderName';
 import { validateReply } from '../domain/ReplyValidator';
 import { extractEscalation, EscalationReason } from '../domain/escalationSignal';
 import { extractStage, StageSignalValue } from '../domain/stageSignal';
+import { extractAudioTranscript } from '../domain/audioTranscriptSignal';
 import { getOffHoursContext } from '../domain/workingHours';
 import { PromptBuilder } from './PromptBuilder';
 
@@ -182,6 +184,14 @@ export class ConversationAiService {
      * (nenhuma conversa recebe o bloco de contexto de campanha).
      */
     private readonly campaignOriginResolver?: CampaignOriginResolver,
+    /**
+     * Feature de transcrição de áudio (2026-08-24). OPCIONAL, mesmo padrão
+     * de `mediaDownloader`/`campaignOriginResolver`: sem ele configurado, a
+     * IA ainda "ouve" o áudio anexado nesta chamada (comportamento de F1.2
+     * inalterado), só não persiste a transcrição — degrada para o
+     * comportamento de antes desta feature, nunca quebra a resposta.
+     */
+    private readonly messageRepository?: MessageRepository,
   ) {}
 
   async generateReply(
@@ -249,8 +259,12 @@ export class ConversationAiService {
     // marcador de estágio do texto JÁ SEM o marcador de escalonamento (a
     // ordem entre os dois marcadores na resposta da IA não importa, cada
     // extração só procura o seu próprio marcador).
-    const { stage: suggestedStage, content: cleanedContent } =
+    const { stage: suggestedStage, content: contentWithoutStage } =
       extractStage(contentWithoutEscalation);
+    // Feature de transcrição de áudio (2026-08-24): mesmo encadeamento —
+    // extrai o marcador de transcrição do texto já sem os dois anteriores.
+    const { transcript: audioTranscript, content: cleanedContent } =
+      extractAudioTranscript(contentWithoutStage);
     const validation = validateReply(cleanedContent, this.maxReplyLength);
 
     if (!validation.valid) {
@@ -281,6 +295,20 @@ export class ConversationAiService {
       status: 'success',
       escalationReason,
     });
+
+    // Feature de transcrição de áudio (2026-08-24): só no caminho de SUCESSO
+    // (mesmo racional de `escalate`/`stage` — nunca gravar um efeito colateral
+    // de uma resposta que reprovou na validação). Persiste só se a IA
+    // realmente emitiu o marcador E sabemos a qual áudio ele se refere
+    // (a única mídia anexada nesta chamada, se for do tipo áudio).
+    if (audioTranscript) {
+      const audioMessageId = [...mediaByMessageId.entries()].find(([, part]) =>
+        part.mimeType.startsWith('audio/'),
+      )?.[0];
+      if (audioMessageId) {
+        await this.persistAudioTranscript(tenantId, audioMessageId, audioTranscript);
+      }
+    }
 
     return {
       status: 'success',
@@ -419,8 +447,19 @@ export class ConversationAiService {
         // campanha e reagia como se o cliente a tivesse mandado ("Vi que você
         // mandou umas imagens"). Interpretar mídia só faz sentido para o que
         // o CLIENTE enviou — o que nós mandamos, nós já sabemos o que é.
+        //
+        // Feature de transcrição de áudio (2026-08-24): um áudio JÁ
+        // transcrito (`audioTranscript` preenchido) deixa de ser reanexado
+        // aqui — `describeMessageContent` já mostra a transcrição real no
+        // histórico textual, então reenviar o binário de novo gastaria
+        // custo/latência sem ganho (mesmo racional do comentário da função
+        // acima, "reenviar mídia antiga multiplica custo sem ganho real" —
+        // que, para IMAGEM, continua sendo só uma intenção documentada, sem
+        // mecanismo equivalente de "já visto"; não resolvido nesta rodada,
+        // fora do escopo pedido).
         message.direction === 'inbound' &&
-        (message.contentType === 'image' || message.contentType === 'audio') &&
+        (message.contentType === 'image' ||
+          (message.contentType === 'audio' && !message.audioTranscript)) &&
         Boolean(message.media),
     );
     if (!latestMediaMessage) {
@@ -447,6 +486,29 @@ export class ConversationAiService {
       // resposta (a IA cai no fallback textual de `describeMessageContent`).
     }
     return result;
+  }
+
+  /**
+   * Grava a transcrição extraída de um áudio (feature de transcrição de
+   * áudio, 2026-08-24) via `MessageRepository.setAudioTranscript()`.
+   * DEGRADAÇÃO GRACIOSA (mesmo racional de `loadProfileContext`/
+   * `loadCampaignContext`): sem `messageRepository` configurado, ou
+   * qualquer falha na escrita, não faz nada — é enriquecimento auxiliar,
+   * nunca pode impedir a resposta já validada de chegar ao cliente.
+   */
+  private async persistAudioTranscript(
+    tenantId: string,
+    messageId: string,
+    transcript: string,
+  ): Promise<void> {
+    if (!this.messageRepository) {
+      return;
+    }
+    try {
+      await this.messageRepository.setAudioTranscript(tenantId, messageId, transcript);
+    } catch {
+      // Silencioso de propósito — ver docstring acima.
+    }
   }
 
   /**

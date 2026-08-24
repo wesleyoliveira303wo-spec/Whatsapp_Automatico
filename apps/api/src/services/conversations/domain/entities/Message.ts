@@ -35,7 +35,8 @@ export interface MessageMediaReference {
  * Uma mensagem (inbound ou outbound) dentro de uma `Conversation` —
  * Milestone 3, Bloco 2. Registro append-only: uma vez criada, nunca é
  * atualizada — mesmo espírito de `WhatsAppSessionEvent` (log imutável), por
- * isso não expõe `updatedAt`.
+ * isso não expõe `updatedAt`. ÚNICA exceção: `audioTranscript` (ver abaixo),
+ * enriquecimento assíncrono, nunca correção de conteúdo.
  *
  * `direction` tipado como união literal, não `string` livre (mesmo racional
  * do F6/ADR #15). Só `'inbound'` é produzida pelo Bloco 2
@@ -66,5 +67,19 @@ export interface Message {
   content: string;
   contentType: MessageContentType;
   media?: MessageMediaReference;
+  /**
+   * Transcrição de um áudio INBOUND, preenchida de forma assíncrona depois
+   * da criação da mensagem (feature de transcrição de áudio, 2026-08-24) —
+   * ver `MessageRepository.setAudioTranscript()`. `undefined` até ser
+   * transcrita, ou para qualquer mensagem que não seja áudio inbound.
+   *
+   * ÚNICA EXCEÇÃO à imutabilidade descrita acima ("uma vez criada, nunca é
+   * atualizada"): a IA transcreve o áudio como parte da MESMA chamada
+   * multimodal que já gera a resposta (zero chamada de IA extra) e o texto
+   * chega depois que a `Message` já existe. É enriquecimento assíncrono de
+   * uma mensagem existente, nunca correção de conteúdo — nenhum outro campo
+   * de `Message` ganha esse mesmo tratamento.
+   */
+  audioTranscript?: string;
   occurredAt: Date;
 }

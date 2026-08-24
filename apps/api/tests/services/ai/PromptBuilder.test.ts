@@ -57,7 +57,11 @@ describe('PromptBuilder', () => {
   });
 
   // --- Fase 1, Bloco F1.1 (ADR #90): mensagens de mídia no histórico ---
-  describe('mensagens de mídia (nenhum AiProvider é multimodal)', () => {
+  // Título ATUALIZADO (2026-08-24): `GeminiAiProvider` É multimodal desde
+  // F1.2 — a claim antiga de "nenhum provider é multimodal" ficou
+  // desatualizada. `describeMessageContent` é o fallback textual, usado
+  // sempre que não há binário anexado (ou o provider não é multimodal).
+  describe('mensagens de mídia (descrição textual — fallback quando não há binário anexado)', () => {
     it('descreve uma imagem sem legenda como um aviso factual entre colchetes', () => {
       const builder = new PromptBuilder();
       const messages = [
@@ -181,6 +185,63 @@ describe('PromptBuilder', () => {
       expect(request.messages).toEqual([
         { role: 'user', content: `[O cliente enviou um(a) ${label}, sem legenda]` },
       ]);
+    });
+
+    // Feature de transcrição de áudio (2026-08-24) — ver
+    // `audioTranscriptSignal.ts`/`ConversationAiService.persistAudioTranscript`.
+    describe('transcrição de áudio (feature de transcrição de áudio, 2026-08-24)', () => {
+      it('áudio INBOUND já transcrito usa a transcrição real, não a descrição genérica', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'inbound',
+            contentType: 'audio',
+            content: '',
+            media: { mimeType: 'audio/ogg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+            audioTranscript: 'quero saber o preço do site',
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe(
+          '[O cliente enviou um áudio dizendo: "quero saber o preço do site"]',
+        );
+      });
+
+      it('áudio INBOUND sem transcrição ainda usa a descrição genérica (comportamento anterior preservado)', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'inbound',
+            contentType: 'audio',
+            content: '',
+            media: { mimeType: 'audio/ogg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe('[O cliente enviou um(a) áudio, sem legenda]');
+      });
+
+      it('áudio OUTBOUND com audioTranscript preenchido (não deveria acontecer, mas não deve usar a transcrição — só faz sentido para inbound)', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'outbound',
+            contentType: 'audio',
+            content: '',
+            media: { mimeType: 'audio/ogg', url: '', mediaKeyEncrypted: '' },
+            audioTranscript: 'não deveria aparecer aqui',
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).not.toContain('não deveria aparecer aqui');
+        expect(request.messages[0].content).toBe('[Você enviou um(a) áudio, sem legenda]');
+      });
     });
 
     it('trata contentType de mídia sem media (dado inconsistente) como o content cru, sem quebrar', () => {
