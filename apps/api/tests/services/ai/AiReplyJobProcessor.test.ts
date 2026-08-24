@@ -859,6 +859,49 @@ describe('AiReplyJobProcessor', () => {
       expect(updated?.stageSetBy).toBe('human');
     });
 
+    /**
+     * Pedido do fundador (2026-08-24) — quando a sessão reinicia (gap >=
+     * 24h), a regra "só para frente" do teste acima NÃO se aplica: a IA
+     * classificou lendo só a mensagem nova, sem nenhuma pista da conversa
+     * antiga, então mesmo uma REGRESSÃO (aqui, de "negotiating" para "new")
+     * é uma classificação legítima, não um erro de leitura — ver docstring
+     * de `shouldAiUpdateStage`.
+     */
+    it('EXCEÇÃO à regra "só para frente": sessão reiniciada (24h+) libera a IA a regredir o estágio', async () => {
+      const { processor, conversationRepository, messageRepository, aiProviderFactory } =
+        buildSut();
+      conversationRepository.seed(
+        buildConversation({ stage: 'negotiating', stageSetBy: 'ai' }),
+      );
+      await messageRepository.create(
+        buildMessage({
+          id: 'antiga-1',
+          content: 'pergunta sobre o orçamento de dias atrás',
+          occurredAt: new Date('2026-07-10T12:00:00Z'),
+        }),
+      );
+      // Gap de 2 dias — sessão reiniciada.
+      await messageRepository.create(
+        buildMessage({
+          id: 'message-inbound-1',
+          content: 'oi, quero saber sobre outro assunto',
+          occurredAt: new Date('2026-07-12T12:00:00Z'),
+        }),
+      );
+      aiProviderFactory.provider.setNextResult({
+        content: 'Oi! Tudo bem? Me conta, o que você precisa? [[ESTAGIO:NEW]]',
+        model: 'claude-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      await processor.process(buildJobData());
+
+      const updated = await conversationRepository.findById(CONVERSATION_ID);
+      expect(updated?.stage).toBe('new');
+      expect(updated?.stageSetBy).toBe('ai');
+    });
+
     it('resposta sem marcador de estágio: nao mexe no stage atual', async () => {
       const { processor, conversationRepository, aiProviderFactory } = buildSut();
       conversationRepository.seed(buildConversation({ stage: 'contacted', stageSetBy: 'ai' }));

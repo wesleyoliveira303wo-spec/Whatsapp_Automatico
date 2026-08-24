@@ -40,16 +40,28 @@ export const DEFAULT_SESSION_GAP_MS = 24 * 60 * 60 * 1000;
  * inteira, para o operador ver na Dashboard. "Recomeçar a conversa" é sobre
  * o que a IA LÊ, não sobre o que fica GRAVADO.
  *
- * NÃO mexe em `stage`/`escalatedAt`/qualquer outro campo da `Conversation` —
- * escopo deliberadamente restrito ao contexto passado à IA (o pedido do
- * fundador foi especificamente sobre a IA "esquecer" o assunto anterior, não
- * sobre o funil de CRM voltar para "Novo"). Se isso se mostrar errado, é uma
- * decisão de produto separada, não decidida agora.
+ * NÃO mexe em `stage`/`escalatedAt`/qualquer outro campo da `Conversation`
+ * diretamente — só devolve, além do histórico cortado, um sinal
+ * (`sessionRestarted`) de que um corte de verdade aconteceu. Quem decide o
+ * que fazer com esse sinal é `AiReplyJobProcessor`: hoje ele libera
+ * `shouldAiUpdateStage` a reclassificar o estágio LIVREMENTE (inclusive
+ * regredindo) só nesta resposta — pedido direto do fundador (2026-08-24):
+ * "se o cliente quiser algo novo, pode voltar a Novo; se ele continuar o
+ * último pedido, a IA analisa e classifica certo" — ou seja, quem decide o
+ * estágio correto é a PRÓPRIA IA, lendo só a mensagem nova, não uma regra
+ * automática que força "Novo" nem uma que preserva o estágio antigo por
+ * padrão.
  */
+export interface SessionHistory {
+  messages: Message[];
+  /** `true` quando um gap >= `sessionGapMs` foi encontrado — a sessão atual não é a mesma de todo o histórico lido. */
+  sessionRestarted: boolean;
+}
+
 export function trimHistoryToCurrentSession(
   messages: Message[],
   sessionGapMs: number = DEFAULT_SESSION_GAP_MS,
-): Message[] {
+): SessionHistory {
   let sessionStart = 0;
   for (let index = 1; index < messages.length; index += 1) {
     const gap = messages[index].occurredAt.getTime() - messages[index - 1].occurredAt.getTime();
@@ -57,5 +69,5 @@ export function trimHistoryToCurrentSession(
       sessionStart = index;
     }
   }
-  return messages.slice(sessionStart);
+  return { messages: messages.slice(sessionStart), sessionRestarted: sessionStart > 0 };
 }

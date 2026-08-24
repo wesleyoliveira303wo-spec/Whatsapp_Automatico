@@ -51,10 +51,27 @@ const STAGE_ORDER: Record<Conversation['stage'], number> = {
  *
  * `stageSetBy` continua sendo gravado (quem classificou por último), mas
  * deixou de BLOQUEAR — agora é só informação exibida no card.
+ *
+ * EXCEÇÃO — sessão reiniciada (2026-08-24, pedido direto do fundador): a
+ * regra "só para frente" pressupõe que o histórico que a IA está vendo é a
+ * MESMA conversa contínua — proteção contra a IA reclassificar por engano
+ * baseada numa mensagem ambígua no meio de um papo já em andamento. Deixa de
+ * fazer sentido quando `trimHistoryToCurrentSession` (ver
+ * `AiReplyJobProcessor`) já cortou o histórico numa sessão nova (gap >= 24h):
+ * a IA está classificando com base SÓ no que o cliente disse agora, sem
+ * nenhuma pista da conversa antiga — se ela concluir que é um "Novo"
+ * interesse, essa classificação é tão legítima quanto a antiga era, não uma
+ * falha de leitura. `sessionRestarted=true` libera a regressão SÓ nesse
+ * caso; para toda conversa contínua (o caso comum), o comportamento
+ * permanece EXATAMENTE o mesmo de antes (default `false`).
  */
 export function shouldAiUpdateStage(
   conversation: Conversation,
   suggestedStage: Conversation['stage'],
+  sessionRestarted: boolean = false,
 ): boolean {
+  if (sessionRestarted) {
+    return true;
+  }
   return STAGE_ORDER[suggestedStage] >= STAGE_ORDER[conversation.stage];
 }

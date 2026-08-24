@@ -17,17 +17,20 @@ function buildMessage(overrides: Partial<Message> = {}): Message {
 }
 
 describe('trimHistoryToCurrentSession', () => {
-  it('devolve o histórico inteiro quando não há nenhum gap >= o limite (conversa contínua)', () => {
+  it('devolve o histórico inteiro e sessionRestarted=false quando não há nenhum gap >= o limite (conversa contínua)', () => {
     const messages = [
       buildMessage({ id: 'm1', occurredAt: new Date('2026-08-14T12:00:00.000Z') }),
       buildMessage({ id: 'm2', occurredAt: new Date('2026-08-14T12:05:00.000Z') }),
       buildMessage({ id: 'm3', occurredAt: new Date('2026-08-14T12:10:00.000Z') }),
     ];
 
-    expect(trimHistoryToCurrentSession(messages)).toEqual(messages);
+    expect(trimHistoryToCurrentSession(messages)).toEqual({
+      messages,
+      sessionRestarted: false,
+    });
   });
 
-  it('corta tudo antes do último gap >= 24h (cliente sumiu e voltou dias depois)', () => {
+  it('corta tudo antes do último gap >= 24h e sinaliza sessionRestarted=true (cliente sumiu e voltou dias depois)', () => {
     const messages = [
       buildMessage({ id: 'm1', occurredAt: new Date('2026-08-01T12:00:00.000Z') }),
       buildMessage({ id: 'm2', occurredAt: new Date('2026-08-01T12:05:00.000Z') }),
@@ -38,7 +41,8 @@ describe('trimHistoryToCurrentSession', () => {
 
     const result = trimHistoryToCurrentSession(messages);
 
-    expect(result.map((m) => m.id)).toEqual(['m3', 'm4']);
+    expect(result.messages.map((m) => m.id)).toEqual(['m3', 'm4']);
+    expect(result.sessionRestarted).toBe(true);
   });
 
   it('usa o ÚLTIMO gap grande, não o primeiro, quando há mais de uma sessão antiga no histórico', () => {
@@ -53,10 +57,11 @@ describe('trimHistoryToCurrentSession', () => {
 
     const result = trimHistoryToCurrentSession(messages);
 
-    expect(result.map((m) => m.id)).toEqual(['m3', 'm4']);
+    expect(result.messages.map((m) => m.id)).toEqual(['m3', 'm4']);
+    expect(result.sessionRestarted).toBe(true);
   });
 
-  it('um gap logo ABAIXO do limite (23h59min) NÃO corta — é uma conversa contínua, só demorada', () => {
+  it('um gap logo ABAIXO do limite (23h59min) NÃO corta e sessionRestarted fica false — é conversa contínua, só demorada', () => {
     const messages = [
       buildMessage({ id: 'm1', occurredAt: new Date('2026-08-10T12:00:00.000Z') }),
       buildMessage({
@@ -65,10 +70,13 @@ describe('trimHistoryToCurrentSession', () => {
       }),
     ];
 
-    expect(trimHistoryToCurrentSession(messages).map((m) => m.id)).toEqual(['m1', 'm2']);
+    const result = trimHistoryToCurrentSession(messages);
+
+    expect(result.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+    expect(result.sessionRestarted).toBe(false);
   });
 
-  it('um gap de EXATAMENTE 24h corta (limite é inclusivo, >=)', () => {
+  it('um gap de EXATAMENTE 24h corta e sinaliza sessionRestarted=true (limite é inclusivo, >=)', () => {
     const messages = [
       buildMessage({ id: 'm1', occurredAt: new Date('2026-08-10T12:00:00.000Z') }),
       buildMessage({
@@ -77,7 +85,10 @@ describe('trimHistoryToCurrentSession', () => {
       }),
     ];
 
-    expect(trimHistoryToCurrentSession(messages).map((m) => m.id)).toEqual(['m2']);
+    const result = trimHistoryToCurrentSession(messages);
+
+    expect(result.messages.map((m) => m.id)).toEqual(['m2']);
+    expect(result.sessionRestarted).toBe(true);
   });
 
   it('respeita um limite customizado (sessionGapMs), não só o default de 24h', () => {
@@ -88,17 +99,25 @@ describe('trimHistoryToCurrentSession', () => {
       buildMessage({ id: 'm2', occurredAt: new Date('2026-08-10T14:00:00.000Z') }),
     ];
 
-    expect(trimHistoryToCurrentSession(messages, oneHourMs).map((m) => m.id)).toEqual(['m2']);
-    expect(trimHistoryToCurrentSession(messages).map((m) => m.id)).toEqual(['m1', 'm2']);
+    const cortado = trimHistoryToCurrentSession(messages, oneHourMs);
+    expect(cortado.messages.map((m) => m.id)).toEqual(['m2']);
+    expect(cortado.sessionRestarted).toBe(true);
+
+    const naoCortado = trimHistoryToCurrentSession(messages);
+    expect(naoCortado.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+    expect(naoCortado.sessionRestarted).toBe(false);
   });
 
-  it('lista vazia devolve lista vazia', () => {
-    expect(trimHistoryToCurrentSession([])).toEqual([]);
+  it('lista vazia devolve lista vazia e sessionRestarted=false', () => {
+    expect(trimHistoryToCurrentSession([])).toEqual({ messages: [], sessionRestarted: false });
   });
 
-  it('uma única mensagem devolve ela mesma, sem tentar comparar consigo própria', () => {
+  it('uma única mensagem devolve ela mesma e sessionRestarted=false, sem tentar comparar consigo própria', () => {
     const messages = [buildMessage({ id: 'm1' })];
 
-    expect(trimHistoryToCurrentSession(messages)).toEqual(messages);
+    expect(trimHistoryToCurrentSession(messages)).toEqual({
+      messages,
+      sessionRestarted: false,
+    });
   });
 });

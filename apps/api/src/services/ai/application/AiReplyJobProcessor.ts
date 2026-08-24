@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 
-import { Message } from '../../conversations/domain/entities/Message';
 import { ConversationRepository } from '../../conversations/domain/repositories/ConversationRepository';
 import { MessageRepository } from '../../conversations/domain/repositories/MessageRepository';
 import { shouldAutoRespond } from '../../conversations/domain/policies/shouldAutoRespond';
@@ -203,7 +202,10 @@ export class AiReplyJobProcessor {
     // conversa antiga, nem para a IA responder nem para decidir se uma
     // mensagem faz parte de uma rajada em andamento. O banco continua com a
     // conversa inteira — ver docstring de `trimHistoryToCurrentSession`.
-    const chronological: Message[] = trimHistoryToCurrentSession(
+    // `sessionRestarted` é usado mais abaixo para liberar `shouldAiUpdateStage`
+    // a reclassificar o estágio livremente (a IA decide se é "Novo" interesse
+    // ou continuação do mesmo pedido, lendo só a mensagem atual).
+    const { messages: chronological, sessionRestarted } = trimHistoryToCurrentSession(
       [...recent].reverse(),
       this.sessionGapMs,
     );
@@ -337,13 +339,16 @@ export class AiReplyJobProcessor {
     // estágio sugerido pela IA, na MESMA condição de `shouldAutoRespond` já
     // garantida pela re-checagem do topo de `process()` (`conversation.status
     // === 'bot'`) — nenhuma checagem adicional de status é necessária aqui.
-    // A policy `shouldAiUpdateStage` cobre a ÚNICA condição extra: a IA só
-    // escreve se `stageSetBy` ainda for `'ai'` (nunca sobrescreve uma
-    // correção manual). Depois do dispatch, de propósito (mesmo racional do
-    // `escalate` acima): se o envio falhar e o job for retentado, melhor não
-    // ter mudado o estágio de uma resposta que nunca chegou ao cliente.
+    // A policy `shouldAiUpdateStage` cobre a condição extra de "só para
+    // frente" — EXCETO quando `sessionRestarted` (pedido do fundador,
+    // 2026-08-24): aí a IA classificou lendo só a mensagem nova, sem
+    // nenhuma pista da conversa antiga, então essa classificação vale mesmo
+    // que regrida o card (ver docstring de `shouldAiUpdateStage`). Depois do
+    // dispatch, de propósito (mesmo racional do `escalate` acima): se o
+    // envio falhar e o job for retentado, melhor não ter mudado o estágio de
+    // uma resposta que nunca chegou ao cliente.
     const podeAtualizarEstagio = result.suggestedStage
-      ? shouldAiUpdateStage(conversation, result.suggestedStage)
+      ? shouldAiUpdateStage(conversation, result.suggestedStage, sessionRestarted)
       : false;
 
     if (result.suggestedStage && podeAtualizarEstagio) {
