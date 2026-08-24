@@ -6,6 +6,10 @@ import { MessageRepository } from '../../conversations/domain/repositories/Messa
 import { shouldAutoRespond } from '../../conversations/domain/policies/shouldAutoRespond';
 import { shouldAiUpdateStage } from '../../conversations/domain/policies/shouldAiUpdateStage';
 import { shouldGenerateReply } from '../../conversations/domain/policies/shouldGenerateReply';
+import {
+  trimHistoryToCurrentSession,
+  DEFAULT_SESSION_GAP_MS,
+} from '../../conversations/domain/policies/trimHistoryToCurrentSession';
 import { AiReplyJobData } from '../../conversations/infrastructure/queues/AiReplyQueue';
 import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/OutboundMessageDispatcher';
 import { Logger } from '../../../shared/domain/Logger';
@@ -87,7 +91,11 @@ const DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS = 6 * 60 * 60 * 1000;
  *    antes de repassar ao `ConversationAiService`: `PromptBuilder` espera
  *    histórico cronológico (mais antigo primeiro), exatamente como a
  *    docstring de `listRecentByConversation()` já avisava que seria
- *    responsabilidade de quem chama.
+ *    responsabilidade de quem chama. Em seguida, `trimHistoryToCurrentSession`
+ *    (pedido do fundador, 2026-08-24) corta esse histórico na última sessão
+ *    ativa — um gap de 24h+ (configurável) sem nenhuma mensagem encerra a
+ *    "sessão" de contexto; um cliente que volta depois disso não carrega a
+ *    conversa antiga para a IA, mesmo ela continuando gravada no banco.
  * 4. Chama `ConversationAiService.generateReply()` — a MESMA instância é
  *    responsável por gravar o `AiInteraction` em toda tentativa (Bloco 3b),
  *    então esta classe não grava nada por conta própria.
@@ -149,6 +157,8 @@ export class AiReplyJobProcessor {
     // CORREÇÃO 2026-08-18 — ver docstring de `DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS`.
     private readonly handoffNoticeRepeatAfterMs: number = DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS,
     private readonly now: () => Date = () => new Date(),
+    // Pedido do fundador (2026-08-24) — ver docstring de `trimHistoryToCurrentSession`.
+    private readonly sessionGapMs: number = DEFAULT_SESSION_GAP_MS,
   ) {}
 
   async process(data: AiReplyJobData): Promise<void> {
@@ -187,7 +197,16 @@ export class AiReplyJobProcessor {
       data.conversationId,
       this.historyLimit,
     );
-    const chronological: Message[] = [...recent].reverse();
+    // Pedido do fundador (2026-08-24) — corta para a sessão ATUAL antes de
+    // qualquer outro uso do histórico (agrupamento de rajada incluído): um
+    // cliente que sumiu por 24h+ e voltou não deve ler como continuação da
+    // conversa antiga, nem para a IA responder nem para decidir se uma
+    // mensagem faz parte de uma rajada em andamento. O banco continua com a
+    // conversa inteira — ver docstring de `trimHistoryToCurrentSession`.
+    const chronological: Message[] = trimHistoryToCurrentSession(
+      [...recent].reverse(),
+      this.sessionGapMs,
+    );
 
     // AGRUPAMENTO DE RAJADA (2026-08-14) — segundo portão, depois de
     // `shouldAutoRespond` e antes de qualquer custo de IA. `shouldAutoRespond`

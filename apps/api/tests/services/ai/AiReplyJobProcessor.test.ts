@@ -167,6 +167,56 @@ describe('AiReplyJobProcessor', () => {
       ]);
     });
 
+    /**
+     * Pedido do fundador (2026-08-24) — achado real: um cliente sumiu e
+     * voltou dias depois, e a IA respondeu como se fosse a continuação
+     * direta da conversa antiga. `trimHistoryToCurrentSession` corta o
+     * histórico na última sessão ativa (gap >= 24h) antes de repassar à IA
+     * — este teste prova a fiação ponta a ponta (não só a função pura, já
+     * coberta em `trimHistoryToCurrentSession.test.ts`).
+     */
+    it('corta mensagens de mais de 24h atrás antes de repassar à IA (cliente voltou dias depois)', async () => {
+      const { processor, conversationRepository, messageRepository, aiProviderFactory } =
+        buildSut();
+      conversationRepository.seed(buildConversation());
+      await messageRepository.create(
+        buildMessage({
+          id: 'antiga-1',
+          content: 'pergunta de uma conversa de dias atrás',
+          occurredAt: new Date('2026-07-10T12:00:00Z'),
+        }),
+      );
+      await messageRepository.create(
+        buildMessage({
+          id: 'antiga-2',
+          direction: 'outbound',
+          content: 'resposta antiga da IA',
+          occurredAt: new Date('2026-07-10T12:01:00Z'),
+        }),
+      );
+      // Gap de 2 dias — bem acima do limite de 24h.
+      await messageRepository.create(
+        buildMessage({
+          id: 'message-inbound-1',
+          content: 'oi, voltei',
+          occurredAt: new Date('2026-07-12T12:00:00Z'),
+        }),
+      );
+      aiProviderFactory.provider.setNextResult({
+        content: 'resposta',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData());
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(1);
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages).toEqual([
+        { role: 'user', content: 'oi, voltei' },
+      ]);
+    });
+
     it('despacha via OutboundMessageDispatcher com aiInteractionId/content corretos quando a geração é bem-sucedida', async () => {
       const {
         processor,
