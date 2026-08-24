@@ -553,3 +553,106 @@ describe('v7 (2026-08-24 — distingue conversa iniciada pelo cliente de convers
     expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
   });
 });
+
+/**
+ * `v8` nasceu de uma investigação numa conversa REAL (não hipótese):
+ * `ai_interactions.escalation_reason='UNKNOWN_ANSWER'` confirmou que a IA
+ * escalou na primeira menção de uma funcionalidade fora da lista de
+ * serviços, sem tentar explorar antes. Cada teste abaixo trava um pedaço do
+ * comportamento corrigido — se alguém reescrever o prompt e voltar a deixar
+ * a IA escalar sem explorar, o teste diz qual comportamento real regrediu.
+ */
+describe('v8 (2026-08-24 — explora antes de escalar, dona da conversa até o cliente convencido)', () => {
+  it('está registrada e é resolvível por id, sem substituir as anteriores', () => {
+    expect(getPromptVersion('v8')).toBe(PROMPT_VERSIONS.v8);
+    for (const id of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7']) {
+      expect(PROMPT_VERSIONS[id]).toBeDefined();
+      expect(PROMPT_VERSIONS.v8.systemPrompt).not.toBe(PROMPT_VERSIONS[id].systemPrompt);
+    }
+  });
+
+  it('não tinha, em v7, nenhuma instrução de explorar antes de escalar — o gap real que causou o defeito', () => {
+    expect(PROMPT_VERSIONS.v7.systemPrompt).not.toMatch(/EXPLORE o que você já sabe/i);
+  });
+
+  it('manda a IA conduzir a conversa inteira e explorar antes de encaminhar para um humano', () => {
+    const prompt = PROMPT_VERSIONS.v8.systemPrompt;
+    expect(prompt).toMatch(
+      /VOCÊ CONDUZ A CONVERSA INTEIRA — da apresentação até o cliente estar convencido a contratar/i,
+    );
+    expect(prompt).toMatch(/EXPLORE o que você já sabe/i);
+    expect(prompt).toMatch(/Mais\s+perguntas geram mais respostas/i);
+  });
+
+  it('proíbe encaminhar na hora quando o pedido não está exatamente na lista de serviços', () => {
+    const prompt = PROMPT_VERSIONS.v8.systemPrompt;
+    expect(prompt).toMatch(
+      /QUANDO O CLIENTE PEDIR ALGO QUE NÃO ESTÁ EXATAMENTE NA LISTA DE SERVIÇOS, NÃO ENCAMINHE NA HORA/i,
+    );
+    expect(prompt).toMatch(/diga com sinceridade o que você TEM de relacionado/i);
+    expect(prompt).toMatch(/pergunte se aquela parte específica é\s+realmente indispensável/i);
+    expect(prompt).toMatch(/Só encaminhe para um humano DEPOIS que o cliente confirmar/i);
+  });
+
+  it('preserva os gatilhos de encaminhamento DIRETO (fechamento, pedido explícito, mídia) — não vira "nunca escalar"', () => {
+    const prompt = PROMPT_VERSIONS.v8.systemPrompt;
+    expect(prompt).toMatch(/Encaminhe direto para um humano \(sem precisar explorar mais\) só nestes casos/i);
+    expect(prompt).toMatch(/pede\s+explicitamente para falar com uma pessoa/i);
+    expect(prompt).toMatch(/pergunta como\s+paga, como começa, pede orçamento ou proposta fechada/i);
+    expect(prompt).toMatch(/manda ou pede foto, áudio, vídeo ou\s+documento/i);
+  });
+
+  it('reforça o anti-alucinação: explorar nunca significa inventar o que a empresa não faz', () => {
+    expect(PROMPT_VERSIONS.v8.systemPrompt).toMatch(
+      /nunca invente preço, prazo, número, prova, portfólio, funcionalidade ou\s+caso de cliente/i,
+    );
+  });
+
+  it('mantém a distinção de origem de v7 (cliente chamou vs. campanha), sem mudança', () => {
+    const prompt = PROMPT_VERSIONS.v8.systemPrompt;
+    expect(prompt).toMatch(/CASO 1 — O CLIENTE PROCUROU VOCÊ/i);
+    expect(prompt).toMatch(/CASO 2 — VOCÊ PROCUROU O CLIENTE/i);
+    expect(prompt).toMatch(/CONHEÇA A PESSOA ANTES DE OFERECER QUALQUER COISA/i);
+  });
+
+  it('mantém o ritmo e o formato de v6/v7 (um tópico por mensagem, blocos escalonados por estágio)', () => {
+    const prompt = PROMPT_VERSIONS.v8.systemPrompt;
+    expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
+    expect(prompt).toMatch(/No máximo UMA pergunta por mensagem/i);
+    expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
+  });
+
+  it('define closingDirective própria, reforçando "explorar antes de escalar" na posição de maior saliência', () => {
+    const directive = PROMPT_VERSIONS.v8.closingDirective;
+    expect(directive).toBeDefined();
+    expect(directive).toMatch(/LEMBRETE FINAL/i);
+    expect(directive).toMatch(/NÃO ENCAMINHE PARA UM HUMANO SÓ PORQUE O PEDIDO NÃO BATE 100% COM O QUE ESTÁ ESCRITO/i);
+    expect(directive).toMatch(/pergunte se é\s+indispensável antes de encaminhar/i);
+    expect(directive!.length).toBeLessThan(2000);
+    expect(directive).not.toBe(PROMPT_VERSIONS.v7.closingDirective);
+  });
+
+  it('o exemplo de pedido fora da lista explora antes de encaminhar, em vez de encaminhar na hora', () => {
+    const directive = PROMPT_VERSIONS.v8.closingDirective!;
+    expect(directive).toMatch(/Isso especificamente a gente ainda não faz, mas o restante do que você descreveu/i);
+    expect(directive).toMatch(/dá pra seguir sem ela por enquanto\?/i);
+  });
+
+  it('não cola um nome real de tenant nos exemplos — o produto é multi-tenant', () => {
+    expect(PROMPT_VERSIONS.v8.systemPrompt).not.toMatch(/Wesley Francis/i);
+    expect(PROMPT_VERSIONS.v8.closingDirective).not.toMatch(/Wesley Francis/i);
+  });
+
+  it('preserva mídia e marcadores TEXTUALMENTE — Pipeline/escalonamento intactos', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    expect(PROMPT_VERSIONS.v8.systemPrompt).toContain(mediaSentence);
+    expect(PROMPT_VERSIONS.v8.systemPrompt).toContain(MARKER_INSTRUCTIONS);
+  });
+
+  it('mantém as regras absolutas de anti-alucinação e escalonamento', () => {
+    const prompt = PROMPT_VERSIONS.v8.systemPrompt;
+    expect(prompt).toMatch(/nunca prometa\s+aprovação nem resultado garantido/i);
+    expect(prompt).toMatch(/nunca incentive.*burlar/i);
+    expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});
