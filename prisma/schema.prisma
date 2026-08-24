@@ -1,6 +1,3 @@
-// Prisma schema generated for Milestone 003 – Conversations
-// This schema mirrors the domain model defined in specs/M003-Conversations.md
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,175 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ---------- Enums ----------
-
-enum ConversationStatus {
-  NEW
-  ACTIVE
-  WAITING_CUSTOMER
-  WAITING_AGENT
-  RESOLVED
-  ARCHIVED
-  SPAM
-}
-
-enum MessageDirection {
-  IN
-  OUT
-}
-
-enum MessageType {
-  TEXT
-  IMAGE
-  VIDEO
-  AUDIO
-  DOCUMENT
-  STICKER
-  SYSTEM
-  LOCATION
-  CONTACT
-}
-
-enum MessageStatus {
-  SENT
-  DELIVERED
-  READ
-  FAILED
-}
-
-enum ConversationEventType {
-  CONVERSATION_CREATED
-  MESSAGE_ADDED
-  MESSAGE_STATUS_UPDATED
-  CONVERSATION_STATUS_CHANGED
-  CONVERSATION_CLOSED
-  TAG_ADDED
-  TAG_REMOVED
-  INTERNAL_NOTE_ADDED
-  ASSIGNMENT_CHANGED
-  ATTACHMENT_ADDED
-}
-
-// ---------- Models ----------
-model Contact {
-  id          String   @id @default(uuid())
-  tenantId    String
-  phoneNumber String
-  name        String?
-  email       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  conversations Conversation[]
-
-  @@unique([tenantId, phoneNumber])
-}
-
-model Conversation {
-  id           String   @id @default(uuid())
-  tenantId     String
-  contactId    String
-  status       ConversationStatus @default(NEW)
-  assignedTo   String?
-  leadId       String?
-  openedAt     DateTime?
-  closedAt     DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  // Relations
-  contact      Contact @relation(fields: [contactId], references: [id])
-  messages     Message[]
-  tags         ConversationTag[]
-  events       ConversationEvent[]
-  internalNotes InternalNote[]
-}
-
-model Message {
-  id                 String   @id @default(uuid())
-  conversationId     String
-  direction          MessageDirection
-  type               MessageType
-  content            String
-  providerMessageId String?
-  sentAt             DateTime?
-  receivedAt         DateTime @default(now())
-  status             MessageStatus @default(SENT)
-  metadata           Json?
-  createdAt          DateTime @default(now())
-
-  // Relations
-  conversation       Conversation @relation(fields: [conversationId], references: [id])
-  attachments        Attachment[]
-}
-
-model Attachment {
-  id        String   @id @default(uuid())
-  messageId String
-  type      MessageType
-  url       String
-  mimeType  String
-  sizeBytes Int
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  // Relations
-  message   Message @relation(fields: [messageId], references: [id])
-}
-
-model Tag {
-  id        String   @id @default(uuid())
-  tenantId  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  conversationTags ConversationTag[]
-
-  @@unique([tenantId, name])
-}
-
-model ConversationTag {
-  id             String   @id @default(uuid())
-  conversationId String
-  tagId          String
-  createdAt      DateTime @default(now())
-
-  // Relations
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  tag           Tag          @relation(fields: [tagId], references: [id])
-}
-
-model InternalNote {
-  id             String   @id @default(uuid())
-  conversationId String
-  authorId       String
-  content        String
-  createdAt      DateTime @default(now())
-
-  // Relations
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-}
-
-model ConversationEvent {
-  id             String   @id @default(uuid())
-  conversationId String
-  type           ConversationEventType
-  payload        Json
-  createdAt      DateTime @default(now())
-
-  // Relations
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-}
-
 // ============================================================
 // Milestone 1 – WhatsApp Connectivity
-// Adicionado em 2026-07-06. Não altera, não depende e não
-// referencia nenhum model/enum acima (domínio legado
-// "Conversations", Milestone 003 — migração adiada, ver
-// DECISIONS.md ADR #11 e PROJECT_STATUS.md §2.1).
+// Adicionado em 2026-07-06.
+//
+// Onda 3 do redesign (2026-08-24, P2) — o domínio legado "Conversations"
+// (Milestone 003, congelado desde ADR #11) foi REMOVIDO deste schema: 8
+// models + 5 enums (Contact/Conversation/Message/Attachment/Tag/
+// ConversationTag/InternalNote/ConversationEvent) nunca tiveram uma única
+// linha de código em `apps/` os referenciando (confirmado por busca no
+// repositório inteiro) e as 8 tabelas correspondentes no Postgres de
+// produção estavam vazias (confirmado por contagem direta antes desta
+// migration). Ver migration `20260824120000_drop_legacy_milestone003_schema`
+// e DECISIONS.md ADR #11 (atualizada) para o histórico completo.
 // ============================================================
 
 // ---------- Enums (WhatsApp Connectivity) ----------
