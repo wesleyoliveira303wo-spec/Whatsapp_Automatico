@@ -557,6 +557,7 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar por nome ou telefone…"
+            aria-label="Buscar por nome ou telefone"
             className="h-[34px] min-w-[220px] flex-1 rounded-[9px] border-border bg-panel text-[13px]"
           />
           {canManage && (

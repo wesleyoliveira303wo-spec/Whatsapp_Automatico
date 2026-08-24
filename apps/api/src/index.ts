@@ -733,6 +733,20 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // pela demora nas respostas). Sem métricas/dashboard novo — só um
     // endpoint JSON simples, do jeito mais barato de responder "o sistema
     // está funcionando?" pedido explicitamente pelo fundador.
+    // Onda 3 do redesign (2026-08-23, P1) — achado ao investigar por que
+    // `healthReady.test.ts` estourava o timeout de 15s em vez de responder
+    // 503 rápido com Redis fora do ar: a conexão de `aiReplyQueue`
+    // (`aiReplyProducerConnection`) usa `maxRetriesPerRequest: null`
+    // (exigência do `Worker`, ver comentário acima da criação da conexão) —
+    // um comando ioredis nessa configuração retenta INDEFINIDAMENTE enquanto
+    // a conexão está fora, então `getJobCounts()` nunca rejeitava sozinho.
+    // Isso não é só um problema de teste: é o PRÓPRIO endpoint de readiness
+    // ficando pendurado quando a dependência que ele deveria reportar como
+    // "fora do ar" está, de fato, fora do ar — o oposto do que um probe de
+    // prontidão deve fazer. `Promise.race` contra um teto curto resolve os
+    // dois lados (aplicado também ao Postgres, por simetria e defesa contra
+    // um cenário futuro de rede degradada, não só desconexão total).
+    const HEALTH_CHECK_TIMEOUT_MS = 3000;
     app.get('/health/ready', async (_req: Request, res: Response) => {
       const checks: {
         database: 'ok' | 'down';
@@ -741,14 +755,28 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       } = { database: 'down', redis: 'down' };
 
       try {
-        await prisma.$queryRaw`SELECT 1`;
+        const dbCheck = prisma.$queryRaw`SELECT 1`;
+        dbCheck.catch(() => {});
+        await Promise.race([
+          dbCheck,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout ao checar Postgres')), HEALTH_CHECK_TIMEOUT_MS),
+          ),
+        ]);
         checks.database = 'ok';
       } catch {
         // fica 'down' — não deixa a checagem inteira derrubar a resposta.
       }
 
       try {
-        const counts = await aiReplyQueue.getJobCounts('waiting', 'active', 'failed', 'delayed');
+        const redisCheck = aiReplyQueue.getJobCounts('waiting', 'active', 'failed', 'delayed');
+        redisCheck.catch(() => {});
+        const counts = await Promise.race([
+          redisCheck,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout ao checar Redis')), HEALTH_CHECK_TIMEOUT_MS),
+          ),
+        ]);
         checks.redis = 'ok';
         checks.aiQueue = {
           waiting: counts.waiting ?? 0,
@@ -757,8 +785,9 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           delayed: counts.delayed ?? 0,
         };
       } catch {
-        // fica 'down'/`aiQueue` ausente — Redis inacessível ou fila não
-        // respondeu; não deixa a checagem inteira derrubar a resposta.
+        // fica 'down'/`aiQueue` ausente — Redis inacessível, comando parado
+        // na fila de retentativas, ou timeout; não deixa a checagem inteira
+        // derrubar a resposta.
       }
 
       const healthy = checks.database === 'ok' && checks.redis === 'ok';

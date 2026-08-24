@@ -403,6 +403,7 @@ export default function CampaignCreateForm({
               value={contactSearch}
               onChange={(event) => setContactSearch(event.target.value)}
               placeholder="Buscar por nome ou telefone…"
+              aria-label="Buscar contatos salvos por nome ou telefone"
               className="mt-1.5 h-[34px] text-[13px]"
             />
             <div className="mt-2 max-h-[220px] overflow-y-auto rounded-lg border border-border">

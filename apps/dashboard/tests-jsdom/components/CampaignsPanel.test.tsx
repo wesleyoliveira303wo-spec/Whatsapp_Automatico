@@ -474,6 +474,43 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     await waitFor(() => expect(screen.getByText('Mostrando 1 de 7 campanhas')).toBeInTheDocument());
   });
 
+  /**
+   * Teto de carga (auditoria 2026-08-22, P1.1) — antes desta correção o
+   * painel buscava só a 1ª página (50 campanhas) e tratava como se fosse
+   * tudo, sem nenhum aviso quando a sessão tinha mais. Mesma disciplina já
+   * aplicada em `PipelineBoard`/`usePipelineConversations`: acumula por
+   * cursor até esgotar ou bater o teto, e avisa (`role="status"`) em vez de
+   * mentir por omissão.
+   */
+  it('avisa quando a sessão tem mais campanhas do que cabe no teto de carga', async () => {
+    let callCount = 0;
+    (clientApi.fetchCampaigns as jest.Mock).mockImplementation(() => {
+      callCount += 1;
+      return Promise.resolve({
+        campaigns: [campaign({ id: `campaign-${callCount}`, name: `Campanha ${callCount}` })],
+        nextCursor: `cursor-${callCount}`,
+      });
+    });
+    (clientApi.fetchCampaign as jest.Mock).mockImplementation((id: string) =>
+      Promise.resolve({
+        campaign: campaign({ id, name: id }),
+        summary: { total: 1, pending: 0, skipped: 0, skipReasons: {} },
+      }),
+    );
+
+    render(<CampaignsPanel sessionName="vendas" />);
+
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/500 campanhas mais recentes/i);
+    // Parou no teto (10 páginas), não ficou preso num laço infinito.
+    expect(clientApi.fetchCampaigns).toHaveBeenCalledTimes(10);
+  });
+
+  it('não mostra o aviso de recorte quando a sessão inteira coube no teto de carga', async () => {
+    await renderPanel();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('estado vazio: nenhuma campanha ainda', async () => {
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({ campaigns: [] });
     (clientApi.fetchCampaignsOverview as jest.Mock).mockResolvedValue({

@@ -158,6 +158,22 @@ const SORT_OPTIONS: { key: SortOption; label: string }[] = [
 
 const PAGE_SIZE = 6;
 
+/**
+ * Teto de páginas de carregamento (auditoria 2026-08-22, P1.1). Antes desta
+ * rodada `load()` buscava só a PRIMEIRA página (`fetchCampaigns({limit:50})`)
+ * e tratava como se fosse tudo — o card do topo ("Total de campanhas") vem
+ * de `GET /campaigns/overview`, agregado no servidor sobre TODAS as
+ * campanhas da sessão, então uma sessão com mais de 50 campanhas mostrava um
+ * total no card que a tabela (e a busca/filtro/paginação client-side sobre
+ * ela) nunca conseguia alcançar — sem nenhum aviso. Mesmo remédio já usado
+ * em `usePipelineConversations` (`MAX_PIPELINE_PAGES`): acumula por cursor
+ * até esgotar ou bater o teto, e avisa (`truncated`) em vez de mentir por
+ * omissão. 10 páginas × 50 = 500 campanhas, folga generosa sobre o volume
+ * real (criar campanha é ação deliberada de administrador, não algo que
+ * acumula como mensagem).
+ */
+const MAX_CAMPAIGNS_PAGES = 10;
+
 interface CampaignRow {
   campaign: Campaign;
   summary?: CampaignRecipientSummary;
@@ -293,19 +309,21 @@ function ResponseProgressDonut({
  * Cards do topo, o donut "Progresso da campanha" e a lista "Status das
  * campanhas" vêm de `GET /campaigns/overview` (agregado no servidor, sobre
  * TODAS as campanhas da sessão — não só a página carregada/filtrada). A
- * tabela usa `fetchCampaigns` (até 50 por vez, suficiente para o volume
- * real deste produto) + `fetchCampaign`/`fetchCampaignMetrics` por campanha
- * em paralelo — mesmo padrão N+1 já aceito no restante do projeto para
- * telas de lista pequenas. Busca/filtro/ordenação/paginação (6 por página)
- * são só sobre esse conjunto já carregado — client-side, honesto porque a
- * sessão inteira já está em memória (não é uma lista paginada no servidor
- * sendo cortada silenciosamente).
+ * tabela acumula `fetchCampaigns` por cursor até esgotar ou bater
+ * `MAX_CAMPAIGNS_PAGES` (auditoria 2026-08-22, P1.1 — ver docstring da
+ * constante) + `fetchCampaign`/`fetchCampaignMetrics` por campanha em
+ * paralelo — mesmo padrão N+1 já aceito no restante do projeto para telas
+ * de lista pequenas. Busca/filtro/ordenação/paginação (6 por página) são só
+ * sobre esse conjunto já carregado — client-side, honesto porque a sessão
+ * inteira (ou o recorte declarado via `truncated`) já está em memória, não
+ * é uma lista paginada no servidor sendo cortada silenciosamente.
  */
 export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JSX.Element {
   const [overview, setOverview] = useState<CampaignSessionOverview | null>(null);
   const [rows, setRows] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | 'all'>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
@@ -327,9 +345,27 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
   const load = useCallback(() => {
     setLoading(true);
     setErrorMessage(null);
-    Promise.all([fetchCampaignsOverview(sessionName), fetchCampaigns({ limit: 50, sessionName })])
+    async function loadAllCampaigns(): Promise<{
+      campaigns: Campaign[];
+      truncated: boolean;
+    }> {
+      const all: Campaign[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        // eslint-disable-next-line no-await-in-loop -- paginação sequencial deliberada, mesmo padrão de usePipelineConversations.
+        const page = await fetchCampaigns({ sessionName, cursor, limit: 50 });
+        all.push(...page.campaigns);
+        cursor = page.nextCursor;
+        pages += 1;
+      } while (cursor && pages < MAX_CAMPAIGNS_PAGES);
+      return { campaigns: all, truncated: cursor !== undefined };
+    }
+
+    Promise.all([fetchCampaignsOverview(sessionName), loadAllCampaigns()])
       .then(async ([overviewResult, page]) => {
         setOverview(overviewResult.overview);
+        setTruncated(page.truncated);
         const withDetails = await Promise.all(
           page.campaigns.map(async (campaign) => {
             try {
@@ -542,6 +578,22 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
             />
           </motion.div>
 
+          {/*
+            Teto de carga atingido (auditoria 2026-08-22, P1.1) — mesma
+            disciplina de `PipelineBoard`: a tabela mostra um recorte, não a
+            sessão inteira, e isso precisa ser dito, nunca escondido.
+          */}
+          {truncated && (
+            <p
+              role="status"
+              className="mb-3 rounded-md bg-warning/[.12] px-3 py-2 text-[12.5px] text-warning-emphasis"
+            >
+              Mostrando as {MAX_CAMPAIGNS_PAGES * 50} campanhas mais recentes desta sessão. As
+              mais antigas não aparecem na tabela abaixo (os cards no topo continuam contando
+              todas).
+            </p>
+          )}
+
           <div className="mb-4 flex flex-wrap items-center gap-2.5">
             <div className="relative min-w-[220px] flex-1">
               <Search
@@ -552,6 +604,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar campanha por nome…"
+                aria-label="Buscar campanha por nome"
                 className="h-[34px] rounded-[9px] border-border bg-panel pl-8 text-[13px]"
               />
             </div>

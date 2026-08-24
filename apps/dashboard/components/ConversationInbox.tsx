@@ -155,6 +155,7 @@ export default function ConversationInbox({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar pessoa, número ou mensagem"
+              aria-label="Buscar pessoa, número ou mensagem"
               className="h-[35px] rounded-[10px] pl-[33px] text-[13px]"
             />
           </div>
