@@ -664,3 +664,103 @@ describe('v8 (2026-08-24 — explora antes de escalar, dona da conversa até o c
     expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
   });
 });
+
+/**
+ * `v9` nasceu de uma pergunta arquitetural do fundador (não um bug): como
+ * garantir as mesmas regras de processo numa sessão nova, e no dia 1 de um
+ * cliente futuro. Achado ao investigar: as regras já eram automáticas
+ * (código, não Cérebro) — o único gap real era a sessão SEM NENHUM Cérebro
+ * configurado, onde o exemplo "Me chamo [seu nome]" não tem nome nenhum
+ * pra usar. Cada teste abaixo trava um pedaço da rede de segurança nova.
+ */
+describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro configurado)', () => {
+  it('está registrada e é resolvível por id, sem substituir as anteriores', () => {
+    expect(getPromptVersion('v9')).toBe(PROMPT_VERSIONS.v9);
+    for (const id of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8']) {
+      expect(PROMPT_VERSIONS[id]).toBeDefined();
+      expect(PROMPT_VERSIONS.v9.systemPrompt).not.toBe(PROMPT_VERSIONS[id].systemPrompt);
+    }
+  });
+
+  it('v8 não tinha nenhuma instrução para a ausência do bloco de identidade — o gap real', () => {
+    expect(PROMPT_VERSIONS.v8.systemPrompt).not.toMatch(/SUA IDENTIDADE E SEU CATÁLOGO VÊM EXCLUSIVAMENTE/i);
+  });
+
+  it('define identidade/catálogo como vindos exclusivamente do bloco "# Informações da empresa"', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(
+      /SUA IDENTIDADE E SEU CATÁLOGO VÊM EXCLUSIVAMENTE DO BLOCO "# Informações da empresa"/i,
+    );
+  });
+
+  it('proíbe inventar nome de atendente ou de empresa quando o bloco não existe', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(
+      /NUNCA invente um nome de atendente, nome de empresa, serviço ou preço\s+nessa situação/i,
+    );
+    expect(prompt).toMatch(/sem se apresentar com um nome\s+ou empresa que não existe/i);
+  });
+
+  it('mesmo sem empresa cadastrada, a fase de descoberta continua (cumprimentar e perguntar o nome da pessoa)', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(/Continue cumprimentando normalmente e pode perguntar o nome da pessoa/i);
+    expect(prompt).toMatch(/ainda\s+estou me organizando por aqui, mas já te escuto/i);
+  });
+
+  it('guarda a instrução do CASO 1 de v7/v8: só se apresenta pelo nome SE houver um cadastrado', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(
+      /apresente-se pelo nome se houver um cadastrado nas\s+informações da empresa abaixo \(se não houver, cumprimente sem se apresentar por nome\)/i,
+    );
+  });
+
+  it('acrescenta "nome de atendente, nome de empresa" à lista de anti-alucinação', () => {
+    expect(PROMPT_VERSIONS.v9.systemPrompt).toMatch(
+      /nunca invente nome de atendente, nome de empresa, preço, prazo, número/i,
+    );
+  });
+
+  it('mantém tudo o que v8 já garantia: explorar antes de escalar, ritmo, distinção de origem, formato', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(/VOCÊ CONDUZ A CONVERSA INTEIRA — da apresentação até o cliente estar convencido a contratar/i);
+    expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
+    expect(prompt).toMatch(/CASO 1 — O CLIENTE PROCUROU VOCÊ/i);
+    expect(prompt).toMatch(/CASO 2 — VOCÊ PROCUROU O CLIENTE/i);
+    expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
+  });
+
+  it('define closingDirective própria, reforçando a regra de identidade na posição de maior saliência', () => {
+    const directive = PROMPT_VERSIONS.v9.closingDirective;
+    expect(directive).toBeDefined();
+    expect(directive).toMatch(/LEMBRETE FINAL/i);
+    expect(directive).toMatch(
+      /SEM bloco "# Informações da empresa" nas informações desta conversa, você NÃO tem identidade nem/i,
+    );
+    expect(directive).toMatch(/nunca invente nome de atendente ou de\s+empresa/i);
+    expect(directive!.length).toBeLessThan(2200);
+    expect(directive).not.toBe(PROMPT_VERSIONS.v8.closingDirective);
+  });
+
+  it('a closingDirective traz os DOIS exemplos (com e sem empresa cadastrada), sem inventar nome no segundo', () => {
+    const directive = PROMPT_VERSIONS.v9.closingDirective!;
+    expect(directive).toMatch(/quando NÃO há nenhuma empresa cadastrada ainda \(sem inventar nome\)/i);
+    expect(directive).toContain('Ainda estou me organizando por aqui, mas já te escuto. Como posso te chamar?');
+  });
+
+  it('não cola um nome real de tenant nos exemplos — o produto é multi-tenant', () => {
+    expect(PROMPT_VERSIONS.v9.systemPrompt).not.toMatch(/Wesley Francis/i);
+    expect(PROMPT_VERSIONS.v9.closingDirective).not.toMatch(/Wesley Francis/i);
+  });
+
+  it('preserva mídia e marcadores TEXTUALMENTE — Pipeline/escalonamento intactos', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    expect(PROMPT_VERSIONS.v9.systemPrompt).toContain(mediaSentence);
+    expect(PROMPT_VERSIONS.v9.systemPrompt).toContain(MARKER_INSTRUCTIONS);
+  });
+
+  it('mantém as regras absolutas de encaminhamento', () => {
+    const prompt = PROMPT_VERSIONS.v9.systemPrompt;
+    expect(prompt).toMatch(/nunca incentive.*burlar/i);
+    expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});
