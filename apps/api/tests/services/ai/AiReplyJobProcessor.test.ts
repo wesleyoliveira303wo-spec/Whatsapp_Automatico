@@ -870,9 +870,7 @@ describe('AiReplyJobProcessor', () => {
     it('EXCEÇÃO à regra "só para frente": sessão reiniciada (24h+) libera a IA a regredir o estágio', async () => {
       const { processor, conversationRepository, messageRepository, aiProviderFactory } =
         buildSut();
-      conversationRepository.seed(
-        buildConversation({ stage: 'negotiating', stageSetBy: 'ai' }),
-      );
+      conversationRepository.seed(buildConversation({ stage: 'negotiating', stageSetBy: 'ai' }));
       await messageRepository.create(
         buildMessage({
           id: 'antiga-1',
