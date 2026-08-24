@@ -345,3 +345,86 @@ describe('v5 (2026-08-24 — formato de balões escalonado por estágio, pedido 
     expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
   });
 });
+
+describe('v6 (2026-08-24 — reversão parcial de v4/v5: um tópico por mensagem, nunca despejar tudo de uma vez)', () => {
+  it('está registrada e é resolvível por id, sem substituir as anteriores', () => {
+    expect(getPromptVersion('v6')).toBe(PROMPT_VERSIONS.v6);
+    for (const id of ['v1', 'v2', 'v3', 'v4', 'v5']) {
+      expect(PROMPT_VERSIONS[id]).toBeDefined();
+      expect(PROMPT_VERSIONS.v6.systemPrompt).not.toBe(PROMPT_VERSIONS[id].systemPrompt);
+    }
+  });
+
+  it('remove a diretiva "OFEREÇA DE FORMA CONCRETA" de v4/v5, que empurrava a IA a despejar tudo de uma vez', () => {
+    expect(PROMPT_VERSIONS.v5.systemPrompt).toMatch(/OFEREÇA DE FORMA CONCRETA/i);
+    expect(PROMPT_VERSIONS.v6.systemPrompt).not.toMatch(/OFEREÇA DE FORMA CONCRETA/i);
+  });
+
+  it('instrui ritmo devagar, um tópico por mensagem, nunca serviço+preço+prazo juntos', () => {
+    const prompt = PROMPT_VERSIONS.v6.systemPrompt;
+    expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
+    expect(prompt).toMatch(/NUNCA junte, na mesma\s+resposta, mais de UM assunto novo/i);
+    expect(prompt).toMatch(/nunca fale do que a empresa faz, do preço e do prazo ao\s+mesmo tempo/i);
+    expect(prompt).toMatch(/deixar o cliente\s+confortável até ele mesmo querer avançar/i);
+  });
+
+  it('responde só o tópico perguntado, sem aproveitar para mencionar o resto da oferta', () => {
+    const prompt = PROMPT_VERSIONS.v6.systemPrompt;
+    expect(prompt).toMatch(/RESPONDA SÓ O QUE FOI PERGUNTADO, UM TÓPICO DE CADA VEZ/i);
+    expect(prompt).toMatch(/não aproveite a pergunta\s+para também mencionar os outros detalhes da oferta/i);
+  });
+
+  it('mantém uma pergunta por mensagem, agora combinada com um tópico por mensagem', () => {
+    const prompt = PROMPT_VERSIONS.v6.systemPrompt;
+    expect(prompt).toMatch(
+      /No máximo UMA pergunta por mensagem, e no máximo UM tópico novo por mensagem/i,
+    );
+  });
+
+  it('mantém a mecânica de blocos escalonada por estágio de v5, mas o bloco extra nunca introduz um segundo assunto', () => {
+    const prompt = PROMPT_VERSIONS.v6.systemPrompt;
+    expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
+    expect(prompt).toMatch(/estágio é CONTACTED ou NEGOTIATING/i);
+    expect(prompt).toMatch(
+      /TERCEIRO bloco só quando o MESMO tópico\s+precisar de mais espaço/i,
+    );
+    expect(prompt).toMatch(/NUNCA para além dela,\s+também falar de outro assunto/i);
+  });
+
+  it('preserva os guardas-corpo de v4/v5 que não são sobre ritmo: nunca ensinar o mercado do cliente', () => {
+    const prompt = PROMPT_VERSIONS.v6.systemPrompt;
+    expect(prompt).toMatch(/NUNCA EXPLIQUE PARA O CLIENTE COMO O MERCADO DELE FUNCIONA/i);
+  });
+
+  it('define closingDirective própria, reforçando "um tópico por mensagem" na posição de maior saliência', () => {
+    const directive = PROMPT_VERSIONS.v6.closingDirective;
+    expect(directive).toBeDefined();
+    expect(directive).toMatch(/LEMBRETE FINAL/i);
+    expect(directive).toMatch(/UM TÓPICO POR MENSAGEM, sempre/i);
+    expect(directive).toMatch(/Nunca junte, na mesma resposta, o que a empresa faz \+ preço \+ prazo/i);
+    expect(directive).toMatch(/Vá com calma/i);
+    expect(directive!.length).toBeLessThan(1700);
+    expect(directive).toMatch(/regras de nunca inventar informação.*continuam/is);
+    expect(directive).not.toBe(PROMPT_VERSIONS.v5.closingDirective);
+  });
+
+  it('o exemplo de NEGOTIATING responde só o preço, sem emendar prazo/escopo na mesma resposta', () => {
+    const directive = PROMPT_VERSIONS.v6.closingDirective!;
+    expect(directive).toMatch(/pergunta só o preço/i);
+    expect(directive).toContain('R$ 990, valor único, sem mensalidade.\nFaz sentido pra você nesse momento?');
+    expect(directive).not.toMatch(/pronto em cerca de \d+ dias/i);
+  });
+
+  it('preserva mídia e marcadores TEXTUALMENTE — Pipeline/escalonamento intactos', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    expect(PROMPT_VERSIONS.v6.systemPrompt).toContain(mediaSentence);
+    expect(PROMPT_VERSIONS.v6.systemPrompt).toContain(MARKER_INSTRUCTIONS);
+  });
+
+  it('mantém as regras absolutas de anti-alucinação e escalonamento', () => {
+    const prompt = PROMPT_VERSIONS.v6.systemPrompt;
+    expect(prompt).toMatch(/nunca invente preço, prazo, número, prova, portfólio/i);
+    expect(prompt).toMatch(/nunca incentive.*burlar/i);
+    expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});
