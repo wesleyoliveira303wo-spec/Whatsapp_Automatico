@@ -364,14 +364,18 @@ describe('v6 (2026-08-24 — reversão parcial de v4/v5: um tópico por mensagem
     const prompt = PROMPT_VERSIONS.v6.systemPrompt;
     expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
     expect(prompt).toMatch(/NUNCA junte, na mesma\s+resposta, mais de UM assunto novo/i);
-    expect(prompt).toMatch(/nunca fale do que a empresa faz, do preço e do prazo ao\s+mesmo tempo/i);
+    expect(prompt).toMatch(
+      /nunca fale do que a empresa faz, do preço e do prazo ao\s+mesmo tempo/i,
+    );
     expect(prompt).toMatch(/deixar o cliente\s+confortável até ele mesmo querer avançar/i);
   });
 
   it('responde só o tópico perguntado, sem aproveitar para mencionar o resto da oferta', () => {
     const prompt = PROMPT_VERSIONS.v6.systemPrompt;
     expect(prompt).toMatch(/RESPONDA SÓ O QUE FOI PERGUNTADO, UM TÓPICO DE CADA VEZ/i);
-    expect(prompt).toMatch(/não aproveite a pergunta\s+para também mencionar os outros detalhes da oferta/i);
+    expect(prompt).toMatch(
+      /não aproveite a pergunta\s+para também mencionar os outros detalhes da oferta/i,
+    );
   });
 
   it('mantém uma pergunta por mensagem, agora combinada com um tópico por mensagem', () => {
@@ -385,9 +389,7 @@ describe('v6 (2026-08-24 — reversão parcial de v4/v5: um tópico por mensagem
     const prompt = PROMPT_VERSIONS.v6.systemPrompt;
     expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
     expect(prompt).toMatch(/estágio é CONTACTED ou NEGOTIATING/i);
-    expect(prompt).toMatch(
-      /TERCEIRO bloco só quando o MESMO tópico\s+precisar de mais espaço/i,
-    );
+    expect(prompt).toMatch(/TERCEIRO bloco só quando o MESMO tópico\s+precisar de mais espaço/i);
     expect(prompt).toMatch(/NUNCA para além dela,\s+também falar de outro assunto/i);
   });
 
@@ -401,7 +403,9 @@ describe('v6 (2026-08-24 — reversão parcial de v4/v5: um tópico por mensagem
     expect(directive).toBeDefined();
     expect(directive).toMatch(/LEMBRETE FINAL/i);
     expect(directive).toMatch(/UM TÓPICO POR MENSAGEM, sempre/i);
-    expect(directive).toMatch(/Nunca junte, na mesma resposta, o que a empresa faz \+ preço \+ prazo/i);
+    expect(directive).toMatch(
+      /Nunca junte, na mesma resposta, o que a empresa faz \+ preço \+ prazo/i,
+    );
     expect(directive).toMatch(/Vá com calma/i);
     expect(directive!.length).toBeLessThan(1700);
     expect(directive).toMatch(/regras de nunca inventar informação.*continuam/is);
@@ -411,7 +415,9 @@ describe('v6 (2026-08-24 — reversão parcial de v4/v5: um tópico por mensagem
   it('o exemplo de NEGOTIATING responde só o preço, sem emendar prazo/escopo na mesma resposta', () => {
     const directive = PROMPT_VERSIONS.v6.closingDirective!;
     expect(directive).toMatch(/pergunta só o preço/i);
-    expect(directive).toContain('R$ 990, valor único, sem mensalidade.\nFaz sentido pra você nesse momento?');
+    expect(directive).toContain(
+      'R$ 990, valor único, sem mensalidade.\nFaz sentido pra você nesse momento?',
+    );
     expect(directive).not.toMatch(/pronto em cerca de \d+ dias/i);
   });
 
