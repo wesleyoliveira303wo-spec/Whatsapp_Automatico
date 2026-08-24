@@ -33,13 +33,42 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm ci
+      # O schema mora na RAIZ do monorepo (prisma/schema.prisma), não em
+      # apps/api — mesmo comando/racional do estágio de build do
+      # apps/api/Dockerfile ("Prisma Client PRECISA ser gerado antes do
+      # tsc"). `npm ci` já dispara isto implicitamente via o postinstall do
+      # próprio pacote @prisma/client, mas deixar explícito documenta a
+      # dependência e não depende desse comportamento implícito continuar
+      # existindo em versões futuras do Prisma.
+      - name: Generate Prisma Client
+        run: npx prisma generate
+      - name: Type-check
+        run: npm run typecheck
       - name: Lint
         run: npm run lint
+      # `migrate deploy` (nunca `migrate dev`, que é interativo e pode gerar
+      # migration nova) contra o Postgres de serviço deste job — sem isto o
+      # banco de CI sobe vazio (zero tabelas) e todo teste de integração que
+      # toca Postgres de verdade (`tests/integration/*.integration.test.ts`)
+      # falha por tabela inexistente em vez de exercitar o código de
+      # verdade. Mesmo comando já documentado em apps/api/Dockerfile/
+      # docker-compose.prod.yml para produção.
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: postgres://user:password@localhost:5432/whatsapp
+        run: npx prisma migrate deploy
       - name: Run tests
         env:
           DATABASE_URL: postgres://user:password@localhost:5432/whatsapp
           REDIS_URL: redis://localhost:6379
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          # O provider de IA ativo em produção é o Gemini (ver .env.example/
+          # CLAUDE.md) — o secret aqui precisa refletir isso, não o Claude.
+          # Nenhum teste da suíte faz chamada real a um provider de IA (todos
+          # usam Fakes/mocks), então esta chave não é estritamente exigida
+          # para os testes passarem; mantida para não mentir sobre qual
+          # provider este ambiente representa.
+          AI_PROVIDER: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: npm test -- --coverage
       - name: Build Docker images
         run: |

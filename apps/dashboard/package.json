@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "next start",
     "lint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint . --ext .js,.ts,.tsx",
     "format": "prettier --write \"**/*.{js,ts,tsx,json,md}\""
