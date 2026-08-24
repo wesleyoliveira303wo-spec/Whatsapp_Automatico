@@ -596,9 +596,13 @@ describe('v8 (2026-08-24 — explora antes de escalar, dona da conversa até o c
 
   it('preserva os gatilhos de encaminhamento DIRETO (fechamento, pedido explícito, mídia) — não vira "nunca escalar"', () => {
     const prompt = PROMPT_VERSIONS.v8.systemPrompt;
-    expect(prompt).toMatch(/Encaminhe direto para um humano \(sem precisar explorar mais\) só nestes casos/i);
+    expect(prompt).toMatch(
+      /Encaminhe direto para um humano \(sem precisar explorar mais\) só nestes casos/i,
+    );
     expect(prompt).toMatch(/pede\s+explicitamente para falar com uma pessoa/i);
-    expect(prompt).toMatch(/pergunta como\s+paga, como começa, pede orçamento ou proposta fechada/i);
+    expect(prompt).toMatch(
+      /pergunta como\s+paga, como começa, pede orçamento ou proposta fechada/i,
+    );
     expect(prompt).toMatch(/manda ou pede foto, áudio, vídeo ou\s+documento/i);
   });
 
@@ -626,7 +630,9 @@ describe('v8 (2026-08-24 — explora antes de escalar, dona da conversa até o c
     const directive = PROMPT_VERSIONS.v8.closingDirective;
     expect(directive).toBeDefined();
     expect(directive).toMatch(/LEMBRETE FINAL/i);
-    expect(directive).toMatch(/NÃO ENCAMINHE PARA UM HUMANO SÓ PORQUE O PEDIDO NÃO BATE 100% COM O QUE ESTÁ ESCRITO/i);
+    expect(directive).toMatch(
+      /NÃO ENCAMINHE PARA UM HUMANO SÓ PORQUE O PEDIDO NÃO BATE 100% COM O QUE ESTÁ ESCRITO/i,
+    );
     expect(directive).toMatch(/pergunte se é\s+indispensável antes de encaminhar/i);
     expect(directive!.length).toBeLessThan(2000);
     expect(directive).not.toBe(PROMPT_VERSIONS.v7.closingDirective);
@@ -634,7 +640,9 @@ describe('v8 (2026-08-24 — explora antes de escalar, dona da conversa até o c
 
   it('o exemplo de pedido fora da lista explora antes de encaminhar, em vez de encaminhar na hora', () => {
     const directive = PROMPT_VERSIONS.v8.closingDirective!;
-    expect(directive).toMatch(/Isso especificamente a gente ainda não faz, mas o restante do que você descreveu/i);
+    expect(directive).toMatch(
+      /Isso especificamente a gente ainda não faz, mas o restante do que você descreveu/i,
+    );
     expect(directive).toMatch(/dá pra seguir sem ela por enquanto\?/i);
   });
 
