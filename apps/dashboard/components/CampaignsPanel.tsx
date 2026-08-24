@@ -588,9 +588,8 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
               role="status"
               className="mb-3 rounded-md bg-warning/[.12] px-3 py-2 text-[12.5px] text-warning-emphasis"
             >
-              Mostrando as {MAX_CAMPAIGNS_PAGES * 50} campanhas mais recentes desta sessão. As
-              mais antigas não aparecem na tabela abaixo (os cards no topo continuam contando
-              todas).
+              Mostrando as {MAX_CAMPAIGNS_PAGES * 50} campanhas mais recentes desta sessão. As mais
+              antigas não aparecem na tabela abaixo (os cards no topo continuam contando todas).
             </p>
           )}
 

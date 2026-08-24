@@ -760,7 +760,10 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         await Promise.race([
           dbCheck,
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout ao checar Postgres')), HEALTH_CHECK_TIMEOUT_MS),
+            setTimeout(
+              () => reject(new Error('Timeout ao checar Postgres')),
+              HEALTH_CHECK_TIMEOUT_MS,
+            ),
           ),
         ]);
         checks.database = 'ok';
