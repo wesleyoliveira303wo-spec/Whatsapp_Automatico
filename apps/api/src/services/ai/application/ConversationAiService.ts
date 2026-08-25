@@ -269,9 +269,8 @@ export class ConversationAiService {
       extractAudioTranscript(contentWithoutStage);
     // Feature de descrição de imagem (2026-08-24): mesmo encadeamento —
     // extrai o marcador de descrição do texto já sem os três anteriores.
-    const { description: imageDescription, content: cleanedContent } = extractImageDescription(
-      contentWithoutTranscript,
-    );
+    const { description: imageDescription, content: cleanedContent } =
+      extractImageDescription(contentWithoutTranscript);
     const validation = validateReply(cleanedContent, this.maxReplyLength);
 
     if (!validation.valid) {
