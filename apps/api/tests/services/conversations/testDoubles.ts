@@ -346,6 +346,21 @@ export class FakeMessageRepository implements MessageRepository {
       message.audioTranscript = transcript;
     }
   }
+
+  /**
+   * Feature de descrição de imagem (2026-08-24, aditivo). Espelha
+   * `PrismaMessageRepository.setImageDescription()`.
+   */
+  async setImageDescription(
+    tenantId: string,
+    messageId: string,
+    description: string,
+  ): Promise<void> {
+    const message = this.messages.find((m) => m.tenantId === tenantId && m.id === messageId);
+    if (message) {
+      message.imageDescription = description;
+    }
+  }
 }
 
 /**

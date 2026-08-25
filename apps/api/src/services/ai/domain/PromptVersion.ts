@@ -8,6 +8,10 @@ import {
   AUDIO_TRANSCRIPT_MARKER_PREFIX,
   AUDIO_TRANSCRIPT_MARKER_SUFFIX,
 } from './audioTranscriptSignal';
+import {
+  IMAGE_DESCRIPTION_MARKER_PREFIX,
+  IMAGE_DESCRIPTION_MARKER_SUFFIX,
+} from './imageDescriptionSignal';
 
 /**
  * Uma versão de prompt de sistema, versionada em código — Milestone 3,
@@ -42,13 +46,14 @@ export interface PromptVersion {
 }
 
 /**
- * Instrução técnica dos DOIS marcadores internos (estágio do funil +
- * escalonamento) — IDÊNTICA entre `v1` e `v2` (Fase 1, Fase H, 2026-08-08):
- * extraída para uma constante compartilhada para as duas versões nunca
- * divergirem por acidente (o Pipeline/escalonamento dependem do FORMATO
- * exato desses marcadores, não da versão do prompt). Nunca editar isto
- * como parte de uma mudança de "tom"/comportamento de venda — é
- * infraestrutura do sistema, não conteúdo de produto.
+ * Instrução técnica dos marcadores internos — originalmente DOIS (estágio do
+ * funil + escalonamento), IDÊNTICA entre `v1` e `v2` (Fase 1, Fase H,
+ * 2026-08-08): extraída para uma constante compartilhada para as versões
+ * nunca divergirem por acidente (o Pipeline/escalonamento dependem do
+ * FORMATO exato desses marcadores, não da versão do prompt). Ganhou um
+ * TERCEIRO (transcrição de áudio) e um QUARTO (descrição de imagem) em
+ * 2026-08-24, mesmo racional: infraestrutura do sistema, editada in-place em
+ * TODA versão de uma vez, nunca uma mudança de "tom"/comportamento de venda.
  */
 export const MARKER_INSTRUCTIONS =
   // CORREÇÃO 2026-07-30 (2ª rodada — achado real do fundador: pediu "como
@@ -126,13 +131,30 @@ export const MARKER_INSTRUCTIONS =
   `${AUDIO_TRANSCRIPT_MARKER_SUFFIX} com uma transcrição FIEL do que a pessoa disse — sem resumir, sem ` +
   'corrigir, sem adicionar nada que não foi dito. Nunca invente esse marcador quando não tiver ouvido nada de ' +
   'verdade. Exemplo — cliente manda um áudio pedindo um site com carrinho de compras, você realmente ouve e ' +
-  'responde, incluindo os TRÊS tipos de marcador juntos (aqui só o de estágio e o de transcrição, pois não há ' +
-  'escalonamento neste caso), cada um em sua própria linha: ' +
+  'responde, incluindo os tipos de marcador que se aplicam juntos (aqui o de estágio e o de transcrição, pois ' +
+  'não há escalonamento neste caso), cada um em sua própria linha: ' +
   '"Entendi! Você quer uma loja virtual com carrinho de compras.\\n' +
   'A gente faz esse tipo de site sim — quer que eu te explique como funciona?\\n' +
   `${STAGE_MARKER_PREFIX}NEGOTIATING${STAGE_MARKER_SUFFIX}\\n` +
   `${AUDIO_TRANSCRIPT_MARKER_PREFIX}Oi, eu queria um site com carrinho de compras pra minha loja` +
-  `${AUDIO_TRANSCRIPT_MARKER_SUFFIX}"`;
+  `${AUDIO_TRANSCRIPT_MARKER_SUFFIX}" ` +
+  // QUARTO marcador, independente dos demais (feature de descrição de
+  // imagem, 2026-08-24): mesmo racional do TERCEIRO (transcrição de áudio),
+  // aplicado a imagem — zero chamada de IA extra, mesma chamada multimodal
+  // fazendo dupla função. Mesma guarda explícita contra inventar descrição
+  // de uma imagem que só apareceu como texto entre colchetes.
+  'QUARTO, e também independente dos marcadores acima: SÓ quando você REALMENTE viu uma imagem do cliente ' +
+  'anexada a esta chamada (nunca quando só vir a descrição textual entre colchetes, sem conteúdo perceptível), ' +
+  `adicione também, em sua própria linha, o marcador ${IMAGE_DESCRIPTION_MARKER_PREFIX}o que você viu` +
+  `${IMAGE_DESCRIPTION_MARKER_SUFFIX} com uma descrição FIEL do que aparece na imagem — objetiva, sem ` +
+  'interpretar nem inventar detalhes que não estão realmente visíveis. Nunca invente esse marcador quando não ' +
+  'tiver visto nada de verdade. Exemplo — cliente manda uma foto da loja dele, você realmente vê e responde, ' +
+  'incluindo o de estágio e o de descrição juntos, cada um em sua própria linha: ' +
+  '"Legal, recebi a foto da sua loja!\\n' +
+  'Dá pra ver que já tem uma vitrine bem organizada — combina bem com o que a gente conversou.\\n' +
+  `${STAGE_MARKER_PREFIX}CONTACTED${STAGE_MARKER_SUFFIX}\\n` +
+  `${IMAGE_DESCRIPTION_MARKER_PREFIX}foto de uma loja de roupas, com araras de roupas penduradas e um balcão ` +
+  `de caixa ao fundo${IMAGE_DESCRIPTION_MARKER_SUFFIX}"`;
 
 /**
  * Exemplos do FORMATO de resposta — exclusivos de `v3`, e propositalmente
@@ -441,6 +463,13 @@ const MEDIA_INSTRUCTIONS =
  * continua valendo), só que sem se apresentar com uma identidade que não
  * existe. Mesma técnica de sinal objetivo já usada em `v7` para a origem da
  * conversa (presença/ausência de um bloco, não um campo novo).
+ *
+ * NENHUMA VERSÃO NOVA a partir daqui para as duas features seguintes
+ * (transcrição de áudio e descrição de imagem, 2026-08-24) — ambas vivem
+ * inteiramente em `MEDIA_INSTRUCTIONS`/`MARKER_INSTRUCTIONS` (infra
+ * compartilhada por toda versão) e no par
+ * `audioTranscriptSignal.ts`/`imageDescriptionSignal.ts` (Domain), então
+ * `v9` continua sendo a versão ativa — nada aqui muda por versão.
  */
 export const PROMPT_VERSIONS: Record<string, PromptVersion> = {
   v1: {

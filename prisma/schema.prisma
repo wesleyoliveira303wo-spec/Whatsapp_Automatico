@@ -825,6 +825,14 @@ model WhatsAppMessage {
   /// mensagem já existente, nunca uma correção de conteúdo. `NULL` até ser
   /// preenchido, ou para qualquer mensagem que não seja áudio inbound.
   audioTranscript String?                 @map("audio_transcript") @db.Text
+  /// Descrição de uma imagem INBOUND, preenchida depois da criação da linha
+  /// (feature de descrição de imagem, 2026-08-24) — mesmo mecanismo de
+  /// `audioTranscript`: a IA descreve a imagem como parte da MESMA chamada
+  /// multimodal que já gera a resposta (zero chamada de IA extra), via
+  /// `MessageRepository.setImageDescription()`. Mesma exceção documentada à
+  /// imutabilidade de `Message`. `NULL` até ser preenchida, ou para qualquer
+  /// mensagem que não seja imagem inbound.
+  imageDescription String?                @map("image_description") @db.Text
   /// Instante de negócio (recebida/enviada) — distinto de `createdAt`
   /// (quando a linha foi persistida). Mesmo padrão de
   /// `WhatsAppSessionEvent.occurredAt`.

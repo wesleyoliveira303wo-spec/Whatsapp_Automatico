@@ -15,6 +15,7 @@ import { validateReply } from '../domain/ReplyValidator';
 import { extractEscalation, EscalationReason } from '../domain/escalationSignal';
 import { extractStage, StageSignalValue } from '../domain/stageSignal';
 import { extractAudioTranscript } from '../domain/audioTranscriptSignal';
+import { extractImageDescription } from '../domain/imageDescriptionSignal';
 import { getOffHoursContext } from '../domain/workingHours';
 import { PromptBuilder } from './PromptBuilder';
 
@@ -185,11 +186,12 @@ export class ConversationAiService {
      */
     private readonly campaignOriginResolver?: CampaignOriginResolver,
     /**
-     * Feature de transcrição de áudio (2026-08-24). OPCIONAL, mesmo padrão
-     * de `mediaDownloader`/`campaignOriginResolver`: sem ele configurado, a
-     * IA ainda "ouve" o áudio anexado nesta chamada (comportamento de F1.2
-     * inalterado), só não persiste a transcrição — degrada para o
-     * comportamento de antes desta feature, nunca quebra a resposta.
+     * Features de transcrição de áudio / descrição de imagem (2026-08-24).
+     * OPCIONAL, mesmo padrão de `mediaDownloader`/`campaignOriginResolver`:
+     * sem ele configurado, a IA ainda "ouve"/"vê" o anexo desta chamada
+     * (comportamento de F1.2 inalterado), só não persiste a transcrição/
+     * descrição — degrada para o comportamento de antes destas features,
+     * nunca quebra a resposta.
      */
     private readonly messageRepository?: MessageRepository,
   ) {}
@@ -263,8 +265,13 @@ export class ConversationAiService {
       extractStage(contentWithoutEscalation);
     // Feature de transcrição de áudio (2026-08-24): mesmo encadeamento —
     // extrai o marcador de transcrição do texto já sem os dois anteriores.
-    const { transcript: audioTranscript, content: cleanedContent } =
+    const { transcript: audioTranscript, content: contentWithoutTranscript } =
       extractAudioTranscript(contentWithoutStage);
+    // Feature de descrição de imagem (2026-08-24): mesmo encadeamento —
+    // extrai o marcador de descrição do texto já sem os três anteriores.
+    const { description: imageDescription, content: cleanedContent } = extractImageDescription(
+      contentWithoutTranscript,
+    );
     const validation = validateReply(cleanedContent, this.maxReplyLength);
 
     if (!validation.valid) {
@@ -307,6 +314,17 @@ export class ConversationAiService {
       )?.[0];
       if (audioMessageId) {
         await this.persistAudioTranscript(tenantId, audioMessageId, audioTranscript);
+      }
+    }
+
+    // Feature de descrição de imagem (2026-08-24) — mesmo racional acima,
+    // aplicado a imagem.
+    if (imageDescription) {
+      const imageMessageId = [...mediaByMessageId.entries()].find(([, part]) =>
+        part.mimeType.startsWith('image/'),
+      )?.[0];
+      if (imageMessageId) {
+        await this.persistImageDescription(tenantId, imageMessageId, imageDescription);
       }
     }
 
@@ -453,12 +471,14 @@ export class ConversationAiService {
         // aqui — `describeMessageContent` já mostra a transcrição real no
         // histórico textual, então reenviar o binário de novo gastaria
         // custo/latência sem ganho (mesmo racional do comentário da função
-        // acima, "reenviar mídia antiga multiplica custo sem ganho real" —
-        // que, para IMAGEM, continua sendo só uma intenção documentada, sem
-        // mecanismo equivalente de "já visto"; não resolvido nesta rodada,
-        // fora do escopo pedido).
+        // acima, "reenviar mídia antiga multiplica custo sem ganho real").
+        //
+        // Feature de descrição de imagem (2026-08-24): MESMO mecanismo,
+        // agora também para imagem (`imageDescription` preenchido) — fecha
+        // o gap que a versão anterior desta função deixava documentado
+        // como "sem mecanismo equivalente, fora do escopo".
         message.direction === 'inbound' &&
-        (message.contentType === 'image' ||
+        ((message.contentType === 'image' && !message.imageDescription) ||
           (message.contentType === 'audio' && !message.audioTranscript)) &&
         Boolean(message.media),
     );
@@ -508,6 +528,26 @@ export class ConversationAiService {
       await this.messageRepository.setAudioTranscript(tenantId, messageId, transcript);
     } catch {
       // Silencioso de propósito — ver docstring acima.
+    }
+  }
+
+  /**
+   * Grava a descrição extraída de uma imagem (feature de descrição de
+   * imagem, 2026-08-24) — mesmo racional/degradação graciosa de
+   * `persistAudioTranscript`, ver docstring lá.
+   */
+  private async persistImageDescription(
+    tenantId: string,
+    messageId: string,
+    description: string,
+  ): Promise<void> {
+    if (!this.messageRepository) {
+      return;
+    }
+    try {
+      await this.messageRepository.setImageDescription(tenantId, messageId, description);
+    } catch {
+      // Silencioso de propósito — ver docstring de `persistAudioTranscript`.
     }
   }
 

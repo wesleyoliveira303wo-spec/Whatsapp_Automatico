@@ -29,14 +29,16 @@ const MEDIA_CONTENT_TYPE_LABEL: Record<Exclude<Message['contentType'], 'text'>, 
  * mas não consigo abrir arquivos — pode descrever o que precisa?") em vez de
  * ignorar a mensagem ou fingir que era texto vazio.
  *
- * ATUALIZAÇÃO (Fase 1, Bloco F1.2 + feature de transcrição de áudio,
- * 2026-08-24): `GeminiAiProvider` É multimodal desde F1.2 — a claim antiga
- * de "nenhum provider é multimodal" ficou desatualizada e foi corrigida
- * aqui. Para ÁUDIO inbound já transcrito (`message.audioTranscript`
- * preenchido — ver `ConversationAiService`/`audioTranscriptSignal.ts`), esta
- * função devolve a transcrição real em vez da descrição genérica: é o que
- * faz a IA "lembrar" o conteúdo de um áudio em TODOS os turnos futuros da
- * conversa, não só naquele em que o binário foi anexado.
+ * ATUALIZAÇÃO (Fase 1, Bloco F1.2 + features de transcrição de áudio/
+ * descrição de imagem, 2026-08-24): `GeminiAiProvider` É multimodal desde
+ * F1.2 — a claim antiga de "nenhum provider é multimodal" ficou
+ * desatualizada e foi corrigida aqui. Para ÁUDIO/IMAGEM inbound já
+ * transcritos/descritos (`message.audioTranscript`/`message.imageDescription`
+ * preenchidos — ver `ConversationAiService`/`audioTranscriptSignal.ts`/
+ * `imageDescriptionSignal.ts`), esta função devolve o conteúdo real em vez
+ * da descrição genérica: é o que faz a IA "lembrar" do que ouviu/viu em
+ * TODOS os turnos futuros da conversa, não só naquele em que o binário foi
+ * anexado.
  */
 /**
  * Exportada (Redesign 2026-08-05, R5) para reuso por `SummaryPromptBuilder`
@@ -58,6 +60,17 @@ export function describeMessageContent(message: Message): string {
     message.audioTranscript
   ) {
     return `[O cliente enviou um áudio dizendo: "${message.audioTranscript}"]`;
+  }
+
+  // Feature de descrição de imagem (2026-08-24) — mesmo racional acima,
+  // aplicado a imagem: usa a descrição real em vez da genérica em qualquer
+  // turno futuro.
+  if (
+    message.contentType === 'image' &&
+    message.direction === 'inbound' &&
+    message.imageDescription
+  ) {
+    return `[O cliente enviou uma imagem mostrando: "${message.imageDescription}"]`;
   }
 
   const label = MEDIA_CONTENT_TYPE_LABEL[message.contentType];

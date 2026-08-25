@@ -12,6 +12,10 @@ import {
   AUDIO_TRANSCRIPT_MARKER_PREFIX,
   AUDIO_TRANSCRIPT_MARKER_SUFFIX,
 } from '../../../src/services/ai/domain/audioTranscriptSignal';
+import {
+  IMAGE_DESCRIPTION_MARKER_PREFIX,
+  IMAGE_DESCRIPTION_MARKER_SUFFIX,
+} from '../../../src/services/ai/domain/imageDescriptionSignal';
 
 const TENANT_ID = 'tenant-1';
 const CONVERSATION_ID = 'conversation-1';
@@ -1059,6 +1063,175 @@ describe('ConversationAiService', () => {
       expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].content).toBe(
         '[O cliente enviou um áudio dizendo: "quero saber o preço do site"]',
       );
+    });
+  });
+
+  describe('feature de descrição de imagem (2026-08-24)', () => {
+    function buildSutWithImageDescription(): {
+      sut: ConversationAiService;
+      aiProviderFactory: FakeAiProviderFactory;
+      mediaDownloader: FakeMediaDownloader;
+      messageRepository: FakeMessageRepository;
+    } {
+      const aiProviderFactory = new FakeAiProviderFactory();
+      const promptBuilder = new PromptBuilder();
+      const aiInteractionRepository = new FakeAiInteractionRepository();
+      const mediaDownloader = new FakeMediaDownloader();
+      const messageRepository = new FakeMessageRepository();
+      const sut = new ConversationAiService(
+        aiProviderFactory,
+        'gemini',
+        promptBuilder,
+        aiInteractionRepository,
+        undefined,
+        undefined,
+        mediaDownloader,
+        undefined,
+        messageRepository,
+      );
+      return { sut, aiProviderFactory, mediaDownloader, messageRepository };
+    }
+
+    function buildImageMessageWithDescription(overrides: Partial<Message> = {}): Message {
+      return {
+        id: 'm-image',
+        tenantId: TENANT_ID,
+        conversationId: CONVERSATION_ID,
+        direction: 'inbound',
+        content: '',
+        contentType: 'image',
+        media: { mimeType: 'image/jpeg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+        occurredAt: new Date('2026-07-10T12:00:00.000Z'),
+        ...overrides,
+      };
+    }
+
+    it('extrai a descrição do marcador e persiste via MessageRepository.setImageDescription', async () => {
+      const { sut, aiProviderFactory, messageRepository } = buildSutWithImageDescription();
+      await messageRepository.create(buildImageMessageWithDescription());
+      aiProviderFactory.provider.setNextResult({
+        content:
+          'Legal, recebi a foto da sua loja!\n' +
+          `${IMAGE_DESCRIPTION_MARKER_PREFIX}foto de uma loja de roupas, com araras de roupas${IMAGE_DESCRIPTION_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 10,
+        tokensOutput: 10,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildImageMessageWithDescription()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+      if (result.status === 'success') {
+        expect(result.content).not.toContain(IMAGE_DESCRIPTION_MARKER_PREFIX);
+        expect(result.content).toBe('Legal, recebi a foto da sua loja!');
+      }
+      const stored = await messageRepository.findById(TENANT_ID, 'm-image');
+      expect(stored?.imageDescription).toBe('foto de uma loja de roupas, com araras de roupas');
+    });
+
+    it('sem marcador na resposta: não chama setImageDescription nenhuma vez', async () => {
+      const { sut, messageRepository } = buildSutWithImageDescription();
+      await messageRepository.create(buildImageMessageWithDescription());
+      const setImageDescriptionSpy = jest.spyOn(messageRepository, 'setImageDescription');
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildImageMessageWithDescription()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(setImageDescriptionSpy).not.toHaveBeenCalled();
+    });
+
+    it('imagem JÁ descrita não é reanexada (evita gasto de download/tokens repetido — fecha o gap deixado em aberto na feature de áudio)', async () => {
+      const { sut, aiProviderFactory, mediaDownloader, messageRepository } =
+        buildSutWithImageDescription();
+      await messageRepository.create(
+        buildImageMessageWithDescription({ imageDescription: 'já descrita antes' }),
+      );
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildImageMessageWithDescription({ imageDescription: 'já descrita antes' })],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(mediaDownloader.downloadCalls).toEqual([]);
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].media).toBeUndefined();
+    });
+
+    it('describeMessageContent usa a descrição real no histórico textual em vez da descrição genérica', async () => {
+      const { sut, aiProviderFactory } = buildSutWithImageDescription();
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildImageMessageWithDescription({ imageDescription: 'print de um site com carrinho' })],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].messages[0].content).toBe(
+        '[O cliente enviou uma imagem mostrando: "print de um site com carrinho"]',
+      );
+    });
+
+    it('falha em setImageDescription: degrada graciosamente, resposta continua bem-sucedida', async () => {
+      const { sut, aiProviderFactory, messageRepository } = buildSutWithImageDescription();
+      await messageRepository.create(buildImageMessageWithDescription());
+      jest
+        .spyOn(messageRepository, 'setImageDescription')
+        .mockRejectedValueOnce(new Error('falha simulada'));
+      aiProviderFactory.provider.setNextResult({
+        content: `Ok.\n${IMAGE_DESCRIPTION_MARKER_PREFIX}foto${IMAGE_DESCRIPTION_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildImageMessageWithDescription()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+    });
+
+    it('resposta REPROVADA na validação: nunca persiste a descrição (só o caminho de sucesso grava)', async () => {
+      const { sut, aiProviderFactory, messageRepository } = buildSutWithImageDescription();
+      await messageRepository.create(buildImageMessageWithDescription());
+      const setImageDescriptionSpy = jest.spyOn(messageRepository, 'setImageDescription');
+      // Resposta que vira VAZIA depois de remover o marcador.
+      aiProviderFactory.provider.setNextResult({
+        content: `${IMAGE_DESCRIPTION_MARKER_PREFIX}foto${IMAGE_DESCRIPTION_MARKER_SUFFIX}`,
+        model: 'gemini-x',
+        tokensInput: 5,
+        tokensOutput: 5,
+      });
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        [buildImageMessageWithDescription()],
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('validation_rejected');
+      expect(setImageDescriptionSpy).not.toHaveBeenCalled();
     });
   });
 

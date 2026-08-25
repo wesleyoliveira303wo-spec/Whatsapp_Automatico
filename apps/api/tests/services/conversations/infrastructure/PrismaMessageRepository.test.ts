@@ -49,6 +49,8 @@ const SAMPLE_ROW = {
   // Feature de transcrição de áudio (2026-08-24) — `null` no caso comum
   // (mensagem de texto, ou áudio ainda não transcrito).
   audioTranscript: null,
+  // Feature de descrição de imagem (2026-08-24) — `null` no caso comum.
+  imageDescription: null,
   occurredAt: new Date('2026-07-10T12:00:00Z'),
 };
 
@@ -65,6 +67,7 @@ const SAMPLE_IMAGE_ROW = {
   mediaKeyEncrypted: 'cifrado-base64',
   mediaFileName: null,
   audioTranscript: null,
+  imageDescription: null,
   occurredAt: new Date('2026-07-10T12:05:00Z'),
 };
 
@@ -486,6 +489,46 @@ describe('PrismaMessageRepository', () => {
       await expect(
         repo.setAudioTranscript('tenant-1', 'message-inexistente', 'texto'),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // Feature de descrição de imagem (2026-08-24) — mesmo mecanismo de
+  // setAudioTranscript(), ver docstring do port.
+  describe('setImageDescription()', () => {
+    it('chama prisma.whatsAppMessage.updateMany() escopado por tenantId+id, gravando o texto', async () => {
+      const prisma = createFakePrisma();
+      const repo = new PrismaMessageRepository(prisma as never);
+
+      await repo.setImageDescription('tenant-1', 'message-image-1', 'foto de uma loja de roupas');
+
+      expect(prisma.whatsAppMessage.updateMany).toHaveBeenCalledWith({
+        where: { tenantId: 'tenant-1', id: 'message-image-1' },
+        data: { imageDescription: 'foto de uma loja de roupas' },
+      });
+    });
+
+    it('não lança quando zero linhas são afetadas (mensagem inexistente/de outro tenant)', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppMessage.updateMany.mockResolvedValue({ count: 0 });
+      const repo = new PrismaMessageRepository(prisma as never);
+
+      await expect(
+        repo.setImageDescription('tenant-1', 'message-inexistente', 'texto'),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('toDomain() — reconstrói imageDescription (Feature de descrição de imagem, 2026-08-24)', () => {
+    it('reconstrói imageDescription quando a linha vem preenchida', async () => {
+      const prisma = createFakePrisma();
+      prisma.whatsAppMessage.findMany.mockResolvedValue([
+        { ...SAMPLE_IMAGE_ROW, imageDescription: 'foto de uma loja de roupas' },
+      ]);
+      const repo = new PrismaMessageRepository(prisma as never);
+
+      const result = await repo.listRecentByConversation('tenant-1', 'conversation-1', 20);
+
+      expect(result[0].imageDescription).toBe('foto de uma loja de roupas');
     });
   });
 });

@@ -71,4 +71,11 @@ export interface MessageRepository {
    * bloqueia o fluxo principal).
    */
   setAudioTranscript(tenantId: string, messageId: string, transcript: string): Promise<void>;
+
+  /**
+   * Grava a descrição de uma imagem INBOUND numa `Message` já existente
+   * (feature de descrição de imagem, 2026-08-24) — mesmo mecanismo/exceção
+   * de `setAudioTranscript`, ver docstring de `Message.imageDescription`.
+   */
+  setImageDescription(tenantId: string, messageId: string, description: string): Promise<void>;
 }

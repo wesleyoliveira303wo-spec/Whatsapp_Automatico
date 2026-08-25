@@ -244,6 +244,82 @@ describe('PromptBuilder', () => {
       });
     });
 
+    // Feature de descrição de imagem (2026-08-24) — mesmo mecanismo de
+    // `audioTranscript`, aplicado a imagem.
+    describe('descrição de imagem (feature de descrição de imagem, 2026-08-24)', () => {
+      it('imagem INBOUND já descrita usa a descrição real, não a descrição genérica', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'inbound',
+            contentType: 'image',
+            content: '',
+            media: { mimeType: 'image/jpeg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+            imageDescription: 'foto de uma loja de roupas, com araras penduradas',
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe(
+          '[O cliente enviou uma imagem mostrando: "foto de uma loja de roupas, com araras penduradas"]',
+        );
+      });
+
+      it('imagem INBOUND sem descrição ainda usa a descrição genérica (comportamento anterior preservado)', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'inbound',
+            contentType: 'image',
+            content: '',
+            media: { mimeType: 'image/jpeg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe('[O cliente enviou um(a) imagem, sem legenda]');
+      });
+
+      it('imagem OUTBOUND com imageDescription preenchida (não deveria acontecer, mas não deve usar a descrição — só faz sentido para inbound)', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'outbound',
+            contentType: 'image',
+            content: '',
+            media: { mimeType: 'image/jpeg', url: '', mediaKeyEncrypted: '' },
+            imageDescription: 'não deveria aparecer aqui',
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).not.toContain('não deveria aparecer aqui');
+        expect(request.messages[0].content).toBe('[Você enviou um(a) imagem, sem legenda]');
+      });
+
+      it('imagem com legenda + descrição: a descrição tem prioridade (é o que a IA realmente viu)', () => {
+        const builder = new PromptBuilder();
+        const messages = [
+          buildMessage({
+            direction: 'inbound',
+            contentType: 'image',
+            content: 'olha isso',
+            media: { mimeType: 'image/jpeg', url: 'https://x.enc', mediaKeyEncrypted: 'enc:abc' },
+            imageDescription: 'foto de um carro danificado na lateral',
+          }),
+        ];
+
+        const request = builder.build(messages, PROMPT_VERSION);
+
+        expect(request.messages[0].content).toBe(
+          '[O cliente enviou uma imagem mostrando: "foto de um carro danificado na lateral"]',
+        );
+      });
+    });
+
     it('trata contentType de mídia sem media (dado inconsistente) como o content cru, sem quebrar', () => {
       const builder = new PromptBuilder();
       const messages = [

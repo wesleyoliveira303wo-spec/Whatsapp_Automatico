@@ -9,6 +9,10 @@ import {
   AUDIO_TRANSCRIPT_MARKER_SUFFIX,
 } from '../../../../src/services/ai/domain/audioTranscriptSignal';
 import {
+  IMAGE_DESCRIPTION_MARKER_PREFIX,
+  IMAGE_DESCRIPTION_MARKER_SUFFIX,
+} from '../../../../src/services/ai/domain/imageDescriptionSignal';
+import {
   getPromptVersion,
   MARKER_INSTRUCTIONS,
   PROMPT_VERSIONS,
@@ -836,6 +840,43 @@ describe('MARKER_INSTRUCTIONS — TERCEIRO marcador de transcrição de áudio (
     // do bloco — não até o fim da string: `v3` anexa `V3_FORMAT_EXAMPLES`
     // logo depois de MARKER_INSTRUCTIONS, então comparar "até o fim" quebraria
     // só por causa desse conteúdo extra, que não é drift do próprio marcador.
+    const markerStart = 'INSTRUÇÃO OBRIGATÓRIA sobre marcadores internos';
+    const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'];
+    const blocks = versions.map((id) => {
+      const prompt = PROMPT_VERSIONS[id].systemPrompt;
+      const start = prompt.indexOf(markerStart);
+      return prompt.slice(start, start + MARKER_INSTRUCTIONS.length);
+    });
+    for (const block of blocks.slice(1)) {
+      expect(block).toBe(blocks[0]);
+    }
+  });
+});
+
+describe('MARKER_INSTRUCTIONS — QUARTO marcador de descrição de imagem (2026-08-24)', () => {
+  it('instrui a IA a incluir a descrição SÓ quando realmente viu a imagem anexada', () => {
+    expect(MARKER_INSTRUCTIONS).toMatch(
+      /SÓ quando você REALMENTE viu uma imagem do cliente\s+anexada a esta chamada/i,
+    );
+    expect(MARKER_INSTRUCTIONS).toMatch(
+      /Nunca invente esse marcador quando não\s+tiver visto nada de verdade/i,
+    );
+  });
+
+  it('usa o formato de marcador esperado por extractImageDescription', () => {
+    expect(MARKER_INSTRUCTIONS).toContain(IMAGE_DESCRIPTION_MARKER_PREFIX);
+    expect(MARKER_INSTRUCTIONS).toContain(IMAGE_DESCRIPTION_MARKER_SUFFIX);
+  });
+
+  it('mostra um exemplo com o marcador de descrição JUNTO do marcador de estágio (mesma lição de 2026-07-30)', () => {
+    const exampleStart = MARKER_INSTRUCTIONS.indexOf('Exemplo — cliente manda uma foto');
+    expect(exampleStart).toBeGreaterThan(-1);
+    const example = MARKER_INSTRUCTIONS.slice(exampleStart);
+    expect(example).toContain(`${STAGE_MARKER_PREFIX}CONTACTED`);
+    expect(example).toContain(IMAGE_DESCRIPTION_MARKER_PREFIX);
+  });
+
+  it('é idêntico entre todas as versões que o usam (v1-v9), preservando a garantia de não-drift', () => {
     const markerStart = 'INSTRUÇÃO OBRIGATÓRIA sobre marcadores internos';
     const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'];
     const blocks = versions.map((id) => {

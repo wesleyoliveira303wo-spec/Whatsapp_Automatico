@@ -35,8 +35,9 @@ export interface MessageMediaReference {
  * Uma mensagem (inbound ou outbound) dentro de uma `Conversation` —
  * Milestone 3, Bloco 2. Registro append-only: uma vez criada, nunca é
  * atualizada — mesmo espírito de `WhatsAppSessionEvent` (log imutável), por
- * isso não expõe `updatedAt`. ÚNICA exceção: `audioTranscript` (ver abaixo),
- * enriquecimento assíncrono, nunca correção de conteúdo.
+ * isso não expõe `updatedAt`. ÚNICAS exceções: `audioTranscript`/
+ * `imageDescription` (ver abaixo), enriquecimento assíncrono, nunca correção
+ * de conteúdo.
  *
  * `direction` tipado como união literal, não `string` livre (mesmo racional
  * do F6/ADR #15). Só `'inbound'` é produzida pelo Bloco 2
@@ -81,5 +82,13 @@ export interface Message {
    * de `Message` ganha esse mesmo tratamento.
    */
   audioTranscript?: string;
+  /**
+   * Descrição de uma imagem INBOUND, preenchida de forma assíncrona depois
+   * da criação da mensagem (feature de descrição de imagem, 2026-08-24) —
+   * mesmo mecanismo de `audioTranscript`, ver
+   * `MessageRepository.setImageDescription()`. `undefined` até ser
+   * descrita, ou para qualquer mensagem que não seja imagem inbound.
+   */
+  imageDescription?: string;
   occurredAt: Date;
 }

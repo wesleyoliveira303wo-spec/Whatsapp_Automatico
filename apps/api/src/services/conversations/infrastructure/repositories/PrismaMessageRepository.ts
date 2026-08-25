@@ -53,6 +53,7 @@ interface WhatsAppMessageRow {
   mediaKeyEncrypted: string | null;
   mediaFileName: string | null;
   audioTranscript: string | null;
+  imageDescription: string | null;
   occurredAt: Date;
 }
 
@@ -97,6 +98,7 @@ function toDomain(row: WhatsAppMessageRow): Message {
           }
         : undefined,
     audioTranscript: row.audioTranscript ?? undefined,
+    imageDescription: row.imageDescription ?? undefined,
     occurredAt: row.occurredAt,
   };
 }
@@ -203,6 +205,21 @@ export class PrismaMessageRepository implements MessageRepository {
     await this.prisma.whatsAppMessage.updateMany({
       where: { tenantId, id: messageId },
       data: { audioTranscript: transcript },
+    });
+  }
+
+  /**
+   * Feature de descrição de imagem (2026-08-24) — mesmo mecanismo de
+   * `setAudioTranscript`, ver docstring do port.
+   */
+  async setImageDescription(
+    tenantId: string,
+    messageId: string,
+    description: string,
+  ): Promise<void> {
+    await this.prisma.whatsAppMessage.updateMany({
+      where: { tenantId, id: messageId },
+      data: { imageDescription: description },
     });
   }
 }
