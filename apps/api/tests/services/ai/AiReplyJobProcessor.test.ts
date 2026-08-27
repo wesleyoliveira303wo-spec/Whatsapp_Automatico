@@ -652,6 +652,111 @@ describe('AiReplyJobProcessor', () => {
     });
   });
 
+  describe('process() — válvula de segurança contra loop de automação (pedido do fundador, 2026-08-27)', () => {
+    /**
+     * Semeia 3 trocas rápidas (<3s) com conteúdo repetido — o padrão que
+     * `detectAutomatedLoop` reconhece como bot-vs-bot. Devolve o `id` real da
+     * última mensagem inbound, necessário para `shouldGenerateReply` deixar o
+     * job seguir adiante até a checagem de loop.
+     */
+    async function seedFastRepetitiveExchanges(
+      messageRepository: FakeMessageRepository,
+    ): Promise<string> {
+      const REPEATED = 'Recebemos sua mensagem, retornaremos em breve.';
+      let lastInboundId = '';
+      let t = 0;
+      for (let i = 0; i < 3; i += 1) {
+        await messageRepository.create(
+          buildMessage({
+            id: 'ignorado',
+            direction: 'outbound',
+            content: REPEATED,
+            occurredAt: new Date(1_752_000_000_000 + t * 1000),
+          }),
+        );
+        t += 1; // 1s depois — bem abaixo do limiar de 3s
+        const inbound = await messageRepository.create(
+          buildMessage({
+            id: 'ignorado',
+            direction: 'inbound',
+            content: REPEATED,
+            occurredAt: new Date(1_752_000_000_000 + t * 1000),
+          }),
+        );
+        lastInboundId = inbound.id;
+        t += 10;
+      }
+      return lastInboundId;
+    }
+
+    it('detecta o padrão (ritmo rápido + conteúdo repetido) e encerra SEM chamar a IA nem enviar nada ao cliente', async () => {
+      const {
+        processor,
+        conversationRepository,
+        messageRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+      } = buildSut();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      const lastInboundId = await seedFastRepetitiveExchanges(messageRepository);
+
+      await processor.process(buildJobData({ messageId: lastInboundId }));
+
+      // Nem uma chamada de IA, nem uma mensagem enviada — nenhum custo de
+      // Gemini, e nenhum "aviso de encaminhamento" desperdiçado num robô.
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+
+      // Mas a conversa É sinalizada internamente, para um humano revisar.
+      const updated = await conversationRepository.findById(CONVERSATION_ID);
+      expect(updated?.escalatedAt).toBeInstanceOf(Date);
+      expect(updated?.status).toBe('bot'); // não tira a IA do circuito, mesmo racional dos demais gatilhos
+    });
+
+    it('conversa rápida mas SEM repetição de conteúdo continua respondendo normalmente (não é falso positivo)', async () => {
+      const { processor, conversationRepository, messageRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      let t = 0;
+      let lastInboundId = '';
+      const perguntas = ['Quero saber o preço', 'Vocês têm entrega?', 'Fecho o pedido então'];
+      for (const pergunta of perguntas) {
+        await messageRepository.create(
+          buildMessage({
+            id: 'ignorado',
+            direction: 'outbound',
+            content: 'Claro, já te respondo!',
+            occurredAt: new Date(1_752_000_000_000 + t * 1000),
+          }),
+        );
+        t += 1;
+        const inbound = await messageRepository.create(
+          buildMessage({
+            id: 'ignorado',
+            direction: 'inbound',
+            content: pergunta,
+            occurredAt: new Date(1_752_000_000_000 + t * 1000),
+          }),
+        );
+        lastInboundId = inbound.id;
+        t += 10;
+      }
+      aiProviderFactory.provider.setNextResult({
+        content: 'Resposta normal.',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData({ messageId: lastInboundId }));
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(1);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+      const updated = await conversationRepository.findById(CONVERSATION_ID);
+      expect(updated?.escalatedAt).toBeUndefined();
+    });
+  });
+
   describe('process() — resultado não enviável avisa o cliente e sinaliza para humano (sem tirar a IA do circuito)', () => {
     it('validation_rejected (resposta vazia): envia aviso educado ao cliente, grava o AiInteraction e sinaliza escalatedAt, sem mudar status', async () => {
       const {

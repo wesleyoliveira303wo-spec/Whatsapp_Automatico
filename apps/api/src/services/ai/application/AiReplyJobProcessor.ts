@@ -6,6 +6,11 @@ import { shouldAutoRespond } from '../../conversations/domain/policies/shouldAut
 import { shouldAiUpdateStage } from '../../conversations/domain/policies/shouldAiUpdateStage';
 import { shouldGenerateReply } from '../../conversations/domain/policies/shouldGenerateReply';
 import {
+  detectAutomatedLoop,
+  DEFAULT_AUTOMATED_LOOP_EXCHANGES_TO_CHECK,
+  DEFAULT_AUTOMATED_LOOP_MAX_REPLY_LATENCY_MS,
+} from '../../conversations/domain/policies/detectAutomatedLoop';
+import {
   trimHistoryToCurrentSession,
   DEFAULT_SESSION_GAP_MS,
 } from '../../conversations/domain/policies/trimHistoryToCurrentSession';
@@ -167,6 +172,15 @@ export class AiReplyJobProcessor {
      * própria mensagem de encaminhamento, em vez do texto padrão do sistema.
      */
     private readonly aiPreferencesRepository?: AiPreferencesRepository,
+    /**
+     * Válvula de segurança contra LOOP DE AUTOMAÇÃO (pedido do fundador,
+     * 2026-08-27) — ver docstring de `detectAutomatedLoop`. Defaults
+     * herdados da própria policy (3 trocas, 3s) — expostos aqui só para
+     * permitir calibração futura com uso real, mesmo padrão de
+     * `historyLimit`/`handoffNoticeRepeatAfterMs`.
+     */
+    private readonly automatedLoopExchangesToCheck: number = DEFAULT_AUTOMATED_LOOP_EXCHANGES_TO_CHECK,
+    private readonly automatedLoopMaxReplyLatencyMs: number = DEFAULT_AUTOMATED_LOOP_MAX_REPLY_LATENCY_MS,
   ) {}
 
   async process(data: AiReplyJobData): Promise<void> {
@@ -233,6 +247,45 @@ export class AiReplyJobProcessor {
         'Job ai-reply encerrado: chegou mensagem mais recente nesta conversa (agrupamento de rajada)',
         { ...data },
       );
+      return;
+    }
+
+    // VÁLVULA DE SEGURANÇA CONTRA LOOP DE AUTOMAÇÃO (pedido do fundador,
+    // 2026-08-27) — terceiro portão, depois de `shouldGenerateReply` e ainda
+    // ANTES de qualquer chamada ao provider de IA. Cenário real que motivou
+    // isto: um disparo de campanha (Fase L) atinge um número que também é um
+    // robô/auto-resposta, e as duas automações passam a se responder
+    // indefinidamente — cada rodada gastando uma chamada de IA de verdade.
+    //
+    // `detectAutomatedLoop` (Domain, ver sua docstring para o desenho
+    // completo) só devolve `true` quando DOIS sinais aparecem JUNTOS nas
+    // últimas `automatedLoopExchangesToCheck` trocas: ritmo rápido demais
+    // para ser humano E conteúdo repetitivo/eco. Reusa o histórico já lido
+    // acima — nenhuma consulta nova, nenhuma chamada de IA para detectar.
+    //
+    // AÇÃO DELIBERADAMENTE DIFERENTE do caminho de falha logo abaixo: aqui
+    // NÃO enviamos nenhum aviso de encaminhamento — não há um cliente humano
+    // do outro lado para ler o aviso, então mandar mais uma mensagem seria só
+    // desperdiçar mais um envio. Só sinalizamos internamente
+    // (`flagNeedsHumanAttention`) para um humano revisar depois, e paramos
+    // por aqui. Como `status` continua `'bot'`, o PRÓXIMO job desta conversa
+    // (se a automação do outro lado insistir) vai re-detectar o mesmo padrão
+    // e encerrar de novo, sempre ANTES de gastar Gemini — a proteção se
+    // sustenta sozinha, sem precisar de nenhum estado permanente novo. Se o
+    // padrão parar (ex.: um humano de verdade assume do outro lado), a
+    // próxima checagem simplesmente deixa de bater e a IA volta a responder.
+    if (
+      detectAutomatedLoop(
+        chronological,
+        this.automatedLoopExchangesToCheck,
+        this.automatedLoopMaxReplyLatencyMs,
+      )
+    ) {
+      this.logger.warn(
+        'Job ai-reply encerrado: padrão de automação detectado do outro lado (ritmo rápido demais + conteúdo repetido) — parando de responder para não gastar cota da IA',
+        { ...data },
+      );
+      await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'loop_automatizado');
       return;
     }
 
@@ -452,12 +505,15 @@ export class AiReplyJobProcessor {
    *   - `decisao_da_ia`: a IA emitiu o marcador de escalonamento (feature N2).
    *   - `falha_da_ia`: a geração falhou (cota, provider, validação) e não há o
    *     que enviar — melhor avisar um humano do que deixar o lead no vácuo.
+   *   - `loop_automatizado` (2026-08-27): `detectAutomatedLoop` identificou
+   *     ritmo+conteúdo típicos de automação do outro lado — a IA para de
+   *     responder para não gastar cota respondendo a outro robô.
    * `reason` entra no log só para diagnóstico (por que a conversa escalou).
    */
   private async flagNeedsHumanAttention(
     tenantId: string,
     conversationId: string,
-    reason: 'decisao_da_ia' | 'falha_da_ia',
+    reason: 'decisao_da_ia' | 'falha_da_ia' | 'loop_automatizado',
   ): Promise<void> {
     await this.conversationRepository.flagNeedsHumanAttention(tenantId, conversationId, new Date());
     this.logger.info(
