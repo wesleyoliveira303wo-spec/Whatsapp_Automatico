@@ -7,11 +7,12 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
-import { Paperclip, X, FileText, MessageSquareText, Send } from 'lucide-react';
+import { Paperclip, X, FileText, MessageSquareText, Send, Settings2, ChevronLeft } from 'lucide-react';
 import { sendConversationMessage, sendConversationMedia, ClientApiError } from '@/lib/clientApi';
 import { useQuickReplies } from '@/hooks/useQuickReplies';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
+import QuickRepliesPanel from '@/components/QuickRepliesPanel';
 
 interface MessageComposerProps {
   conversationId: string;
@@ -77,6 +78,15 @@ function errorMessageFor(error: unknown): string {
  * anexo) abre um dropdown local com as frases cadastradas na sessão
  * (`useQuickReplies`); clicar insere o texto no campo (acrescenta com espaço
  * se já houver algo digitado) e fecha o dropdown.
+ *
+ * Redesign 2026-08-25: o mesmo dropdown ganhou um modo "Gerenciar" — antes,
+ * cadastrar/editar/remover respostas rápidas só era possível numa aba
+ * separada dentro do Cérebro da IA (pedido do fundador: não fazia sentido
+ * gerenciar num lugar e usar em outro). Um botão de engrenagem no cabeçalho
+ * do dropdown alterna para o `QuickRepliesPanel` completo (mesmo
+ * componente da tela antiga, reaproveitado aqui sem duplicar CRUD) dentro
+ * do próprio popover; "Voltar" retorna à lista de inserção. A aba
+ * "Respostas Rápidas" que existia em `ai.tsx` foi removida.
  */
 export default function MessageComposer({
   conversationId,
@@ -91,8 +101,9 @@ export default function MessageComposer({
   // Fase 1, Bloco F1.9 — Respostas Rápidas: dropdown local (sem Radix novo,
   // mesmo racional já usado no projeto para evitar dependência/reestruturação
   // sem necessidade — ex. `<select>` nativo em `UserManagementPanel`).
-  const { quickReplies } = useQuickReplies(sessionName);
+  const { quickReplies, refresh: refreshQuickReplies } = useQuickReplies(sessionName);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [managingQuickReplies, setManagingQuickReplies] = useState(false);
   const quickRepliesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,6 +111,7 @@ export default function MessageComposer({
     const handleClickOutside = (event: MouseEvent): void => {
       if (quickRepliesRef.current && !quickRepliesRef.current.contains(event.target as Node)) {
         setShowQuickReplies(false);
+        setManagingQuickReplies(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -258,32 +270,73 @@ export default function MessageComposer({
               size="icon"
               className="h-8 w-8 rounded-[9px]"
               disabled={sending}
-              onClick={() => setShowQuickReplies((current) => !current)}
+              onClick={() =>
+                setShowQuickReplies((current) => {
+                  if (current) setManagingQuickReplies(false);
+                  return !current;
+                })
+              }
               aria-label="Respostas rápidas"
             >
               <MessageSquareText className="h-[17px] w-[17px]" aria-hidden="true" />
             </Button>
-            {showQuickReplies && (
-              <div className="absolute bottom-full left-0 mb-2 max-h-64 w-72 overflow-y-auto rounded-xl border border-border bg-card p-1.5 shadow-menu">
-                {quickReplies.length === 0 ? (
-                  <p className="p-2 text-xs text-muted-foreground">
-                    Nenhuma resposta rápida cadastrada.
-                  </p>
-                ) : (
-                  quickReplies.map((quickReply) => (
+            {showQuickReplies &&
+              (managingQuickReplies ? (
+                <div className="fx-scroll absolute bottom-full left-0 mb-2 max-h-[420px] w-[460px] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-menu">
+                  <div className="mb-2 flex items-center gap-1.5">
                     <button
-                      key={quickReply.id}
                       type="button"
-                      onClick={() => insertQuickReply(quickReply.content)}
-                      className="block w-full truncate rounded-lg p-2 text-left text-[13px] text-foreground hover:bg-muted"
-                      title={quickReply.content}
+                      onClick={() => {
+                        // Reflete criações/edições/remoções feitas dentro do
+                        // `QuickRepliesPanel` (que gerencia seu PRÓPRIO
+                        // `useQuickReplies`, independente deste) na lista de
+                        // inserção — sem isso, uma resposta recém-cadastrada
+                        // só apareceria depois de reabrir o dropdown do zero.
+                        setManagingQuickReplies(false);
+                        refreshQuickReplies();
+                      }}
+                      aria-label="Voltar para a lista de respostas rápidas"
+                      className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
-                      {quickReply.content}
+                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                     </button>
-                  ))
-                )}
-              </div>
-            )}
+                    <span className="text-[13px] font-medium text-foreground">
+                      Gerenciar respostas rápidas
+                    </span>
+                  </div>
+                  <QuickRepliesPanel sessionName={sessionName} />
+                </div>
+              ) : (
+                <div className="absolute bottom-full left-0 mb-2 w-72 overflow-hidden rounded-xl border border-border bg-card shadow-menu">
+                  <div className="fx-scroll max-h-56 overflow-y-auto p-1.5">
+                    {quickReplies.length === 0 ? (
+                      <p className="p-2 text-xs text-muted-foreground">
+                        Nenhuma resposta rápida cadastrada.
+                      </p>
+                    ) : (
+                      quickReplies.map((quickReply) => (
+                        <button
+                          key={quickReply.id}
+                          type="button"
+                          onClick={() => insertQuickReply(quickReply.content)}
+                          className="block w-full truncate rounded-lg p-2 text-left text-[13px] text-foreground hover:bg-muted"
+                          title={quickReply.content}
+                        >
+                          {quickReply.content}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setManagingQuickReplies(true)}
+                    className="flex w-full items-center gap-1.5 border-t border-border/70 p-2 text-left text-[12.5px] font-medium text-primary hover:bg-muted"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Cadastrar / gerenciar respostas rápidas
+                  </button>
+                </div>
+              ))}
           </div>
           <div className="flex-1" />
           <span className="mr-2 hidden whitespace-nowrap text-[11.5px] text-muted-foreground sm:inline">

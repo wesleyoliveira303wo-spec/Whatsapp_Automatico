@@ -14,6 +14,7 @@ function buildRepo(overrides: Record<string, unknown> = {}): {
   const user = {
     create: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     updateMany: jest.fn(),
     ...overrides,
@@ -67,15 +68,33 @@ describe('PrismaUserRepository (Milestone 5, Bloco M5A)', () => {
     expect(found?.lastLoginAt).toBeUndefined();
   });
 
-  it('findByTenantAndEmail usa a chave composta tenantId_email', async () => {
+  it('findByTenantAndEmail filtra por tenantId + email (email e unico global desde 2026-08-26)', async () => {
     const { repo, user } = buildRepo();
-    user.findUnique.mockResolvedValue(ROW);
+    user.findFirst.mockResolvedValue(ROW);
 
     await repo.findByTenantAndEmail('tenant-1', 'joao@empresa.com');
 
-    expect(user.findUnique).toHaveBeenCalledWith({
-      where: { tenantId_email: { tenantId: 'tenant-1', email: 'joao@empresa.com' } },
+    expect(user.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-1', email: 'joao@empresa.com' },
     });
+  });
+
+  it('findByEmail busca so pelo e-mail, sem tenant', async () => {
+    const { repo, user } = buildRepo();
+    user.findUnique.mockResolvedValue(ROW);
+
+    await repo.findByEmail('joao@empresa.com');
+
+    expect(user.findUnique).toHaveBeenCalledWith({ where: { email: 'joao@empresa.com' } });
+  });
+
+  it('existsByEmail devolve true/false conforme o registro existe', async () => {
+    const { repo, user } = buildRepo();
+    user.findUnique.mockResolvedValueOnce({ id: 'user-1' });
+    expect(await repo.existsByEmail('joao@empresa.com')).toBe(true);
+
+    user.findUnique.mockResolvedValueOnce(null);
+    expect(await repo.existsByEmail('ninguem@empresa.com')).toBe(false);
   });
 
   it('update devolve undefined quando updateMany nao afeta nenhuma linha', async () => {

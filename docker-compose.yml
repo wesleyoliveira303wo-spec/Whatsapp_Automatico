@@ -74,6 +74,13 @@ services:
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
       REDIS_URL: "redis://redis:6379"
+      # HOTFIX 2026-08-26: o .env traz INTERNAL_API_BASE_URL=http://localhost:4000
+      # (valor para rodar via `npm run dev` no host) — dentro do container do
+      # worker, "localhost" aponta pro próprio worker, não pra API, e o
+      # download de mídia pra IA (F1.2, `HttpMediaDownloader`) falhava sempre
+      # com "fetch failed" (confirmado no log). "api" é o hostname do serviço
+      # na rede interna do compose (ver `api:` acima, porta 4000 exposta lá).
+      INTERNAL_API_BASE_URL: "http://api:4000"
 
   dashboard:
     build:

@@ -17,17 +17,20 @@ export function buildCampaignContext(messageSent: string): string {
     `A pessoa não procurou a empresa — nós a procuramos. Não pergunte por que ela está entrando ` +
     `em contato. Reconheça o contato inicial, apresente-se com clareza, confirme se o assunto faz ` +
     `sentido para ela e, se ela não tiver interesse, encerre com cordialidade e sem insistir.\n` +
-    // Reforço explícito (2026-08-24, junto com o prompt `v7`): este é o CASO 2
-    // descrito no prompt de sistema — a postura de descoberta ("qual é o seu
-    // nome? com o que você trabalha?"), que é o PADRÃO correto quando o
-    // cliente procura a empresa, seria errada aqui: a pessoa está respondendo
-    // a uma abordagem comercial nossa e já sabe do que se trata. Segurar a
-    // apresentação para "conhecer o cliente primeiro" faz ela perder o fio.
-    `Como esta é uma abordagem nossa, você JÁ deve dizer a que veio na primeira resposta: ` +
-    `apresente-se pelo nome (o que consta nas informações da empresa), diga em uma frase curta o que a ` +
-    `empresa faz e por que faz sentido para o negócio dela — e só então faça UMA pergunta. Não fique ` +
-    `perguntando o nome e o ramo dela antes de explicar quem é você e o motivo do contato. ` +
-    `Mesmo aqui, continue valendo a regra de um tópico por mensagem: nunca despeje serviço, preço e ` +
-    `prazo de uma vez só.`
+    // CORREÇÃO 2026-08-25 (achado real, medido numa conversa de campanha):
+    // a versão anterior deste texto mandava "diga em uma frase curta o que a
+    // empresa faz e POR QUE FAZ SENTIDO PARA O NEGÓCIO DELA" já na primeira
+    // resposta — isso é exatamente o que produziu o pitch agressivo
+    // observado (nome + o que a empresa faz + benefício + pergunta comercial,
+    // tudo de uma vez). O ritmo certo (mínimo na primeira resposta, nunca se
+    // reapresentar depois) já vive no `systemPrompt` (CASO 2, condicionado ao
+    // `stage` — mesmo sinal que já governa o FORMATO) — este bloco só precisa
+    // confirmar o FATO de que fomos nós que procuramos, sem ditar o CONTEÚDO
+    // do pitch, para não duplicar/contradizer aquela regra.
+    `Como esta é uma abordagem nossa, siga a regra do CASO 2 do seu prompt de sistema — o quanto você já se ` +
+    `apresentou depende do estágio desta conversa (ainda NEW = primeira resposta, mínima; já ` +
+    `CONTACTED/NEGOTIATING = você já se apresentou, nunca repita). Continua valendo a regra de um tópico por ` +
+    `mensagem: nunca despeje serviço, preço e prazo de uma vez só, e nunca repita o mesmo argumento em ` +
+    `mensagens seguidas.`
   );
 }

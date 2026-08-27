@@ -104,10 +104,18 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async findByTenantAndEmail(tenantId: string, email: string): Promise<User | null> {
-    const row = await this.prisma.user.findUnique({
-      where: { tenantId_email: { tenantId, email } },
-    });
+    const row = await this.prisma.user.findFirst({ where: { tenantId, email } });
     return row ? toDomain(row) : null;
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    const row = await this.prisma.user.findUnique({ where: { email } });
+    return row ? toDomain(row) : null;
+  }
+
+  async existsByEmail(email: string): Promise<boolean> {
+    const row = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+    return row !== null;
   }
 
   async listByTenant(tenantId: string, options: ListUsersOptions): Promise<UserPage> {

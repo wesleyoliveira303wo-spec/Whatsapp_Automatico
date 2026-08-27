@@ -244,6 +244,49 @@ describe('dashboardSession', () => {
       expect(reread).toEqual({ ...session, accessToken: newToken, refreshToken: 'refresh-2' });
     });
 
+    /**
+     * HOTFIX 2026-08-25 — achado real: várias conexões SSE da mesma página
+     * (Conversas, Sessões, Mensagens...) chamam `requireSession`
+     * independentemente. Quando o token de todas precisa renovar no MESMO
+     * instante (ex.: um redeploy do Dashboard derruba e reconecta TODAS as
+     * SSE de uma vez), cada uma lia o MESMO `refreshToken` do cookie (ainda
+     * não atualizado) e disparava sua PRÓPRIA chamada a `/auth/refresh` —
+     * a segunda chamada em diante, usando um token JÁ CONSUMIDO pela
+     * primeira, cai na detecção de reuso da API, que revoga TODOS os
+     * refresh tokens do usuário, derrubando a sessão inteira. Medido no
+     * Postgres: várias linhas de `refresh_tokens` criadas/revogadas em
+     * menos de 200ms para o mesmo usuário.
+     */
+    it('HOTFIX 2026-08-25: duas chamadas concorrentes de requireSession com o MESMO refreshToken fazem só UMA chamada à API (dedupe da corrida de renovação)', async () => {
+      const newToken = fakeAccessToken(Math.floor(Date.now() / 1000) + 900);
+      let resolveFetch: (value: { ok: true; json: () => Promise<unknown> }) => void;
+      const fetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve as never;
+      });
+      const fetchMock = jest.fn().mockReturnValue(fetchPromise);
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const session = userSession(Math.floor(Date.now() / 1000) + 10); // < 60s, precisa renovar
+      const cookie = cookieFor(session);
+      const req1 = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookie } });
+      const res1 = createFakeRes();
+      const req2 = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookie } });
+      const res2 = createFakeRes();
+
+      // As duas chamadas partem ANTES de qualquer uma delas terminar — a
+      // segunda deve encontrar a renovação da primeira já em andamento e
+      // esperar por ela, em vez de disparar uma chamada própria.
+      const result1Promise = requireSession(req1, res1);
+      const result2Promise = requireSession(req2, res2);
+
+      resolveFetch!({ ok: true, json: async () => ({ accessToken: newToken, refreshToken: 'refresh-2' }) });
+      const [result1, result2] = await Promise.all([result1Promise, result2Promise]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result1).toEqual({ ...session, accessToken: newToken, refreshToken: 'refresh-2' });
+      expect(result2).toEqual({ ...session, accessToken: newToken, refreshToken: 'refresh-2' });
+    });
+
     it('renovacao recusada pela API (refresh revogado): limpa o cookie e responde 401', async () => {
       const fetchMock = jest
         .fn()

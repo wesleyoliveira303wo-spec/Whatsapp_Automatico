@@ -39,4 +39,9 @@ export class PrismaTenantRepository implements TenantRepository {
     const row = await this.prisma.tenant.findUnique({ where: { apiKeyHash: hash } });
     return row ? toDomain(row) : null;
   }
+
+  async create(input: { name: string }): Promise<Tenant> {
+    const row = await this.prisma.tenant.create({ data: { name: input.name } });
+    return toDomain(row);
+  }
 }

@@ -184,6 +184,12 @@ model Tenant {
   aiBusinessProfiles    AiBusinessProfile[]
   // Fase 1, Bloco F1.9 — respostas rapidas por sessao.
   quickReplies          QuickReply[]
+  // Cérebro da IA v3 (2026-08-25) — FAQ estruturada por sessao (substitui o
+  // "anexar texto cru" da v2, ver AiFaqEntry).
+  aiFaqEntries          AiFaqEntry[]
+  // Cérebro da IA v3, Fase 3 (2026-08-26) — preferencias/limites reais de
+  // atendimento por sessao, ver AiPreferences.
+  aiPreferences         AiPreferences[]
   // Redesign 2026-08-05 (R4) — catálogo de tags livres por sessão.
   tags                  WhatsAppTag[]
   // Fase L, Bloco L1 (2026-08-15) — identidade durável de contato, por TENANT
@@ -1035,6 +1041,52 @@ model AiBusinessProfile {
   @@map("ai_business_profiles")
 }
 
+/// Cérebro da IA v3, Fase 3 (2026-08-26) — "Preferências": controles REAIS de
+/// postura/limite operacional da IA, POR SESSÃO (mesmo padrão 1:1 de
+/// AiBusinessProfile, M6H-3). Decisão do fundador ao revisar a Fase 3
+/// (rejeitou uma primeira proposta de toggles informativos/travados):
+/// nenhum campo aqui é decorativo — cada um muda de fato o que a IA recebe no
+/// prompt (`preferencesContext`, `services/ai/domain`) ou o comportamento do
+/// worker (`customHandoffMessage` substitui a mensagem padrão de
+/// encaminhamento em `AiReplyJobProcessor`).
+model AiPreferences {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  /// Nível de autonomia da IA ao conduzir a venda/negociação — orienta o
+  /// prompt sobre o quanto ela pode avançar sozinha antes de preferir
+  /// encaminhar a um humano. 'conservative' | 'balanced' | 'autonomous'.
+  autonomyLevel String @default("balanced") @map("autonomy_level")
+
+  /// Desconto máximo (%) que a IA pode oferecer por conta própria, SEM
+  /// consultar um humano. `null` = sem limite configurado (a IA nunca
+  /// oferece desconto próprio, comportamento herdado do prompt base).
+  maxDiscountPercent Int? @map("max_discount_percent")
+
+  /// Assuntos que a IA deve evitar ou redirecionar para um humano (texto
+  /// livre, ex.: "reclamações jurídicas, reembolso de pedidos antigos").
+  /// `null`/vazio = nenhuma restrição extra além das regras do prompt base.
+  topicsToAvoid String? @db.Text @map("topics_to_avoid")
+
+  /// Depois de quantas tentativas sem sucesso a IA deve preferir escalar
+  /// para um humano em vez de insistir. `null` = usa o critério padrão do
+  /// prompt (mesmo comportamento de antes desta feature).
+  escalateAfterAttempts Int? @map("escalate_after_attempts")
+
+  /// Mensagem customizada enviada ao cliente quando a IA falha e escala
+  /// (substitui `DEFAULT_HUMAN_HANDOFF_MESSAGE` em `AiReplyJobProcessor`
+  /// SÓ para esta sessão). `null` = usa o texto padrão do sistema.
+  customHandoffMessage String? @db.Text @map("custom_handoff_message")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sessionName])
+  @@map("ai_preferences")
+}
+
 /// Fase 1, Bloco F1.9 — respostas rapidas (templates) para o atendente
 /// humano inserir com um clique no MessageComposer. POR SESSAO (nao por
 /// tenant, mesmo padrao de AiBusinessProfile/M6H-3): cada WhatsApp pode ter
@@ -1052,6 +1104,32 @@ model QuickReply {
 
   @@index([tenantId, sessionName])
   @@map("quick_replies")
+}
+
+/// Cérebro da IA v3, Fase 2 (2026-08-25) — FAQ ESTRUTURADA por sessão,
+/// substituindo o antigo botão "Cadastrar pergunta não respondida" que só
+/// ANEXAVA texto cru dentro do blob de `AiBusinessProfile.content`. Mesmo
+/// padrão de `QuickReply` (várias linhas por tenant+sessão, sem `@@unique`).
+/// `category`/`active` são novos: permitem busca/filtro na UI e desativar
+/// uma entrada sem apagar (ex.: preço sazonal fora de vigência). O CONTEÚDO
+/// (pergunta+resposta) entra no prompt como um bloco próprio — nunca mais
+/// misturado ao texto livre do "Conhecimento" (ver `buildFaqContext`,
+/// `services/ai/domain`).
+model AiFaqEntry {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  question    String   @db.Text
+  answer      String   @db.Text
+  category    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sessionName])
+  @@map("ai_faq_entries")
 }
 
 /// Redesign 2026-08-05 (R4) — paleta FIXA de cores de tag (8 opções — decisão
@@ -1154,7 +1232,12 @@ enum UserStatus {
 model User {
   id           String     @id @default(uuid())
   tenantId     String     @map("tenant_id")
-  email        String
+  /// Unico GLOBAL (nao mais por tenant) desde 2026-08-26 — pre-requisito do
+  /// login por e-mail sem exigir o tenantId digitado (Fase de Auth/Registro).
+  /// Antes era `@@unique([tenantId, email])`: a mesma pessoa podia existir em
+  /// dois tenants com o mesmo e-mail. Migrado com a base ainda pequena
+  /// (nenhuma duplicidade real encontrada) — ver ADR correspondente.
+  email        String     @unique
   passwordHash String     @map("password_hash")
   role         UserRole
   status       UserStatus @default(ACTIVE)
@@ -1171,7 +1254,6 @@ model User {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
 
-  @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
 }

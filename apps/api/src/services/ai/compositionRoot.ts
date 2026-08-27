@@ -4,10 +4,13 @@ import { Logger } from '../../shared/domain/Logger';
 import { PrismaTenantRepository } from '../../shared/tenant/infrastructure/PrismaTenantRepository';
 import { PrismaAiInteractionRepository } from './infrastructure/repositories/PrismaAiInteractionRepository';
 import { PrismaAiBusinessProfileRepository } from './infrastructure/repositories/PrismaAiBusinessProfileRepository';
+import { PrismaAiPreferencesRepository } from './infrastructure/repositories/PrismaAiPreferencesRepository';
 import { AiInteractionRepository } from './domain/repositories/AiInteractionRepository';
 import { AiBusinessProfileRepository } from './domain/repositories/AiBusinessProfileRepository';
+import { AiPreferencesRepository } from './domain/repositories/AiPreferencesRepository';
 import { AiInteractionsService } from './application/AiInteractionsService';
 import { AiBusinessProfileService } from './application/AiBusinessProfileService';
+import { AiPreferencesService } from './application/AiPreferencesService';
 
 /**
  * Composition root do bounded context `ai` (Presentation, Milestone 3, Bloco
@@ -31,11 +34,18 @@ export interface AiComposition {
   // diretamente; aqui serve a leitura/escrita REST via `aiBusinessProfileService`.
   aiBusinessProfileRepository: AiBusinessProfileRepository;
   aiBusinessProfileService: AiBusinessProfileService;
+  // Cérebro da IA v3, Fase 3 (2026-08-26) — aditivo, mesmo racional de
+  // aiBusinessProfileRepository acima: também usado pelo `worker.ts` (para
+  // injetar as preferências no prompt e no handoff), construído lá
+  // diretamente; aqui serve a leitura/escrita REST via `aiPreferencesService`.
+  aiPreferencesRepository: AiPreferencesRepository;
+  aiPreferencesService: AiPreferencesService;
 }
 
 export function createAiComposition(prisma: PrismaClient, logger: Logger): AiComposition {
   const aiInteractionRepository = new PrismaAiInteractionRepository(prisma);
   const aiBusinessProfileRepository = new PrismaAiBusinessProfileRepository(prisma);
+  const aiPreferencesRepository = new PrismaAiPreferencesRepository(prisma);
   const tenantRepository = new PrismaTenantRepository(prisma);
 
   const aiInteractionsService = new AiInteractionsService(
@@ -48,11 +58,18 @@ export function createAiComposition(prisma: PrismaClient, logger: Logger): AiCom
     tenantRepository,
     logger,
   );
+  const aiPreferencesService = new AiPreferencesService(
+    aiPreferencesRepository,
+    tenantRepository,
+    logger,
+  );
 
   return {
     aiInteractionRepository,
     aiInteractionsService,
     aiBusinessProfileRepository,
     aiBusinessProfileService,
+    aiPreferencesRepository,
+    aiPreferencesService,
   };
 }

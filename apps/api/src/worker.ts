@@ -12,8 +12,11 @@ import {
 } from './services/conversations/infrastructure/queues/AiReplyQueue';
 import { PrismaAiInteractionRepository } from './services/ai/infrastructure/repositories/PrismaAiInteractionRepository';
 import { PrismaAiBusinessProfileRepository } from './services/ai/infrastructure/repositories/PrismaAiBusinessProfileRepository';
+import { PrismaAiPreferencesRepository } from './services/ai/infrastructure/repositories/PrismaAiPreferencesRepository';
 import { PrismaCampaignRepository } from './services/campaigns/infrastructure/repositories/PrismaCampaignRepository';
 import { CampaignOriginResolverImpl } from './services/campaigns/infrastructure/CampaignOriginResolverImpl';
+import { AiFaqReaderImpl } from './services/aiFaq/infrastructure/AiFaqReaderImpl';
+import { PrismaAiFaqRepository } from './services/aiFaq/infrastructure/repositories/PrismaAiFaqRepository';
 import { AiProviderFactoryImpl } from './services/ai/infrastructure/AiProviderFactoryImpl';
 import { AiProviderName } from './services/ai/domain/providers/AiProviderName';
 import { PromptBuilder } from './services/ai/application/PromptBuilder';
@@ -196,6 +199,19 @@ async function main(): Promise<void> {
     logger.child({ module: 'campaign-origin-resolver' }),
   );
 
+  // Cérebro da IA v3, Fase 2 (2026-08-25) — mesmo racional de
+  // `campaignOriginResolver`: puro leitor de Postgres, construído aqui direto.
+  const aiFaqReader = new AiFaqReaderImpl(
+    new PrismaAiFaqRepository(prisma),
+    logger.child({ module: 'ai-faq-reader' }),
+  );
+
+  // Cérebro da IA v3, Fase 3 (2026-08-26) — Preferências: mesma instância
+  // usada tanto para injetar o bloco de contexto no prompt (abaixo) quanto
+  // para `AiReplyJobProcessor` resolver a mensagem customizada de
+  // encaminhamento (mais abaixo).
+  const aiPreferencesRepository = new PrismaAiPreferencesRepository(prisma);
+
   const conversationAiService = new ConversationAiService(
     aiProviderFactory,
     selectedProvider,
@@ -210,6 +226,8 @@ async function main(): Promise<void> {
     // Feature de transcrição de áudio (2026-08-24) — `messageRepository` já
     // existe neste escopo (usado por `AiReplyJobProcessor` mais abaixo).
     messageRepository,
+    aiFaqReader,
+    aiPreferencesRepository,
   );
   const promptVersion = getPromptVersion(AI_PROMPT_VERSION ?? 'v1');
 
@@ -257,6 +275,15 @@ async function main(): Promise<void> {
     // ATUAL antes de gerar a resposta (ver docstring de `process()`).
     aiBusinessProfileRepository,
     AI_HISTORY_LIMIT ? Number(AI_HISTORY_LIMIT) : undefined,
+    // Cérebro da IA v3, Fase 3 (2026-08-26): 4 params intermediários no
+    // default (humanHandoffMessage/handoffNoticeRepeatAfterMs/now/sessionGapMs)
+    // para alcançar `aiPreferencesRepository`, mesma instância já construída
+    // acima para `ConversationAiService`.
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    aiPreferencesRepository,
   );
 
   // Fase 1, Bloco F1.10 (estabilidade para beta) — a auditoria pré-beta

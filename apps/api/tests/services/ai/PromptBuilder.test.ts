@@ -589,4 +589,156 @@ describe('PromptBuilder', () => {
 
     expect(withCampaign.systemPrompt).toBe(withoutCampaign.systemPrompt);
   });
+
+  describe('Cérebro da IA v3, Fase 2 — faqContext (2026-08-25)', () => {
+    it('injeta o bloco de FAQ logo após "Informações da empresa", antes do horário/campanha', () => {
+      const builder = new PromptBuilder();
+
+      const request = builder.build(
+        [],
+        PROMPT_VERSION,
+        'Salão da Maria.',
+        undefined,
+        '# Aviso de Horário\nFora do expediente.',
+        undefined,
+        '# Perguntas frequentes\n**P:** Qual o preço?\n**R:** R$ 990',
+      );
+
+      const prompt = request.systemPrompt;
+      expect(prompt).toContain('# Perguntas frequentes');
+      const businessIndex = prompt.indexOf('Salão da Maria.');
+      const faqIndex = prompt.indexOf('# Perguntas frequentes');
+      const offHoursIndex = prompt.indexOf('Fora do expediente.');
+      expect(faqIndex).toBeGreaterThan(businessIndex);
+      expect(offHoursIndex).toBeGreaterThan(faqIndex);
+    });
+
+    it('faqContext ausente (undefined) não altera o systemPrompt', () => {
+      const builder = new PromptBuilder();
+
+      const withFaq = builder.build(
+        [],
+        PROMPT_VERSION,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      const withoutFaq = builder.build([], PROMPT_VERSION);
+
+      expect(withFaq.systemPrompt).toBe(withoutFaq.systemPrompt);
+    });
+
+    it('closingDirective continua sendo a ÚLTIMA coisa do prompt mesmo com faqContext presente', () => {
+      const builder = new PromptBuilder();
+      const withClosing: PromptVersion = {
+        ...PROMPT_VERSION,
+        id: 'v-teste-faq',
+        closingDirective: 'LEMBRETE FINAL: responda curto.',
+      };
+
+      const request = builder.build(
+        [],
+        withClosing,
+        'Salão da Maria.',
+        undefined,
+        undefined,
+        undefined,
+        '# Perguntas frequentes\n**P:** Qual o preço?\n**R:** R$ 990',
+      );
+
+      const prompt = request.systemPrompt;
+      expect(prompt.indexOf('LEMBRETE FINAL')).toBeGreaterThan(
+        prompt.indexOf('# Perguntas frequentes'),
+      );
+      expect(prompt.trimEnd().endsWith('responda curto.')).toBe(true);
+    });
+  });
+
+  describe('Cérebro da IA v3, Fase 3 — preferencesContext (2026-08-26)', () => {
+    it('injeta o bloco de preferências logo após o horário, antes da campanha/closingDirective', () => {
+      const builder = new PromptBuilder();
+
+      const request = builder.build(
+        [],
+        PROMPT_VERSION,
+        'Salão da Maria.',
+        undefined,
+        '# Aviso de Horário\nFora do expediente.',
+        '# Origem desta conversa\nCampanha de reengajamento.',
+        undefined,
+        '# Preferências de atendimento\nNível de autonomia: AUTÔNOMO.',
+      );
+
+      const prompt = request.systemPrompt;
+      expect(prompt).toContain('# Preferências de atendimento');
+      const offHoursIndex = prompt.indexOf('Fora do expediente.');
+      const preferencesIndex = prompt.indexOf('# Preferências de atendimento');
+      const campaignIndex = prompt.indexOf('# Origem desta conversa');
+      expect(preferencesIndex).toBeGreaterThan(offHoursIndex);
+      expect(campaignIndex).toBeGreaterThan(preferencesIndex);
+    });
+
+    it('preferencesContext ausente (undefined) não altera o systemPrompt', () => {
+      const builder = new PromptBuilder();
+
+      const withPreferences = builder.build(
+        [],
+        PROMPT_VERSION,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      const withoutPreferences = builder.build([], PROMPT_VERSION);
+
+      expect(withPreferences.systemPrompt).toBe(withoutPreferences.systemPrompt);
+    });
+
+    it('closingDirective continua sendo a ÚLTIMA coisa do prompt mesmo com preferencesContext presente', () => {
+      const builder = new PromptBuilder();
+      const withClosing: PromptVersion = {
+        ...PROMPT_VERSION,
+        id: 'v-teste-preferences',
+        closingDirective: 'LEMBRETE FINAL: responda curto.',
+      };
+
+      const request = builder.build(
+        [],
+        withClosing,
+        'Salão da Maria.',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        '# Preferências de atendimento\nNível de autonomia: AUTÔNOMO.',
+      );
+
+      const prompt = request.systemPrompt;
+      expect(prompt.indexOf('LEMBRETE FINAL')).toBeGreaterThan(
+        prompt.indexOf('# Preferências de atendimento'),
+      );
+      expect(prompt.trimEnd().endsWith('responda curto.')).toBe(true);
+    });
+
+    it('não menciona a mensagem de encaminhamento — esse campo nunca vai para o prompt (só o worker usa)', () => {
+      const builder = new PromptBuilder();
+
+      const request = builder.build(
+        [],
+        PROMPT_VERSION,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        '# Preferências de atendimento\nNível de autonomia: EQUILIBRADO.',
+      );
+
+      expect(request.systemPrompt).not.toContain('encaminhamento');
+    });
+  });
 });

@@ -190,6 +190,39 @@ function needsRefresh(session: DashboardSession & { accessToken: string }, nowMs
 }
 
 /**
+ * HOTFIX 2026-08-25 — achado real: uma página do Dashboard abre VÁRIAS
+ * conexões SSE ao mesmo tempo (Conversas, Sessões, Mensagens, Interações de
+ * IA...), cada uma chamando `requireSession` de forma independente. Quando
+ * o access token de todas elas precisa renovar no MESMO instante (ex.: logo
+ * depois de um redeploy do Dashboard, que derruba e reconecta TODAS as
+ * conexões SSE de uma vez — `EventSource` reconecta sozinho a qualquer
+ * encerramento, ver `SSE_MAX_LIFETIME_MS`), cada uma lia o MESMO
+ * `refreshToken` do cookie (ainda não atualizado por nenhuma das outras) e
+ * disparava sua PRÓPRIA chamada a `POST /auth/refresh`, em paralelo.
+ *
+ * `RefreshTokenService.refresh` (`apps/api`) só permite um refresh token
+ * ser consumido UMA vez — a segunda chamada em diante, usando o MESMO
+ * token já consumido pela primeira que chegou, cai no ramo de detecção de
+ * reuso (`reason: 'reuse_detected'`), que REVOGA TODOS os refresh tokens do
+ * usuário de propósito (defesa contra roubo de token) — derrubando a
+ * sessão inteira. Medido no Postgres: múltiplas linhas de `refresh_tokens`
+ * criadas/revogadas em menos de 200ms, mesmo usuário, coerente com essa
+ * corrida.
+ *
+ * Correção: um Map em memória, por PROCESSO (`next start` roda como
+ * processo único e persistente, não serverless-por-requisição — a
+ * suposição já documentada para `KeyedMutex`/rate limiters em memória
+ * deste projeto), dedupa chamadas concorrentes que apresentam o MESMO
+ * `refreshToken` — a primeira dispara a chamada real; todas as demais
+ * esperam a MESMA Promise e recebem o MESMO resultado, em vez de cada uma
+ * tentar consumir o token por conta própria. Limitação aceita (mesma
+ * classe já documentada nesta base): só protege dentro de UM processo —
+ * se o Dashboard escalar horizontalmente, precisa virar um lock
+ * distribuído (Redis), mesma ressalva já registrada para `KeyedMutex`.
+ */
+const inFlightRefreshes = new Map<string, Promise<DashboardSession | null>>();
+
+/**
  * Renova o par de tokens na API (`POST /auth/refresh`). Devolve a sessao nova
  * ou `null` se a API recusou (refresh vencido/revogado/reuso detectado) ou
  * esta inacessivel — em ambos os casos o chamador derruba a sessao (401).
@@ -198,6 +231,25 @@ function needsRefresh(session: DashboardSession & { accessToken: string }, nowMs
  * runtime), entao o import de valor abaixo nao forma ciclo real.
  */
 async function refreshUserSession(
+  session: DashboardSession & {
+    accessToken: string;
+    refreshToken: string;
+    user: DashboardSessionUser;
+  },
+): Promise<DashboardSession | null> {
+  const existing = inFlightRefreshes.get(session.refreshToken);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = performRefreshRequest(session).finally(() => {
+    inFlightRefreshes.delete(session.refreshToken);
+  });
+  inFlightRefreshes.set(session.refreshToken, promise);
+  return promise;
+}
+
+async function performRefreshRequest(
   session: DashboardSession & {
     accessToken: string;
     refreshToken: string;
@@ -250,10 +302,47 @@ async function refreshUserSession(
  * front manda para o login. Sessao de MAQUINA (API key) passa direto, como
  * sempre (zero mudanca de comportamento para o fluxo atual).
  */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Defesa de CSRF (R6 da auditoria de seguranca, 2026-08-26) — checagem de
+ * `Origin` (com fallback a `Referer`) contra o proprio `Host` da requisicao,
+ * so em metodos MUTANTES. Deliberadamente LEVE (nao um token CSRF de dupla
+ * submissao): `SameSite=Lax` ja bloqueia a maioria dos casos; isto fecha a
+ * lacuna que o Lax NAO cobre (subdominio comprometido, navegador antigo sem
+ * SameSite). So REJEITA quando o header esta PRESENTE e diverge — ausencia
+ * de Origin (chamadas same-site legitimas, curl, testes) continua permitida,
+ * para nao quebrar nada que hoje funciona.
+ */
+function failsOriginCheck(req: NextApiRequest): boolean {
+  if (!MUTATING_METHODS.has(req.method ?? '')) {
+    return false;
+  }
+  const origin = req.headers.origin ?? req.headers.referer;
+  if (!origin) {
+    return false;
+  }
+  const host = req.headers.host;
+  if (!host) {
+    return false;
+  }
+  try {
+    const originHost = new URL(origin).host;
+    return originHost !== host;
+  } catch {
+    return true; // Origin/Referer malformado — trata como suspeito.
+  }
+}
+
 export async function requireSession(
   req: NextApiRequest,
   res: NextApiResponse,
 ): Promise<DashboardSession | null> {
+  if (failsOriginCheck(req)) {
+    res.status(403).json({ error: 'cross_origin_request_blocked' });
+    return null;
+  }
+
   const session = readSessionFromRequest(req);
   if (!session) {
     res.status(401).json({ error: 'not_authenticated' });

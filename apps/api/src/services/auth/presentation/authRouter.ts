@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AuthService } from '../application/AuthService';
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { RequestWithAuthUser } from '../../../shared/presentation/requireUser';
+import { AccessTokenService } from '../domain/AccessTokenService';
 
 const tenantIdParamSchema = z.object({
   tenantId: z.string().trim().min(1, 'tenantId nao pode ser vazio'),
@@ -34,6 +35,7 @@ export function createAuthRouter(
   authService: AuthService,
   requireUser: RequestHandler,
   loginRateLimiter?: RequestHandler,
+  accessTokenService?: AccessTokenService,
 ): Router {
   const router = Router({ mergeParams: true });
 
@@ -83,18 +85,30 @@ export function createAuthRouter(
     }),
   );
 
+  // Logout NAO exige `requireUser` (R5 da auditoria de seguranca,
+  // 2026-08-26): a revogacao acha o refresh token pelo HASH, nao pelo dono —
+  // exigir um access token AINDA VALIDO so criava uma janela onde, se ele ja
+  // tivesse expirado, o refresh token (ate 7 dias) sobrevivia ao "sair" do
+  // usuario, e o BFF engolia o 401 em silencio. O Authorization e opcional
+  // aqui: se vier e for valido, identifica o autor na auditoria; se faltar
+  // ou estiver expirado, o logout revoga do mesmo jeito.
   router.post(
     '/logout',
-    requireUser,
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(tenantIdParamSchema, req.params, res);
       if (!params) return;
       const body = validateOrRespond(logoutBodySchema, req.body, res);
       if (!body) return;
 
-      const authUser = (req as RequestWithAuthUser).authUser;
+      let actorUserId: string | null = null;
+      const header = req.headers.authorization;
+      if (accessTokenService && typeof header === 'string' && header.startsWith('Bearer ')) {
+        const claims = accessTokenService.verify(header.slice('Bearer '.length).trim());
+        if (claims) actorUserId = claims.userId;
+      }
+
       const meta = { userAgent: req.headers['user-agent'], ip: req.ip };
-      await authService.logout(params.tenantId, authUser?.userId ?? '', body.refreshToken, meta);
+      await authService.logout(params.tenantId, actorUserId, body.refreshToken, meta);
       res.status(204).end();
     }),
   );

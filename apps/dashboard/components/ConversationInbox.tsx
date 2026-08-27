@@ -28,8 +28,10 @@ interface ConversationInboxProps {
  *
  * Redesign 2026-08-05 (R3): ganhou uma 3ª coluna (`ConversationContextPanel`,
  * só em telas `xl:` 1280px+) e o filtro cresceu de 3 para 5 opções
- * (`ConversationFilterTabs`). Dois tipos de filtro coexistem — nunca
- * combinados na mesma consulta, porque a UI só deixa escolher um por vez:
+ * (`ConversationFilterTabs`; layout reapertado em 2026-08-26 pra caber as 5
+ * sem cortar/rolar — ver docstring do próprio componente). Dois tipos de
+ * filtro coexistem — nunca combinados na mesma consulta, porque a UI só
+ * deixa escolher um por vez:
  * - `bot`/`human`/`waiting` viram `status`/`needsHumanAttention` no
  *   SERVIDOR (trocam a URL do SSE via `useConversationsList`).
  * - `unread` filtra no CLIENTE (`unreadCount > 0`), mesma natureza da busca
@@ -122,9 +124,13 @@ export default function ConversationInbox({
           hasSelection ? 'hidden' : 'flex',
         )}
       >
-        <div className="flex flex-col gap-3 px-4 pb-2.5 pt-4">
+        {/* Padronização de cabeçalhos (2026-08-25, pedido do fundador) —
+            mesmo tamanho/posicionamento de Contatos/Campanhas/Configurações/IA
+            (px-6/pt-5, h1 21px), preservando o `pb-2.5` que só existe pra dar
+            respiro até a busca logo abaixo (não é a margem de fim de página). */}
+        <div className="flex flex-col gap-3 px-6 pb-2.5 pt-5">
           <div className="flex items-baseline justify-between gap-2">
-            <h1 className="text-[17px] font-semibold tracking-tight text-foreground">Conversas</h1>
+            <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Conversas</h1>
             {/*
               Contador honesto (auditoria 2026-08-22). Antes exibia
               "{filtradas} de {carregadas}", o que produzia "50 de 50" numa
@@ -161,8 +167,8 @@ export default function ConversationInbox({
           </div>
         </div>
 
-        {/* `pb-0`: o próprio `ConversationFilterTabs` já reserva espaço (pb-2) entre os botões e a barra de rolagem horizontal — duplicar aqui deixaria o respiro grande demais. */}
-        <div className="px-3">
+        {/* Correção 2026-08-26 — `ConversationFilterTabs` não rola mais (as 5 pílulas cabem inteiras, ver seu próprio docstring); `pb-2` aqui é só o respiro comum antes da lista. */}
+        <div className="px-3 pb-2">
           <ConversationFilterTabs value={filter} onChange={setFilter} />
         </div>
 

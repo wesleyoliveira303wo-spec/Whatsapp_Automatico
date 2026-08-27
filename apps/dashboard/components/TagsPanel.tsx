@@ -33,7 +33,7 @@ interface ColorSwatchPickerProps {
 /** Paleta FIXA de 8 cores (decisão do fundador) — swatches circulares, sem escolha livre de hex. */
 function ColorSwatchPicker({ value, onChange }: ColorSwatchPickerProps): JSX.Element {
   return (
-    <div className="flex shrink-0 gap-1.5" role="radiogroup" aria-label="Cor da tag">
+    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Cor da tag">
       {TAG_COLORS.map((color) => (
         <button
           key={color}
@@ -138,7 +138,7 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
     <div>
       <form
         onSubmit={handleCreate}
-        className="mb-3.5 flex items-center gap-2.5 rounded-lg border border-border bg-card p-4"
+        className="mb-3.5 flex flex-col gap-2.5 rounded-lg border border-border bg-card p-4"
       >
         <label htmlFor="newTagName" className="sr-only">
           Nome da tag
@@ -150,13 +150,13 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
           placeholder="Nome da tag"
           maxLength={40}
           required
-          className="h-[34px] flex-1 rounded-[9px] border-border bg-panel text-[13px]"
+          className="h-[34px] rounded-[9px] border-border bg-panel text-[13px]"
         />
         <ColorSwatchPicker value={newColor} onChange={setNewColor} />
         <Button
           type="submit"
           size="cta"
-          className="shrink-0"
+          className="w-full"
           disabled={creating || !newName.trim()}
         >
           {creating ? 'Adicionando…' : 'Adicionar'}

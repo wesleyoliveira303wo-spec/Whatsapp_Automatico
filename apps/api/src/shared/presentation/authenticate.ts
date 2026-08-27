@@ -76,6 +76,22 @@ export function createAuthenticate(
         });
         return;
       }
+      // R1 da auditoria de seguranca (2026-08-26): `mustChangePassword` era
+      // imposto SO no frontend do Dashboard (`getServerSideProps`) — uma
+      // chamada direta a API com o access token contornava a exigencia por
+      // completo. Bloqueado aqui, no unico portao que TODAS as rotas de
+      // negocio atravessam (conversas, sessoes, usuarios, campanhas...).
+      // O router de auth (`/auth/*`) NAO passa por este middleware (usa
+      // `requireUser` direto) — por isso `change-password`/`logout`/`me`
+      // continuam acessiveis mesmo com a flag ligada (o usuario PRECISA
+      // conseguir trocar a senha e sair).
+      if (claims.mustChangePassword) {
+        res.status(403).json({
+          error: 'must_change_password',
+          message: 'Troque sua senha provisoria antes de continuar.',
+        });
+        return;
+      }
       const principal: Principal = {
         kind: 'user',
         userId: claims.userId,

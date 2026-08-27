@@ -151,6 +151,47 @@ describe('createAuthenticate (Milestone 5, Bloco M5D)', () => {
    * barrada por padrão. Este teste prova o comportamento seguro (fail-closed)
    * diretamente, sem depender de nenhuma rota real ficar mal configurada.
    */
+  /**
+   * R1 da auditoria de seguranca (2026-08-26): `mustChangePassword` era
+   * imposto SO no frontend — uma chamada direta com o access token
+   * contornava a exigencia. Este teste prova que o backend bloqueia com
+   * 403, mesmo com um crachá VALIDO em todos os outros aspectos.
+   */
+  it('[R1] crachá com mustChangePassword=true -> 403 must_change_password, mesmo valido', async () => {
+    const { authenticate, access } = build();
+    const token = access.issue({
+      userId: 'u1',
+      tenantId: 'tenant-1',
+      role: 'operator',
+      mustChangePassword: true,
+    });
+    const req = makeReq({ authorization: `Bearer ${token}` }, { tenantId: 'tenant-1' });
+    const { res, statusMock, jsonMock } = fakeRes();
+    const next = jest.fn();
+
+    authenticate(req, res, next);
+    await flush();
+
+    expect(statusMock).toHaveBeenCalledWith(403);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'must_change_password' }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('[R1] crachá com mustChangePassword=false (ou ausente) -> passa normalmente', async () => {
+    const { authenticate, access } = build();
+    const token = access.issue({ userId: 'u1', tenantId: 'tenant-1', role: 'operator' });
+    const req = makeReq({ authorization: `Bearer ${token}` }, { tenantId: 'tenant-1' });
+    const { res } = fakeRes();
+    const next = jest.fn();
+
+    authenticate(req, res, next);
+    await flush();
+
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it('[IDOR] sem :tenantId no path -> 403, nunca libera por omissão (fail-closed)', async () => {
     const { authenticate, access } = build();
     const token = access.issue({ userId: 'u1', tenantId: 'tenant-1', role: 'operator' });

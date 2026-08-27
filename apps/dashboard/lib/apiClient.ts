@@ -194,6 +194,15 @@ export const callAiProfileApi = createApiClient('sessions');
 export const callQuickRepliesApi = createApiClient('sessions');
 
 /**
+ * Cliente do recurso `sessions`, usado pela FAQ estruturada do Cérebro da IA
+ * (v3, Fase 2, 2026-08-25) — o path passado a `callAiFaqApi` inclui o
+ * `sessionName` (ex.: `/minha-sessao/ai-faq`), mesmo padrão já usado por
+ * `callAiProfileApi`/`callQuickRepliesApi`. RBAC (ai_profile:read/update)
+ * imposto pela API.
+ */
+export const callAiFaqApi = createApiClient('sessions');
+
+/**
  * Cliente do recurso `sessions`, usado pelo CATÁLOGO de tags por sessão
  * (Redesign 2026-08-05, R4) — o path passado a `callTagsApi` inclui o
  * `sessionName` (ex.: `/minha-sessao/tags`), mesmo padrão já usado por

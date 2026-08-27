@@ -13,9 +13,11 @@ import { Hs256AccessTokenService } from './infrastructure/Hs256AccessTokenServic
 import { Sha256RefreshTokenCodec } from './infrastructure/Sha256RefreshTokenCodec';
 import { RefreshTokenService } from './application/RefreshTokenService';
 import { AuthService } from './application/AuthService';
+import { RegistrationService } from './application/RegistrationService';
 import { UserManagementService } from './application/UserManagementService';
 import { AuditLogService } from './application/AuditLogService';
 import { createAuthRouter } from './presentation/authRouter';
+import { createGlobalAuthRouter } from './presentation/globalAuthRouter';
 import { createAuthErrorHandler } from './presentation/authErrorHandler';
 import { createUsersRouter } from './presentation/usersRouter';
 import { createUsersErrorHandler } from './presentation/usersErrorHandler';
@@ -40,6 +42,8 @@ export interface AuthConfig {
 export interface AuthComposition {
   authService: AuthService;
   authRouter: Router;
+  /** Fase Auth/Registro (2026-08-26) — `/api/auth/{register,login}`, sem tenantId na URL. Campo ADITIVO. */
+  globalAuthRouter: Router;
   authErrorHandler: ErrorRequestHandler;
   requireUser: RequestHandler;
   /** Exposto para o `index.ts` construir o `authenticate` (porteiro dois-planos, M5D) reusando a MESMA instancia — nao um segundo verificador. */
@@ -88,8 +92,36 @@ export function createAuthComposition(
   // processo — suficiente para instancia unica; Redis-backed fica como
   // evolucao futura (ver docstring de `createRateLimiter`).
   const loginRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
-  const authRouter = createAuthRouter(authService, requireUser, loginRateLimiter);
+  const authRouter = createAuthRouter(authService, requireUser, loginRateLimiter, accessTokenService);
   const authErrorHandler = createAuthErrorHandler(logger);
+
+  // Fase Auth/Registro (2026-08-26) — R4 da auditoria: alem do freio por IP
+  // (`loginRateLimiter`, reusado aqui), um freio POR IDENTIDADE (e-mail) nas
+  // tentativas de LOGIN — 10 tentativas por conta a cada 15 minutos,
+  // independente de quantos IPs o atacante usar. So no login (registro nao
+  // tem "identidade" a proteger antes de existir).
+  const loginByIdentityRateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    keyFn: (req) => {
+      const email = (req.body as { email?: unknown } | undefined)?.email;
+      return typeof email === 'string' ? email.trim().toLowerCase() : 'unknown';
+    },
+  });
+  const registrationService = new RegistrationService(
+    prisma,
+    passwordHasher,
+    accessTokenService,
+    refreshTokenService,
+    auditLogRepository,
+    logger,
+  );
+  const globalAuthRouter = createGlobalAuthRouter(
+    authService,
+    registrationService,
+    loginRateLimiter,
+    loginByIdentityRateLimiter,
+  );
 
   // Milestone 5, Bloco M5E — o "RH" reusa os MESMOS repositorios/hasher do
   // login (uma instancia de cada por composition; nada duplicado).
@@ -111,6 +143,7 @@ export function createAuthComposition(
   return {
     authService,
     authRouter,
+    globalAuthRouter,
     authErrorHandler,
     requireUser,
     accessTokenService,

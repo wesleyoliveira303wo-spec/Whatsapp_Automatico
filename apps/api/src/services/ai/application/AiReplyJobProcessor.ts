@@ -15,6 +15,7 @@ import { Logger } from '../../../shared/domain/Logger';
 import { PromptVersion } from '../domain/PromptVersion';
 import { splitReplyIntoParagraphs } from '../domain/messageSplitting';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
+import { AiPreferencesRepository } from '../domain/repositories/AiPreferencesRepository';
 import { ConversationAiService } from './ConversationAiService';
 
 /**
@@ -158,6 +159,14 @@ export class AiReplyJobProcessor {
     private readonly now: () => Date = () => new Date(),
     // Pedido do fundador (2026-08-24) — ver docstring de `trimHistoryToCurrentSession`.
     private readonly sessionGapMs: number = DEFAULT_SESSION_GAP_MS,
+    /**
+     * Cérebro da IA v3, Fase 3 (2026-08-26) — OPCIONAL, mesmo padrão de
+     * `aiBusinessProfileRepository`: sem ele configurado, `sendHumanHandoffNotice`
+     * sempre usa `this.humanHandoffMessage` (comportamento inalterado). Com
+     * ele, uma sessão que configurou `customHandoffMessage` recebe SUA
+     * própria mensagem de encaminhamento, em vez do texto padrão do sistema.
+     */
+    private readonly aiPreferencesRepository?: AiPreferencesRepository,
   ) {}
 
   async process(data: AiReplyJobData): Promise<void> {
@@ -293,7 +302,11 @@ export class AiReplyJobProcessor {
           { ...data, escalatedAt: conversation.escalatedAt, msSinceUltimoAviso },
         );
       } else {
-        await this.sendHumanHandoffNotice(data.tenantId, data.conversationId);
+        await this.sendHumanHandoffNotice(
+          data.tenantId,
+          data.conversationId,
+          conversation.sessionName,
+        );
       }
       await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'falha_da_ia');
       return;
@@ -376,13 +389,18 @@ export class AiReplyJobProcessor {
    * job falhar e reprocessar, o que poderia reenviar o aviso). A falha do envio
    * fica registrada no log.
    */
-  private async sendHumanHandoffNotice(tenantId: string, conversationId: string): Promise<void> {
+  private async sendHumanHandoffNotice(
+    tenantId: string,
+    conversationId: string,
+    sessionName: string,
+  ): Promise<void> {
     try {
+      const message = await this.resolveHandoffMessage(tenantId, sessionName);
       await this.outboundMessageDispatcher.dispatch({
         tenantId,
         conversationId,
         idempotencyKey: randomUUID(),
-        content: [this.humanHandoffMessage],
+        content: [message],
       });
     } catch (error) {
       this.logger.warn(
@@ -393,6 +411,31 @@ export class AiReplyJobProcessor {
           error: error instanceof Error ? error.message : String(error),
         },
       );
+    }
+  }
+
+  /**
+   * Cérebro da IA v3, Fase 3 (2026-08-26) — resolve a mensagem de
+   * encaminhamento a usar: a `customHandoffMessage` da SESSÃO, se
+   * configurada, senão `this.humanHandoffMessage` (o texto padrão do
+   * sistema). DEGRADAÇÃO GRACIOSA (mesmo racional de
+   * `ConversationAiService.loadPreferencesContext`): sem repositório
+   * configurado, sem preferências salvas, ou qualquer falha na leitura,
+   * cai no texto padrão — a mensagem de encaminhamento é auxiliar, sua
+   * personalização nunca pode impedir o cliente de ser avisado.
+   */
+  private async resolveHandoffMessage(tenantId: string, sessionName: string): Promise<string> {
+    if (!this.aiPreferencesRepository) {
+      return this.humanHandoffMessage;
+    }
+    try {
+      const preferences = await this.aiPreferencesRepository.findByTenantAndSession(
+        tenantId,
+        sessionName,
+      );
+      return preferences?.customHandoffMessage?.trim() || this.humanHandoffMessage;
+    } catch {
+      return this.humanHandoffMessage;
     }
   }
 

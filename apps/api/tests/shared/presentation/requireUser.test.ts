@@ -31,6 +31,7 @@ describe('createRequireUser (Milestone 5, Bloco M5C)', () => {
       userId: 'user-1',
       tenantId: 'tenant-1',
       role: 'operator',
+      mustChangePassword: false,
     });
   });
 

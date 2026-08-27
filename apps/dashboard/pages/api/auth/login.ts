@@ -29,19 +29,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { tenantId, apiKey, email, password } = req.body ?? {};
-  if (typeof tenantId !== 'string' || tenantId.trim() === '') {
-    res.status(400).json({ error: 'invalid_params', message: 'tenantId é obrigatório' });
-    return;
-  }
 
-  // --- Modo PESSOA (M5F-1): e-mail + senha -> tokens da API ---
-  // Tem prioridade quando ambos os pares vierem (não deveria acontecer).
+  // --- Modo PESSOA (Fase Auth/Registro, 2026-08-26): SEM tenantId — o
+  // tenant e resolvido no backend a partir do e-mail (unico global). ---
   if (typeof email === 'string' && email.trim() !== '') {
-    await loginAsUser(res, tenantId, email, typeof password === 'string' ? password : '');
+    await loginAsUser(res, email, typeof password === 'string' ? password : '');
     return;
   }
 
   // --- Modo MAQUINA (M2, Fase 3 — inalterado): tenantId + apiKey ---
+  if (typeof tenantId !== 'string' || tenantId.trim() === '') {
+    res.status(400).json({ error: 'invalid_params', message: 'tenantId é obrigatório' });
+    return;
+  }
   if (typeof apiKey !== 'string' || apiKey.trim() === '') {
     res.status(400).json({ error: 'invalid_params', message: 'informe email+password ou apiKey' });
     return;
@@ -82,18 +82,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 }
 
 /**
- * Login de PESSOA (Milestone 5, Bloco M5F-1): repassa e-mail+senha para
- * `POST /api/tenants/:tenantId/auth/login` da API e guarda os tokens + user
- * no cookie httpOnly cifrado. O browser NUNCA ve os tokens — só recebe
- * `{ tenantId, user }` (o `user` inclui `mustChangePassword` para a tela de
- * login redirecionar para a troca obrigatória — M5F-2).
+ * Login de PESSOA (Fase Auth/Registro, 2026-08-26): repassa e-mail+senha
+ * para `POST /api/auth/login` da API — SEM tenantId, resolvido no backend a
+ * partir do e-mail (unico global desde a migration `20260826210000`) — e
+ * guarda os tokens + user no cookie httpOnly cifrado. O browser NUNCA ve os
+ * tokens — só recebe `{ tenantId, user }` (o `tenantId` vem da RESPOSTA da
+ * API, não mais digitado pelo usuário; `user` inclui `mustChangePassword`
+ * para a tela de login redirecionar para a troca obrigatória — M5F-2).
  */
-async function loginAsUser(
-  res: NextApiResponse,
-  tenantId: string,
-  email: string,
-  password: string,
-): Promise<void> {
+async function loginAsUser(res: NextApiResponse, email: string, password: string): Promise<void> {
   if (password === '') {
     res.status(400).json({ error: 'invalid_params', message: 'password é obrigatório' });
     return;
@@ -109,14 +106,11 @@ async function loginAsUser(
 
   let loginResponse: Response;
   try {
-    loginResponse = await fetch(
-      new URL(`/api/tenants/${encodeURIComponent(tenantId)}/auth/login`, apiBaseUrl),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      },
-    );
+    loginResponse = await fetch(new URL('/api/auth/login', apiBaseUrl), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
   } catch (error) {
     res.status(502).json({ error: 'api_unreachable', message: (error as Error).message });
     return;
@@ -131,7 +125,11 @@ async function loginAsUser(
     return;
   }
 
-  let body: { accessToken?: unknown; refreshToken?: unknown; user?: Record<string, unknown> };
+  let body: {
+    accessToken?: unknown;
+    refreshToken?: unknown;
+    user?: Record<string, unknown> & { tenantId?: unknown };
+  };
   try {
     body = (await loginResponse.json()) as typeof body;
   } catch {
@@ -146,12 +144,14 @@ async function loginAsUser(
     !user ||
     typeof user.id !== 'string' ||
     typeof user.email !== 'string' ||
-    typeof user.role !== 'string'
+    typeof user.role !== 'string' ||
+    typeof user.tenantId !== 'string'
   ) {
     res.status(502).json({ error: 'api_error', message: 'resposta de login inválida' });
     return;
   }
 
+  const tenantId = user.tenantId;
   const sessionUser = {
     id: user.id,
     email: user.email,

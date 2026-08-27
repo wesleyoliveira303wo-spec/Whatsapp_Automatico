@@ -9,6 +9,14 @@ export interface AccessTokenClaims {
   userId: string;
   tenantId: string;
   role: UserRole;
+  /**
+   * Espelha `User.mustChangePassword` NO MOMENTO da emissao (Fase Auth,
+   * 2026-08-26) — imposto pelo `authenticate` middleware (bloqueia 403 fora
+   * das rotas de auth) em vez de so no frontend, que era contornavel com uma
+   * chamada direta a API. Ausente/`false` = sem restricao (default seguro,
+   * compativel com todo token emitido antes desta mudanca).
+   */
+  mustChangePassword?: boolean;
 }
 
 /**

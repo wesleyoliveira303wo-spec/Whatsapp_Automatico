@@ -88,14 +88,24 @@ describe('POST /api/auth/login', () => {
 
   // --- Milestone 5, Bloco M5F-1: modo PESSOA (email + senha) ---
   describe('modo pessoa (email + senha)', () => {
+    // Fase Auth/Registro (2026-08-26): a resposta da API inclui `tenantId`
+    // dentro do `user` (o BFF nao recebe mais tenantId do cliente — resolve
+    // pelo e-mail). `SESSION_USER` e o formato reduzido que volta no corpo.
     const API_USER = {
+      id: 'user-1',
+      email: 'maria@empresa.com',
+      role: 'operator',
+      mustChangePassword: true,
+      tenantId: 'tenant-1',
+    };
+    const SESSION_USER = {
       id: 'user-1',
       email: 'maria@empresa.com',
       role: 'operator',
       mustChangePassword: true,
     };
 
-    it('login ok: repassa para /auth/login da API, grava cookie e devolve { tenantId, user } SEM tokens', async () => {
+    it('login ok: repassa para /auth/login da API (SEM tenantId), grava cookie e devolve { tenantId, user } SEM tokens', async () => {
       (fetch as jest.Mock).mockResolvedValue({
         status: 200,
         ok: true,
@@ -103,19 +113,19 @@ describe('POST /api/auth/login', () => {
       });
       const req = createFakeReq({
         method: 'POST',
-        body: { tenantId: 'tenant-1', email: 'maria@empresa.com', password: 'senha-provisoria' },
+        body: { email: 'maria@empresa.com', password: 'senha-provisoria' },
       });
       const res = createFakeRes();
 
       await handler(req, res);
 
       expect(fetch).toHaveBeenCalledWith(
-        new URL('/api/tenants/tenant-1/auth/login', 'http://api-de-teste:4000'),
+        new URL('/api/auth/login', 'http://api-de-teste:4000'),
         expect.objectContaining({ method: 'POST' }),
       );
       expect(res._headers['Set-Cookie']).toMatch(/wa_dashboard_session=/);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ tenantId: 'tenant-1', user: API_USER });
+      expect(res.json).toHaveBeenCalledWith({ tenantId: 'tenant-1', user: SESSION_USER });
       // Tokens NUNCA saem no corpo — so dentro do cookie cifrado.
       const responseBody = JSON.stringify((res.json as jest.Mock).mock.calls[0][0]);
       expect(responseBody).not.toContain('acc-1');

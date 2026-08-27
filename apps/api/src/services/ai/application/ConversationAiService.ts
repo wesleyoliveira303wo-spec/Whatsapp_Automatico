@@ -5,7 +5,11 @@ import { AiInteraction } from '../domain/entities/AiInteraction';
 import { AiInteractionRepository } from '../domain/repositories/AiInteractionRepository';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
 import { CampaignOriginResolver } from '../domain/repositories/CampaignOriginResolver';
+import { AiFaqReader } from '../domain/repositories/AiFaqReader';
+import { AiPreferencesRepository } from '../domain/repositories/AiPreferencesRepository';
 import { buildCampaignContext } from '../domain/campaignContext';
+import { buildFaqContext } from '../domain/faqContext';
+import { buildPreferencesContext } from '../domain/preferencesContext';
 import { calculateCostUsd } from '../domain/AiPricing';
 import { PromptVersion } from '../domain/PromptVersion';
 import { AiGenerationResult, AiMediaContentPart } from '../domain/providers/AiProvider';
@@ -194,6 +198,18 @@ export class ConversationAiService {
      * nunca quebra a resposta.
      */
     private readonly messageRepository?: MessageRepository,
+    /**
+     * Cérebro da IA v3, Fase 2 (2026-08-25) — OPCIONAL, mesmo padrão de
+     * `campaignOriginResolver`: sem ele configurado, nenhuma sessão recebe o
+     * bloco de FAQ estruturada (comportamento inalterado).
+     */
+    private readonly aiFaqReader?: AiFaqReader,
+    /**
+     * Cérebro da IA v3, Fase 3 (2026-08-26) — OPCIONAL, mesmo padrão de
+     * `aiFaqReader`: sem ele configurado, nenhuma sessão recebe o bloco de
+     * preferências (comportamento inalterado).
+     */
+    private readonly aiPreferencesRepository?: AiPreferencesRepository,
   ) {}
 
   async generateReply(
@@ -219,6 +235,8 @@ export class ConversationAiService {
     );
     const mediaByMessageId = await this.loadLatestInboundMedia(tenantId, sessionName, messages);
     const campaignContext = await this.loadCampaignContext(tenantId, conversationId);
+    const faqContext = await this.loadFaqContext(tenantId, sessionName);
+    const preferencesContext = await this.loadPreferencesContext(tenantId, sessionName);
     const request = this.promptBuilder.build(
       messages,
       promptVersion,
@@ -226,6 +244,8 @@ export class ConversationAiService {
       mediaByMessageId,
       offHoursContext,
       campaignContext,
+      faqContext,
+      preferencesContext,
     );
     const startedAt = Date.now();
 
@@ -408,6 +428,49 @@ export class ConversationAiService {
     try {
       const origin = await this.campaignOriginResolver.findOrigin(tenantId, conversationId);
       return origin ? buildCampaignContext(origin.messageSent) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Cérebro da IA v3, Fase 2 — busca as FAQs ATIVAS da sessão e monta o
+   * bloco de contexto (`buildFaqContext`). DEGRADAÇÃO GRACIOSA, mesmo
+   * racional de `loadCampaignContext`: sem leitor configurado, ou qualquer
+   * falha (já tratada dentro de `AiFaqReaderImpl`, que nunca lança), devolve
+   * `undefined` — nunca impede a resposta ao cliente.
+   */
+  private async loadFaqContext(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<string | undefined> {
+    if (!this.aiFaqReader) {
+      return undefined;
+    }
+    const entries = await this.aiFaqReader.listActiveFaqEntries(tenantId, sessionName);
+    return buildFaqContext(entries);
+  }
+
+  /**
+   * Cérebro da IA v3, Fase 3 — busca as preferências da sessão e monta o
+   * bloco de contexto (`buildPreferencesContext`). DEGRADAÇÃO GRACIOSA,
+   * mesmo racional de `loadFaqContext`: sem repositório configurado, sem
+   * preferências salvas, ou qualquer falha na leitura, devolve `undefined`
+   * — nunca impede a resposta ao cliente.
+   */
+  private async loadPreferencesContext(
+    tenantId: string,
+    sessionName: string,
+  ): Promise<string | undefined> {
+    if (!this.aiPreferencesRepository) {
+      return undefined;
+    }
+    try {
+      const preferences = await this.aiPreferencesRepository.findByTenantAndSession(
+        tenantId,
+        sessionName,
+      );
+      return buildPreferencesContext(preferences);
     } catch {
       return undefined;
     }

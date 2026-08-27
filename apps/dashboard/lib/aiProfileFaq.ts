@@ -1,18 +1,15 @@
 /**
- * Cérebro da IA — "Cadastrar pergunta não respondida" (ADR #71 item (a):
- * "aprendizado contínuo sem RAG... registrar as perguntas que fizeram a IA
- * escalar por 'não sei' → tela de lacunas de conhecimento com atalho para
- * ensinar"). Esta é a versão MANUAL desse atalho: o dono do negócio digita a
- * pergunta que um cliente fez (por exemplo, ao ver que a IA escalou) e a
- * resposta correta; o par vira uma linha a mais no texto do Cérebro da IA.
+ * Cérebro da IA — utilitário de composição do texto livre ("Conhecimento").
  *
- * Deliberadamente SEM captura automática a partir de uma conversa real — o
- * backend hoje não guarda o texto da pergunta do cliente vinculado a um
- * escalonamento (`AiInteraction` não linka a `Message` inbound, e o
- * marcador de escalonamento não distingue "não sei" de "cliente pediu
- * humano"). Automatizar isso é trabalho de backend novo, fora deste bloco —
- * ver ADR #71 itens (b)/(c) para as extensões futuras (assuntos recorrentes,
- * sugestão automática de FAQ).
+ * `appendToProfileContent` é a função genérica por trás do modo "Assistente
+ * Guiado" (`AiProfilePanel`): sempre ANEXA ao final do conteúdo já
+ * existente, nunca sobrescreve (correção 2026-07-30, ADR #87 — antes disso,
+ * gerar texto pelo quiz apagava qualquer coisa já escrita manualmente).
+ *
+ * A antiga `appendFaqEntry` ("Cadastrar pergunta não respondida", ADR #71
+ * item (a)) foi REMOVIDA na Cérebro da IA v3, Fase 2 (2026-08-25) — a FAQ
+ * deixou de ser texto cru anexado ao blob e virou uma entidade estruturada
+ * própria (`AiFaqPanel`/`useAiFaqEntries`, aba "FAQ" dedicada).
  *
  * Função pura, mesmo racional de `aiProfileQuiz.ts`/`conversationsView.ts`:
  * testável sem jsdom, sem falar com a API.
@@ -33,14 +30,4 @@ export function appendToProfileContent(currentContent: string, addition: string)
   const base = currentContent.trim();
   if (!trimmedAddition) return base;
   return base ? `${base}\n\n${trimmedAddition}` : trimmedAddition;
-}
-
-/** Pergunta e resposta separadas por uma linha em branco de aviso (rótulos em negrito markdown — mesmo estilo de lista usado pelo texto livre/placeholder). */
-export function appendFaqEntry(currentContent: string, question: string, answer: string): string {
-  const trimmedQuestion = question.trim();
-  const trimmedAnswer = answer.trim();
-  return appendToProfileContent(
-    currentContent,
-    `**P:** ${trimmedQuestion}\n**R:** ${trimmedAnswer}`,
-  );
 }

@@ -5,13 +5,12 @@ import SessionLayout from '@/components/SessionLayout';
 import SessionConnectionPanel from '@/components/SessionConnectionPanel';
 import UserManagementPanel from '@/components/UserManagementPanel';
 import AuditLogPanel from '@/components/AuditLogPanel';
-import TagsPanel from '@/components/TagsPanel';
 import { TabList, TabTrigger } from '@/components/ui/tabs-nav';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 import type { ManagedUserRole } from '@/lib/clientApi';
 
-type SettingsTab = 'connection' | 'team' | 'audit' | 'tags';
+type SettingsTab = 'connection' | 'team' | 'audit';
 
 interface SettingsPageProps {
   tenantId: string;
@@ -21,7 +20,7 @@ interface SettingsPageProps {
 }
 
 function isSettingsTab(value: unknown): value is SettingsTab {
-  return value === 'connection' || value === 'team' || value === 'audit' || value === 'tags';
+  return value === 'connection' || value === 'team' || value === 'audit';
 }
 
 function canSeeTeam(role: ManagedUserRole | null): boolean {
@@ -30,11 +29,6 @@ function canSeeTeam(role: ManagedUserRole | null): boolean {
 
 function canSeeAudit(role: ManagedUserRole | null): boolean {
   return role === 'manager' || role === 'administrator' || role === 'owner';
-}
-
-/** Redesign 2026-08-05 (R4) — gestão do catálogo de tags exige `tag:manage` (administrator/owner), mesma régua de Equipe. */
-function canSeeTags(role: ManagedUserRole | null): boolean {
-  return role === 'administrator' || role === 'owner';
 }
 
 /**
@@ -58,6 +52,13 @@ function canSeeTags(role: ManagedUserRole | null): boolean {
  * `pages/sessions/[sessionName]/contacts.tsx`/`SessionRail.tsx`), renomeado
  * para "Contatos". Não é mais uma aba administrativa: é destino de trabalho
  * do dia a dia, no mesmo nível de Conversas/Pipeline.
+ *
+ * 2026-08-26 (pedido do fundador): "Tags" também SAIU daqui, mesmo motivo —
+ * a gestão do catálogo (`TagsPanel`) migrou para dentro do botão "+ Tag" do
+ * `ConversationTagPicker`, na dashboard de Conversas, junto de onde as tags
+ * já eram atribuídas a um contato (mesmo padrão de Respostas Rápidas,
+ * 2026-08-25). `?tab=tags` (se algum link antigo apontar aqui) cai no
+ * default "connection" — `isSettingsTab` não reconhece mais o valor.
  */
 export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
@@ -74,7 +75,6 @@ export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (
   let initialTab: SettingsTab = isSettingsTab(requestedTab) ? requestedTab : 'connection';
   if (initialTab === 'team' && !canSeeTeam(role)) initialTab = 'connection';
   if (initialTab === 'audit' && !canSeeAudit(role)) initialTab = 'connection';
-  if (initialTab === 'tags' && !canSeeTags(role)) initialTab = 'connection';
   return { props: { tenantId: session.tenantId, sessionName, role, initialTab } };
 };
 
@@ -87,7 +87,6 @@ export default function SettingsPage({
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const showTeam = canSeeTeam(role);
   const showAudit = canSeeAudit(role);
-  const showTags = canSeeTags(role);
 
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
@@ -100,7 +99,7 @@ export default function SettingsPage({
             Configurações
           </h1>
           <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
-            Conexão, equipe, auditoria e tags da sessão {sessionName}.
+            Conexão, equipe e auditoria da sessão {sessionName}.
           </p>
 
           <div className="mb-5">
@@ -130,22 +129,12 @@ export default function SettingsPage({
                   Auditoria
                 </TabTrigger>
               )}
-              {showTags && (
-                <TabTrigger
-                  active={tab === 'tags'}
-                  variant="underline"
-                  onClick={() => setTab('tags')}
-                >
-                  Tags
-                </TabTrigger>
-              )}
             </TabList>
           </div>
 
           {tab === 'connection' && <SessionConnectionPanel sessionName={sessionName} />}
           {tab === 'team' && showTeam && <UserManagementPanel />}
           {tab === 'audit' && showAudit && <AuditLogPanel />}
-          {tab === 'tags' && showTags && <TagsPanel sessionName={sessionName} />}
         </div>
       </div>
     </SessionLayout>

@@ -27,6 +27,7 @@ interface JwtPayload {
   userId?: unknown;
   tenantId?: unknown;
   role?: unknown;
+  mustChangePassword?: unknown;
   iat?: unknown;
   exp?: unknown;
 }
@@ -52,6 +53,7 @@ export class Hs256AccessTokenService implements AccessTokenService {
       userId: claims.userId,
       tenantId: claims.tenantId,
       role: claims.role,
+      ...(claims.mustChangePassword ? { mustChangePassword: true } : {}),
       iat,
       exp: iat + this.ttlSeconds,
     });
@@ -103,7 +105,12 @@ export class Hs256AccessTokenService implements AccessTokenService {
       return null;
     }
 
-    return { userId: payload.userId, tenantId: payload.tenantId, role: payload.role as UserRole };
+    return {
+      userId: payload.userId,
+      tenantId: payload.tenantId,
+      role: payload.role as UserRole,
+      mustChangePassword: payload.mustChangePassword === true,
+    };
   }
 
   private sign(signingInput: string): string {

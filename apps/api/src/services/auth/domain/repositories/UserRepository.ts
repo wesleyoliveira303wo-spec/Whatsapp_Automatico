@@ -49,8 +49,19 @@ export interface UserRepository {
 
   findById(id: string): Promise<User | null>;
 
-  /** Localiza o usuario pelo par (tenant, email) — usado no login. `email` e unico por tenant (nunca global). */
+  /** Localiza o usuario pelo par (tenant, email) — usado no login legado com tenantId explicito. `email` e unico GLOBAL desde 2026-08-26, mas o par continua funcionando (tenantId vira so um filtro redundante). */
   findByTenantAndEmail(tenantId: string, email: string): Promise<User | null>;
+
+  /**
+   * Localiza o usuario pelo e-mail, SEM exigir o tenant — Fase Auth/Registro
+   * (2026-08-26). E o que viabiliza o login com so e-mail+senha: o tenant e
+   * resolvido a partir do proprio usuario encontrado. So existe porque
+   * `email` e unico GLOBAL agora.
+   */
+  findByEmail(email: string): Promise<User | null>;
+
+  /** Verifica se ja existe algum usuario com este e-mail — usado no registro (Fase Auth/Registro) para responder 409 sem vazar mais detalhe. */
+  existsByEmail(email: string): Promise<boolean>;
 
   /**
    * Lista os usuarios de UM tenant (isolamento multi-tenant no proprio

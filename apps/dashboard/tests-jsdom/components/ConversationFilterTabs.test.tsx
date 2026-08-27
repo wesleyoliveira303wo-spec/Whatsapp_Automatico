@@ -4,6 +4,11 @@
  * opções (Todas/Não lidas/Aguardando/IA/Humano) — este arquivo cobre a
  * emissão do `value` escolhido; a resolução server-side vs. client-side de
  * cada opção é responsabilidade de `ConversationInbox`, não deste componente.
+ *
+ * Correção 2026-08-26 — layout reapertado (padding/gap/fonte menores) para
+ * as 5 pílulas caberem inteiras na coluna sem cortar nem precisar rolar;
+ * nenhuma opção foi removida (uma tentativa inicial de remover "Humano" foi
+ * revertida no mesmo dia — o pedido real era só o enquadramento).
  */
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';

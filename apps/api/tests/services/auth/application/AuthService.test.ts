@@ -69,6 +69,7 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
           userId: 'user-1',
           tenantId: 'tenant-1',
           role: 'operator',
+          mustChangePassword: false,
         });
         expect(result.refreshToken).toBeTruthy();
         expect((result.user as Record<string, unknown>).passwordHash).toBeUndefined();
@@ -219,6 +220,43 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
         ok: false,
         reason: 'invalid_current_password',
       });
+    });
+  });
+
+  // Fase Auth/Registro (2026-08-26) — login SEM tenantId, resolvido pelo
+  // e-mail (unico global desde a migration `20260826210000`).
+  describe('loginByEmail', () => {
+    it('sucesso: resolve o tenant a partir do e-mail e loga normalmente', async () => {
+      const { service, users } = build();
+      users.seed(buildUser());
+
+      const result = await service.loginByEmail('joao@empresa.com', 'senha123');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.user.tenantId).toBe('tenant-1');
+      }
+    });
+
+    it('e-mail inexistente -> ok:false (sem vazar existencia)', async () => {
+      const { service } = build();
+      expect(await service.loginByEmail('ninguem@empresa.com', 'qualquer')).toEqual({
+        ok: false,
+      });
+    });
+
+    it('senha errada -> ok:false', async () => {
+      const { service, users } = build();
+      users.seed(buildUser());
+      expect(await service.loginByEmail('joao@empresa.com', 'senha-errada')).toEqual({
+        ok: false,
+      });
+    });
+
+    it('usuario suspenso -> ok:false', async () => {
+      const { service, users } = build();
+      users.seed(buildUser({ status: 'suspended' }));
+      expect(await service.loginByEmail('joao@empresa.com', 'senha123')).toEqual({ ok: false });
     });
   });
 });

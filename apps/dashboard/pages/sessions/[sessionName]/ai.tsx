@@ -1,35 +1,32 @@
-import { useState } from 'react';
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
 import SessionLayout from '@/components/SessionLayout';
 import AiProfilePanel from '@/components/AiProfilePanel';
-import QuickRepliesPanel from '@/components/QuickRepliesPanel';
-import { TabList, TabTrigger } from '@/components/ui/tabs-nav';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 
 interface AiPageProps {
   tenantId: string;
   sessionName: string;
-  initialTab: AiTab;
-}
-
-type AiTab = 'profile' | 'quick-replies';
-
-function isAiTab(value: unknown): value is AiTab {
-  return value === 'profile' || value === 'quick-replies';
 }
 
 /**
- * Redesign 2026-08-05 (R2) — agrupa "Cérebro da IA" e "Respostas Rápidas" sob
- * um único item de rail ("IA"), como abas: os dois eram itens SOLTOS no menu
- * antigo (`SessionSidebar`), mas são a mesma categoria de configuração (o que
- * a IA sabe/como ela responde). Mesmo gate de sempre (administrator/owner —
- * `ai_profile:*`/`quick_reply:manage` já exigem isso na API).
+ * Redesign 2026-08-25 — "Respostas Rápidas" SAIU desta página: a
+ * funcionalidade (inserir e cadastrar frases prontas) migrou para dentro do
+ * `MessageComposer`, no mesmo botão que já inseria as respostas na
+ * conversa (pedido do fundador — não fazia sentido gerenciar num lugar e
+ * usar em outro). Com isso, a pílula de 2 abas ("Cérebro da IA" /
+ * "Respostas Rápidas") que existia aqui desde o Redesign 2026-08-05 (R2)
+ * deixou de fazer sentido — só sobrou UM conteúdo, então a página volta a
+ * ser direta, sem abas.
  *
- * Rotas antigas `/ai-profile` e `/quick-replies` (arquivos preservados,
- * viraram redirect — ambiente não permite apagar) apontam para cá com
- * `?tab=`, então links salvos continuam funcionando.
+ * `AiProfilePanel` já tem suas PRÓPRIAS 4 abas internas (Visão geral/
+ * Conhecimento/Assistente Guiado/FAQ, Cérebro da IA v3) — nada muda aí.
+ *
+ * Rota antiga `/sessions/:s/quick-replies` (arquivo preservado, ambiente
+ * não permite apagar) segue redirecionando pra cá com `?tab=quick-replies`
+ * — o parâmetro agora é simplesmente ignorado (não há mais pra onde
+ * alternar).
  */
 export const getServerSideProps: GetServerSideProps<AiPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
@@ -45,50 +42,25 @@ export const getServerSideProps: GetServerSideProps<AiPageProps> = async (contex
   if (typeof sessionName !== 'string') {
     return { notFound: true };
   }
-  const tabParam = context.query?.tab;
-  const initialTab: AiTab = isAiTab(tabParam) ? tabParam : 'profile';
-  return { props: { tenantId: session.tenantId, sessionName, initialTab } };
+  return { props: { tenantId: session.tenantId, sessionName } };
 };
 
-export default function AiPage({ tenantId, sessionName, initialTab }: AiPageProps): JSX.Element {
-  const [tab, setTab] = useState<AiTab>(initialTab);
-
+export default function AiPage({ tenantId, sessionName }: AiPageProps): JSX.Element {
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
       <Head>
-        <title>{pageTitle(`IA · ${sessionName}`)}</title>
+        <title>{pageTitle(`Cérebro da IA · ${sessionName}`)}</title>
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
-        <div className="max-w-[780px] px-6 pb-12 pt-5">
-          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">IA</h1>
+        <div className="max-w-[1040px] px-6 pb-12 pt-5">
+          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
+            Cérebro da IA
+          </h1>
           <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
-            O que o Francis sabe sobre o seu negócio e as frases prontas do atendente.
+            O que o Francis sabe sobre o seu negócio.
           </p>
 
-          <div className="mb-5">
-            <TabList ariaLabel="Seção de IA" variant="pill">
-              <TabTrigger
-                active={tab === 'profile'}
-                variant="pill"
-                onClick={() => setTab('profile')}
-              >
-                Cérebro da IA
-              </TabTrigger>
-              <TabTrigger
-                active={tab === 'quick-replies'}
-                variant="pill"
-                onClick={() => setTab('quick-replies')}
-              >
-                Respostas Rápidas
-              </TabTrigger>
-            </TabList>
-          </div>
-
-          {tab === 'profile' ? (
-            <AiProfilePanel sessionName={sessionName} />
-          ) : (
-            <QuickRepliesPanel sessionName={sessionName} />
-          )}
+          <AiProfilePanel sessionName={sessionName} />
         </div>
       </div>
     </SessionLayout>

@@ -49,6 +49,9 @@ export class RefreshTokenService {
       userAgent: meta.userAgent,
       ip: meta.ip,
     });
+    // Purga oportunista (Fase Auth, 2026-08-26): apaga tokens ja expirados
+    // deste usuario a cada emissao nova. Best-effort — nunca impede o login.
+    this.repository.purgeExpiredForUser(userId, this.now()).catch(() => {});
     return token;
   }
 

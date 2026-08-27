@@ -784,8 +784,98 @@ describe('v9 (2026-08-24 — rede de segurança para sessão sem nenhum Cérebro
 });
 
 /**
+ * `v10` nasceu de uma conversa REAL de campanha (contato "GB", sessão
+ * "Whatsapp Sites", 2026-08-25) que expôs dois defeitos medidos, não
+ * assumidos: (1) a primeira resposta do CASO 2 (v7-v9 nunca diferenciava
+ * "primeira resposta" de "resposta seguinte" nesse caso, ao contrário do
+ * CASO 1) despejava identidade + o que a empresa faz + benefício + pergunta
+ * comercial tudo de uma vez; (2) o mesmo argumento comercial ("aparecer no
+ * Google") se repetia em 3 das 4 respostas seguintes, sem a conversa
+ * avançar. Reusa o sinal `stage` já existente (mesmo que já governa o
+ * FORMATO desde v5) — nenhum campo/mecanismo novo.
+ */
+describe('v10 (2026-08-25 — CASO 2 diferencia 1ª resposta de resposta seguinte; nunca repete argumento)', () => {
+  it('está registrada e é resolvível por id, sem substituir as anteriores', () => {
+    expect(getPromptVersion('v10')).toBe(PROMPT_VERSIONS.v10);
+    for (const id of ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9']) {
+      expect(PROMPT_VERSIONS[id]).toBeDefined();
+      expect(PROMPT_VERSIONS.v10.systemPrompt).not.toBe(PROMPT_VERSIONS[id].systemPrompt);
+    }
+  });
+
+  it('v9 não diferenciava a primeira resposta do CASO 2 das respostas seguintes — o gap real', () => {
+    expect(PROMPT_VERSIONS.v9.systemPrompt).not.toMatch(/O QUANTO VOCÊ JÁ SE APRESENTOU DEPENDE DO ESTÁGIO/i);
+  });
+
+  it('no CASO 2, com estágio NEW, manda apresentação MÍNIMA e UMA única pergunta, sem despejar benefício', () => {
+    const prompt = PROMPT_VERSIONS.v10.systemPrompt;
+    expect(prompt).toMatch(/Se o estágio ainda é NEW, esta é a sua PRIMEIRA resposta de verdade/i);
+    expect(prompt).toMatch(/Apresente-se de forma MÍNIMA e natural/i);
+    expect(prompt).toMatch(/NÃO despeje benefícios, NÃO explique por que isso\s+importa para o negócio dela/i);
+  });
+
+  it('no CASO 2, a partir de CONTACTED/NEGOTIATING, proíbe reapresentação e manda descoberta progressiva', () => {
+    const prompt = PROMPT_VERSIONS.v10.systemPrompt;
+    expect(prompt).toMatch(
+      /A partir do momento em que o estágio é CONTACTED ou NEGOTIATING, você JÁ SE APRESENTOU — nunca repita sua\s+apresentação/i,
+    );
+    expect(prompt).toMatch(/só apresente um argumento comercial quando isso responder a\s+uma lacuna real/i);
+  });
+
+  it('proíbe repetir o mesmo argumento comercial em mensagens consecutivas, em qualquer caso de origem', () => {
+    const prompt = PROMPT_VERSIONS.v10.systemPrompt;
+    expect(prompt).toMatch(/NUNCA REPITA O MESMO ARGUMENTO COMERCIAL EM MENSAGENS CONSECUTIVAS/i);
+    expect(prompt).toMatch(/Cada\s+resposta sua precisa fazer a conversa AVANÇAR/i);
+  });
+
+  it('mantém tudo o que v9 já garantia: identidade condicional, exploração antes de escalar, ritmo, formato por estágio', () => {
+    const prompt = PROMPT_VERSIONS.v10.systemPrompt;
+    expect(prompt).toMatch(
+      /SUA IDENTIDADE E SEU CATÁLOGO VÊM EXCLUSIVAMENTE DO BLOCO "# Informações da empresa"/i,
+    );
+    expect(prompt).toMatch(
+      /VOCÊ CONDUZ A CONVERSA INTEIRA — da apresentação até o cliente estar convencido a contratar/i,
+    );
+    expect(prompt).toMatch(/CONDUZA A CONVERSA DEVAGAR, UM TÓPICO POR MENSAGEM/i);
+    expect(prompt).toMatch(/CASO 1 — O CLIENTE PROCUROU VOCÊ/i);
+    expect(prompt).toMatch(/CASO 2 — VOCÊ PROCUROU O CLIENTE/i);
+    expect(prompt).toMatch(/estágio desta conversa é NEW.*responda em UM ÚNICO BLOCO/is);
+  });
+
+  it('define closingDirective própria, com os 5 pontos e os dois exemplos de CASO 2 (NEW e CONTACTED)', () => {
+    const directive = PROMPT_VERSIONS.v10.closingDirective;
+    expect(directive).toBeDefined();
+    expect(directive).toMatch(/LEMBRETE FINAL/i);
+    expect(directive).toMatch(
+      /SÓ na primeira resposta \(estágio NEW\), apresentação MÍNIMA \+ UMA\s+pergunta/i,
+    );
+    expect(directive).toMatch(/NUNCA repita o mesmo argumento comercial em respostas seguidas/i);
+    expect(directive).toContain('Qual é o ramo da sua empresa?');
+    expect(directive).toMatch(/sem reapresentação, sem repetir argumento/i);
+    expect(directive).not.toBe(PROMPT_VERSIONS.v9.closingDirective);
+  });
+
+  it('não cola um nome real de tenant nos exemplos — o produto é multi-tenant', () => {
+    expect(PROMPT_VERSIONS.v10.systemPrompt).not.toMatch(/Wesley Francis/i);
+    expect(PROMPT_VERSIONS.v10.closingDirective).not.toMatch(/Wesley Francis/i);
+  });
+
+  it('preserva mídia e marcadores TEXTUALMENTE — Pipeline/escalonamento intactos', () => {
+    const mediaSentence = 'nunca finja saber o conteúdo desse arquivo nem invente o que ele mostra';
+    expect(PROMPT_VERSIONS.v10.systemPrompt).toContain(mediaSentence);
+    expect(PROMPT_VERSIONS.v10.systemPrompt).toContain(MARKER_INSTRUCTIONS);
+  });
+
+  it('mantém as regras absolutas de encaminhamento e anti-fraude', () => {
+    const prompt = PROMPT_VERSIONS.v10.systemPrompt;
+    expect(prompt).toMatch(/nunca incentive.*burlar/i);
+    expect(prompt).toMatch(/encaminhar a conversa para um de nossos atendentes/i);
+  });
+});
+
+/**
  * MEDIA_INSTRUCTIONS/MARKER_INSTRUCTIONS são constantes COMPARTILHADAS por
- * TODA versão de prompt (v1-v9) — editá-las in-place, sem criar uma versão
+ * TODA versão de prompt (v1-v10) — editá-las in-place, sem criar uma versão
  * nova, é o mecanismo correto para correção de infraestrutura (mesmo
  * precedente já usado para o marcador de escalonamento em 2026-07-30). A
  * causa raiz real: `MEDIA_INSTRUCTIONS` mandava a IA sempre negar que ouve
@@ -841,7 +931,7 @@ describe('MARKER_INSTRUCTIONS — TERCEIRO marcador de transcrição de áudio (
     // logo depois de MARKER_INSTRUCTIONS, então comparar "até o fim" quebraria
     // só por causa desse conteúdo extra, que não é drift do próprio marcador.
     const markerStart = 'INSTRUÇÃO OBRIGATÓRIA sobre marcadores internos';
-    const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'];
+    const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9', 'v10'];
     const blocks = versions.map((id) => {
       const prompt = PROMPT_VERSIONS[id].systemPrompt;
       const start = prompt.indexOf(markerStart);
@@ -878,7 +968,7 @@ describe('MARKER_INSTRUCTIONS — QUARTO marcador de descrição de imagem (2026
 
   it('é idêntico entre todas as versões que o usam (v1-v9), preservando a garantia de não-drift', () => {
     const markerStart = 'INSTRUÇÃO OBRIGATÓRIA sobre marcadores internos';
-    const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'];
+    const versions = ['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9', 'v10'];
     const blocks = versions.map((id) => {
       const prompt = PROMPT_VERSIONS[id].systemPrompt;
       const start = prompt.indexOf(markerStart);

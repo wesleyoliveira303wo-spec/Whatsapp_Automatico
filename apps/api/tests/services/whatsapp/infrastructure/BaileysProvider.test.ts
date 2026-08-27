@@ -1829,7 +1829,40 @@ describe('BaileysProvider', () => {
       expect(events[0]).toMatchObject({ type: 'message_received', contentType: 'video' });
     });
 
-    it('ignora eventos que não são type "notify" (sincronização de histórico)', async () => {
+    it('ignora eventos que não são "notify" nem "append" (ex.: outro tipo desconhecido)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'placeholder',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'algo' },
+          },
+        ],
+      });
+
+      expect(events).toEqual([]);
+    });
+
+    /**
+     * MUDANÇA 2026-08-25 (episódio 2): antes deste fix, um 'append' SEM
+     * `messageTimestamp` era rejeitado por padrão ("sem evidência, não
+     * arrisca"). O critério ficou assimétrico — sem timestamp não há
+     * EVIDÊNCIA POSITIVA de que a mensagem é velha, então agora é aceita
+     * (mesma regra que sempre valeu pra 'notify', unificada pros dois
+     * tipos). Ver docstring de `isStaleQueuedMessage`.
+     */
+    it('aceita "append" SEM messageTimestamp — sem evidência de que é histórico velho, mesma regra de "notify"', async () => {
       const provider = new BaileysProvider(
         'tenant-1',
         'default',
@@ -1846,12 +1879,207 @@ describe('BaileysProvider', () => {
         messages: [
           {
             key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
-            message: { conversation: 'histórico antigo' },
+            message: { conversation: 'sem timestamp' },
+          },
+        ],
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({ type: 'message_received', content: 'sem timestamp' }),
+      ]);
+    });
+
+    /**
+     * HOTFIX 2026-08-25 — achado real: cliente respondeu a uma campanha
+     * durante a janela de reconexão da sessão, e a resposta nunca chegou.
+     * Medido: o WhatsApp entrega esse tipo de mensagem como
+     * `messages.upsert { type: 'append' }`, que o código descartava
+     * incondicionalmente. Agora é aceita quando `messageTimestamp` está
+     * dentro da janela de frescor (30 min).
+     */
+    it('HOTFIX 2026-08-25: aceita "append" com messageTimestamp RECENTE como mensagem nova (mensagem chegada durante reconexão)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'append',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'Oi, recebi sua mensagem' },
+            messageTimestamp: nowSeconds,
+          },
+        ],
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'message_received',
+          from: '5511888888888@s.whatsapp.net',
+          content: 'Oi, recebi sua mensagem',
+        }),
+      ]);
+    });
+
+    it('HOTFIX 2026-08-25: aceita "append" com messageTimestamp como objeto Long (protobuf), não só number', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'append',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'via Long' },
+            messageTimestamp: { toNumber: () => nowSeconds },
+          },
+        ],
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({ type: 'message_received', content: 'via Long' }),
+      ]);
+    });
+
+    it('aceita "append" com messageTimestamp de 10 min atrás — dentro da janela de 30 min aumentada (pedido do fundador, episódio 2)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      const tenMinutesAgoSeconds = Math.floor(Date.now() / 1000) - 10 * 60;
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'append',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'chegou durante reconexão longa' },
+            messageTimestamp: tenMinutesAgoSeconds,
+          },
+        ],
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'message_received',
+          content: 'chegou durante reconexão longa',
+        }),
+      ]);
+    });
+
+    it('HOTFIX 2026-08-25: ignora "append" com messageTimestamp ANTIGO (fora da janela de 30 min — histórico real de sincronização)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      const oneHourAgoSeconds = Math.floor(Date.now() / 1000) - 60 * 60;
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'append',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'histórico de verdade' },
+            messageTimestamp: oneHourAgoSeconds,
           },
         ],
       });
 
       expect(events).toEqual([]);
+    });
+
+    /**
+     * HOTFIX 2026-08-25 (episódio 2, achado real, sessão "Lest Conceito"):
+     * duas mensagens de 6 dias atrás foram entregues como `type: 'notify'`
+     * (não 'append') na reconexão, e a IA respondeu as duas na hora como se
+     * fossem novas — porque 'notify' sempre foi aceito incondicionalmente,
+     * sem NENHUMA checagem de idade. Ver docstring de
+     * `MESSAGE_FRESHNESS_WINDOW_MS`/`isStaleQueuedMessage`.
+     */
+    it('HOTFIX 2026-08-25 (episódio 2): ignora "notify" com messageTimestamp de DIAS atrás — reentrega de mensagem não lida, não mensagem nova', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      const sixDaysAgoSeconds = Math.floor(Date.now() / 1000) - 6 * 24 * 60 * 60;
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'notify',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'Bom dia irmao' },
+            messageTimestamp: sixDaysAgoSeconds,
+          },
+        ],
+      });
+
+      expect(events).toEqual([]);
+    });
+
+    it('aceita "notify" com messageTimestamp RECENTE — mensagem em tempo real de verdade', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      const events: WhatsAppProviderEvent[] = [];
+      provider.onEvent((event) => events.push(event));
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      createdSockets[0].ev.handlers['messages.upsert']({
+        type: 'notify',
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'Oi, tudo bem?' },
+            messageTimestamp: nowSeconds,
+          },
+        ],
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({ type: 'message_received', content: 'Oi, tudo bem?' }),
+      ]);
     });
 
     it('ignora mensagens sem nenhum conteúdo reconhecido (mensagem de sistema/reação/enquete)', async () => {

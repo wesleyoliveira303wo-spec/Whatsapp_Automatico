@@ -7,6 +7,8 @@ import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionR
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 import { FakeMediaDownloader } from '../whatsapp/infrastructure/FakeMediaDownloader';
 import { FakeCampaignOriginResolver } from './infrastructure/FakeCampaignOriginResolver';
+import { FakeAiFaqReader } from './infrastructure/FakeAiFaqReader';
+import { FakeAiPreferencesRepository } from './infrastructure/FakeAiPreferencesRepository';
 import { FakeMessageRepository } from '../conversations/testDoubles';
 import {
   AUDIO_TRANSCRIPT_MARKER_PREFIX,
@@ -1312,6 +1314,181 @@ describe('ConversationAiService', () => {
 
     it('sem resolver configurado: comportamento idêntico a antes deste bloco', async () => {
       const { sut, aiProviderFactory } = buildSut(); // sem campaignOriginResolver
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+  });
+
+  describe('Cérebro da IA v3, Fase 2 — FAQ estruturada no prompt', () => {
+    function buildSutWithFaqReader(): {
+      sut: ConversationAiService;
+      aiProviderFactory: FakeAiProviderFactory;
+      aiFaqReader: FakeAiFaqReader;
+    } {
+      const aiProviderFactory = new FakeAiProviderFactory();
+      const aiInteractionRepository = new FakeAiInteractionRepository();
+      const aiFaqReader = new FakeAiFaqReader();
+      const sut = new ConversationAiService(
+        aiProviderFactory,
+        'claude',
+        new PromptBuilder(),
+        aiInteractionRepository,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        aiFaqReader,
+      );
+      return { sut, aiProviderFactory, aiFaqReader };
+    }
+
+    it('injeta o bloco de FAQ quando a sessão tem FAQ ativa cadastrada', async () => {
+      const { sut, aiProviderFactory, aiFaqReader } = buildSutWithFaqReader();
+      aiFaqReader.seed(TENANT_ID, SESSION_NAME, [
+        { question: 'Qual o preço?', answer: 'R$ 990', category: null },
+      ]);
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      const sentSystemPrompt = aiProviderFactory.provider.generateReplyCalls[0].systemPrompt;
+      expect(sentSystemPrompt).toContain('Você é um assistente de atendimento.'); // base preservado
+      expect(sentSystemPrompt).toContain('# Perguntas frequentes');
+      expect(sentSystemPrompt).toContain('**P:** Qual o preço?');
+    });
+
+    it('usa só o prompt base quando a sessão não tem nenhuma FAQ ativa', async () => {
+      const { sut, aiProviderFactory } = buildSutWithFaqReader(); // reader vazio
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+
+    it('sem leitor configurado: comportamento idêntico a antes deste bloco', async () => {
+      const { sut, aiProviderFactory } = buildSut(); // sem aiFaqReader
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+  });
+
+  describe('Cérebro da IA v3, Fase 3 — preferências no prompt', () => {
+    function buildSutWithPreferences(): {
+      sut: ConversationAiService;
+      aiProviderFactory: FakeAiProviderFactory;
+      aiPreferencesRepository: FakeAiPreferencesRepository;
+    } {
+      const aiProviderFactory = new FakeAiProviderFactory();
+      const aiInteractionRepository = new FakeAiInteractionRepository();
+      const aiPreferencesRepository = new FakeAiPreferencesRepository();
+      const sut = new ConversationAiService(
+        aiProviderFactory,
+        'claude',
+        new PromptBuilder(),
+        aiInteractionRepository,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        aiPreferencesRepository,
+      );
+      return { sut, aiProviderFactory, aiPreferencesRepository };
+    }
+
+    it('injeta o bloco de preferências quando a sessão configurou pelo menos uma', async () => {
+      const { sut, aiProviderFactory, aiPreferencesRepository } = buildSutWithPreferences();
+      aiPreferencesRepository.seed(TENANT_ID, SESSION_NAME, {
+        autonomyLevel: 'autonomous',
+        maxDiscountPercent: 15,
+      });
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      const sentSystemPrompt = aiProviderFactory.provider.generateReplyCalls[0].systemPrompt;
+      expect(sentSystemPrompt).toContain('Você é um assistente de atendimento.'); // base preservado
+      expect(sentSystemPrompt).toContain('# Preferências de atendimento');
+      expect(sentSystemPrompt).toContain('AUTÔNOMO');
+      expect(sentSystemPrompt).toContain('até 15%');
+    });
+
+    it('usa só o prompt base quando a sessão nunca configurou preferências', async () => {
+      const { sut, aiProviderFactory } = buildSutWithPreferences(); // repo vazio
+
+      await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+
+    it('degrada graciosamente quando a leitura falha (nunca impede a resposta)', async () => {
+      const { sut, aiProviderFactory, aiPreferencesRepository } = buildSutWithPreferences();
+      aiPreferencesRepository.failNextFind();
+
+      const result = await sut.generateReply(
+        TENANT_ID,
+        CONVERSATION_ID,
+        buildMessages(),
+        PROMPT_VERSION,
+        SESSION_NAME,
+      );
+
+      expect(result.status).toBe('success');
+      expect(aiProviderFactory.provider.generateReplyCalls[0].systemPrompt).toBe(
+        'Você é um assistente de atendimento.',
+      );
+    });
+
+    it('sem repositório configurado: comportamento idêntico a antes deste bloco', async () => {
+      const { sut, aiProviderFactory } = buildSut(); // sem aiPreferencesRepository
 
       await sut.generateReply(
         TENANT_ID,

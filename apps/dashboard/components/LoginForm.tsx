@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Building2, Mail, Lock, Eye, EyeOff, KeyRound, Loader2, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,7 @@ export default function LoginForm(): JSX.Element {
     setErrorMessage(null);
     try {
       if (mode === 'user') {
-        const result = await loginWithPassword(tenantId.trim(), email.trim(), password);
+        const result = await loginWithPassword(email.trim(), password);
         await router.push(result.user.mustChangePassword ? '/change-password' : '/');
         return;
       }
@@ -68,29 +69,31 @@ export default function LoginForm(): JSX.Element {
         </p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="tenantId" className="text-sm font-medium text-foreground">
-          Empresa
-        </label>
-        <div className="relative">
-          <Building2
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            id="tenantId"
-            type="text"
-            value={tenantId}
-            onChange={(event) => setTenantId(event.target.value)}
-            placeholder="tenant-1"
-            className="pl-9"
-            required
-          />
+      {mode === 'apiKey' && (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="tenantId" className="text-sm font-medium text-foreground">
+            Empresa
+          </label>
+          <div className="relative">
+            <Building2
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="tenantId"
+              type="text"
+              value={tenantId}
+              onChange={(event) => setTenantId(event.target.value)}
+              placeholder="tenant-1"
+              className="pl-9"
+              required
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            O código do seu workspace, recebido ao criar a conta.
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          O código do seu workspace, recebido ao criar a conta.
-        </p>
-      </div>
+      )}
 
       {mode === 'user' ? (
         <>
@@ -180,6 +183,15 @@ export default function LoginForm(): JSX.Element {
         {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
         {submitting ? 'Entrando…' : 'Entrar'}
       </Button>
+
+      {mode === 'user' && (
+        <p className="text-center text-sm text-muted-foreground">
+          Ainda não tem uma conta?{' '}
+          <Link href="/register" className="font-medium text-primary hover:underline">
+            Criar minha conta
+          </Link>
+        </p>
+      )}
 
       {/* Acesso por API Key — recolhido, discreto, sem competir com o login principal */}
       <div className="border-t border-border pt-3">

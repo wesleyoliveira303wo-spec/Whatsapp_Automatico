@@ -160,6 +160,18 @@ export class PromptBuilder {
    * reescrever nenhum prompt existente. `undefined` = comportamento
    * inalterado (conversa comum).
    */
+  /**
+   * Cérebro da IA v3, Fase 2 (2026-08-25): novo 7º parâmetro `faqContext` —
+   * já formatado por `buildFaqContext()` (domain `faqContext.ts`), presente
+   * só quando a sessão tem FAQ estruturada ativa. `undefined` = comportamento
+   * inalterado (nenhuma sessão configurou FAQ ainda).
+   */
+  /**
+   * Cérebro da IA v3, Fase 3 (2026-08-26): novo 8º parâmetro
+   * `preferencesContext` — já formatado por `buildPreferencesContext()`
+   * (domain `preferencesContext.ts`), presente só quando a sessão configurou
+   * pelo menos uma preferência real. `undefined` = comportamento inalterado.
+   */
   build(
     messages: Message[],
     promptVersion: PromptVersion,
@@ -167,6 +179,8 @@ export class PromptBuilder {
     mediaByMessageId?: Map<string, AiMediaContentPart>,
     offHoursContext?: string,
     campaignContext?: string,
+    faqContext?: string,
+    preferencesContext?: string,
   ): AiGenerationRequest {
     return {
       systemPrompt: this.composeSystemPrompt(
@@ -175,6 +189,8 @@ export class PromptBuilder {
         offHoursContext,
         campaignContext,
         promptVersion.closingDirective,
+        faqContext,
+        preferencesContext,
       ),
       messages: messages.map((message) => ({
         role: message.direction === 'inbound' ? 'user' : 'assistant',
@@ -212,6 +228,8 @@ export class PromptBuilder {
     offHoursContext?: string,
     campaignContext?: string,
     closingDirective?: string,
+    faqContext?: string,
+    preferencesContext?: string,
   ): string {
     let prompt = basePrompt;
 
@@ -223,9 +241,23 @@ export class PromptBuilder {
         `# Informações da empresa\n${trimmedBusiness}`;
     }
 
+    // Cérebro da IA v3, Fase 2 — logo após "Informações da empresa": FAQ é
+    // conhecimento da empresa também, só que estruturado/pré-aprovado.
+    const trimmedFaq = faqContext?.trim();
+    if (trimmedFaq) {
+      prompt += `\n\n${trimmedFaq}`;
+    }
+
     const trimmedOffHours = offHoursContext?.trim();
     if (trimmedOffHours) {
       prompt += `\n\n${trimmedOffHours}`;
+    }
+
+    // Cérebro da IA v3, Fase 3 — logo depois do horário: são as duas peças
+    // "operacionais" (quando atender, como se comportar ao atender).
+    const trimmedPreferences = preferencesContext?.trim();
+    if (trimmedPreferences) {
+      prompt += `\n\n${trimmedPreferences}`;
     }
 
     // Fase L, Bloco L6 — depois dos demais blocos: o mais importante é a

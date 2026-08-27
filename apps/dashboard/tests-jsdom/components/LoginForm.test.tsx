@@ -50,17 +50,16 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
     expect(screen.getByLabelText('API Key')).toBeInTheDocument();
   });
 
-  it('faz login com e-mail/senha e redireciona para /', async () => {
+  it('faz login com e-mail/senha (sem tenantId, Fase Auth/Registro) e redireciona para /', async () => {
     (clientApi.loginWithPassword as jest.Mock).mockResolvedValue({
       user: { mustChangePassword: false },
     });
     render(<LoginForm />);
-    fireEvent.change(screen.getByLabelText('Empresa'), { target: { value: 'tenant-1' } });
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'segredo' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     await waitFor(() => {
-      expect(clientApi.loginWithPassword).toHaveBeenCalledWith('tenant-1', 'a@b.com', 'segredo');
+      expect(clientApi.loginWithPassword).toHaveBeenCalledWith('a@b.com', 'segredo');
       expect(push).toHaveBeenCalledWith('/');
     });
   });
@@ -70,7 +69,6 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
       user: { mustChangePassword: true },
     });
     render(<LoginForm />);
-    fireEvent.change(screen.getByLabelText('Empresa'), { target: { value: 'tenant-1' } });
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'provisoria' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
@@ -84,12 +82,17 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
       new clientApi.ClientApiError(401, {}),
     );
     render(<LoginForm />);
-    fireEvent.change(screen.getByLabelText('Empresa'), { target: { value: 'tenant-1' } });
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'errada' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     await waitFor(() => {
       expect(screen.getByText('E-mail ou senha inválidos.')).toBeInTheDocument();
     });
+  });
+
+  it('mostra o link "Criar minha conta" no modo pessoa, apontando para /register', () => {
+    render(<LoginForm />);
+    const link = screen.getByRole('link', { name: 'Criar minha conta' });
+    expect(link).toHaveAttribute('href', '/register');
   });
 });

@@ -50,6 +50,15 @@ export class FakeUserRepository implements UserRepository {
     return user ? { ...user } : null;
   }
 
+  async findByEmail(email: string): Promise<User | null> {
+    const user = this.users.find((u) => u.email === email);
+    return user ? { ...user } : null;
+  }
+
+  async existsByEmail(email: string): Promise<boolean> {
+    return this.users.some((u) => u.email === email);
+  }
+
   async update(id: string, changes: UserUpdate): Promise<User | undefined> {
     const user = this.users.find((u) => u.id === id);
     if (!user) return undefined;
@@ -114,6 +123,14 @@ export class FakeRefreshTokenRepository implements RefreshTokenRepository {
         token.revokedAt = new Date();
       }
     }
+  }
+
+  async purgeExpiredForUser(userId: string, olderThan: Date): Promise<number> {
+    const before = this.tokens.length;
+    this.tokens = this.tokens.filter(
+      (t) => !(t.userId === userId && t.expiresAt.getTime() < olderThan.getTime()),
+    );
+    return before - this.tokens.length;
   }
 
   /** Helper de teste. */

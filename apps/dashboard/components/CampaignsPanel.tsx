@@ -521,17 +521,13 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
 
   return (
     <div>
-      <div className="mb-5 flex items-center gap-3">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-          <Megaphone className="h-5 w-5" aria-hidden="true" />
-        </div>
-        <div>
-          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Campanhas</h1>
-          <p className="text-[13px] text-muted-foreground">
-            Envie mensagens para seus contatos e acompanhe os resultados em tempo real.
-          </p>
-        </div>
-      </div>
+      {/* Padronização de cabeçalhos (2026-08-25, pedido do fundador) —
+          mesmo padrão de Contatos/Configurações/IA: só h1 + subtítulo, sem
+          ícone, mesmo tamanho (21px/13px) e mesmo espaçamento (mt-1/mb-5). */}
+      <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Campanhas</h1>
+      <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
+        Envie mensagens para seus contatos e acompanhe os resultados em tempo real.
+      </p>
 
       <div className="flex flex-col gap-5 xl:flex-row">
         <div className="min-w-0 flex-1">

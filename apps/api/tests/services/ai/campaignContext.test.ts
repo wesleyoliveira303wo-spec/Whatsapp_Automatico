@@ -22,19 +22,26 @@ describe('buildCampaignContext (Fase L, Bloco L6)', () => {
   });
 
   /**
-   * Reforço de 2026-08-24 (junto com o prompt `v7`): sem estas instruções, a
-   * postura de DESCOBERTA — que `v7` tornou o padrão correto para quando o
-   * cliente procura a empresa — vazaria para o caso de campanha, onde ela
-   * está errada (a pessoa está respondendo a uma abordagem nossa).
+   * CORREÇÃO 2026-08-25 (junto com o prompt `v10`): a versão anterior deste
+   * texto mandava dizer "o que a empresa faz e por que faz sentido para o
+   * negócio dela" já na primeira resposta — medido como a causa raiz do
+   * pitch agressivo observado numa conversa real de campanha. O ritmo passa
+   * a ser decidido pela regra de estágio do CASO 2 no `systemPrompt`
+   * (PromptVersion `v10`, item 3b), não mais ditado aqui.
    */
-  it('manda apresentar o serviço já na primeira resposta (nunca segurar para "conhecer o cliente" antes)', () => {
+  it('delega o ritmo de apresentação para a regra de estágio do CASO 2, sem mandar o pitch completo já na primeira resposta', () => {
     const context = buildCampaignContext('Oi!');
 
-    expect(context).toMatch(/JÁ deve dizer a que veio na primeira resposta/i);
-    expect(context).toMatch(/diga em uma frase curta o que a\s+empresa faz/i);
-    expect(context).toMatch(
-      /Não fique\s+perguntando o nome e o ramo dela antes de explicar quem é você/i,
-    );
+    expect(context).toMatch(/regra do CASO 2 do seu prompt de sistema/i);
+    expect(context).toMatch(/depende do estágio desta conversa/i);
+    expect(context).not.toMatch(/JÁ deve dizer a que veio na primeira resposta/i);
+    expect(context).not.toMatch(/diga em uma frase curta o que a\s+empresa faz/i);
+  });
+
+  it('preserva a regra de não repetir apresentação/argumento quando o estágio já avançou', () => {
+    const context = buildCampaignContext('Oi!');
+
+    expect(context).toMatch(/já se apresentou, nunca repita/i);
   });
 
   it('preserva a regra de ritmo de v6 — nem no caso de campanha despeja tudo de uma vez', () => {
@@ -42,5 +49,11 @@ describe('buildCampaignContext (Fase L, Bloco L6)', () => {
 
     expect(context).toMatch(/um tópico por mensagem/i);
     expect(context).toMatch(/nunca despeje serviço, preço e\s+prazo de uma vez só/i);
+  });
+
+  it('instrui a nunca repetir o mesmo argumento em mensagens seguidas', () => {
+    const context = buildCampaignContext('Oi!');
+
+    expect(context).toMatch(/nunca repita o mesmo argumento em\s+mensagens seguidas/i);
   });
 });

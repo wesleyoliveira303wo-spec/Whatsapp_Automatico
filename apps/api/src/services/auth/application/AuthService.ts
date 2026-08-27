@@ -81,11 +81,36 @@ export class AuthService {
       userId: user.id,
       tenantId: user.tenantId,
       role: user.role,
+      mustChangePassword: user.mustChangePassword,
     });
     const refreshToken = await this.refreshTokenService.issue(user.id, meta);
 
     await this.audit(tenantId, user.id, 'auth.login.success', {}, meta);
     return { ok: true, accessToken, refreshToken, user: toPublicUser(updated ?? user) };
+  }
+
+  /**
+   * Login SEM tenantId (Fase Auth/Registro, 2026-08-26) — resolve o usuario
+   * pelo e-mail (unico global desde a migration `20260826210000`) e usa o
+   * `tenantId` do PROPRIO usuario encontrado. Mesma logica anti-enumeracao/
+   * anti-timing de `login`; nao duplica-la, delega para `login(tenantId,...)`
+   * depois de descobrir o tenant. Sem usuario encontrado, ainda roda a
+   * verificacao contra o hash-isca (mesmo `login` legado faz isso quando o
+   * usuario nao existe) para nao vazar "e-mail existe/nao existe" por timing.
+   */
+  async loginByEmail(
+    email: string,
+    password: string,
+    meta: AuthRequestMeta = {},
+  ): Promise<LoginResult> {
+    const user = await this.userRepository.findByEmail(email);
+    if (!user) {
+      // Sem tenant real para auditar (AuditLog tem FK para Tenant) — so a
+      // defesa de timing roda aqui; a falha em si nao gera log.
+      await this.passwordHasher.verify(password, DUMMY_PASSWORD_HASH);
+      return { ok: false };
+    }
+    return this.login(user.tenantId, email, password, meta);
   }
 
   async refresh(presentedRefreshToken: string): Promise<RefreshResult> {
@@ -105,13 +130,23 @@ export class AuthService {
       userId: user.id,
       tenantId: user.tenantId,
       role: user.role,
+      mustChangePassword: user.mustChangePassword,
     });
     return { ok: true, accessToken, refreshToken: rotated.token };
   }
 
+  /**
+   * `actorUserId` e OPCIONAL (Fase Auth, 2026-08-26 — R5 da auditoria): o
+   * logout so precisa do refresh token para revogar (`revoke` acha pelo
+   * HASH, nao pelo dono) — exigir um access token AINDA VALIDO era uma
+   * barreira desnecessaria que, se o access token ja tivesse expirado,
+   * deixava o refresh token (ate 7 dias) intacto e o erro passava em
+   * silencio no BFF. Sem `actorUserId`, so o refresh token e revogado; a
+   * auditoria fica sem o autor identificado (ainda registra o evento).
+   */
   async logout(
     tenantId: string,
-    actorUserId: string,
+    actorUserId: string | null,
     presentedRefreshToken: string,
     meta: AuthRequestMeta = {},
   ): Promise<void> {

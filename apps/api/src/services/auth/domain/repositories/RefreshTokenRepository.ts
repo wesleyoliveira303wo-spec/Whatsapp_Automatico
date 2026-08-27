@@ -20,4 +20,13 @@ export interface RefreshTokenRepository {
 
   /** Revoga TODOS os tokens ativos de um usuario — usado no logout-de-tudo e na deteccao de roubo (revogar a familia inteira). */
   revokeAllByUser(userId: string): Promise<void>;
+
+  /**
+   * Apaga fisicamente tokens ja EXPIRADOS ha mais de `olderThan` — purga
+   * (Fase Auth, 2026-08-26): a auditoria encontrou 656 linhas acumuladas sem
+   * nenhuma limpeza. Chamado de forma OPORTUNISTA (nao um cron dedicado) a
+   * cada login bem-sucedido, escopado ao proprio usuario — nunca um DELETE
+   * global disparado por uma unica requisicao. Devolve quantas linhas saíram.
+   */
+  purgeExpiredForUser(userId: string, olderThan: Date): Promise<number>;
 }

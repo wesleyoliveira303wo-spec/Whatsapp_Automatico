@@ -13,6 +13,18 @@ import type { Worker } from 'bullmq';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 export const app = express();
+
+// R3 da auditoria de seguranca (2026-08-26): sem `trust proxy`, `req.ip`
+// devolve o IP do ultimo hop de rede — atras de QUALQUER reverse proxy
+// (Docker/Nginx/load balancer), isso e sempre o MESMO endereco para toda
+// requisicao, entao o rate limiter de login (por IP) trancava todo mundo
+// junto com 20 tentativas de qualquer origem. `TRUST_PROXY_HOPS` (default 1)
+// diz ao Express para confiar em exatamente N hops de `X-Forwarded-For` —
+// nunca `true`/`*` (que confiaria em qualquer IP alegado pelo cliente,
+// permitindo forjar o proprio IP e burlar o rate limit por completo).
+const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10);
+app.set('trust proxy', Number.isFinite(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
+
 app.use(express.json());
 
 // Simple health check
@@ -180,6 +192,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { ConsoleLogger },
       { createAnalyticsComposition },
       { createQuickRepliesComposition },
+      { createAiFaqComposition },
       { createTagsComposition },
       { createContactsComposition },
       { createCampaignsComposition, wireCampaignSendEngine },
@@ -199,6 +212,9 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       // (mesmo racional de analytics): carregado aqui, no bloco de imports
       // compartilhado pelos dois ramos (degradado e completo).
       import('./services/quickReplies/compositionRoot'),
+      // Cérebro da IA v3, Fase 2 (2026-08-25) — FAQ estruturada, mesmo
+      // racional (CRUD sem Redis).
+      import('./services/aiFaq/compositionRoot'),
       // Redesign 2026-08-05 (R4) — tags, mesmo racional (CRUD sem Redis).
       import('./services/tags/compositionRoot'),
       // Fase L, Bloco L1b — contatos, mesmo racional (CRUD sem Redis).
@@ -244,6 +260,11 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       accessTokenService = authComposition.accessTokenService;
       app.use('/api/tenants/:tenantId/auth', authComposition.authRouter);
       app.use('/api/tenants/:tenantId/auth', authComposition.authErrorHandler);
+      // Fase Auth/Registro (2026-08-26) — `/api/auth/{register,login}`, SEM
+      // tenantId na URL (o tenant nasce no registro / e resolvido pelo
+      // e-mail no login). Mesma error handler generica de auth.
+      app.use('/api/auth', authComposition.globalAuthRouter);
+      app.use('/api/auth', authComposition.authErrorHandler);
     } else {
       console.warn(
         'ACCESS_TOKEN_SECRET ausente: rotas de auth (login/refresh/logout/me) nao montadas (ver .env.example).',
@@ -350,6 +371,20 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         degradedQuickReplies.quickReplyErrorHandler,
       );
 
+      // Cérebro da IA v3, Fase 2 (2026-08-25) — FAQ estruturada: CRUD
+      // autocontido sobre Postgres, sem fila, mesmo racional de Respostas
+      // Rápidas acima. RBAC POR ROTA reaproveita ai_profile:read/update.
+      const degradedAiFaq = createAiFaqComposition(prisma, logger);
+      app.use(
+        '/api/tenants/:tenantId/sessions/:sessionName/ai-faq',
+        authenticate,
+        degradedAiFaq.aiFaqRouter,
+      );
+      app.use(
+        '/api/tenants/:tenantId/sessions/:sessionName/ai-faq',
+        degradedAiFaq.aiFaqErrorHandler,
+      );
+
       // Redesign 2026-08-05 (R4) — tags: CRUD autocontido sobre Postgres,
       // sem fila, mesmo racional de Respostas Rápidas acima. Dois routers
       // (catálogo por sessão + atribuição por conversa), mesmo service.
@@ -411,6 +446,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createAiInteractionsErrorHandler },
       { createAiProfileRouter },
       { createAiProfileErrorHandler },
+      { createAiPreferencesRouter },
+      { createAiPreferencesErrorHandler },
       { AiProviderFactoryImpl },
       { ConversationSummaryService },
       { createConversationSummaryRouter },
@@ -425,6 +462,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       import('./services/ai/presentation/aiInteractionsErrorHandler'),
       import('./services/ai/presentation/aiProfileRouter'),
       import('./services/ai/presentation/aiProfileErrorHandler'),
+      import('./services/ai/presentation/aiPreferencesRouter'),
+      import('./services/ai/presentation/aiPreferencesErrorHandler'),
       import('./services/ai/infrastructure/AiProviderFactoryImpl'),
       import('./services/ai/application/ConversationSummaryService'),
       import('./services/ai/presentation/conversationSummaryRouter'),
@@ -442,8 +481,12 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     const aiReplyProducerConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
     const outboundConsumerConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
 
-    const { aiInteractionRepository, aiInteractionsService, aiBusinessProfileService } =
-      createAiComposition(prisma, logger);
+    const {
+      aiInteractionRepository,
+      aiInteractionsService,
+      aiBusinessProfileService,
+      aiPreferencesService,
+    } = createAiComposition(prisma, logger);
     const {
       conversationRepository,
       messageRepository,
@@ -551,6 +594,19 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       createAiProfileErrorHandler(logger),
     );
 
+    // Cérebro da IA v3, Fase 3 (2026-08-26) — Preferências/limites reais de
+    // atendimento. Mesmo padrão exato de ai-profile logo acima (RBAC POR
+    // ROTA reaproveitando ai_profile:read/update, error handler escopado).
+    app.use(
+      '/api/tenants/:tenantId/sessions/:sessionName/ai-preferences',
+      authenticate,
+      createAiPreferencesRouter(aiPreferencesService),
+    );
+    app.use(
+      '/api/tenants/:tenantId/sessions/:sessionName/ai-preferences',
+      createAiPreferencesErrorHandler(logger),
+    );
+
     // Milestone 4, Bloco M4C — Analytics (read-only, D51). Mesmo `requireApiKey`
     // do pipeline completo; error handler escopado ao path (D17). Migrada de
     // rota flat para ANINHADA por sessão — M6H-4, 2026-07-26.
@@ -580,6 +636,17 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       '/api/tenants/:tenantId/sessions/:sessionName/quick-replies',
       quickReplies.quickReplyErrorHandler,
     );
+
+    // Cérebro da IA v3, Fase 2 (2026-08-25) — FAQ estruturada. So
+    // `authenticate` no mount; RBAC POR ROTA reaproveita ai_profile:read/update
+    // (a página inteira já é administrator/owner). Error handler escopado (D17).
+    const aiFaq = createAiFaqComposition(prisma, logger);
+    app.use(
+      '/api/tenants/:tenantId/sessions/:sessionName/ai-faq',
+      authenticate,
+      aiFaq.aiFaqRouter,
+    );
+    app.use('/api/tenants/:tenantId/sessions/:sessionName/ai-faq', aiFaq.aiFaqErrorHandler);
 
     // Redesign 2026-08-05 (R4) — tags: catálogo por sessão + atribuição por
     // conversa, mesmo service. RBAC POR ROTA dentro de cada router

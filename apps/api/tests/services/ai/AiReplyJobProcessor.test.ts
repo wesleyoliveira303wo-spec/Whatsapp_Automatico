@@ -9,6 +9,7 @@ import { FakeConversationRepository, FakeMessageRepository } from '../conversati
 import { FakeAiProviderFactory } from './infrastructure/FakeAiProviderFactory';
 import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionRepository';
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
+import { FakeAiPreferencesRepository } from './infrastructure/FakeAiPreferencesRepository';
 import { FakeOutboundMessageDispatcher } from '../whatsapp/infrastructure/FakeOutboundMessageDispatcher';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 
@@ -64,7 +65,12 @@ function buildMessage(overrides: Partial<Message> & Pick<Message, 'id' | 'occurr
 
 function buildSut(
   historyLimit?: number,
-  options: { now?: () => Date; handoffNoticeRepeatAfterMs?: number } = {},
+  options: {
+    now?: () => Date;
+    handoffNoticeRepeatAfterMs?: number;
+    // Cérebro da IA v3, Fase 3 (2026-08-26).
+    aiPreferencesRepository?: FakeAiPreferencesRepository;
+  } = {},
 ): {
   processor: AiReplyJobProcessor;
   conversationRepository: FakeConversationRepository;
@@ -105,6 +111,8 @@ function buildSut(
           undefined,
           options.handoffNoticeRepeatAfterMs,
           options.now,
+          undefined,
+          options.aiPreferencesRepository,
         )
       : new AiReplyJobProcessor(
           conversationRepository,
@@ -118,6 +126,8 @@ function buildSut(
           undefined,
           options.handoffNoticeRepeatAfterMs,
           options.now,
+          undefined,
+          options.aiPreferencesRepository,
         );
 
   return {
@@ -674,6 +684,69 @@ describe('AiReplyJobProcessor', () => {
       expect(updated?.status).toBe('bot');
       expect(updated?.assignedToUserId).toBeUndefined();
       expect(updated?.escalatedAt).toBeInstanceOf(Date);
+    });
+
+    it('Cérebro da IA v3, Fase 3: usa a mensagem customizada da SESSÃO quando configurada', async () => {
+      const aiPreferencesRepository = new FakeAiPreferencesRepository();
+      aiPreferencesRepository.seed(TENANT_ID, 'default', {
+        customHandoffMessage: 'Segura aí que já te chamo um humano! 🙌',
+      });
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
+        undefined,
+        { aiPreferencesRepository },
+      );
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      aiProviderFactory.provider.setNextResult({
+        content: '   ',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls[0].content[0]).toBe(
+        'Segura aí que já te chamo um humano! 🙌',
+      );
+    });
+
+    it('Cérebro da IA v3, Fase 3: sem preferências configuradas para a sessão, usa o texto padrão', async () => {
+      const aiPreferencesRepository = new FakeAiPreferencesRepository(); // vazio
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
+        undefined,
+        { aiPreferencesRepository },
+      );
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      aiProviderFactory.provider.setNextResult({
+        content: '   ',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls[0].content[0]).toContain('encaminhando');
+    });
+
+    it('Cérebro da IA v3, Fase 3: degrada graciosamente quando a leitura de preferências falha (usa o texto padrão)', async () => {
+      const aiPreferencesRepository = new FakeAiPreferencesRepository();
+      aiPreferencesRepository.failNextFind();
+      const { processor, conversationRepository, aiProviderFactory, outboundDispatcher } = buildSut(
+        undefined,
+        { aiPreferencesRepository },
+      );
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      aiProviderFactory.provider.setNextResult({
+        content: '   ',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls[0].content[0]).toContain('encaminhando');
     });
 
     it('provider_error (ex.: cota esgotada): envia aviso educado ao cliente, grava o AiInteraction e sinaliza escalatedAt, sem mudar status', async () => {

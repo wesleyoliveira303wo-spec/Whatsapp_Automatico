@@ -40,4 +40,13 @@ export interface TenantRepository {
    * `X-API-Key`: resolve o tenant dono do hash informado, ou `null` se
    * nenhum tenant tiver essa chave. */
   findByApiKeyHash(hash: string): Promise<Tenant | null>;
+
+  /**
+   * Cria um tenant novo (Fase Auth/Registro, 2026-08-26) — a revisão prevista
+   * na docstring acima: "revisitar `create` só se houver uma Milestone de
+   * Administração/Registro". `apiKeyHash` nasce `null` (emitido depois, se
+   * necessário, via `issueApiKey.ts`) — o registro self-service cria só o
+   * necessário para o Owner logar (tenant + usuário), nunca uma API key.
+   */
+  create(input: { name: string }): Promise<Tenant>;
 }

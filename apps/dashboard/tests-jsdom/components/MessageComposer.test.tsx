@@ -13,6 +13,9 @@ jest.mock('../../lib/clientApi', () => ({
   sendConversationMessage: jest.fn(),
   sendConversationMedia: jest.fn(),
   fetchQuickReplies: jest.fn(),
+  createQuickReply: jest.fn(),
+  updateQuickReply: jest.fn(),
+  deleteQuickReply: jest.fn(),
 }));
 
 jest.mock('../../components/ui/use-toast', () => ({
@@ -288,6 +291,120 @@ describe('MessageComposer (Milestone 6, Bloco M6E-2)', () => {
         expect(screen.queryByRole('button', { name: 'Bom dia!' })).not.toBeInTheDocument();
       });
       expect(screen.getByPlaceholderText(/Escreva sua resposta/)).toHaveValue('');
+    });
+
+    /**
+     * Redesign 2026-08-25 — "Respostas Rápidas" saiu de dentro do Cérebro
+     * da IA e virou um modo "Gerenciar" dentro deste mesmo dropdown
+     * (reaproveita `QuickRepliesPanel` inteiro, sem duplicar CRUD).
+     */
+    describe('modo Gerenciar (Redesign 2026-08-25)', () => {
+      it('mostra o botão "Cadastrar / gerenciar respostas rápidas" na lista de inserção', async () => {
+        render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+
+        expect(
+          await screen.findByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
+        ).toBeInTheDocument();
+      });
+
+      it('clicar em "Cadastrar / gerenciar" troca para o QuickRepliesPanel completo, com botão Voltar', async () => {
+        render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+        fireEvent.click(
+          await screen.findByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
+        );
+
+        expect(screen.getByText('Gerenciar respostas rápidas')).toBeInTheDocument();
+        expect(screen.getByLabelText('Nova resposta rápida')).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }),
+        ).toBeInTheDocument();
+      });
+
+      it('cadastrar uma nova resposta no modo Gerenciar chama createQuickReply e ela aparece na lista de inserção ao voltar', async () => {
+        const novaResposta = {
+          id: 'qr-novo',
+          tenantId: 't1',
+          sessionName: 'vendas',
+          content: 'Obrigado pelo contato!',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          updatedAt: '2026-08-25T00:00:00.000Z',
+        };
+        (clientApi.createQuickReply as jest.Mock).mockResolvedValue({ quickReply: novaResposta });
+        // "Voltar" reexecuta `fetchQuickReplies` na lista de INSERÇÃO (hook
+        // separado do `QuickRepliesPanel` embutido) — a 2ª chamada em diante
+        // já reflete o que acabou de ser criado.
+        (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValueOnce({ quickReplies: [] });
+        (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValue({
+          quickReplies: [novaResposta],
+        });
+
+        render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+        fireEvent.click(
+          await screen.findByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
+        );
+
+        fireEvent.change(screen.getByLabelText('Nova resposta rápida'), {
+          target: { value: 'Obrigado pelo contato!' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
+
+        await waitFor(() => {
+          expect(clientApi.createQuickReply).toHaveBeenCalledWith('vendas', 'Obrigado pelo contato!');
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }));
+
+        expect(await screen.findByRole('button', { name: 'Obrigado pelo contato!' })).toBeInTheDocument();
+      });
+
+      it('voltar da tela de Gerenciar sem cadastrar nada preserva a lista de inserção intacta', async () => {
+        (clientApi.fetchQuickReplies as jest.Mock).mockResolvedValue({
+          quickReplies: [
+            {
+              id: 'qr-1',
+              tenantId: 't1',
+              sessionName: 'vendas',
+              content: 'Bom dia!',
+              createdAt: '2026-08-05T00:00:00.000Z',
+              updatedAt: '2026-08-05T00:00:00.000Z',
+            },
+          ],
+        });
+
+        render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+        await screen.findByRole('button', { name: 'Bom dia!' });
+
+        fireEvent.click(
+          screen.getByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }));
+
+        expect(screen.getByRole('button', { name: 'Bom dia!' })).toBeInTheDocument();
+      });
+
+      it('fechar o dropdown pelo ícone enquanto no modo Gerenciar e reabrir volta para a lista de inserção, não direto pra Gerenciar', async () => {
+        render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+        fireEvent.click(
+          await screen.findByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
+        );
+        expect(screen.getByText('Gerenciar respostas rápidas')).toBeInTheDocument();
+
+        // Fecha
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+        expect(screen.queryByText('Gerenciar respostas rápidas')).not.toBeInTheDocument();
+
+        // Reabre
+        fireEvent.click(screen.getByRole('button', { name: 'Respostas rápidas' }));
+        expect(screen.queryByText('Gerenciar respostas rápidas')).not.toBeInTheDocument();
+        expect(
+          await screen.findByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
+        ).toBeInTheDocument();
+      });
     });
   });
 });

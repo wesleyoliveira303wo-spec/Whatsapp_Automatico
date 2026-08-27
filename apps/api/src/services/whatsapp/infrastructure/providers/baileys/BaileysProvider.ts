@@ -114,6 +114,16 @@ interface BaileysInboundMessage {
      */
     remoteJidAlt?: string | null;
   };
+  /**
+   * HOTFIX 2026-08-25 — segundos desde epoch (protobuf pode entregar como
+   * `number` OU como `Long`, dependendo de como o evento foi serializado;
+   * nunca suposto, ver `resolveMessageTimestampMs`). Usado só para decidir
+   * se uma mensagem `type: 'append'` é recente o bastante para ser tratada
+   * como mensagem nova (ver `handleMessagesUpsert`) — nunca para lógica de
+   * negócio (a `Message.occurredAt` continua vindo de `new Date()` no
+   * momento do recebimento, como sempre foi).
+   */
+  messageTimestamp?: number | { toNumber(): number } | null;
   message?: {
     conversation?: string | null;
     extendedTextMessage?: { text?: string | null; contextInfo?: BaileysContextInfo | null } | null;
@@ -227,6 +237,89 @@ function isStatusReply(message: BaileysInboundMessage): boolean {
     message.message?.stickerMessage?.contextInfo,
   ];
   return contexts.some((context) => context?.remoteJid === STATUS_BROADCAST_JID);
+}
+
+/**
+ * HOTFIX 2026-08-25 — achado real (episódio 1, sessão "Whatsapp Sites"): uma
+ * mensagem de campanha foi enviada a um número novo, o cliente respondeu, e
+ * a resposta NUNCA chegou (sem log, sem erro, sem linha no banco — silêncio
+ * total). Medido no log real: a conexão caiu (`statusCode 428`) ~40s depois
+ * do envio e reconectou ~32s depois — exatamente a janela em que, pelo
+ * protocolo do WhatsApp, uma mensagem recebida enquanto reconectávamos
+ * costuma ser entregue como `messages.upsert { type: 'append' }` (mensagem
+ * "recuperada" na resincronização), não como `{ type: 'notify' }`.
+ * `handleMessagesUpsert` descartava TODO evento `!== 'notify'` sem log
+ * nenhum. Corrigido para também aceitar `'append'`.
+ *
+ * HOTFIX 2026-08-25 (episódio 2, sessão "Lest Conceito", MESMO DIA) —
+ * achado real que REFUTA a suposição original de que só `'append'`
+ * carregava risco de histórico velho: duas mensagens de contatos reais, de
+ * **6 dias atrás** (quarta-feira, 11h37 e 20h43), foram entregues como
+ * `type: 'notify'` — não `'append'` — na reconexão desta sessão (que ficou
+ * muito tempo sem conectar), e a IA respondeu as duas na hora como se
+ * fossem mensagens novas, porque `'notify'` sempre foi aceito
+ * incondicionalmente, sem NENHUMA checagem de idade. `'notify'` não é
+ * garantia de "mensagem em tempo real" — é só a categoria que o WhatsApp
+ * usa pra dizer "isso merece notificação", o que inclui reentrega de
+ * mensagens não lidas de dias atrás numa sessão que ficou muito tempo
+ * offline.
+ *
+ * Por isso a checagem de frescor deixou de ser exclusiva de `'append'` e
+ * passa a valer para QUALQUER mensagem aceita, seja `'notify'` ou
+ * `'append'` — usando o `messageTimestamp` real da mensagem (não o tipo do
+ * evento) como sinal. Critério assimétrico deliberado: só REJEITA quando
+ * há EVIDÊNCIA POSITIVA de que a mensagem é velha (timestamp presente e
+ * fora da janela); sem `messageTimestamp` (nunca deveria faltar, mas o
+ * campo é opcional no protobuf), aceita — não há evidência de problema, e
+ * negar por padrão arriscaria descartar mensagem legítima sem prova
+ * nenhuma. Isso também simplificou o código: não há mais divergência de
+ * comportamento entre `'notify'` e `'append'` além do próprio filtro de
+ * tipo no topo de `handleMessagesUpsert`.
+ *
+ * Janela aumentada de 5 para 30 minutos (pedido do fundador, mesmo
+ * episódio 2): 5 min era curto demais para cobrir o tempo real entre uma
+ * sessão cair e alguém notar/reconectar pela Dashboard — mas ainda ordens
+ * de magnitude menor que "dias", suficiente para não deixar passar
+ * histórico de verdade (ver o achado do episódio 2: um histórico real de
+ * milhares de mensagens `'append'` velhas continua sendo corretamente
+ * rejeitado, porque elas carregam `messageTimestamp` genuinamente antigo).
+ */
+const MESSAGE_FRESHNESS_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * Normaliza `messageTimestamp` (segundos desde epoch) para milissegundos —
+ * o protobuf do WhatsApp entrega como `number` OU como `Long` (objeto com
+ * `.toNumber()`) dependendo de como o evento foi serializado; nunca supõe
+ * um dos dois formatos.
+ */
+function resolveMessageTimestampMs(
+  messageTimestamp: BaileysInboundMessage['messageTimestamp'],
+): number | undefined {
+  if (messageTimestamp == null) {
+    return undefined;
+  }
+  const seconds =
+    typeof messageTimestamp === 'number' ? messageTimestamp : messageTimestamp.toNumber();
+  if (!Number.isFinite(seconds)) {
+    return undefined;
+  }
+  return seconds * 1000;
+}
+
+/**
+ * Ver docstring de `MESSAGE_FRESHNESS_WINDOW_MS` para o histórico completo
+ * (dois episódios reais) por trás deste critério assimétrico: só rejeita
+ * quando o `messageTimestamp` está PRESENTE e é mais velho que a janela —
+ * sem timestamp, não há evidência de problema, então aceita. Vale para
+ * QUALQUER mensagem aceita por `handleMessagesUpsert` (`'notify'` ou
+ * `'append'`), não só para um dos dois tipos.
+ */
+function isStaleQueuedMessage(message: BaileysInboundMessage, now: () => Date): boolean {
+  const timestampMs = resolveMessageTimestampMs(message.messageTimestamp);
+  if (timestampMs === undefined) {
+    return false;
+  }
+  return Math.abs(now().getTime() - timestampMs) > MESSAGE_FRESHNESS_WINDOW_MS;
 }
 
 /**
@@ -1108,10 +1201,27 @@ export class BaileysProvider implements WhatsAppProvider {
    *   configurado.
    */
   private handleMessagesUpsert(update: BaileysMessagesUpsertEvent): void {
-    if (update.type !== 'notify') {
+    if (update.type !== 'notify' && update.type !== 'append') {
       return;
     }
     for (const message of update.messages) {
+      // HOTFIX 2026-08-25 (episódios 1 e 2) — ver docstring de
+      // `isStaleQueuedMessage`: vale para QUALQUER mensagem aceita
+      // ('notify' OU 'append'), não só 'append' — um 'notify' com
+      // `messageTimestamp` de dias atrás (mensagem não lida reentregue
+      // numa reconexão) é rejeitado do mesmo jeito que um 'append' velho
+      // de sincronização de histórico.
+      if (isStaleQueuedMessage(message, () => new Date())) {
+        this.logger.debug(
+          'Mensagem antiga ignorada (fora da janela de frescor — histórico de sincronização ou reentrega de mensagem velha, não mensagem nova)',
+          {
+            tenantId: this.tenantId,
+            sessionName: this.sessionName,
+            eventType: update.type,
+          },
+        );
+        continue;
+      }
       if (message.key.fromMe) {
         // ADR #97: distinguir eco do nosso próprio stack (já persistido por
         // `OutboundCommandConsumer`/`sendAgentMediaMessage`) de mensagem

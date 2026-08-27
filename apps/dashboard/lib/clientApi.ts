@@ -117,15 +117,35 @@ export interface SessionUserInfo {
   mustChangePassword: boolean;
 }
 
-/** Login de PESSOA (M5F-2): e-mail + senha. `user.mustChangePassword: true` = a tela deve levar para /change-password antes de qualquer outra coisa. */
+/**
+ * Login de PESSOA (Fase Auth/Registro, 2026-08-26): so e-mail + senha — SEM
+ * tenantId, resolvido no backend a partir do e-mail (unico global).
+ * `user.mustChangePassword: true` = a tela deve levar para /change-password
+ * antes de qualquer outra coisa.
+ */
 export function loginWithPassword(
-  tenantId: string,
   email: string,
   password: string,
 ): Promise<{ tenantId: string; user: SessionUserInfo }> {
   return request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ tenantId, email, password }),
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/**
+ * Registro self-service (Fase Auth/Registro, 2026-08-26): cria Tenant+Owner
+ * e ja autentica. `companyName` vira o nome do Tenant.
+ */
+export function registerAccount(
+  name: string,
+  email: string,
+  password: string,
+  companyName: string,
+): Promise<{ tenantId: string; user: SessionUserInfo }> {
+  return request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password, companyName }),
   });
 }
 
@@ -329,6 +349,54 @@ export function setAiEnabled(
   });
 }
 
+// --- Preferências do Cérebro da IA (v3, Fase 3, 2026-08-26) ---
+// POR SESSÃO (mesmo padrão do Cérebro da IA/FAQ, ADR #82). Controles REAIS
+// de postura/limite operacional — nunca toggles decorativos: cada campo
+// muda o prompt (`autonomyLevel`/`maxDiscountPercent`/`topicsToAvoid`/
+// `escalateAfterAttempts`) ou a mensagem enviada ao cliente quando a IA
+// escala por falha (`customHandoffMessage`). RBAC: `ai_profile:read`/
+// `ai_profile:update` (mesmo nível de todo o Cérebro da IA).
+
+export type AiAutonomyLevel = 'conservative' | 'balanced' | 'autonomous';
+
+export interface AiPreferences {
+  tenantId: string;
+  sessionName: string;
+  updatedAt: string;
+  autonomyLevel: AiAutonomyLevel;
+  maxDiscountPercent: number | null;
+  topicsToAvoid: string | null;
+  escalateAfterAttempts: number | null;
+  customHandoffMessage: string | null;
+}
+
+/** Dados a salvar — todos opcionais (upsert parcial). `null` explícito limpa o campo. */
+export interface SaveAiPreferencesData {
+  autonomyLevel?: AiAutonomyLevel;
+  maxDiscountPercent?: number | null;
+  topicsToAvoid?: string | null;
+  escalateAfterAttempts?: number | null;
+  customHandoffMessage?: string | null;
+}
+
+/** Lê as preferências da sessão. `preferences: null` = ainda não configuradas (a UI mostra os defaults). */
+export function fetchAiPreferences(
+  sessionName: string,
+): Promise<{ preferences: AiPreferences | null }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-preferences`);
+}
+
+/** Salva (upsert parcial) as preferências da sessão. */
+export function saveAiPreferences(
+  sessionName: string,
+  data: SaveAiPreferencesData,
+): Promise<{ preferences: AiPreferences }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-preferences`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
 // --- Respostas rápidas (Fase 1, Bloco F1.9) ---
 // POR SESSÃO (mesmo padrão do Cérebro da IA, ADR #82) — cada WhatsApp pode
 // ter seu próprio conjunto de frases prontas que o atendente insere com um
@@ -382,6 +450,63 @@ export function deleteQuickReply(sessionName: string, id: string): Promise<void>
       method: 'DELETE',
     },
   );
+}
+
+// --- FAQ estruturada do Cérebro da IA (v3, Fase 2, 2026-08-25) ---
+// POR SESSÃO (mesmo padrão do Cérebro da IA/Respostas Rápidas, ADR #82).
+// Substitui o antigo botão "Cadastrar pergunta não respondida" que só
+// anexava texto cru ao blob de conteúdo — aqui pergunta/resposta são campos
+// de verdade, com categoria opcional e um toggle `active` (desativar sem
+// apagar). RBAC: `ai_profile:read`/`ai_profile:update` (mesmo nível de todo
+// o Cérebro da IA — administrator/owner).
+
+export interface AiFaqEntry {
+  id: string;
+  tenantId: string;
+  sessionName: string;
+  question: string;
+  answer: string;
+  category: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Lista TODAS as FAQs da sessão (ativas e inativas), ordenadas por criação. */
+export function fetchAiFaqEntries(sessionName: string): Promise<{ faqEntries: AiFaqEntry[] }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-faq`);
+}
+
+/** Cria uma nova FAQ na sessão. Exige `ai_profile:update` (administrator/owner). */
+export function createAiFaqEntry(
+  sessionName: string,
+  question: string,
+  answer: string,
+  category: string | null,
+): Promise<{ faqEntry: AiFaqEntry }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-faq`, {
+    method: 'POST',
+    body: JSON.stringify({ question, answer, category }),
+  });
+}
+
+/** Atualização parcial (pergunta/resposta/categoria/active) — usado tanto para editar quanto para o toggle. Exige `ai_profile:update`. */
+export function updateAiFaqEntry(
+  sessionName: string,
+  id: string,
+  input: Partial<Pick<AiFaqEntry, 'question' | 'answer' | 'category' | 'active'>>,
+): Promise<{ faqEntry: AiFaqEntry }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-faq/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Remove uma FAQ. Exige `ai_profile:update`. */
+export function deleteAiFaqEntry(sessionName: string, id: string): Promise<void> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-faq/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 // --- Tags livres (Redesign 2026-08-05, R4) ---

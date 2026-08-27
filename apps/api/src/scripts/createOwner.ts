@@ -40,11 +40,11 @@ async function main(): Promise<void> {
       return;
     }
 
-    const existing = await prisma.user.findUnique({
-      where: { tenantId_email: { tenantId, email } },
-    });
+    // `email` e unico GLOBAL desde 2026-08-26 (Fase Auth/Registro) — nao mais
+    // por tenant.
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      console.error(`Ja existe um usuario com este e-mail neste tenant: ${email}`);
+      console.error(`Ja existe um usuario com este e-mail: ${email}`);
       process.exitCode = 1;
       return;
     }

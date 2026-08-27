@@ -2,7 +2,12 @@ import { Hs256AccessTokenService } from '../../../../src/services/auth/infrastru
 import type { AccessTokenClaims } from '../../../../src/services/auth/domain/AccessTokenService';
 
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
-const CLAIMS: AccessTokenClaims = { userId: 'user-1', tenantId: 'tenant-1', role: 'operator' };
+const CLAIMS: AccessTokenClaims = {
+  userId: 'user-1',
+  tenantId: 'tenant-1',
+  role: 'operator',
+  mustChangePassword: false,
+};
 
 describe('Hs256AccessTokenService (Milestone 5, Bloco M5B)', () => {
   it('construtor recusa secret vazio e ttl invalido', () => {
