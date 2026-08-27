@@ -279,7 +279,10 @@ describe('dashboardSession', () => {
       const result1Promise = requireSession(req1, res1);
       const result2Promise = requireSession(req2, res2);
 
-      resolveFetch!({ ok: true, json: async () => ({ accessToken: newToken, refreshToken: 'refresh-2' }) });
+      resolveFetch!({
+        ok: true,
+        json: async () => ({ accessToken: newToken, refreshToken: 'refresh-2' }),
+      });
       const [result1, result2] = await Promise.all([result1Promise, result2Promise]);
 
       expect(fetchMock).toHaveBeenCalledTimes(1);

@@ -153,12 +153,7 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
           className="h-[34px] rounded-[9px] border-border bg-panel text-[13px]"
         />
         <ColorSwatchPicker value={newColor} onChange={setNewColor} />
-        <Button
-          type="submit"
-          size="cta"
-          className="w-full"
-          disabled={creating || !newName.trim()}
-        >
+        <Button type="submit" size="cta" className="w-full" disabled={creating || !newName.trim()}>
           {creating ? 'Adicionando…' : 'Adicionar'}
         </Button>
       </form>

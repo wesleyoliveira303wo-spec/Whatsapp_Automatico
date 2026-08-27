@@ -69,7 +69,10 @@ describe('aiPreferencesRouter (Cérebro da IA v3, Fase 3)', () => {
 
     it('devolve as preferences existentes (200)', async () => {
       const { app, preferences } = buildApp(person('owner'));
-      preferences.seed('tenant-1', SESSION, { autonomyLevel: 'autonomous', maxDiscountPercent: 10 });
+      preferences.seed('tenant-1', SESSION, {
+        autonomyLevel: 'autonomous',
+        maxDiscountPercent: 10,
+      });
 
       const response = await request(app).get(path('tenant-1'));
 
@@ -133,9 +136,7 @@ describe('aiPreferencesRouter (Cérebro da IA v3, Fase 3)', () => {
       const { app } = buildApp(person('administrator'));
       await request(app).put(path('tenant-1')).send({ maxDiscountPercent: 20 });
 
-      const response = await request(app)
-        .put(path('tenant-1'))
-        .send({ maxDiscountPercent: null });
+      const response = await request(app).put(path('tenant-1')).send({ maxDiscountPercent: null });
 
       expect(response.status).toBe(200);
       expect(response.body.preferences.maxDiscountPercent).toBeNull();
@@ -162,9 +163,7 @@ describe('aiPreferencesRouter (Cérebro da IA v3, Fase 3)', () => {
     it('rejeita escalateAfterAttempts menor que 1 (400)', async () => {
       const { app } = buildApp(person('administrator'));
 
-      const response = await request(app)
-        .put(path('tenant-1'))
-        .send({ escalateAfterAttempts: 0 });
+      const response = await request(app).put(path('tenant-1')).send({ escalateAfterAttempts: 0 });
 
       expect(response.status).toBe(400);
     });

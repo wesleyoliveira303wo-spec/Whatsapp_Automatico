@@ -7,7 +7,15 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
-import { Paperclip, X, FileText, MessageSquareText, Send, Settings2, ChevronLeft } from 'lucide-react';
+import {
+  Paperclip,
+  X,
+  FileText,
+  MessageSquareText,
+  Send,
+  Settings2,
+  ChevronLeft,
+} from 'lucide-react';
 import { sendConversationMessage, sendConversationMedia, ClientApiError } from '@/lib/clientApi';
 import { useQuickReplies } from '@/hooks/useQuickReplies';
 import { Button } from '@/components/ui/button';

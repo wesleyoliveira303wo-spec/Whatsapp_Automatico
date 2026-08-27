@@ -440,10 +440,7 @@ export class ConversationAiService {
    * falha (já tratada dentro de `AiFaqReaderImpl`, que nunca lança), devolve
    * `undefined` — nunca impede a resposta ao cliente.
    */
-  private async loadFaqContext(
-    tenantId: string,
-    sessionName: string,
-  ): Promise<string | undefined> {
+  private async loadFaqContext(tenantId: string, sessionName: string): Promise<string | undefined> {
     if (!this.aiFaqReader) {
       return undefined;
     }

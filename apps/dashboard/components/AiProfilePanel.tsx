@@ -223,7 +223,12 @@ interface TabSectionHeaderProps {
  * aqui como o ÚNICO lugar que desenha esse cabeçalho — as 5 abas agora
  * passam pelo mesmo componente, garantindo paridade pixel a pixel.
  */
-function TabSectionHeader({ icon: Icon, title, description, trailing }: TabSectionHeaderProps): JSX.Element {
+function TabSectionHeader({
+  icon: Icon,
+  title,
+  description,
+  trailing,
+}: TabSectionHeaderProps): JSX.Element {
   return (
     <div className="mb-3.5 flex items-start justify-between gap-2.5">
       <div className="flex items-center gap-2.5">
@@ -422,211 +427,227 @@ export default function AiProfilePanel({ sessionName }: AiProfilePanelProps): JS
           há sinal persistido pra isso) + Horário de atendimento. */}
       {activeTab === 'overview' && (
         <div className="flex flex-col gap-5 xl:flex-row">
-        <div className="min-w-0 flex-1 space-y-3.5">
-          <div>
-            <TabSectionHeader
-              icon={LayoutDashboard}
-              title="Visão geral"
-              description="Resumo do que já está configurado no Cérebro da IA e o horário de atendimento."
-              trailing={
-                updatedAt ? (
-                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                    Atualizado em {new Date(updatedAt).toLocaleString('pt-BR')}
-                  </span>
-                ) : undefined
-              }
-            />
-            <motion.div
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-              className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
-            >
-              <OverviewStatCard
-                icon={BookOpen}
-                label="Base de conhecimento"
-                value={knowledgeIsEmpty ? 'Vazia' : 'Preenchida'}
-                tone={knowledgeIsEmpty ? 'warning' : 'success'}
+          <div className="min-w-0 flex-1 space-y-3.5">
+            <div>
+              <TabSectionHeader
+                icon={LayoutDashboard}
+                title="Visão geral"
+                description="Resumo do que já está configurado no Cérebro da IA e o horário de atendimento."
+                trailing={
+                  updatedAt ? (
+                    <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                      Atualizado em {new Date(updatedAt).toLocaleString('pt-BR')}
+                    </span>
+                  ) : undefined
+                }
               />
-              <OverviewStatCard
-                icon={AlignLeft}
-                label="Caracteres usados"
-                value={`${content.length.toLocaleString('pt-BR')} / ${MAX_CONTENT_LENGTH.toLocaleString('pt-BR')}`}
-                tone="primary"
-              />
-              <OverviewStatCard
-                icon={HelpCircle}
-                label="FAQ ativas"
-                value={String(activeFaqCount)}
-                numericValue={activeFaqCount}
-                tone="primary"
-              />
-              <OverviewStatCard
-                icon={Clock}
-                label="Horário de atendimento"
-                value={offHours.enabled ? 'Ativo' : 'Desativado'}
-                tone={offHours.enabled ? 'success' : 'muted'}
-              />
-            </motion.div>
-          </div>
-
-          {/* ── Horário de atendimento (F1.8) ─────────────────────────────── */}
-          <div className="rounded-lg border border-border bg-card p-[18px]">
-            <div className="mb-3.5 flex items-center justify-between">
-              <span className="text-[13.5px] font-semibold text-foreground">
-                Horário de atendimento
-              </span>
-              <Switch
-                checked={offHours.enabled}
-                onCheckedChange={(checked) => updateOffHours('enabled', checked)}
-                aria-label="Enviar aviso automático quando a mensagem chegar fora do horário"
-              />
+              <motion.div
+                variants={staggerContainer}
+                initial="hidden"
+                animate="visible"
+                className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+              >
+                <OverviewStatCard
+                  icon={BookOpen}
+                  label="Base de conhecimento"
+                  value={knowledgeIsEmpty ? 'Vazia' : 'Preenchida'}
+                  tone={knowledgeIsEmpty ? 'warning' : 'success'}
+                />
+                <OverviewStatCard
+                  icon={AlignLeft}
+                  label="Caracteres usados"
+                  value={`${content.length.toLocaleString('pt-BR')} / ${MAX_CONTENT_LENGTH.toLocaleString('pt-BR')}`}
+                  tone="primary"
+                />
+                <OverviewStatCard
+                  icon={HelpCircle}
+                  label="FAQ ativas"
+                  value={String(activeFaqCount)}
+                  numericValue={activeFaqCount}
+                  tone="primary"
+                />
+                <OverviewStatCard
+                  icon={Clock}
+                  label="Horário de atendimento"
+                  value={offHours.enabled ? 'Ativo' : 'Desativado'}
+                  tone={offHours.enabled ? 'success' : 'muted'}
+                />
+              </motion.div>
             </div>
 
-            {offHours.enabled && (
-              <div>
-                {/* Dias da semana */}
-                <div
-                  className="mb-3.5 flex flex-wrap gap-[5px]"
-                  role="group"
-                  aria-label="Dias de atendimento"
-                >
-                  {DAYS.map(({ label, bit }) => {
-                    const active = (offHours.days & (1 << bit)) !== 0;
-                    return (
-                      <button
-                        key={bit}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => toggleDay(bit)}
-                        className={cn(
-                          'h-[30px] w-[34px] rounded-lg text-xs font-semibold transition-colors',
-                          active
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground',
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {offHours.days === 0 && (
-                  <p className="-mt-2.5 mb-3.5 text-xs text-warning">
-                    Nenhum dia selecionado — o aviso será enviado sempre.
-                  </p>
-                )}
+            {/* ── Horário de atendimento (F1.8) ─────────────────────────────── */}
+            <div className="rounded-lg border border-border bg-card p-[18px]">
+              <div className="mb-3.5 flex items-center justify-between">
+                <span className="text-[13.5px] font-semibold text-foreground">
+                  Horário de atendimento
+                </span>
+                <Switch
+                  checked={offHours.enabled}
+                  onCheckedChange={(checked) => updateOffHours('enabled', checked)}
+                  aria-label="Enviar aviso automático quando a mensagem chegar fora do horário"
+                />
+              </div>
 
-                {/* Horário de início/fim + fuso — texto corrido "Das X às Y" (igual
+              {offHours.enabled && (
+                <div>
+                  {/* Dias da semana */}
+                  <div
+                    className="mb-3.5 flex flex-wrap gap-[5px]"
+                    role="group"
+                    aria-label="Dias de atendimento"
+                  >
+                    {DAYS.map(({ label, bit }) => {
+                      const active = (offHours.days & (1 << bit)) !== 0;
+                      return (
+                        <button
+                          key={bit}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => toggleDay(bit)}
+                          className={cn(
+                            'h-[30px] w-[34px] rounded-lg text-xs font-semibold transition-colors',
+                            active
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {offHours.days === 0 && (
+                    <p className="-mt-2.5 mb-3.5 text-xs text-warning">
+                      Nenhum dia selecionado — o aviso será enviado sempre.
+                    </p>
+                  )}
+
+                  {/* Horário de início/fim + fuso — texto corrido "Das X às Y" (igual
                     ao mockup); os dois campos de hora mantêm nomes acessíveis
                     DISTINTOS via `aria-label` ("Das"/"Até"), já que não fazem mais
                     parte de dois `<label>` próprios separados. */}
-                <div className="mb-3.5 flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    Das
-                    <input
-                      id="ai-profile-hours-start"
-                      aria-label="Das"
-                      type="time"
-                      value={offHours.start}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateOffHours('start', e.target.value)
+                  <div className="mb-3.5 flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      Das
+                      <input
+                        id="ai-profile-hours-start"
+                        aria-label="Das"
+                        type="time"
+                        value={offHours.start}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                          updateOffHours('start', e.target.value)
+                        }
+                        className="rounded-[7px] border border-border bg-card px-[7px] py-1 text-[12.5px] text-foreground [color-scheme:light] dark:[color-scheme:dark]"
+                      />
+                      às
+                      <input
+                        id="ai-profile-hours-end"
+                        aria-label="Até"
+                        type="time"
+                        value={offHours.end}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                          updateOffHours('end', e.target.value)
+                        }
+                        className="rounded-[7px] border border-border bg-card px-[7px] py-1 text-[12.5px] text-foreground [color-scheme:light] dark:[color-scheme:dark]"
+                      />
+                    </span>
+                    <select
+                      id="ai-profile-timezone"
+                      aria-label="Fuso horário"
+                      value={offHours.timezone}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                        updateOffHours('timezone', e.target.value)
                       }
-                      className="rounded-[7px] border border-border bg-card px-[7px] py-1 text-[12.5px] text-foreground [color-scheme:light] dark:[color-scheme:dark]"
-                    />
-                    às
-                    <input
-                      id="ai-profile-hours-end"
-                      aria-label="Até"
-                      type="time"
-                      value={offHours.end}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                        updateOffHours('end', e.target.value)
-                      }
-                      className="rounded-[7px] border border-border bg-card px-[7px] py-1 text-[12.5px] text-foreground [color-scheme:light] dark:[color-scheme:dark]"
-                    />
-                  </span>
-                  <select
-                    id="ai-profile-timezone"
-                    aria-label="Fuso horário"
-                    value={offHours.timezone}
-                    onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                      updateOffHours('timezone', e.target.value)
-                    }
-                    className="rounded-[7px] border border-border bg-card px-2 py-[5px] text-[12.5px] text-foreground"
+                      className="rounded-[7px] border border-border bg-card px-2 py-[5px] text-[12.5px] text-foreground"
+                    >
+                      {TIMEZONES.map(({ value, label }) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {invalidHours && (
+                    <p className="-mt-2.5 mb-3.5 text-xs text-warning">
+                      O horário de fim é anterior ou igual ao de início — o aviso será enviado
+                      sempre.
+                    </p>
+                  )}
+
+                  {/* Mensagem fora do expediente */}
+                  <label
+                    htmlFor="ai-profile-off-hours-msg"
+                    className="mb-1.5 block text-xs text-muted-foreground"
                   >
-                    {TIMEZONES.map(({ value, label }) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {invalidHours && (
-                  <p className="-mt-2.5 mb-3.5 text-xs text-warning">
-                    O horário de fim é anterior ou igual ao de início — o aviso será enviado sempre.
+                    Mensagem fora do expediente
+                  </label>
+                  <Textarea
+                    id="ai-profile-off-hours-msg"
+                    value={offHours.message}
+                    onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                      updateOffHours('message', e.target.value)
+                    }
+                    placeholder={DEFAULT_OFF_HOURS_MESSAGE_PLACEHOLDER}
+                    rows={2}
+                    className="rounded-[9px] border-border bg-panel text-[13px] leading-[1.5]"
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Deixe em branco para usar a mensagem padrão. A IA ainda vai responder — este
+                    aviso é incluído no contexto, não no lugar da resposta.
                   </p>
-                )}
-
-                {/* Mensagem fora do expediente */}
-                <label
-                  htmlFor="ai-profile-off-hours-msg"
-                  className="mb-1.5 block text-xs text-muted-foreground"
-                >
-                  Mensagem fora do expediente
-                </label>
-                <Textarea
-                  id="ai-profile-off-hours-msg"
-                  value={offHours.message}
-                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
-                    updateOffHours('message', e.target.value)
-                  }
-                  placeholder={DEFAULT_OFF_HOURS_MESSAGE_PLACEHOLDER}
-                  rows={2}
-                  className="rounded-[9px] border-border bg-panel text-[13px] leading-[1.5]"
-                />
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Deixe em branco para usar a mensagem padrão. A IA ainda vai responder — este aviso
-                  é incluído no contexto, não no lugar da resposta.
-                </p>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+            {/* ── Fim da seção de horário ──────────────────────────────────── */}
           </div>
-          {/* ── Fim da seção de horário ──────────────────────────────────── */}
-        </div>
 
-        {/* Coluna de dicas — usa o espaço extra da página mais larga (1040px,
+          {/* Coluna de dicas — usa o espaço extra da página mais larga (1040px,
             era 780px) com conteúdo real em vez de vazio; texto vem do
             mockup original ("Dicas para melhores respostas"). */}
-        <aside className="w-full shrink-0 xl:w-[260px]">
-          <div className="rounded-lg border border-border bg-card p-[18px]">
-            <h2 className="mb-3 text-[13px] font-semibold text-foreground">
-              Dicas para melhores respostas
-            </h2>
-            <ul className="space-y-2.5 text-[12.5px] leading-[1.5] text-muted-foreground">
-              <li className="flex gap-2">
-                <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                Seja claro e objetivo nas instruções.
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                Inclua informações sobre seus serviços.
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                Adicione respostas para objeções comuns na aba FAQ.
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                Mantenha o tom de conversa natural.
-              </li>
-              <li className="flex gap-2">
-                <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                Revise e teste suas configurações.
-              </li>
-            </ul>
-          </div>
-        </aside>
+          <aside className="w-full shrink-0 xl:w-[260px]">
+            <div className="rounded-lg border border-border bg-card p-[18px]">
+              <h2 className="mb-3 text-[13px] font-semibold text-foreground">
+                Dicas para melhores respostas
+              </h2>
+              <ul className="space-y-2.5 text-[12.5px] leading-[1.5] text-muted-foreground">
+                <li className="flex gap-2">
+                  <span
+                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                  Seja claro e objetivo nas instruções.
+                </li>
+                <li className="flex gap-2">
+                  <span
+                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                  Inclua informações sobre seus serviços.
+                </li>
+                <li className="flex gap-2">
+                  <span
+                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                  Adicione respostas para objeções comuns na aba FAQ.
+                </li>
+                <li className="flex gap-2">
+                  <span
+                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                  Mantenha o tom de conversa natural.
+                </li>
+                <li className="flex gap-2">
+                  <span
+                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                  Revise e teste suas configurações.
+                </li>
+              </ul>
+            </div>
+          </aside>
         </div>
       )}
 

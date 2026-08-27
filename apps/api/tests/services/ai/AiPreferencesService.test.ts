@@ -28,7 +28,10 @@ describe('AiPreferencesService (Cérebro da IA v3, Fase 3)', () => {
 
     it('devolve as preferências quando existem', async () => {
       const { sut, preferences } = buildSut();
-      preferences.seed('tenant-1', SESSION, { autonomyLevel: 'autonomous', maxDiscountPercent: 10 });
+      preferences.seed('tenant-1', SESSION, {
+        autonomyLevel: 'autonomous',
+        maxDiscountPercent: 10,
+      });
 
       const result = await sut.getPreferences('tenant-1', SESSION);
 

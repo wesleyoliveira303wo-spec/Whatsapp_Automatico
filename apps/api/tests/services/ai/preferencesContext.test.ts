@@ -45,9 +45,7 @@ describe('buildPreferencesContext (Cérebro da IA v3, Fase 3)', () => {
   });
 
   it('inclui os assuntos a evitar só quando configurado e não vazio (trim)', () => {
-    expect(buildPreferencesContext(preferences({ topicsToAvoid: '   ' }))).not.toContain(
-      'evitar',
-    );
+    expect(buildPreferencesContext(preferences({ topicsToAvoid: '   ' }))).not.toContain('evitar');
 
     const context = buildPreferencesContext(
       preferences({ topicsToAvoid: 'reembolsos, disputas jurídicas' }),

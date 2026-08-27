@@ -99,7 +99,9 @@ describe('ConversationTagPicker — modo Gerenciar (Redesign 2026-08-26)', () =>
       target: { value: 'Urgente' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
-    await waitFor(() => expect(clientApi.createTag).toHaveBeenCalledWith('vendas', 'Urgente', 'gray'));
+    await waitFor(() =>
+      expect(clientApi.createTag).toHaveBeenCalledWith('vendas', 'Urgente', 'gray'),
+    );
 
     (clientApi.fetchTags as jest.Mock).mockResolvedValue({
       tags: [tag(), tag({ id: 'tag-2', name: 'Urgente', color: 'red' })],

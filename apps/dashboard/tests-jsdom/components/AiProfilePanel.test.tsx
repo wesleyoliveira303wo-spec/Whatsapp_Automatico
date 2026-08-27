@@ -70,7 +70,9 @@ describe('AiProfilePanel (Cérebro da IA v3 — 4 abas)', () => {
       },
     });
     render(<AiProfilePanel sessionName="vendas" />);
-    await waitFor(() => expect(screen.getByRole('tab', { name: /Visão geral/ })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Visão geral/ })).toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole('tab', { name: 'Conhecimento' }));
 
@@ -104,7 +106,9 @@ describe('AiProfilePanel (Cérebro da IA v3 — 4 abas)', () => {
 
     expect(screen.getByRole('tab', { name: 'FAQ' })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/Pergunta que o cliente costuma fazer/)).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText(/Pergunta que o cliente costuma fazer/),
+      ).toBeInTheDocument();
     });
   });
 

@@ -75,7 +75,12 @@ describe('AiFaqPanel (Cérebro da IA v3, Fase 2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar pergunta' }));
 
     await waitFor(() => {
-      expect(clientApi.createAiFaqEntry).toHaveBeenCalledWith('vendas', 'Vocês entregam?', 'Sim', null);
+      expect(clientApi.createAiFaqEntry).toHaveBeenCalledWith(
+        'vendas',
+        'Vocês entregam?',
+        'Sim',
+        null,
+      );
     });
     expect(await screen.findByText('Vocês entregam?')).toBeInTheDocument();
   });
@@ -153,7 +158,10 @@ describe('AiFaqPanel (Cérebro da IA v3, Fase 2)', () => {
 
   it('busca filtra por pergunta/resposta', async () => {
     (clientApi.fetchAiFaqEntries as jest.Mock).mockResolvedValue({
-      faqEntries: [faqEntry(), faqEntry({ id: 'faq-2', question: 'Vocês entregam?', answer: 'Sim' })],
+      faqEntries: [
+        faqEntry(),
+        faqEntry({ id: 'faq-2', question: 'Vocês entregam?', answer: 'Sim' }),
+      ],
     });
 
     render(<AiFaqPanel sessionName="vendas" />);

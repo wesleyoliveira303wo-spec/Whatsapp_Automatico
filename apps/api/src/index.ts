@@ -641,11 +641,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // `authenticate` no mount; RBAC POR ROTA reaproveita ai_profile:read/update
     // (a página inteira já é administrator/owner). Error handler escopado (D17).
     const aiFaq = createAiFaqComposition(prisma, logger);
-    app.use(
-      '/api/tenants/:tenantId/sessions/:sessionName/ai-faq',
-      authenticate,
-      aiFaq.aiFaqRouter,
-    );
+    app.use('/api/tenants/:tenantId/sessions/:sessionName/ai-faq', authenticate, aiFaq.aiFaqRouter);
     app.use('/api/tenants/:tenantId/sessions/:sessionName/ai-faq', aiFaq.aiFaqErrorHandler);
 
     // Redesign 2026-08-05 (R4) — tags: catálogo por sessão + atribuição por

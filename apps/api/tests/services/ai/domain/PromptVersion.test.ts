@@ -804,14 +804,18 @@ describe('v10 (2026-08-25 — CASO 2 diferencia 1ª resposta de resposta seguint
   });
 
   it('v9 não diferenciava a primeira resposta do CASO 2 das respostas seguintes — o gap real', () => {
-    expect(PROMPT_VERSIONS.v9.systemPrompt).not.toMatch(/O QUANTO VOCÊ JÁ SE APRESENTOU DEPENDE DO ESTÁGIO/i);
+    expect(PROMPT_VERSIONS.v9.systemPrompt).not.toMatch(
+      /O QUANTO VOCÊ JÁ SE APRESENTOU DEPENDE DO ESTÁGIO/i,
+    );
   });
 
   it('no CASO 2, com estágio NEW, manda apresentação MÍNIMA e UMA única pergunta, sem despejar benefício', () => {
     const prompt = PROMPT_VERSIONS.v10.systemPrompt;
     expect(prompt).toMatch(/Se o estágio ainda é NEW, esta é a sua PRIMEIRA resposta de verdade/i);
     expect(prompt).toMatch(/Apresente-se de forma MÍNIMA e natural/i);
-    expect(prompt).toMatch(/NÃO despeje benefícios, NÃO explique por que isso\s+importa para o negócio dela/i);
+    expect(prompt).toMatch(
+      /NÃO despeje benefícios, NÃO explique por que isso\s+importa para o negócio dela/i,
+    );
   });
 
   it('no CASO 2, a partir de CONTACTED/NEGOTIATING, proíbe reapresentação e manda descoberta progressiva', () => {
@@ -819,7 +823,9 @@ describe('v10 (2026-08-25 — CASO 2 diferencia 1ª resposta de resposta seguint
     expect(prompt).toMatch(
       /A partir do momento em que o estágio é CONTACTED ou NEGOTIATING, você JÁ SE APRESENTOU — nunca repita sua\s+apresentação/i,
     );
-    expect(prompt).toMatch(/só apresente um argumento comercial quando isso responder a\s+uma lacuna real/i);
+    expect(prompt).toMatch(
+      /só apresente um argumento comercial quando isso responder a\s+uma lacuna real/i,
+    );
   });
 
   it('proíbe repetir o mesmo argumento comercial em mensagens consecutivas, em qualquer caso de origem', () => {

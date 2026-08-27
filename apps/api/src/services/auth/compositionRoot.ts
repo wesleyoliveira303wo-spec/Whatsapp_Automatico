@@ -92,7 +92,12 @@ export function createAuthComposition(
   // processo — suficiente para instancia unica; Redis-backed fica como
   // evolucao futura (ver docstring de `createRateLimiter`).
   const loginRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
-  const authRouter = createAuthRouter(authService, requireUser, loginRateLimiter, accessTokenService);
+  const authRouter = createAuthRouter(
+    authService,
+    requireUser,
+    loginRateLimiter,
+    accessTokenService,
+  );
   const authErrorHandler = createAuthErrorHandler(logger);
 
   // Fase Auth/Registro (2026-08-26) — R4 da auditoria: alem do freio por IP

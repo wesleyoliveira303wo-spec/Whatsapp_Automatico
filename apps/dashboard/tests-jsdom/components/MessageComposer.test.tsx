@@ -352,12 +352,19 @@ describe('MessageComposer (Milestone 6, Bloco M6E-2)', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
 
         await waitFor(() => {
-          expect(clientApi.createQuickReply).toHaveBeenCalledWith('vendas', 'Obrigado pelo contato!');
+          expect(clientApi.createQuickReply).toHaveBeenCalledWith(
+            'vendas',
+            'Obrigado pelo contato!',
+          );
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }));
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }),
+        );
 
-        expect(await screen.findByRole('button', { name: 'Obrigado pelo contato!' })).toBeInTheDocument();
+        expect(
+          await screen.findByRole('button', { name: 'Obrigado pelo contato!' }),
+        ).toBeInTheDocument();
       });
 
       it('voltar da tela de Gerenciar sem cadastrar nada preserva a lista de inserção intacta', async () => {
@@ -381,7 +388,9 @@ describe('MessageComposer (Milestone 6, Bloco M6E-2)', () => {
         fireEvent.click(
           screen.getByRole('button', { name: /Cadastrar \/ gerenciar respostas rápidas/ }),
         );
-        fireEvent.click(screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }));
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Voltar para a lista de respostas rápidas' }),
+        );
 
         expect(screen.getByRole('button', { name: 'Bom dia!' })).toBeInTheDocument();
       });

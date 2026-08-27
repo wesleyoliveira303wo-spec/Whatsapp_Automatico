@@ -15,9 +15,7 @@ jest.mock('../../lib/clientApi', () => ({
   saveAiPreferences: jest.fn(),
 }));
 
-function preferences(
-  overrides: Partial<clientApi.AiPreferences> = {},
-): clientApi.AiPreferences {
+function preferences(overrides: Partial<clientApi.AiPreferences> = {}): clientApi.AiPreferences {
   return {
     tenantId: 'tenant-1',
     sessionName: 'vendas',
@@ -178,7 +176,9 @@ describe('AiPreferencesPanel (Cérebro da IA v3, Fase 3)', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText('Seu cargo não permite editar as preferências da IA (apenas administrador ou dono).'),
+        screen.getByText(
+          'Seu cargo não permite editar as preferências da IA (apenas administrador ou dono).',
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -220,7 +220,9 @@ describe('AiPreferencesPanel (Cérebro da IA v3, Fase 3)', () => {
     render(<AiPreferencesPanel sessionName="vendas" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Não foi possível concluir a ação. Tente novamente.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Não foi possível concluir a ação. Tente novamente.'),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));

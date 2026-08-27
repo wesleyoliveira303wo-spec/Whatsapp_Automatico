@@ -102,7 +102,11 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
 
   function startEditing(entry: (typeof faqEntries)[number]): void {
     setEditingId(entry.id);
-    setEditingForm({ question: entry.question, answer: entry.answer, category: entry.category ?? '' });
+    setEditingForm({
+      question: entry.question,
+      answer: entry.answer,
+      category: entry.category ?? '',
+    });
   }
 
   function cancelEditing(): void {
@@ -157,13 +161,17 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
           <div className="min-w-0">
             <h2 className="text-[13.5px] font-semibold text-foreground">Nova pergunta</h2>
             <p className="text-[12px] text-muted-foreground">
-              A IA responde com esse texto sempre que a pergunta bater com o que o cliente perguntar.
+              A IA responde com esse texto sempre que a pergunta bater com o que o cliente
+              perguntar.
             </p>
           </div>
         </div>
         <div className="space-y-2.5">
           <div>
-            <label htmlFor="newFaqQuestion" className="mb-1 block text-[12px] text-muted-foreground">
+            <label
+              htmlFor="newFaqQuestion"
+              className="mb-1 block text-[12px] text-muted-foreground"
+            >
               Pergunta
             </label>
             <Input
@@ -191,7 +199,10 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
           </div>
           <div className="flex items-end gap-2.5">
             <div className="min-w-0 flex-1 max-w-[220px]">
-              <label htmlFor="newFaqCategory" className="mb-1 block text-[12px] text-muted-foreground">
+              <label
+                htmlFor="newFaqCategory"
+                className="mb-1 block text-[12px] text-muted-foreground"
+              >
                 Categoria (opcional)
               </label>
               <Input

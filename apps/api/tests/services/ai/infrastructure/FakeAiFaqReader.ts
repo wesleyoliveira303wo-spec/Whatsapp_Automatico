@@ -1,4 +1,7 @@
-import { AiFaqEntryInfo, AiFaqReader } from '../../../../src/services/ai/domain/repositories/AiFaqReader';
+import {
+  AiFaqEntryInfo,
+  AiFaqReader,
+} from '../../../../src/services/ai/domain/repositories/AiFaqReader';
 
 /** Cérebro da IA v3, Fase 2 — Fake de `AiFaqReader`. */
 export class FakeAiFaqReader implements AiFaqReader {
@@ -8,10 +11,7 @@ export class FakeAiFaqReader implements AiFaqReader {
     this.entriesBySession.set(`${tenantId}:${sessionName}`, entries);
   }
 
-  async listActiveFaqEntries(
-    tenantId: string,
-    sessionName: string,
-  ): Promise<AiFaqEntryInfo[]> {
+  async listActiveFaqEntries(tenantId: string, sessionName: string): Promise<AiFaqEntryInfo[]> {
     return this.entriesBySession.get(`${tenantId}:${sessionName}`) ?? [];
   }
 }

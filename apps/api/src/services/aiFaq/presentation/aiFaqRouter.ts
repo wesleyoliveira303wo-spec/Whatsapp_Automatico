@@ -20,7 +20,10 @@ const idParamSchema = z.object({ id: z.string().trim().min(1, 'id não pode ser 
 const categorySchema = z
   .string()
   .trim()
-  .max(MAX_FAQ_CATEGORY_LENGTH, `A categoria não pode passar de ${MAX_FAQ_CATEGORY_LENGTH} caracteres.`)
+  .max(
+    MAX_FAQ_CATEGORY_LENGTH,
+    `A categoria não pode passar de ${MAX_FAQ_CATEGORY_LENGTH} caracteres.`,
+  )
   .nullable()
   .optional()
   .transform((value) => (value === undefined || value === '' ? null : value));
@@ -30,12 +33,18 @@ const createBodySchema = z.object({
     .string()
     .trim()
     .min(1, 'A pergunta não pode ser vazia.')
-    .max(MAX_FAQ_QUESTION_LENGTH, `A pergunta não pode passar de ${MAX_FAQ_QUESTION_LENGTH} caracteres.`),
+    .max(
+      MAX_FAQ_QUESTION_LENGTH,
+      `A pergunta não pode passar de ${MAX_FAQ_QUESTION_LENGTH} caracteres.`,
+    ),
   answer: z
     .string()
     .trim()
     .min(1, 'A resposta não pode ser vazia.')
-    .max(MAX_FAQ_ANSWER_LENGTH, `A resposta não pode passar de ${MAX_FAQ_ANSWER_LENGTH} caracteres.`),
+    .max(
+      MAX_FAQ_ANSWER_LENGTH,
+      `A resposta não pode passar de ${MAX_FAQ_ANSWER_LENGTH} caracteres.`,
+    ),
   category: categorySchema,
 });
 

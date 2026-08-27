@@ -135,9 +135,9 @@ describe('AiFaqService (Cérebro da IA v3, Fase 2)', () => {
       const { sut, aiFaq } = buildSut();
       const id = aiFaq.seed('tenant-1', 'outra-sessao', 'P', 'R');
 
-      await expect(
-        sut.updateFaqEntry('tenant-1', SESSION, id, { active: false }),
-      ).rejects.toThrow(AiFaqEntryNotFoundError);
+      await expect(sut.updateFaqEntry('tenant-1', SESSION, id, { active: false })).rejects.toThrow(
+        AiFaqEntryNotFoundError,
+      );
     });
 
     it('lança AiFaqEntryNotFoundError quando o id existe mas é de outro tenant (IDOR-safe)', async () => {
@@ -145,9 +145,9 @@ describe('AiFaqService (Cérebro da IA v3, Fase 2)', () => {
       tenants.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: 'hash-2' });
       const id = aiFaq.seed('tenant-2', SESSION, 'P', 'R');
 
-      await expect(
-        sut.updateFaqEntry('tenant-1', SESSION, id, { active: false }),
-      ).rejects.toThrow(AiFaqEntryNotFoundError);
+      await expect(sut.updateFaqEntry('tenant-1', SESSION, id, { active: false })).rejects.toThrow(
+        AiFaqEntryNotFoundError,
+      );
     });
   });
 

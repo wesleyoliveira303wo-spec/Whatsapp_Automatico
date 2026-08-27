@@ -6,7 +6,9 @@ describe('buildFaqContext (Cérebro da IA v3, Fase 2)', () => {
   });
 
   it('inclui o rótulo de seção e a instrução de uso', () => {
-    const context = buildFaqContext([{ question: 'Qual o preço?', answer: 'R$ 990', category: null }]);
+    const context = buildFaqContext([
+      { question: 'Qual o preço?', answer: 'R$ 990', category: null },
+    ]);
 
     expect(context).toContain('# Perguntas frequentes');
     expect(context).toContain('respostas já aprovadas pela empresa');
@@ -22,13 +24,17 @@ describe('buildFaqContext (Cérebro da IA v3, Fase 2)', () => {
   });
 
   it('anexa a categoria entre parênteses quando presente', () => {
-    const context = buildFaqContext([{ question: 'Qual o preço?', answer: 'R$ 990', category: 'Preços' }]);
+    const context = buildFaqContext([
+      { question: 'Qual o preço?', answer: 'R$ 990', category: 'Preços' },
+    ]);
 
     expect(context).toContain('**P:** Qual o preço? (Preços)');
   });
 
   it('não anexa parênteses quando a categoria é null', () => {
-    const context = buildFaqContext([{ question: 'Qual o preço?', answer: 'R$ 990', category: null }]);
+    const context = buildFaqContext([
+      { question: 'Qual o preço?', answer: 'R$ 990', category: null },
+    ]);
 
     expect(context).toContain('**P:** Qual o preço?\n');
     expect(context).not.toContain('(');

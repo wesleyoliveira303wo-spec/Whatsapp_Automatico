@@ -28,7 +28,8 @@ describe('Integração real — registro Tenant+Owner (Fase Auth/Registro)', () 
   let databaseAvailable = true;
   const createdTenantIds: string[] = [];
   const createdEmails: string[] = [];
-  const uniqueEmail = (label: string): string => `teste-registro-${label}-${Date.now()}@exemplo.com`;
+  const uniqueEmail = (label: string): string =>
+    `teste-registro-${label}-${Date.now()}@exemplo.com`;
 
   beforeAll(async () => {
     prisma = new PrismaClient();
@@ -38,7 +39,10 @@ describe('Integração real — registro Tenant+Owner (Fase Auth/Registro)', () 
       databaseAvailable = false;
     }
     const passwordHasher = new ScryptPasswordHasher();
-    const accessTokenService = new Hs256AccessTokenService('segredo-teste-registro-1234567890', 900);
+    const accessTokenService = new Hs256AccessTokenService(
+      'segredo-teste-registro-1234567890',
+      900,
+    );
     const refreshTokenService = new RefreshTokenService(
       new PrismaRefreshTokenRepository(prisma),
       new Sha256RefreshTokenCodec(),

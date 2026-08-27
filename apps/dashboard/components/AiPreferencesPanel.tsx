@@ -193,7 +193,11 @@ export default function AiPreferencesPanel({ sessionName }: AiPreferencesPanelPr
       {/* Nível de autonomia */}
       <div className="rounded-lg border border-border bg-card p-[18px]">
         <p className="mb-2.5 text-[13px] font-semibold text-foreground">Nível de autonomia</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Nível de autonomia">
+        <div
+          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+          role="radiogroup"
+          aria-label="Nível de autonomia"
+        >
           {AUTONOMY_OPTIONS.map((option) => {
             const active = form.autonomyLevel === option.value;
             return (
@@ -231,7 +235,10 @@ export default function AiPreferencesPanel({ sessionName }: AiPreferencesPanelPr
       <div className="rounded-lg border border-border bg-card p-[18px]">
         <div className="mb-2.5 flex items-center gap-2">
           <Percent className="h-[15px] w-[15px] text-muted-foreground" aria-hidden="true" />
-          <label htmlFor="ai-preferences-discount" className="text-[13px] font-semibold text-foreground">
+          <label
+            htmlFor="ai-preferences-discount"
+            className="text-[13px] font-semibold text-foreground"
+          >
             Desconto máximo autônomo
           </label>
         </div>
@@ -263,8 +270,14 @@ export default function AiPreferencesPanel({ sessionName }: AiPreferencesPanelPr
       {/* Assuntos a evitar */}
       <div className="rounded-lg border border-border bg-card p-[18px]">
         <div className="mb-2.5 flex items-center gap-2">
-          <MessageSquareWarning className="h-[15px] w-[15px] text-muted-foreground" aria-hidden="true" />
-          <label htmlFor="ai-preferences-topics" className="text-[13px] font-semibold text-foreground">
+          <MessageSquareWarning
+            className="h-[15px] w-[15px] text-muted-foreground"
+            aria-hidden="true"
+          />
+          <label
+            htmlFor="ai-preferences-topics"
+            className="text-[13px] font-semibold text-foreground"
+          >
             Assuntos a evitar ou redirecionar
           </label>
         </div>
@@ -287,7 +300,10 @@ export default function AiPreferencesPanel({ sessionName }: AiPreferencesPanelPr
       <div className="rounded-lg border border-border bg-card p-[18px]">
         <div className="mb-2.5 flex items-center gap-2">
           <Repeat className="h-[15px] w-[15px] text-muted-foreground" aria-hidden="true" />
-          <label htmlFor="ai-preferences-attempts" className="text-[13px] font-semibold text-foreground">
+          <label
+            htmlFor="ai-preferences-attempts"
+            className="text-[13px] font-semibold text-foreground"
+          >
             Escalar após N tentativas sem sucesso
           </label>
         </div>
@@ -315,8 +331,14 @@ export default function AiPreferencesPanel({ sessionName }: AiPreferencesPanelPr
       {/* Mensagem de encaminhamento */}
       <div className="rounded-lg border border-border bg-card p-[18px]">
         <div className="mb-2.5 flex items-center gap-2">
-          <MessageCircleReply className="h-[15px] w-[15px] text-muted-foreground" aria-hidden="true" />
-          <label htmlFor="ai-preferences-handoff" className="text-[13px] font-semibold text-foreground">
+          <MessageCircleReply
+            className="h-[15px] w-[15px] text-muted-foreground"
+            aria-hidden="true"
+          />
+          <label
+            htmlFor="ai-preferences-handoff"
+            className="text-[13px] font-semibold text-foreground"
+          >
             Mensagem de encaminhamento personalizada
           </label>
         </div>

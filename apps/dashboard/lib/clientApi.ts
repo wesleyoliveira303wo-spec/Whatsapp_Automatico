@@ -496,17 +496,23 @@ export function updateAiFaqEntry(
   id: string,
   input: Partial<Pick<AiFaqEntry, 'question' | 'answer' | 'category' | 'active'>>,
 ): Promise<{ faqEntry: AiFaqEntry }> {
-  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-faq/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  });
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/ai-faq/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 /** Remove uma FAQ. Exige `ai_profile:update`. */
 export function deleteAiFaqEntry(sessionName: string, id: string): Promise<void> {
-  return request(`/api/sessions/${encodeURIComponent(sessionName)}/ai-faq/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
+  return request(
+    `/api/sessions/${encodeURIComponent(sessionName)}/ai-faq/${encodeURIComponent(id)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 // --- Tags livres (Redesign 2026-08-05, R4) ---
