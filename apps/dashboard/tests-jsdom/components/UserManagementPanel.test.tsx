@@ -102,6 +102,9 @@ describe('UserManagementPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Mais ações de ana@empresa.com' }));
     fireEvent.click(screen.getByRole('button', { name: 'Suspender' }));
+    // Fase 2 (2026-08-27): "Suspender" passou a ABRIR uma confirmação em vez
+    // de executar direto — quem dispara a ação é o botão do diálogo.
+    fireEvent.click(await screen.findByRole('button', { name: 'Suspender acesso' }));
 
     await waitFor(() => {
       expect(
@@ -110,5 +113,86 @@ describe('UserManagementPanel', () => {
     });
     expect(screen.getByText('ana@empresa.com')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * Reestruturação de Configurações, Fase 2 (2026-08-27) — a auditoria
+   * encontrou suspender / redefinir senha / alterar cargo executando em UM
+   * clique, sem aviso e sem volta. Estes testes travam o comportamento novo:
+   * a ação NÃO pode disparar antes da confirmação.
+   */
+  describe('confirmações de ações administrativas', () => {
+    it('suspender: só executa DEPOIS de confirmar, e o diálogo nomeia o alvo', async () => {
+      (clientApi.fetchUsers as jest.Mock).mockResolvedValue({ users: [managedUser()] });
+      (clientApi.suspendUser as jest.Mock).mockResolvedValue({
+        user: { ...managedUser(), status: 'suspended' },
+      });
+
+      render(<UserManagementPanel />);
+      await waitFor(() => expect(screen.getByText('ana@empresa.com')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mais ações de ana@empresa.com' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Suspender' }));
+
+      // Ainda NÃO pode ter chamado a API.
+      expect(clientApi.suspendUser).not.toHaveBeenCalled();
+      expect(await screen.findByText('Suspender ana@empresa.com?')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Suspender acesso' }));
+      await waitFor(() => expect(clientApi.suspendUser).toHaveBeenCalledTimes(1));
+    });
+
+    it('suspender: cancelar NÃO executa a ação', async () => {
+      (clientApi.fetchUsers as jest.Mock).mockResolvedValue({ users: [managedUser()] });
+
+      render(<UserManagementPanel />);
+      await waitFor(() => expect(screen.getByText('ana@empresa.com')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mais ações de ana@empresa.com' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Suspender' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Cancelar' }));
+
+      await waitFor(() =>
+        expect(screen.queryByText('Suspender ana@empresa.com?')).not.toBeInTheDocument(),
+      );
+      expect(clientApi.suspendUser).not.toHaveBeenCalled();
+    });
+
+    it('alterar cargo: mudar o campo NÃO aplica sozinho — abre confirmação com origem e destino', async () => {
+      (clientApi.fetchUsers as jest.Mock).mockResolvedValue({ users: [managedUser()] });
+      (clientApi.changeUserRole as jest.Mock).mockResolvedValue({
+        user: { ...managedUser(), role: 'manager' },
+      });
+
+      render(<UserManagementPanel />);
+      await waitFor(() => expect(screen.getByText('ana@empresa.com')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByLabelText('Cargo de ana@empresa.com'), {
+        target: { value: 'manager' },
+      });
+
+      expect(clientApi.changeUserRole).not.toHaveBeenCalled();
+      expect(await screen.findByText('Alterar o cargo de ana@empresa.com?')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Alterar cargo' }));
+      await waitFor(() =>
+        expect(clientApi.changeUserRole).toHaveBeenCalledWith('user-1', 'manager'),
+      );
+    });
+
+    it('reativar NÃO pede confirmação (é reversível e devolve acesso)', async () => {
+      (clientApi.fetchUsers as jest.Mock).mockResolvedValue({
+        users: [{ ...managedUser(), status: 'suspended' }],
+      });
+      (clientApi.reactivateUser as jest.Mock).mockResolvedValue({ user: managedUser() });
+
+      render(<UserManagementPanel />);
+      await waitFor(() => expect(screen.getByText('ana@empresa.com')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mais ações de ana@empresa.com' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reativar' }));
+
+      await waitFor(() => expect(clientApi.reactivateUser).toHaveBeenCalledTimes(1));
+    });
   });
 });

@@ -12,6 +12,7 @@ export type Permission =
   | 'conversation:escalate'
   | 'conversation:resume_own'
   | 'conversation:resume_any'
+  /** DECLARADA MAS NUNCA APLICADA — reatribuir conversa a outro atendente nao existe no produto (sem rota, servico ou tela). Nao e falha de seguranca. */
   | 'conversation:reassign'
   | 'message:send'
   | 'session:read'
@@ -34,9 +35,33 @@ export type Permission =
   | 'user:create'
   | 'user:update'
   | 'user:suspend'
+  /**
+   * DECLARADA MAS NUNCA APLICADA — e deve continuar assim.
+   *
+   * A auditoria de Configuracoes (2026-08-27) levantou isto como suposta
+   * falha ("qualquer administrator poderia promover outro administrator");
+   * a investigacao provou o CONTRARIO: a regra ja e imposta, por um
+   * mecanismo diferente e melhor — a hierarquia `outranks` (mais abaixo
+   * neste arquivo), aplicada pelo `UserManagementService` em TODAS as
+   * mutacoes de usuario (criar, mudar cargo, suspender, resetar senha).
+   * Como `outranks` e ESTRITO (`>`, nao `>=`), cargo igual nao gerencia
+   * cargo igual: administrator nao cria nem promove administrator. Coberto
+   * por teste em `UserManagementService.test.ts`.
+   *
+   * Aplicar esta permissao agora criaria uma SEGUNDA fonte de verdade sobre
+   * "quem gerencia quem", coexistindo com a hierarquia — que e exatamente
+   * como brechas nascem (uma e atualizada, a outra fica para tras). Mantida
+   * no catalogo para nao quebrar consumidores do tipo `Permission`.
+   */
   | 'user:manage_admins'
   | 'audit:read'
   | 'tenant:manage'
+  /**
+   * DECLARADA MAS NUNCA APLICADA — nomeia uma funcionalidade que NAO EXISTE
+   * no produto (transferir a posse do tenant), mesmo caso de
+   * `conversation:reassign`. Nao e falha de seguranca: nao ha rota, servico
+   * nem tela que faca isso.
+   */
   | 'ownership:transfer';
 
 // Conjuntos montados por COMPOSICAO (espalhando o cargo inferior) — e so uma

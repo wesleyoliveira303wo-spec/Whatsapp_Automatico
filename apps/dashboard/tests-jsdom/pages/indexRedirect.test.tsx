@@ -54,7 +54,7 @@ describe('/ (Workspace)', () => {
 
     expect(result).toEqual({
       redirect: {
-        destination: '/sessions/Whatsapp%20Sites/settings?tab=whatsapps',
+        destination: '/sessions/Whatsapp%20Sites/settings/whatsapps',
         permanent: false,
       },
     });

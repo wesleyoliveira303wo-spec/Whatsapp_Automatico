@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import UserAvatar from '@/components/UserAvatar';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
-import CompanySettingsTab from '@/components/CompanySettingsTab';
 import ThemeToggle from '@/components/ThemeToggle';
 import { fadeInUp, staggerContainer } from '@/lib/motion';
 
@@ -53,22 +52,24 @@ function ProfileSection({
  *   aqui, isso é `UserManagementService`/RH).
  * - Segurança: `ChangePasswordForm` reaproveitado (mesma lógica de
  *   `/change-password`) + Sair.
- * - Empresa: nome do tenant (`CompanySettingsTab`). Nasceu como aba própria
- *   de Configurações e foi movida para CÁ na 2ª rodada (pedido do fundador,
- *   2026-08-27): um único campo não sustentava uma aba inteira, e o dado
- *   aparece logo acima no cabeçalho ("Dono · Empresa X") — fica junto do
- *   contexto onde já era lido. Edição continua exigindo `tenant:manage`
- *   (hoje só OWNER); os demais veem o campo em somente-leitura.
  * - Preferências: tema (`ThemeToggle`, já existente — por navegador, não
  *   por conta, ver auditoria). Notificações NÃO existem no backend hoje —
  *   não inventadas aqui.
+ *
+ * A seção "Empresa" que existia aqui SAIU na Reestruturação de
+ * Configurações, Fase 4 (2026-08-27): o nome do tenant é dado da EMPRESA,
+ * não da pessoa, e agora vive em Configurações › Dados da empresa. Mantê-lo
+ * nos dois lugares criaria duas telas salvando o mesmo campo. O nome da
+ * empresa continua VISÍVEL aqui (linha "Cargo · Empresa"), como contexto de
+ * leitura — só não é editável por aqui.
+ *
+ * `canManageCompany` continua no contrato (opcional, sem uso interno) para
+ * não quebrar chamadores; será removido quando não houver mais nenhum.
  */
-export default function ProfileSettingsTab({
-  canManageCompany = false,
-}: {
-  /** `tenant:manage` — hoje só OWNER. Controla a edição do nome da empresa. */
+export default function ProfileSettingsTab(_props: {
+  /** @deprecated Fase 4 (2026-08-27) — a edição do nome da empresa migrou para Configurações › Dados da empresa. */
   canManageCompany?: boolean;
-}): JSX.Element | null {
+} = {}): JSX.Element | null {
   const router = useRouter();
   const { user } = useMe();
   const [companyName, setCompanyName] = useState<string | null>(null);
@@ -283,9 +284,6 @@ export default function ProfileSettingsTab({
         </div>
       </ProfileSection>
 
-      <ProfileSection title="Empresa" description="Dados do workspace que sua equipe compartilha.">
-        <CompanySettingsTab canManage={canManageCompany} />
-      </ProfileSection>
 
       <ProfileSection title="Preferências" description="Aparência do Dashboard, neste navegador.">
         <div className="flex items-center justify-between">

@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   Table,
   TableHeader,
@@ -174,6 +175,22 @@ export default function UserManagementPanel(): JSX.Element {
   // Reset de senha por linha (um de cada vez)
   const [resetUserId, setResetUserId] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState('');
+
+  /**
+   * Confirmações de ações administrativas — Reestruturação de Configurações,
+   * Fase 2 (2026-08-27). A auditoria encontrou suspender / redefinir senha /
+   * alterar cargo executando em UM clique, sem aviso. Cada pendência guarda
+   * o ALVO (não só um booleano), para o diálogo poder nomear quem será
+   * afetado — confirmação que não diz em quem vai mexer é quase tão ruim
+   * quanto nenhuma. "Reativar" segue sem confirmação de propósito: é
+   * reversível e restaura acesso, não tira.
+   */
+  const [pendingSuspend, setPendingSuspend] = useState<ManagedUser | null>(null);
+  const [pendingReset, setPendingReset] = useState<ManagedUser | null>(null);
+  const [pendingRoleChange, setPendingRoleChange] = useState<{
+    user: ManagedUser;
+    newRole: ManagedUserRole;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -363,10 +380,15 @@ export default function UserManagementPanel(): JSX.Element {
                     ) : (
                       <select
                         value={user.role}
+                        // Fase 2 (2026-08-27): antes aplicava a mudança de
+                        // cargo direto no `onChange` — um clique errado no
+                        // campo já rebaixava/promovia alguém. Agora só ABRE
+                        // a confirmação; quem aplica é o diálogo.
                         onChange={(event) =>
-                          void runRowAction(() =>
-                            changeUserRole(user.id, event.target.value as ManagedUserRole),
-                          )
+                          setPendingRoleChange({
+                            user,
+                            newRole: event.target.value as ManagedUserRole,
+                          })
                         }
                         className={cn(
                           'rounded-[7px] border border-transparent bg-transparent py-1 text-[13px] text-foreground-secondary transition-colors hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -433,9 +455,13 @@ export default function UserManagementPanel(): JSX.Element {
                       ) : (
                         <RowActionsMenu
                           user={user}
-                          onSuspend={() => void runRowAction(() => suspendUser(user.id))}
+                          // Fase 2 (2026-08-27): suspender e redefinir senha
+                          // passam pela confirmação; reativar não (restaura
+                          // acesso, é reversível — confirmar o inofensivo
+                          // treina a pessoa a clicar "sim" sem ler).
+                          onSuspend={() => setPendingSuspend(user)}
                           onReactivate={() => void runRowAction(() => reactivateUser(user.id))}
-                          onResetPassword={() => setResetUserId(user.id)}
+                          onResetPassword={() => setPendingReset(user)}
                         />
                       ))}
                   </TableCell>
@@ -459,6 +485,55 @@ export default function UserManagementPanel(): JSX.Element {
           )}
         </div>
       )}
+
+      {/*
+        Confirmações das ações administrativas de risco — Fase 2
+        (2026-08-27). Cada uma NOMEIA o alvo e diz o efeito real; o botão
+        carrega o rótulo da ação, nunca "Confirmar".
+      */}
+      <ConfirmDialog
+        open={pendingSuspend !== null}
+        onOpenChange={(open) => !open && setPendingSuspend(null)}
+        title={`Suspender ${pendingSuspend?.email}?`}
+        description="A pessoa perde o acesso ao Francis imediatamente e as sessões abertas dela param de funcionar. O histórico e as conversas são preservados. Você pode reativar a conta depois."
+        confirmLabel="Suspender acesso"
+        pendingLabel="Suspendendo…"
+        onConfirm={async () => {
+          const target = pendingSuspend;
+          if (target) await runRowAction(() => suspendUser(target.id));
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingReset !== null}
+        onOpenChange={(open) => !open && setPendingReset(null)}
+        title={`Redefinir a senha de ${pendingReset?.email}?`}
+        description="A senha atual deixa de funcionar na hora. Você define uma senha provisória no próximo passo e precisa entregá-la à pessoa, que será obrigada a trocá-la no primeiro acesso. Não dá para recuperar a senha antiga."
+        confirmLabel="Definir senha provisória"
+        onConfirm={() => {
+          if (pendingReset) setResetUserId(pendingReset.id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingRoleChange !== null}
+        onOpenChange={(open) => !open && setPendingRoleChange(null)}
+        title={`Alterar o cargo de ${pendingRoleChange?.user.email}?`}
+        description={
+          pendingRoleChange
+            ? `O cargo muda de "${ROLE_LABELS[pendingRoleChange.user.role]}" para "${ROLE_LABELS[pendingRoleChange.newRole]}", alterando o que a pessoa pode ver e fazer no Francis. Você pode alterar de novo depois.`
+            : ''
+        }
+        confirmLabel="Alterar cargo"
+        pendingLabel="Alterando…"
+        variant="default"
+        onConfirm={async () => {
+          const change = pendingRoleChange;
+          if (change) {
+            await runRowAction(() => changeUserRole(change.user.id, change.newRole));
+          }
+        }}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,15 @@ export default function SessionActions({ sessionName, status }: SessionActionsPr
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  /**
+   * Fase 2 da Reestruturação de Configurações (2026-08-27): desconectar
+   * executava em UM clique. Não é destrutivo (dá para reconectar), mas
+   * DERRUBA O ATENDIMENTO — enquanto estiver fora, nenhuma mensagem daquele
+   * número é recebida ou respondida. Por isso ganha confirmação, com peso
+   * menor que "remover": texto sem "não pode ser desfeita" e botão não
+   * destrutivo.
+   */
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   async function run(action: 'connect' | 'disconnect'): Promise<void> {
     setPendingAction(action);
@@ -94,7 +104,7 @@ export default function SessionActions({ sessionName, status }: SessionActionsPr
             type="button"
             variant="outline"
             size="cta"
-            onClick={() => void run('disconnect')}
+            onClick={() => setConfirmDisconnectOpen(true)}
             disabled={busy}
           >
             {pendingAction === 'disconnect' ? 'Desconectando…' : 'Desconectar'}
@@ -112,6 +122,17 @@ export default function SessionActions({ sessionName, status }: SessionActionsPr
         </Button>
       </div>
       {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+
+      <ConfirmDialog
+        open={confirmDisconnectOpen}
+        onOpenChange={setConfirmDisconnectOpen}
+        title={`Desconectar ${sessionName}?`}
+        description="Este WhatsApp para de receber e responder mensagens enquanto estiver desconectado. As conversas e o histórico são preservados, e você pode reconectar escaneando o QR Code de novo."
+        confirmLabel="Desconectar"
+        pendingLabel="Desconectando…"
+        variant="default"
+        onConfirm={() => run('disconnect')}
+      />
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>

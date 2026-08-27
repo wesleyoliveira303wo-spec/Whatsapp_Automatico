@@ -6,6 +6,7 @@ import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
 import ContactAvatar from '@/components/ContactAvatar';
+import UserAvatar from '@/components/UserAvatar';
 import StatusDot from '@/components/StatusDot';
 import FrancisLogo from '@/components/brand/FrancisLogo';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -99,8 +100,7 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
   ];
 
   const settingsHref = `${base}/settings`;
-  const settingsActive =
-    router.asPath === settingsHref || router.asPath.startsWith(`${settingsHref}?`);
+  const settingsActive = router.asPath.startsWith(settingsHref);
 
   return (
     <aside className="flex w-14 shrink-0 flex-col items-center border-r border-border bg-background pb-3 pt-[10px]">
@@ -119,10 +119,11 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
           WhatsApps já com esta sessão aberta: status, número, histórico,
           conectar/desconectar). De lá, "← Todos os WhatsApps" lista as
           demais sessões, permitindo alternar. A identidade da PESSOA não
-          se perde: vive em Configurações → Perfil, pela engrenagem.
+          se perde: vive em `/perfil`, area propria desde a Fase 4 da
+          Reestruturação de Configurações.
       */}
       <Link
-        href={`${settingsHref}?tab=whatsapps&session=${encodeURIComponent(sessionName)}`}
+        href={`${settingsHref}/whatsapps?session=${encodeURIComponent(sessionName)}`}
         title={`${sessionName} — dados desta conexão`}
         aria-label={`${sessionName} — dados desta conexão`}
         className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -203,6 +204,33 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
         })}
       </nav>
 
+      {/*
+        Perfil — Reestruturação de Configurações, Fase 4 (2026-08-27).
+        Precisa de porta PRÓPRIA no rail porque o círculo do topo é a
+        identidade da SESSÃO (foto do WhatsApp), não da pessoa: sem este
+        item, "eu" não teria acesso nenhum depois que Perfil saiu de
+        Configurações. Avatar da PESSOA (iniciais/foto), coerente com o que
+        o item representa.
+      */}
+      {user && (
+        <Link
+          href="/perfil"
+          title="Meu perfil"
+          aria-label="Meu perfil"
+          className={cn(
+            'mb-1 flex h-[38px] w-[38px] items-center justify-center rounded-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            router.asPath.startsWith('/perfil') ? 'bg-muted' : 'hover:bg-muted',
+          )}
+        >
+          <UserAvatar
+            email={user.email}
+            name={user.name}
+            avatarUrl={user.avatarUrl}
+            className="h-[26px] w-[26px] text-[10px]"
+          />
+        </Link>
+      )}
+
       <ThemeToggle className="h-[38px] w-[38px] rounded-[11px]" />
       {/*
         Reorganização Perfil/Configurações (2026-08-27) — antes abria um
@@ -216,13 +244,14 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
         ganha o MESMO destaque verde dos outros destinos quando ativa
         (incluindo o indicador deslizante), em vez do cinza discreto de
         antes: é um destino como os demais, não um botão de canto.
-        6ª rodada (pedido explícito do fundador): `?tab=profile` explícito
-        na URL — a engrenagem deve abrir SEMPRE em Perfil, nunca na última
-        aba que o avatar deixou selecionada (ver correção de sincronização
-        de estado na docstring de `SettingsTabs`).
+        Reestruturação de Configurações, Fase 3/4 (2026-08-27): Perfil SAIU
+        de Configurações (virou `/perfil`, area propria — ver
+        `CONFIGURACOES_REDESIGN_PLAN.md`), entao a engrenagem abre a primeira
+        secao de WORKSPACE que o papel alcança. Cada secao tem URL propria
+        agora; sem `?tab=`, o servidor resolve e normaliza a URL.
       */}
       <Link
-        href={`${settingsHref}?tab=profile`}
+        href={settingsHref}
         title="Configurações"
         aria-label="Configurações"
         className={cn(

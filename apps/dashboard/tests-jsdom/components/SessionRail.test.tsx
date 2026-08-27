@@ -98,7 +98,7 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     const link = screen.getByLabelText('vendas — dados desta conexão');
     expect(link).toHaveAttribute(
       'href',
-      '/sessions/vendas/settings?tab=whatsapps&session=vendas',
+      '/sessions/vendas/settings/whatsapps?session=vendas',
     );
   });
 
@@ -141,7 +141,7 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
     render(<SessionRail sessionName="vendas" />);
     const link = screen.getByLabelText('Configurações');
-    expect(link).toHaveAttribute('href', '/sessions/vendas/settings?tab=profile');
+    expect(link).toHaveAttribute('href', '/sessions/vendas/settings');
   });
 
   it('na tela de Configurações, a engrenagem fica destacada (verde) como os demais destinos', () => {

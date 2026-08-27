@@ -10,7 +10,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   const sessionName = context.params?.sessionName;
   const destination =
     typeof sessionName === 'string'
-      ? `/sessions/${encodeURIComponent(sessionName)}/settings?tab=audit`
+      ? `/sessions/${encodeURIComponent(sessionName)}/settings/auditoria`
       : '/';
   return { redirect: { destination, permanent: false } };
 };

@@ -46,7 +46,7 @@ export const getServerSideProps: GetServerSideProps<HomeProps> = async (context)
    * aba "WhatsApps" de Configurações ficaram quase idênticas — mesma
    * aparência, mesma lista — o que confundia de verdade. A lista passou a
    * viver em Configurações (`WhatsAppsSettingsTab`), e esta rota deixou de
-   * ser um destino: manda para a LISTA de lá (`?tab=whatsapps`, sem
+   * ser um destino: manda para a LISTA de lá (`/settings/whatsapps`, sem
    * `?session=`), que é a tela de entrada pedida pelo fundador — com o rail
    * lateral já presente, mostrando todas as conexões para escolher em qual
    * entrar. Precisa de UMA sessão só para compor a URL (o caminho é
@@ -70,7 +70,7 @@ export const getServerSideProps: GetServerSideProps<HomeProps> = async (context)
     if (typeof first === 'string' && first !== '') {
       return {
         redirect: {
-          destination: `/sessions/${encodeURIComponent(first)}/settings?tab=whatsapps`,
+          destination: `/sessions/${encodeURIComponent(first)}/settings/whatsapps`,
           permanent: false,
         },
       };

@@ -1,19 +1,20 @@
 import type { GetServerSidePropsContext } from 'next';
-import { getServerSideProps } from '../../pages/settings';
+import { getServerSideProps } from '../../pages/settings/[[...section]]';
+import { resolveSectionFromQuery } from '../../pages/sessions/[sessionName]/settings/[[...section]]';
 import { setSessionCookie, SESSION_COOKIE_NAME } from '../../lib/dashboardSession';
 
 /**
- * Reorganização Perfil/Configurações, 2ª rodada (2026-08-27) — "Perfil" é a
- * aba PADRÃO ao abrir pela engrenagem (pedido do fundador: a engrenagem abre
- * no que é da pessoa, não na administração do workspace), e cada aba mantém
- * seu gate de papel.
+ * Reestruturação de Configurações, Fase 3 (2026-08-27, ver
+ * `CONFIGURACOES_REDESIGN_PLAN.md`): a barra de abas com estado em
+ * `useState` virou SEÇÕES com URL própria. Estes testes travam as duas
+ * garantias que a auditoria pediu:
  *
- * Vive em `tests-jsdom` (não em `tests/`) só por causa do transform: este
- * projeto do Jest é o que converte TSX — `pages/settings.tsx` tem JSX, e
- * importá-lo do projeto `dashboard` (sem transform de TSX) falha com
- * "Unexpected token '<'".
+ * - **deep-link**: a seção vem da URL, sobrevive a F5 e é favoritável;
+ * - **gate no servidor**: uma URL que o papel não alcança nunca renderiza —
+ *   redireciona para a primeira seção visível (defesa em profundidade; a
+ *   barreira real continua sendo a API).
  */
-describe('/settings (getServerSideProps)', () => {
+describe('/settings/[[...section]] (getServerSideProps)', () => {
   const originalSecret = process.env.DASHBOARD_SESSION_SECRET;
 
   beforeEach(() => {
@@ -26,21 +27,18 @@ describe('/settings (getServerSideProps)', () => {
 
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const headers: Record<string, string> = {};
-    const res = {
-      setHeader: (name: string, value: string) => {
-        headers[name] = value;
-      },
-    } as never;
-    setSessionCookie(res, session);
+    setSessionCookie({ setHeader: (n: string, v: string) => (headers[n] = v) } as never, session);
     return headers['Set-Cookie'].match(new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`))![1];
   }
 
   function contextFor(
     session: Parameters<typeof setSessionCookie>[1],
+    params: Record<string, unknown> = {},
     query: Record<string, string> = {},
   ): GetServerSidePropsContext {
     return {
       req: { cookies: { [SESSION_COOKIE_NAME]: cookieFor(session) } },
+      params,
       query,
     } as unknown as GetServerSidePropsContext;
   }
@@ -52,38 +50,93 @@ describe('/settings (getServerSideProps)', () => {
     user: { id: 'u1', email: 'a@b.com', role, mustChangePassword: false },
   });
 
-  it('sessão de PESSOA sem ?tab: abre em "profile"', async () => {
+  it('URL sem seção: normaliza para a primeira seção visível', async () => {
     const result = await getServerSideProps(contextFor(userSession('owner')));
-    expect(result).toEqual({ props: { role: 'owner', hasUser: true, initialTab: 'profile' } });
+    expect(result).toEqual({
+      redirect: { destination: '/settings/empresa', permanent: false },
+    });
   });
 
-  it('sessão de MÁQUINA (API key, sem pessoa): cai em "whatsapps"', async () => {
+  it('deep-link: a seção pedida na URL é a que renderiza (sobrevive a F5)', async () => {
     const result = await getServerSideProps(
-      contextFor({ tenantId: 'tenant-1', apiKey: 'chave-1' }),
+      contextFor(userSession('owner'), { section: ['equipe'] }),
     );
-    expect(result).toEqual({ props: { role: null, hasUser: false, initialTab: 'whatsapps' } });
+    expect(result).toEqual({ props: { role: 'owner', section: 'equipe' } });
   });
 
-  it('?tab=team com papel sem gestão: cai de volta em "profile"', async () => {
-    const result = await getServerSideProps(contextFor(userSession('operator'), { tab: 'team' }));
-    expect(result).toEqual({ props: { role: 'operator', hasUser: true, initialTab: 'profile' } });
+  it('GATE: operator pedindo /settings/equipe é redirecionado — a seção nunca renderiza', async () => {
+    const result = await getServerSideProps(
+      contextFor(userSession('operator'), { section: ['equipe'] }),
+    );
+    expect(result).toEqual({
+      redirect: { destination: '/settings/empresa', permanent: false },
+    });
   });
 
-  it('?tab=team com owner: respeita a aba pedida', async () => {
-    const result = await getServerSideProps(contextFor(userSession('owner'), { tab: 'team' }));
-    expect(result).toEqual({ props: { role: 'owner', hasUser: true, initialTab: 'team' } });
+  it('GATE: só owner alcança /settings/seguranca', async () => {
+    const asOwner = await getServerSideProps(
+      contextFor(userSession('owner'), { section: ['seguranca'] }),
+    );
+    expect(asOwner).toEqual({ props: { role: 'owner', section: 'seguranca' } });
+
+    const asAdmin = await getServerSideProps(
+      contextFor(userSession('administrator'), { section: ['seguranca'] }),
+    );
+    expect(asAdmin).toEqual({
+      redirect: { destination: '/settings/empresa', permanent: false },
+    });
   });
 
-  it('?tab=company (aba extinta — virou seção de Perfil): cai em "profile"', async () => {
-    const result = await getServerSideProps(contextFor(userSession('owner'), { tab: 'company' }));
-    expect(result).toEqual({ props: { role: 'owner', hasUser: true, initialTab: 'profile' } });
+  it('manager alcança auditoria; operator não', async () => {
+    const asManager = await getServerSideProps(
+      contextFor(userSession('manager'), { section: ['auditoria'] }),
+    );
+    expect(asManager).toEqual({ props: { role: 'manager', section: 'auditoria' } });
+
+    const asOperator = await getServerSideProps(
+      contextFor(userSession('operator'), { section: ['auditoria'] }),
+    );
+    expect(asOperator).toEqual({
+      redirect: { destination: '/settings/empresa', permanent: false },
+    });
+  });
+
+  it('seção inexistente na URL: cai na primeira visível, sem 500', async () => {
+    const result = await getServerSideProps(
+      contextFor(userSession('owner'), { section: ['inventada'] }),
+    );
+    expect(result).toEqual({
+      redirect: { destination: '/settings/empresa', permanent: false },
+    });
   });
 
   it('sem sessão: redireciona para /login', async () => {
     const result = await getServerSideProps({
       req: { cookies: {} },
+      params: {},
       query: {},
     } as unknown as GetServerSidePropsContext);
     expect(result).toEqual({ redirect: { destination: '/login', permanent: false } });
+  });
+});
+
+describe('resolveSectionFromQuery — compatibilidade com o `?tab=` antigo', () => {
+  it('mapeia os `?tab=` da barra de abas antiga para as seções novas', () => {
+    expect(resolveSectionFromQuery(undefined, 'team', 'owner')).toBe('equipe');
+    expect(resolveSectionFromQuery(undefined, 'audit', 'owner')).toBe('auditoria');
+    expect(resolveSectionFromQuery(undefined, 'whatsapps', 'owner')).toBe('whatsapps');
+    expect(resolveSectionFromQuery(undefined, 'company', 'owner')).toBe('empresa');
+  });
+
+  it('`?tab=profile` (Perfil saiu de Configurações na Fase 4) cai numa seção de workspace', () => {
+    expect(resolveSectionFromQuery(undefined, 'profile', 'owner')).toBe('empresa');
+  });
+
+  it('a seção da URL tem precedência sobre o `?tab=` legado', () => {
+    expect(resolveSectionFromQuery(['auditoria'], 'team', 'owner')).toBe('auditoria');
+  });
+
+  it('`?tab=` legado também respeita o gate de papel', () => {
+    expect(resolveSectionFromQuery(undefined, 'team', 'operator')).toBe('empresa');
   });
 });

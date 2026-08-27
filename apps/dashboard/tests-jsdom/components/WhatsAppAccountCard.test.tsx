@@ -89,7 +89,7 @@ describe('WhatsAppAccountCard (Milestone 6, Bloco M6G)', () => {
     const manageLink = screen.getByRole('link', { name: /gerenciar/i });
     expect(manageLink).toHaveAttribute(
       'href',
-      '/sessions/vendas/settings?tab=whatsapps&session=vendas',
+      '/sessions/vendas/settings/whatsapps?session=vendas',
     );
     // "Cara de botão": renderizado via `Button asChild` — tem as classes de
     // botão (borda), não é um texto solto com opacidade condicionada a hover.

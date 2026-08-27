@@ -1859,3 +1859,78 @@ Bitmask de dias escolhido sobre um array de strings: tamanho constante (1 inteir
 - **Bug visual não relacionado, reportado no meio da sessão**: o painel de contexto da conversa (`ConversationContextPanel`) mudava de altura dependendo de o contato estar salvo ou não — sem `truncate`, um contato NÃO salvo mostra o telefone completo como "nome" (mais longo que um nome salvo curto) e podia quebrar para 2 linhas. Corrigido com `truncate` no nome, mesmo tratamento já usado na lista de conversas.
 
 **Consequências do adendo**: `AccountMenu.tsx` permanece removido. Novos: `SettingsTabs.tsx` (conteúdo de Configurações, compartilhado pelas 2 montagens), `UserAvatar.tsx` já existia mas seu uso no rail foi revertido. Testes de regressão para cada achado (`sessionEntryRedirect.test.ts`, `indexRedirect.test.tsx`, `SettingsTabs.test.tsx`, casos novos em `SessionRail.test.tsx`/`WhatsAppAccountCard.test.tsx`/`SessionHeader.test.tsx`/`ConversationContextPanel.test.tsx`). Todas as correções validadas AO VIVO no navegador, com contas de teste criadas e removidas do banco ao final de cada rodada — nunca só por teste automatizado. Suíte completa do monorepo ao final de todas as rodadas: 269/271 suítes, 2744/2748 testes verdes (as 2 suítes/4 casos restantes continuam sendo as MESMAS falhas pré-existentes do ADR #105, em arquivos nunca tocados nesta reorganização). `tsc --noEmit`/`eslint` limpos em `apps/api` e `apps/dashboard`.
+
+---
+
+## 107. 2026-08-27 – Configurações: central administrativa (auditoria + sidebar + confirmações)
+
+**Status**: Accepted
+
+**Context**: auditoria completa da aba Configurações pedida pelo fundador, com inventário
+item a item (ver `CONFIGURACOES_REDESIGN_PLAN.md`). Achado estrutural: a aba **nunca foi
+projetada, foi acumulada** — nasceu como a tela de conexão de UMA sessão (M6H-1) e foi
+recebendo Equipe/Auditoria/Tags/Perfil como abas ao longo dos meses. Achado de dados: o
+model `Tenant` tem só `name` e `apiKeyHash`; **não existe configuração de empresa no
+produto** — tudo que é configuração real (horário de atendimento, fuso, autonomia da IA)
+vive **por sessão**, dentro do Cérebro da IA.
+
+**Correção de uma conclusão errada da própria auditoria (registrada de propósito)**: a
+auditoria apontou `user:manage_admins` como falha de segurança ("qualquer administrator
+poderia promover outro administrator"). A investigação da Fase 1 provou o CONTRÁRIO: a
+regra já é imposta pela hierarquia `outranks` (estrita: `>`, não `>=`), aplicada no
+`UserManagementService` em todas as mutações, com 19 testes verdes cobrindo exatamente
+os cenários pedidos. Decisão: **não implementar a permissão** — criaria uma segunda fonte
+de verdade sobre "quem gerencia quem", coexistindo com a hierarquia, que é como brechas
+nascem. As 3 permissões mortas (`user:manage_admins`, `conversation:reassign`,
+`ownership:transfer`) foram DOCUMENTADAS no catálogo explicando por que não são aplicadas.
+
+**Decisão — confirmação proporcional ao risco**: novo `ConfirmDialog` (extraído do
+diálogo que `SessionActions` já usava para "Remover sessão" — mesma casca, generalizada).
+Aplicado a suspender usuário, redefinir senha de terceiro, alterar cargo e desconectar
+WhatsApp — as 4 ações que a auditoria encontrou executando em UM clique. Cada diálogo
+NOMEIA o alvo e diz o efeito real; o botão carrega o rótulo da ação ("Suspender acesso"),
+nunca "Confirmar". **Reativar usuário e reconectar seguem sem confirmação de propósito**:
+confirmar o inofensivo treina a pessoa a clicar "sim" sem ler, e aí a confirmação que
+importa também passa batida.
+
+**Decisão — sidebar interna com rota por seção**: a barra de abas horizontal virou uma
+sidebar com grupos rotulados (EMPRESA / CANAIS / PESSOAS / REGISTROS). Dois motivos: não
+escalava de 4 para 6 seções, e MUDAVA DE FORMA conforme o papel (operator via 2 abas,
+owner via 4 — parecia um resto, não um lugar). Os grupos comunicam o ESCOPO que faltava.
+Cada seção é uma URL real (`/settings/equipe`, `/sessions/:s/settings/equipe`) via
+catch-all opcional `[[...section]]` — resolve o deep-link quebrado (a aba vivia em
+`useState`; F5 voltava sempre para a primeira). `SETTINGS_SECTIONS` é fonte ÚNICA:
+sidebar, página e gate de rota leem dela, para navegação e permissão nunca divergirem.
+O `?tab=` antigo continua funcionando, mapeado para as seções novas.
+
+**Decisão — Perfil vira área própria (`/perfil`)**: "eu" (conta, senha, sair,
+preferências) saiu de Configurações, que passa a ser exclusivamente workspace. Ganhou
+porta própria no rail — necessária porque o círculo do topo é a identidade da SESSÃO
+(foto do WhatsApp), não da pessoa. A edição do nome da empresa saiu do Perfil e vive só
+em Configurações › Dados da empresa (o nome continua VISÍVEL no Perfil, como contexto de
+leitura) — evita duas telas salvando o mesmo campo.
+
+**Decisão — "Atendimento" como ponte honesta, não duplicação**: o horário de atendimento
+continua sendo editado no formulário único do Cérebro da IA; a seção nova lista as
+sessões e leva ao lugar certo. Duplicar o formulário criaria dois lugares salvando o
+mesmo campo. Mover de vez exige antes decidir se passa a existir horário padrão do tenant
+(com a sessão sobrescrevendo) — decisão de produto + migration, registrada como fase
+futura. **"Segurança"** mostra só as políticas que o backend de fato impõe, como leitura;
+"sessões ativas/dispositivos" NÃO foi inventada (o dado existe em `RefreshToken`, mas não
+há endpoint).
+
+**Consequências**: zero mudança de lógica de negócio (WhatsApp/IA/Campanhas/Conversas/
+Pipeline intactos), zero migration, zero endpoint novo. Novos: `SettingsSidebar`,
+`SettingsLayout`, `ConfirmDialog`, `AtendimentoSettingsTab`, `SecuritySettingsTab`,
+`pages/perfil.tsx`, rotas `[[...section]]`. Removido: `SettingsTabs` (substituído).
+Testes novos: gate de rota por papel e deep-link (`settingsPage.test.tsx`, 11 casos),
+sidebar/RBAC na UI (`SettingsSidebar.test.tsx`, 9 casos), confirmações
+(`UserManagementPanel.test.tsx`, +4). `web-design-guidelines` rodada sobre a navegação
+nova — 1 achado real corrigido (título de card em `span` -> `h3`). Suíte: 270/272 suítes,
+2763/2767 verdes (as 2 restantes são as MESMAS falhas pré-existentes do ADR #105).
+Validado ao vivo no navegador: sidebar, deep-link com F5, Perfil separado, confirmação
+nomeando o alvo e cancelamento não executando a ação.
+
+**Pendências registradas**: timezone/idioma do tenant (migration); promover o horário de
+atendimento de vez; sessões ativas (endpoints); branding/logo; exportação e retenção de
+dados. Todas no `CONFIGURACOES_REDESIGN_PLAN.md` com prioridade.

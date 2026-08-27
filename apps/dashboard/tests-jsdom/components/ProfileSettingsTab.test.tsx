@@ -83,24 +83,39 @@ describe('ProfileSettingsTab', () => {
 
   // 2ª rodada (2026-08-27): "Empresa" deixou de ser aba própria e virou uma
   // seção DENTRO de Perfil.
-  it('inclui a seção Empresa (não é mais uma aba separada)', async () => {
+  /**
+   * Reestruturação de Configurações, Fase 4 (2026-08-27): a EDIÇÃO do nome
+   * da empresa saiu do Perfil (é dado da empresa, não da pessoa) e passou a
+   * viver só em Configurações › Dados da empresa. Mantê-la nos dois lugares
+   * criaria duas telas salvando o mesmo campo.
+   */
+  it('NÃO edita o nome da empresa aqui (migrou para Configurações › Dados da empresa)', async () => {
     mockUseMe.mockReturnValue({
       user: { id: 'u1', email: 'a@b.com', role: 'owner', mustChangePassword: false },
     });
-    render(<ProfileSettingsTab canManageCompany />);
-    await waitFor(() => {
-      expect(screen.getByText('Empresa')).toBeInTheDocument();
-      expect(screen.getByLabelText('Nome da empresa')).toBeInTheDocument();
-    });
+    render(<ProfileSettingsTab />);
+    await waitFor(() => expect(screen.getByText('Minha conta')).toBeInTheDocument());
+    expect(screen.queryByLabelText('Nome da empresa')).not.toBeInTheDocument();
   });
 
-  it('sem tenant:manage: campo da empresa fica somente-leitura', async () => {
+  it('mas CONTINUA mostrando o nome da empresa como contexto de leitura', async () => {
     mockUseMe.mockReturnValue({
-      user: { id: 'u1', email: 'a@b.com', role: 'operator', mustChangePassword: false },
+      user: { id: 'u1', email: 'a@b.com', role: 'owner', mustChangePassword: false },
     });
-    render(<ProfileSettingsTab canManageCompany={false} />);
-    await waitFor(() => {
-      expect(screen.getByLabelText('Nome da empresa')).toBeDisabled();
+    render(<ProfileSettingsTab />);
+    await waitFor(() => expect(screen.getByText(/Empresa Teste/)).toBeInTheDocument());
+  });
+
+  it('as 3 seções do Perfil são só sobre a PESSOA (conta, segurança, preferências)', async () => {
+    mockUseMe.mockReturnValue({
+      user: { id: 'u1', email: 'a@b.com', role: 'owner', mustChangePassword: false },
     });
+    render(<ProfileSettingsTab />);
+    await waitFor(() => expect(screen.getByText('Minha conta')).toBeInTheDocument());
+    expect(screen.getByText('Segurança')).toBeInTheDocument();
+    expect(screen.getByText('Preferências')).toBeInTheDocument();
+    // Nada de workspace aqui: equipe/auditoria/WhatsApps são Configurações.
+    expect(screen.queryByText('Equipe')).not.toBeInTheDocument();
+    expect(screen.queryByText('Auditoria')).not.toBeInTheDocument();
   });
 });

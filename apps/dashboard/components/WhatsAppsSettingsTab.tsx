@@ -70,11 +70,12 @@ export default function WhatsAppsSettingsTab(): JSX.Element {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[13px] text-muted-foreground">
-          Conecte e gerencie os números que o Francis atende.
-        </p>
-        {sessions.length > 0 && (
+      {/* Sem parágrafo de intro aqui: o `SettingsLayout` já mostra o título
+          + descrição da seção ("Conecte e administre os números que o
+          Francis atende.") logo acima — repetir quase a mesma frase criava
+          a "mensagem duplicada" que o usuário reportou (2026-08-27). */}
+      {sessions.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
           <ConnectWhatsAppDialog
             trigger={
               <Button size="sm">
@@ -83,8 +84,8 @@ export default function WhatsAppsSettingsTab(): JSX.Element {
               </Button>
             }
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {errorMessage && (
         <p role="alert" aria-live="polite" className="mb-4 text-sm text-destructive">

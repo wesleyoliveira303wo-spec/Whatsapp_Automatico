@@ -43,7 +43,7 @@ const AVATAR_TINT: Record<WhatsAppSessionSummary['status'], string> = {
  * nome/número/status) ENTRA na sessão — Dashboard completo, mesmo destino de
  * sempre; "Gerenciar" é um botão de verdade (`Button asChild`, sempre
  * visível, sem depender de hover para ser descoberto) que leva à DESCRIÇÃO
- * daquela conexão (`/sessions/:s/settings?tab=whatsapps&session=:s` — status,
+ * daquela conexão (`/sessions/:s/settings/whatsapps?session=:s` — status,
  * QR, histórico, conectar/desconectar).
  */
 export default function WhatsAppAccountCard({
@@ -52,7 +52,7 @@ export default function WhatsAppAccountCard({
 }: WhatsAppAccountCardProps): JSX.Element {
   const encodedName = encodeURIComponent(session.sessionName);
   const enterHref = `/sessions/${encodedName}`;
-  const manageHref = `/sessions/${encodedName}/settings?tab=whatsapps&session=${encodedName}`;
+  const manageHref = `/sessions/${encodedName}/settings/whatsapps?session=${encodedName}`;
 
   return (
     <motion.div variants={fadeInUp}>
