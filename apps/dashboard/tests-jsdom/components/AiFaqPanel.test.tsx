@@ -85,6 +85,40 @@ describe('AiFaqPanel (Cérebro da IA v3, Fase 2)', () => {
     expect(await screen.findByText('Vocês entregam?')).toBeInTheDocument();
   });
 
+  it('BUGFIX 2026-08-27: cria a FAQ normalmente mesmo renderizado DENTRO de outro <form> (AiProfilePanel) — nunca usa <form>/onSubmit próprio, só onClick', async () => {
+    (clientApi.fetchAiFaqEntries as jest.Mock).mockResolvedValue({ faqEntries: [] });
+    (clientApi.createAiFaqEntry as jest.Mock).mockResolvedValue({
+      faqEntry: faqEntry({ question: 'Vocês entregam?', answer: 'Sim', category: null }),
+    });
+    // Reproduz exatamente a estrutura real: AiProfilePanel envolve a aba
+    // FAQ num <form> próprio. Um <form> aninhado aqui dentro seria HTML
+    // inválido e o clique em "Adicionar pergunta" acabava disparando uma
+    // navegação de página inteira em vez do submit — mesmo bug real já
+    // corrigido na aba Preferências (`AiPreferencesPanel`).
+    render(
+      <form>
+        <AiFaqPanel sessionName="vendas" />
+      </form>,
+    );
+    await waitFor(() => expect(clientApi.fetchAiFaqEntries).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText('Pergunta'), {
+      target: { value: 'Vocês entregam?' },
+    });
+    fireEvent.change(screen.getByLabelText('Resposta'), { target: { value: 'Sim' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar pergunta' }));
+
+    await waitFor(() => {
+      expect(clientApi.createAiFaqEntry).toHaveBeenCalledWith(
+        'vendas',
+        'Vocês entregam?',
+        'Sim',
+        null,
+      );
+    });
+    expect(await screen.findByText('Vocês entregam?')).toBeInTheDocument();
+  });
+
   it('edita uma FAQ existente (inline) e salva', async () => {
     (clientApi.fetchAiFaqEntries as jest.Mock).mockResolvedValue({ faqEntries: [faqEntry()] });
     (clientApi.updateAiFaqEntry as jest.Mock).mockResolvedValue({

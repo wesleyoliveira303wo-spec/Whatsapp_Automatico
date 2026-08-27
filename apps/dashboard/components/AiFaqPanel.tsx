@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { Trash2, Pencil, Search, HelpCircle, Plus } from 'lucide-react';
 import { useAiFaqEntries } from '@/hooks/useAiFaqEntries';
 import { ClientApiError } from '@/lib/clientApi';
@@ -83,8 +83,7 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
     });
   }, [faqEntries, search, categoryFilter]);
 
-  async function handleCreate(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  async function handleCreate(): Promise<void> {
     const question = newForm.question.trim();
     const answer = newForm.answer.trim();
     if (!question || !answer) return;
@@ -150,10 +149,15 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
 
   return (
     <div>
-      <form
-        onSubmit={handleCreate}
-        className="mb-3.5 rounded-lg border border-border bg-card p-3.5"
-      >
+      {/*
+        BUGFIX 2026-08-27 (mesmo padrão de `AiPreferencesPanel.tsx`) — este
+        painel vive dentro do `<form>` de `AiProfilePanel` (aba "FAQ"). Um
+        `<form>` próprio aqui ficaria ANINHADO (HTML inválido) e o clique em
+        "Adicionar pergunta" disparava uma navegação de página inteira em vez
+        do submit esperado. Trocado `<form>`/`onSubmit` por `<div>`/botão
+        comum com `onClick`.
+      */}
+      <div className="mb-3.5 rounded-lg border border-border bg-card p-3.5">
         <div className="mb-3 flex items-center gap-2.5">
           <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -214,16 +218,17 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
               />
             </div>
             <Button
-              type="submit"
+              type="button"
               size="cta"
               className="shrink-0"
               disabled={creating || !newForm.question.trim() || !newForm.answer.trim()}
+              onClick={() => void handleCreate()}
             >
               {creating ? 'Adicionando…' : 'Adicionar pergunta'}
             </Button>
           </div>
         </div>
-      </form>
+      </div>
 
       {panelError && (
         <p className="mb-3.5 text-sm text-destructive" role="alert" aria-live="polite">
