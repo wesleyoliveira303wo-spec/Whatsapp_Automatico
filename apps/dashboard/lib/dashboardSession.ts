@@ -12,6 +12,9 @@ export interface DashboardSessionUser {
   email: string;
   role: string;
   mustChangePassword: boolean;
+  /** Reorganizacao Perfil/Configuracoes (2026-08-27) — ausentes ate o usuario preencher no Perfil. */
+  name?: string;
+  avatarUrl?: string;
 }
 
 /**
@@ -148,6 +151,9 @@ export function readSessionFromRequest(
           email: parsed.user.email,
           role: parsed.user.role,
           mustChangePassword: parsed.user.mustChangePassword === true,
+          name: typeof parsed.user.name === 'string' ? parsed.user.name : undefined,
+          avatarUrl:
+            typeof parsed.user.avatarUrl === 'string' ? parsed.user.avatarUrl : undefined,
         },
       };
     }

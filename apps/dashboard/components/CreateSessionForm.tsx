@@ -37,7 +37,15 @@ export default function CreateSessionForm({
     try {
       await connectSession(trimmed);
       onSubmitted?.();
-      await router.push(`/sessions/${encodeURIComponent(trimmed)}`);
+      // CORREÇÃO 2026-08-27 (Reorganização Perfil/Configurações): navegava
+      // para `/sessions/:name`, que passou a levar ao Dashboard da sessão
+      // (Conversas) — mas uma sessão RECÉM-CRIADA ainda não está conectada:
+      // a pessoa precisa escanear o QR Code primeiro. Manda direto para a
+      // tela de conexão DAQUELA sessão (aba WhatsApps de Configurações, já
+      // com a sessão selecionada), que é onde o QR Code vive — e dentro de
+      // `/sessions/:name/settings`, para o rail lateral continuar visível.
+      const encoded = encodeURIComponent(trimmed);
+      await router.push(`/sessions/${encoded}/settings?tab=whatsapps&session=${encoded}`);
     } catch (error) {
       const message =
         error instanceof ClientApiError ? bodyMessage(error.body) : 'Falha ao conectar sessão.';

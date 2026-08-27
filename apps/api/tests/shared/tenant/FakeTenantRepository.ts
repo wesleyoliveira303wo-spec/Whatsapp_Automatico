@@ -17,6 +17,20 @@ export class FakeTenantRepository implements TenantRepository {
     return Array.from(this.tenants.values()).find((t) => t.apiKeyHash === hash) ?? null;
   }
 
+  async create(input: { name: string }): Promise<Tenant> {
+    const tenant: Tenant = { id: `tenant-${this.tenants.size + 1}`, name: input.name, apiKeyHash: null };
+    this.tenants.set(tenant.id, tenant);
+    return tenant;
+  }
+
+  async update(id: string, changes: { name: string }): Promise<Tenant | undefined> {
+    const existing = this.tenants.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, name: changes.name };
+    this.tenants.set(id, updated);
+    return updated;
+  }
+
   /** Helper de teste, não faz parte da interface de produção. */
   seed(tenant: Tenant): void {
     this.tenants.set(tenant.id, tenant);

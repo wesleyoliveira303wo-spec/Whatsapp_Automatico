@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
 import { requireProtectedPageSession } from '@/lib/auth';
+import { callApi } from '@/lib/apiClient';
 import { useSessionsList } from '@/hooks/useSessionsList';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { pageTitle } from '@/lib/brand';
@@ -39,6 +40,45 @@ export const getServerSideProps: GetServerSideProps<HomeProps> = async (context)
   if (guard.kind === 'redirect') {
     return { redirect: guard.redirect };
   }
+
+  /**
+   * MESCLAGEM 2026-08-27 (4ª/5ª rodadas, pedido do fundador): esta tela e a
+   * aba "WhatsApps" de Configurações ficaram quase idênticas — mesma
+   * aparência, mesma lista — o que confundia de verdade. A lista passou a
+   * viver em Configurações (`WhatsAppsSettingsTab`), e esta rota deixou de
+   * ser um destino: manda para a LISTA de lá (`?tab=whatsapps`, sem
+   * `?session=`), que é a tela de entrada pedida pelo fundador — com o rail
+   * lateral já presente, mostrando todas as conexões para escolher em qual
+   * entrar. Precisa de UMA sessão só para compor a URL (o caminho é
+   * `/sessions/:s/settings`); qual delas é indiferente, pois a lista mostra
+   * todas.
+   *
+   * Continua renderizando (não redireciona) em UM caso: tenant sem NENHUMA
+   * sessão — é onde se conecta o primeiro WhatsApp, e sem esta tela não
+   * haveria por onde começar.
+   *
+   * Falha ABERTA de propósito: se a listagem falhar (API fora do ar, token
+   * expirado), renderiza a tela de sempre em vez de estourar — o estado de
+   * erro/carregamento já é tratado por `useSessionsList` no cliente.
+   */
+  try {
+    const { status, body } = await callApi<{ sessions?: { sessionName?: unknown }[] }>(
+      guard.session,
+      '',
+    );
+    const first = status === 200 ? body?.sessions?.[0]?.sessionName : undefined;
+    if (typeof first === 'string' && first !== '') {
+      return {
+        redirect: {
+          destination: `/sessions/${encodeURIComponent(first)}/settings?tab=whatsapps`,
+          permanent: false,
+        },
+      };
+    }
+  } catch {
+    // segue para a tela normal
+  }
+
   return { props: { tenantId: guard.session.tenantId } };
 };
 

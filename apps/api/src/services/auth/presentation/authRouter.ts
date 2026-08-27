@@ -15,6 +15,15 @@ const changePasswordBodySchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(1),
 });
+/** Reorganizacao Perfil/Configuracoes (2026-08-27) — os dois campos sao OPCIONAIS (PATCH parcial); pelo menos um precisa vir, senao nao ha o que atualizar. */
+const updateProfileBodySchema = z
+  .object({
+    name: z.string().trim().max(200).optional(),
+    avatarUrl: z.string().trim().max(2048).optional(),
+  })
+  .refine((body) => body.name !== undefined || body.avatarUrl !== undefined, {
+    message: 'informe name ou avatarUrl',
+  });
 
 /**
  * Router de autenticacao (a "portaria") — Milestone 5, Bloco M5C. Thin router
@@ -155,6 +164,25 @@ export function createAuthRouter(
     asyncHandler(async (req, res) => {
       const authUser = (req as RequestWithAuthUser).authUser;
       const user = authUser ? await authService.getMe(authUser.userId) : null;
+      if (!user) {
+        res.status(404).json({ error: 'user_not_found', message: 'Usuario nao encontrado.' });
+        return;
+      }
+      res.status(200).json({ user });
+    }),
+  );
+
+  // Reorganizacao Perfil/Configuracoes (2026-08-27) — o proprio usuario edita
+  // seu nome/foto. Nunca email/role/status (isso e RH, `usersRouter`).
+  router.patch(
+    '/me',
+    requireUser,
+    asyncHandler(async (req, res) => {
+      const body = validateOrRespond(updateProfileBodySchema, req.body, res);
+      if (!body) return;
+
+      const authUser = (req as RequestWithAuthUser).authUser;
+      const user = authUser ? await authService.updateProfile(authUser.userId, body) : null;
       if (!user) {
         res.status(404).json({ error: 'user_not_found', message: 'Usuario nao encontrado.' });
         return;

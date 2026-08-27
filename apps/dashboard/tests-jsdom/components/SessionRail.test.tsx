@@ -1,15 +1,12 @@
 /**
  * Redesign 2026-08-05 (R2) — teste do `SessionRail` (sucessor do
- * `SessionSidebar`, agora um rail vertical só de ícones). Renomeado de
- * `SessionSidebar.test.tsx` na Onda 3 do redesign (2026-08-24, P2), junto
- * da remoção do re-export órfão `components/SessionSidebar.tsx` — `git mv`
- * funciona normalmente neste ambiente, confirmado nesta sessão.
+ * `SessionSidebar`, agora um rail vertical só de ícones).
  *
- * Como o rail não tem mais rótulos visíveis (só ícone + `title`/
- * `aria-label`), as asserções usam `getByLabelText`/`getByTitle` em vez de
- * `getByText`. "Cérebro da IA"/"Respostas Rápidas"/"Equipe"/"Auditoria"
- * deixaram de ser itens do rail — viraram abas dentro de "IA"/"Configurações"
- * (cobertas por outros testes, não aqui).
+ * Reorganização Perfil/Configurações (2026-08-27, ver DECISIONS.md #106) —
+ * o círculo do topo deixou de mostrar a foto do WhatsApp conectado (não
+ * depende mais de `useSessionDetail`) e virou o avatar do USUÁRIO logado,
+ * com link para o Workspace (`/`); a engrenagem deixou de abrir um popover
+ * (`AccountMenu`, removido) e virou um link direto para `/settings`.
  */
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -18,8 +15,9 @@ import * as useMeModule from '../../hooks/useMe';
 import * as useWaitingForHumanModule from '../../hooks/useWaitingForHuman';
 import * as useSessionDetailModule from '../../hooks/useSessionDetail';
 
+let mockAsPath = '/sessions/vendas';
 jest.mock('next/router', () => ({
-  useRouter: () => ({ asPath: '/sessions/vendas' }),
+  useRouter: () => ({ asPath: mockAsPath }),
 }));
 
 jest.mock('../../hooks/useMe');
@@ -39,6 +37,7 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
       errorMessage: null,
       connected: true,
     });
+    mockAsPath = '/sessions/vendas';
   });
 
   it('mostra Conversas, Pipeline e Configurações para qualquer cargo', () => {
@@ -46,7 +45,7 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     render(<SessionRail sessionName="vendas" />);
     expect(screen.getByLabelText('Conversas')).toBeInTheDocument();
     expect(screen.getByLabelText('Pipeline')).toBeInTheDocument();
-    expect(screen.getByLabelText('Configurações e conta')).toBeInTheDocument();
+    expect(screen.getByLabelText('Configurações')).toBeInTheDocument();
   });
 
   // Reorganização Contatos/Campanhas (2026-08-17, 2ª rodada — pedido do
@@ -77,7 +76,7 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
   it('Configurações continua visível mesmo sem gestão (o gate é POR ABA, dentro da página)', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'read_only' } });
     render(<SessionRail sessionName="vendas" />);
-    expect(screen.getByLabelText('Configurações e conta')).toBeInTheDocument();
+    expect(screen.getByLabelText('Configurações')).toBeInTheDocument();
   });
 
   it('mostra o badge de aguardando quando há contagem para esta sessão', () => {
@@ -87,32 +86,23 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     expect(screen.getByTitle('3 conversa(s) aguardando atendimento humano')).toBeInTheDocument();
   });
 
-  it('correção 2026-08-07 (2ª rodada): o ícone do topo NÃO é mais um link — "voltar ao Workspace" migrou para a marca do SessionHeader', () => {
+  /**
+   * 3ª rodada (2026-08-27, decisão do fundador): o círculo do topo é a
+   * identidade da SESSÃO (foto do WhatsApp conectado) e leva aos DADOS dela
+   * — não ao Workspace, e não à identidade da pessoa (que vive em
+   * Configurações → Perfil).
+   */
+  it('o avatar do topo leva aos dados DESTA sessão (aba WhatsApps já aberta nela)', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
     render(<SessionRail sessionName="vendas" />);
-    expect(screen.queryByLabelText('Voltar para Todos os WhatsApps')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /voltar/i })).not.toBeInTheDocument();
+    const link = screen.getByLabelText('vendas — dados desta conexão');
+    expect(link).toHaveAttribute(
+      'href',
+      '/sessions/vendas/settings?tab=whatsapps&session=vendas',
+    );
   });
 
-  it('mostra a bolinha de status quando useSessionDetail já resolveu (2026-07-25)', () => {
-    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
-    mockUseSessionDetail.mockReturnValue({
-      session: {
-        id: 's1',
-        tenantId: 't1',
-        sessionName: 'vendas',
-        provider: 'baileys',
-        status: 'disconnected',
-      },
-      loading: false,
-      errorMessage: null,
-      connected: true,
-    });
-    render(<SessionRail sessionName="vendas" />);
-    expect(screen.getByRole('status', { name: 'Desconectado' })).toBeInTheDocument();
-  });
-
-  it('correção 2026-08-07 (2ª rodada): mostra o avatar do contato quando a sessão tem phoneNumber conhecido', () => {
+  it('o avatar do topo mostra a foto do WhatsApp da sessão quando há phoneNumber', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
     mockUseSessionDetail.mockReturnValue({
       session: {
@@ -128,21 +118,43 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
       connected: true,
     });
     render(<SessionRail sessionName="vendas" />);
-    // Sem foto cacheada (jsdom, sem rede), cai no fallback de iniciais — o
-    // que importa aqui é que o dado passado para o avatar é o número da
-    // SESSÃO, não a logo estática da marca (que só aparece sem phoneNumber).
+    // Sem foto cacheada (jsdom, sem rede) cai no fallback de iniciais do
+    // ContactAvatar — o que importa é NÃO ser a logo estática da marca
+    // (que só aparece antes de o número ser conhecido).
     expect(screen.queryByRole('img', { name: 'Francis' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Conectado' })).toBeInTheDocument();
   });
 
-  it('não mostra a bolinha de status enquanto useSessionDetail ainda está carregando (session === null)', () => {
+  it('sem phoneNumber ainda conhecido: cai na logo da marca, nunca um círculo vazio', () => {
     mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
-    mockUseSessionDetail.mockReturnValue({
-      session: null,
-      loading: true,
-      errorMessage: null,
-      connected: true,
-    });
     render(<SessionRail sessionName="vendas" />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Francis' })).toBeInTheDocument();
+  });
+
+  /**
+   * 3ª rodada (2026-08-27): a engrenagem aponta para as Configurações DA
+   * SESSÃO (`/sessions/:s/settings`), não para `/settings` solto — é o que
+   * mantém o rail lateral visível ao abrir Configurações (o fundador
+   * reportou que perder o menu quebrava a navegação).
+   */
+  it('a engrenagem leva para as Configurações DA SESSÃO, aba Perfil (pedido explícito do fundador)', () => {
+    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
+    render(<SessionRail sessionName="vendas" />);
+    const link = screen.getByLabelText('Configurações');
+    expect(link).toHaveAttribute('href', '/sessions/vendas/settings?tab=profile');
+  });
+
+  it('na tela de Configurações, a engrenagem fica destacada (verde) como os demais destinos', () => {
+    mockAsPath = '/sessions/vendas/settings';
+    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
+    render(<SessionRail sessionName="vendas" />);
+    expect(screen.getByLabelText('Configurações').className).toContain('text-primary');
+  });
+
+  it('fora de Configurações, a engrenagem fica no tom neutro', () => {
+    mockAsPath = '/sessions/vendas/conversations';
+    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'operator' } });
+    render(<SessionRail sessionName="vendas" />);
+    expect(screen.getByLabelText('Configurações').className).toContain('text-muted-foreground');
   });
 });

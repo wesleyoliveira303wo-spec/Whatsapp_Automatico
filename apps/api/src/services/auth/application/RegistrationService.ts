@@ -36,10 +36,9 @@ export interface RegisterInput {
  * outros pontos do projeto (ex.: leituras cruzadas de relatorio em
  * `PrismaAnalyticsRepository`).
  *
- * `name` (nome da pessoa) NAO tem coluna propria em `User` hoje — decisao
- * deliberada de nao adicionar campo novo so para o registro (fora do escopo
- * aprovado, "nao altere schema alem do necessario"); fica registrado so na
- * auditoria (`AuditLog.metadata`), nao persistido de outra forma.
+ * `name` (nome da pessoa) passou a ter coluna propria em `User` a partir da
+ * Reorganizacao Perfil/Configuracoes (2026-08-27) — antes so ia para a
+ * auditoria (`AuditLog.metadata`), nunca persistido de fato.
  */
 export class RegistrationService {
   constructor(
@@ -82,6 +81,7 @@ export class RegistrationService {
             role: 'OWNER',
             status: 'ACTIVE',
             mustChangePassword: false,
+            name,
           },
         });
         const user: User = {
@@ -92,6 +92,7 @@ export class RegistrationService {
           role: 'owner',
           status: 'active',
           mustChangePassword: false,
+          name: userRow.name ?? undefined,
           createdAt: userRow.createdAt,
           updatedAt: userRow.updatedAt,
         };

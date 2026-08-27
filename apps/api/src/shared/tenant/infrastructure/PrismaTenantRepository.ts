@@ -44,4 +44,15 @@ export class PrismaTenantRepository implements TenantRepository {
     const row = await this.prisma.tenant.create({ data: { name: input.name } });
     return toDomain(row);
   }
+
+  async update(id: string, changes: { name: string }): Promise<Tenant | undefined> {
+    const result = await this.prisma.tenant.updateMany({
+      where: { id },
+      data: { name: changes.name },
+    });
+    if (result.count === 0) {
+      return undefined;
+    }
+    return (await this.findById(id)) ?? undefined;
+  }
 }

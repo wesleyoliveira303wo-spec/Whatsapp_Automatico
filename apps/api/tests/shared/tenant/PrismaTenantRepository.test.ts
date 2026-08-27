@@ -5,8 +5,8 @@ import { PrismaTenantRepository } from '../../../src/shared/tenant/infrastructur
  * `PrismaCredentialsStore.test.ts`: cobre só o shape usado por esta classe
  * (`tenant.findUnique`).
  */
-function createFakePrisma(): { tenant: { findUnique: jest.Mock } } {
-  return { tenant: { findUnique: jest.fn() } };
+function createFakePrisma(): { tenant: { findUnique: jest.Mock; updateMany: jest.Mock } } {
+  return { tenant: { findUnique: jest.fn(), updateMany: jest.fn() } };
 }
 
 describe('PrismaTenantRepository', () => {
@@ -83,6 +83,39 @@ describe('PrismaTenantRepository', () => {
       const result = await repo.findByApiKeyHash('hash-abc');
 
       expect(result).toEqual({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: 'hash-abc' });
+    });
+  });
+
+  // Reorganizacao Perfil/Configuracoes (2026-08-27) — aba "Empresa".
+  describe('update', () => {
+    it('atualiza o nome e devolve o tenant atualizado', async () => {
+      const prisma = createFakePrisma();
+      prisma.tenant.updateMany.mockResolvedValue({ count: 1 });
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: 'tenant-1',
+        name: 'Novo Nome',
+        apiKeyHash: null,
+      });
+      const repo = new PrismaTenantRepository(prisma as never);
+
+      const result = await repo.update('tenant-1', { name: 'Novo Nome' });
+
+      expect(prisma.tenant.updateMany).toHaveBeenCalledWith({
+        where: { id: 'tenant-1' },
+        data: { name: 'Novo Nome' },
+      });
+      expect(result).toEqual({ id: 'tenant-1', name: 'Novo Nome', apiKeyHash: null });
+    });
+
+    it('devolve undefined quando o tenant nao existe', async () => {
+      const prisma = createFakePrisma();
+      prisma.tenant.updateMany.mockResolvedValue({ count: 0 });
+      const repo = new PrismaTenantRepository(prisma as never);
+
+      const result = await repo.update('tenant-inexistente', { name: 'X' });
+
+      expect(result).toBeUndefined();
+      expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
     });
   });
 });

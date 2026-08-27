@@ -230,3 +230,13 @@ export const callContactsApi = createApiClient('contacts');
  * campo do corpo, não da rota. RBAC (campaign:read/manage) imposto pela API.
  */
 export const callCampaignsApi = createApiClient('campaigns');
+
+/**
+ * Cliente do proprio tenant (Reorganizacao Perfil/Configuracoes, 2026-08-27
+ * — aba "Empresa"), consumido por `pages/api/tenant/index.ts`. Resource
+ * vazio: a rota da API e `/api/tenants/:tenantId` sem sufixo nenhum —
+ * `createApiClient('')` produz exatamente essa URL (com uma barra final
+ * inofensiva, que o Express normaliza). GET liberado a qualquer principal
+ * autenticado do tenant; PATCH exige `tenant:manage` (a API responde 403).
+ */
+export const callTenantApi = createApiClient('');

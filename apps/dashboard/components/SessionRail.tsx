@@ -1,15 +1,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
-import { MessageSquare, Brain, BarChart3, Kanban, Contact, Send } from 'lucide-react';
+import { MessageSquare, Brain, BarChart3, Kanban, Contact, Send, Settings } from 'lucide-react';
 import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
 import ContactAvatar from '@/components/ContactAvatar';
-import FrancisLogo from '@/components/brand/FrancisLogo';
 import StatusDot from '@/components/StatusDot';
+import FrancisLogo from '@/components/brand/FrancisLogo';
 import ThemeToggle from '@/components/ThemeToggle';
-import AccountMenu from '@/components/AccountMenu';
 import { cn } from '@/lib/utils';
 
 interface SessionRailProps {
@@ -42,28 +41,24 @@ interface RailItem {
  * Reskin 2026-08-06 (Design System §5/§7): `ThemeToggle` migra para AQUI
  * (antes vivia isolado no `Header` genérico, que não é mais renderizado
  * dentro de uma sessão — ver `SessionHeader`/`SessionLayout`), entre a
- * navegação e o botão de conta. O antigo link direto "Configurações" vira
- * `AccountMenu` — um popover com identidade do usuário + Configurações da
- * sessão + Trocar senha + Sair (tudo que antes vivia como texto solto no
- * `Header`, agora fora do fluxo das 5 telas de sessão).
+ * navegação e o ícone de Configurações.
  *
- * Ajuste 2026-08-07 (pedido do fundador, comparando com o HTML do Claude
- * Design): o rail tinha DOIS elementos separados no topo (seta "voltar" +
- * ícone da sessão) — o mockup (`Francis Pipeline.dc.html` linha 45) usa só
- * UM botão. Tamanhos/raios recalibrados para os valores exatos do mockup
- * (ícone-sessão 34px/raio 11; ícones de nav/tema/conta 38px/raio 11, glifo
- * 19px) — antes usavam os derivados genéricos do Design System (36/40px,
- * raio 8/10).
+ * Reorganização Perfil/Configurações (2026-08-27, ver DECISIONS.md #106) —
+ * DOIS pontos deste rail mudaram de papel, pedido explícito do fundador:
  *
- * Correção 2026-08-07 (2ª rodada, pedido do fundador): esse ícone deixou de
- * ser um link — vira só a IDENTIDADE VISUAL do WhatsApp conectado (foto de
- * perfil real do número, via `ContactAvatar`/`useContactAvatar`, mesmo
- * mecanismo já usado para contatos — aqui aplicado ao PRÓPRIO número da
- * sessão, `session.phoneNumber@s.whatsapp.net`). "Voltar a todos os
- * WhatsApps" migrou para a marca no `SessionHeader` (ver sua docstring) —
- * não sobra nenhum caminho de navegação perdido. Sem `phoneNumber` ainda
- * carregado (sessão nunca conectada, ou dado ainda chegando pelo SSE), cai
- * de volta na logo da marca — nunca um círculo vazio.
+ * 1. O círculo do topo MOSTRAVA a foto do WhatsApp conectado (identidade da
+ *    SESSÃO — `ContactAvatar` no número da própria sessão). Auditoria
+ *    apontou isso como a raiz de uma confusão real ("Whatsapp Sites" parecia
+ *    ser o perfil do usuário). Virou o AVATAR DA PESSOA logada
+ *    (`UserAvatar` — iniciais, ou foto se configurada no Perfil), e o
+ *    clique leva ao Workspace (`/`) — assume o papel que antes era da marca
+ *    no `SessionHeader` (essa marca deixou de ser um link, ver sua
+ *    docstring).
+ * 2. O ícone de engrenagem abria `AccountMenu` (popover com identidade +
+ *    Configurações da sessão + Trocar senha + Sair). `AccountMenu` foi
+ *    REMOVIDO — a engrenagem agora navega DIRETO para `/settings`, a nova
+ *    dashboard de Configurações (nível TENANT, não mais aninhada numa
+ *    sessão) — Trocar senha e Sair vivem lá dentro, aba Perfil → Segurança.
  *
  * Cada gate de papel é preservado EXATAMENTE como era (`requiresManager` =
  * administrator/owner, mesma régua de antes para IA/Analytics — ver
@@ -103,13 +98,34 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
     { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },
   ];
 
-  const sessionTitle = session ? `${sessionName} · ${session.status}` : sessionName;
+  const settingsHref = `${base}/settings`;
+  const settingsActive =
+    router.asPath === settingsHref || router.asPath.startsWith(`${settingsHref}?`);
 
   return (
     <aside className="flex w-14 shrink-0 flex-col items-center border-r border-border bg-background pb-3 pt-[10px]">
-      <div
-        title={sessionTitle}
-        className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary"
+      {/*
+        Identidade da SESSÃO ativa (não do usuário) — decisão do fundador,
+        3ª rodada da Reorganização Perfil/Configurações (2026-08-27).
+        Histórico, porque este círculo trocou de papel duas vezes:
+        - Até 2026-08-27: foto do WhatsApp conectado, sem link (puramente
+          visual). A auditoria apontou isso como a raiz da confusão
+          "Whatsapp Sites = perfil do usuário".
+        - 1ª correção: virou o avatar da PESSOA logada, com link para o
+          Workspace.
+        - AGORA: volta a ser a foto do WhatsApp da sessão — mas com função
+          de navegação clara, que era o que faltava antes: leva aos DADOS
+          daquela sessão (`/sessions/:s/settings?session=:s` — aba
+          WhatsApps já com esta sessão aberta: status, número, histórico,
+          conectar/desconectar). De lá, "← Todos os WhatsApps" lista as
+          demais sessões, permitindo alternar. A identidade da PESSOA não
+          se perde: vive em Configurações → Perfil, pela engrenagem.
+      */}
+      <Link
+        href={`${settingsHref}?tab=whatsapps&session=${encodeURIComponent(sessionName)}`}
+        title={`${sessionName} — dados desta conexão`}
+        aria-label={`${sessionName} — dados desta conexão`}
+        className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {session?.phoneNumber ? (
           <ContactAvatar
@@ -125,7 +141,7 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
             <StatusDot status={session.status} className="border-2 border-background" />
           </span>
         )}
-      </div>
+      </Link>
 
       <nav className="flex flex-1 flex-col items-center gap-1">
         {items.map(({ href, label, icon: Icon, requiresManager }) => {
@@ -188,7 +204,44 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
       </nav>
 
       <ThemeToggle className="h-[38px] w-[38px] rounded-[11px]" />
-      <AccountMenu sessionName={sessionName} />
+      {/*
+        Reorganização Perfil/Configurações (2026-08-27) — antes abria um
+        popover (`AccountMenu`, removido) com identidade + Configurações da
+        sessão + Trocar senha + Sair. Agora navega DIRETO para Configurações
+        (Perfil/WhatsApps/Equipe/Auditoria — Trocar senha e Sair vivem na aba
+        Perfil → Segurança).
+        3ª rodada: aponta para `/sessions/:s/settings` (não mais `/settings`
+        solto) para que o RAIL CONTINUE VISÍVEL — o fundador reportou que
+        perder o menu lateral ao abrir Configurações quebrava a navegação. E
+        ganha o MESMO destaque verde dos outros destinos quando ativa
+        (incluindo o indicador deslizante), em vez do cinza discreto de
+        antes: é um destino como os demais, não um botão de canto.
+        6ª rodada (pedido explícito do fundador): `?tab=profile` explícito
+        na URL — a engrenagem deve abrir SEMPRE em Perfil, nunca na última
+        aba que o avatar deixou selecionada (ver correção de sincronização
+        de estado na docstring de `SettingsTabs`).
+      */}
+      <Link
+        href={`${settingsHref}?tab=profile`}
+        title="Configurações"
+        aria-label="Configurações"
+        className={cn(
+          'relative flex h-[38px] w-[38px] items-center justify-center rounded-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          settingsActive
+            ? 'text-primary'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+      >
+        {settingsActive && (
+          <motion.span
+            layoutId="rail-active-indicator"
+            className="absolute inset-0 -z-10 rounded-[11px] bg-primary/10"
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            aria-hidden="true"
+          />
+        )}
+        <Settings className="h-[19px] w-[19px]" aria-hidden="true" />
+      </Link>
     </aside>
   );
 }

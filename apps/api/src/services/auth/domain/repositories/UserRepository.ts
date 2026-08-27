@@ -11,6 +11,9 @@ export interface UserUpdate {
   lastLoginAt?: Date;
   /** Liga/desliga a exigencia de troca de senha (M5E): ligada por um reset de admin, desligada quando o proprio dono troca. */
   mustChangePassword?: boolean;
+  /** Reorganizacao Perfil/Configuracoes (2026-08-27) — o proprio usuario edita seu nome/foto em `PATCH /auth/me`. */
+  name?: string;
+  avatarUrl?: string;
 }
 
 /**

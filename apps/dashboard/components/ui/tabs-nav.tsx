@@ -111,7 +111,7 @@ export function TabTrigger({
       role="tab"
       aria-selected={active}
       className={cn(
-        'relative inline-flex items-center gap-1.5 font-medium transition-colors',
+        'relative inline-flex items-center gap-1.5 rounded-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         variant === 'pill' &&
           cn(
             'h-[34px] rounded-[9px] px-3.5 text-[13px] font-semibold',

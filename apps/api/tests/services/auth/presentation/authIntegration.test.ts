@@ -126,4 +126,59 @@ describe('Integracao authRouter (Milestone 5, Bloco M5C)', () => {
       .send({ refreshToken: login.body.refreshToken });
     expect(res.status).toBe(204);
   });
+
+  // Reorganizacao Perfil/Configuracoes (2026-08-27) — o proprio usuario edita nome/foto.
+  describe('PATCH /me', () => {
+    it('sem cracha: 401', async () => {
+      const { app } = buildApp();
+      const res = await request(app)
+        .patch('/api/tenants/tenant-1/auth/me')
+        .send({ name: 'Joao' });
+      expect(res.status).toBe(401);
+    });
+
+    it('cracha valido + name: 200, devolve o usuario com o nome novo', async () => {
+      const { app } = buildApp();
+      const login = await request(app)
+        .post('/api/tenants/tenant-1/auth/login')
+        .send({ email: 'joao@empresa.com', password: 'senha123' });
+      const res = await request(app)
+        .patch('/api/tenants/tenant-1/auth/me')
+        .set('authorization', `Bearer ${login.body.accessToken}`)
+        .send({ name: 'Joao da Silva' });
+      expect(res.status).toBe(200);
+      expect(res.body.user.name).toBe('Joao da Silva');
+      expect(res.body.user.passwordHash).toBeUndefined();
+    });
+
+    it('corpo vazio (nem name nem avatarUrl): 400', async () => {
+      const { app } = buildApp();
+      const login = await request(app)
+        .post('/api/tenants/tenant-1/auth/login')
+        .send({ email: 'joao@empresa.com', password: 'senha123' });
+      const res = await request(app)
+        .patch('/api/tenants/tenant-1/auth/me')
+        .set('authorization', `Bearer ${login.body.accessToken}`)
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('so avatarUrl: 200, name permanece intacto', async () => {
+      const { app } = buildApp();
+      const login = await request(app)
+        .post('/api/tenants/tenant-1/auth/login')
+        .send({ email: 'joao@empresa.com', password: 'senha123' });
+      await request(app)
+        .patch('/api/tenants/tenant-1/auth/me')
+        .set('authorization', `Bearer ${login.body.accessToken}`)
+        .send({ name: 'Joao da Silva' });
+      const res = await request(app)
+        .patch('/api/tenants/tenant-1/auth/me')
+        .set('authorization', `Bearer ${login.body.accessToken}`)
+        .send({ avatarUrl: 'https://exemplo.com/foto.jpg' });
+      expect(res.status).toBe(200);
+      expect(res.body.user.name).toBe('Joao da Silva');
+      expect(res.body.user.avatarUrl).toBe('https://exemplo.com/foto.jpg');
+    });
+  });
 });

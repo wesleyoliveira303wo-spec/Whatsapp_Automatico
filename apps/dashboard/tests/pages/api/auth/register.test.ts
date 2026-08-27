@@ -76,6 +76,55 @@ describe('POST /api/auth/register', () => {
     expect(responseBody).not.toContain('ref-1');
   });
 
+  /**
+   * REGRESSÃO (achado real no navegador, 2026-08-27): o nome informado no
+   * registro era salvo no banco mas NÃO copiado para o cookie da sessão —
+   * a UI seguia mostrando o e-mail (e as iniciais dele no avatar) até um
+   * relogin.
+   */
+  it('copia name/avatarUrl da resposta da API para a sessão', async () => {
+    (fetch as jest.Mock).mockResolvedValue({
+      status: 201,
+      ok: true,
+      json: async () => ({
+        accessToken: 'acc-1',
+        refreshToken: 'ref-1',
+        tenantId: 'tenant-1',
+        user: {
+          id: 'user-1',
+          email: 'maria@empresa.com',
+          role: 'owner',
+          name: 'Maria Silva',
+          avatarUrl: 'https://exemplo.com/foto.jpg',
+        },
+      }),
+    });
+    const req = createFakeReq({
+      method: 'POST',
+      body: {
+        name: 'Maria Silva',
+        email: 'maria@empresa.com',
+        password: 'senha-forte-123',
+        companyName: 'Empresa da Maria',
+      },
+    });
+    const res = createFakeRes();
+
+    await handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      user: {
+        id: 'user-1',
+        email: 'maria@empresa.com',
+        role: 'owner',
+        mustChangePassword: false,
+        name: 'Maria Silva',
+        avatarUrl: 'https://exemplo.com/foto.jpg',
+      },
+    });
+  });
+
   it('e-mail ja em uso: API responde 409 -> 409 email_in_use, sem cookie', async () => {
     (fetch as jest.Mock).mockResolvedValue({ status: 409, ok: false });
     const req = createFakeReq({

@@ -45,6 +45,15 @@ export interface User {
    * de `Conversation.assignedToUserId`.
    */
   mustChangePassword?: boolean;
+  /**
+   * Nome da pessoa (Reorganizacao Perfil/Configuracoes, 2026-08-27) —
+   * OPCIONAL: contas criadas antes desta migration nao tem nome preenchido,
+   * e o registro/RH tambem nao exigem. Mesma disciplina aditiva de
+   * `mustChangePassword`.
+   */
+  name?: string;
+  /** URL de uma foto de perfil. Ausente = a UI cai nas iniciais do e-mail/nome. */
+  avatarUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 }

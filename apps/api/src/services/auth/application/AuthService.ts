@@ -160,6 +160,25 @@ export class AuthService {
   }
 
   /**
+   * Edita o PROPRIO nome/foto (Reorganizacao Perfil/Configuracoes,
+   * 2026-08-27) — nunca `email`/`role`/`status` (identidade e RBAC nao se
+   * editam por aqui; isso continua exclusivo do RH, `UserManagementService`).
+   * `name`/`avatarUrl` ausentes no input mantem o valor atual; string vazia
+   * limpa o campo (`undefined` explicito no `UserUpdate`).
+   */
+  async updateProfile(
+    userId: string,
+    changes: { name?: string; avatarUrl?: string },
+  ): Promise<PublicUser | null> {
+    const update: { name?: string; avatarUrl?: string } = {};
+    if (changes.name !== undefined) update.name = changes.name.trim();
+    if (changes.avatarUrl !== undefined) update.avatarUrl = changes.avatarUrl.trim();
+
+    const user = await this.userRepository.update(userId, update);
+    return user ? toPublicUser(user) : null;
+  }
+
+  /**
    * Troca da PROPRIA senha (M5F-2) — exige a senha ATUAL (diferente do reset
    * pelo RH, que e um admin agindo sobre um subordinado — M5E-2). Sucesso:
    * grava o hash novo, desliga `mustChangePassword` (o post-it de senha

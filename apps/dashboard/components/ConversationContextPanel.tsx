@@ -75,7 +75,20 @@ export default function ConversationContextPanel({
           savedContactName={conversation.savedContactName}
           className="mb-3 h-[68px] w-[68px] text-[21px]"
         />
-        <p className="text-[15.5px] font-semibold tracking-tight text-foreground">
+        {/*
+          BUGFIX (achado real do fundador, 2026-08-27): sem `truncate`, este
+          nome quebrava para 2 linhas quando o contato NÃO está salvo — o
+          "nome" exibido vira o TELEFONE completo (`formatContactDisplayNameParts`,
+          `lib/formatters.ts`), mais longo que um nome curto salvo, e às
+          vezes ainda soma o apelido do WhatsApp como `secondary`. O painel
+          inteiro (`aside` de largura fixa) ficava mais ALTO só por causa
+          disso — o mesmo contato salvo/não salvo produzia cabeçalhos de
+          tamanhos visivelmente diferentes. `truncate` força sempre 1 linha
+          (com reticências se não couber), mesmo tratamento já usado na
+          linha da lista (`ConversationListItem`) — altura do cabeçalho
+          agora é CONSTANTE, independente do dado.
+        */}
+        <p className="w-full truncate text-[15.5px] font-semibold tracking-tight text-foreground">
           <DisplayNameParts
             {...formatContactDisplayNameParts(
               conversation.contactJid,

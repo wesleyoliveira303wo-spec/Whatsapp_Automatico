@@ -49,4 +49,11 @@ export interface TenantRepository {
    * necessário para o Owner logar (tenant + usuário), nunca uma API key.
    */
   create(input: { name: string }): Promise<Tenant>;
+
+  /**
+   * Atualiza o nome do tenant (Reorganizacao Perfil/Configuracoes,
+   * 2026-08-27 — aba "Empresa" de Configuracoes). Devolve `undefined` se o
+   * id nao existir, mesmo padrao de `UserRepository.update`.
+   */
+  update(id: string, changes: { name: string }): Promise<Tenant | undefined>;
 }

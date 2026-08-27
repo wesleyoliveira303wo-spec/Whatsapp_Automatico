@@ -68,6 +68,8 @@ export class FakeUserRepository implements UserRepository {
     if (changes.lastLoginAt !== undefined) user.lastLoginAt = changes.lastLoginAt;
     if (changes.mustChangePassword !== undefined)
       user.mustChangePassword = changes.mustChangePassword;
+    if (changes.name !== undefined) user.name = changes.name;
+    if (changes.avatarUrl !== undefined) user.avatarUrl = changes.avatarUrl;
     user.updatedAt = new Date();
     return { ...user };
   }

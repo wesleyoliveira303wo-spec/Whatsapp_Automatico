@@ -115,6 +115,9 @@ export interface SessionUserInfo {
   email: string;
   role: string;
   mustChangePassword: boolean;
+  /** Reorganizacao Perfil/Configuracoes (2026-08-27) — ausentes ate o usuario preencher. */
+  name?: string;
+  avatarUrl?: string;
 }
 
 /**
@@ -164,6 +167,31 @@ export function fetchMe(): Promise<{ tenantId: string; user: SessionUserInfo | n
 
 export function logout(): Promise<void> {
   return request('/api/auth/logout', { method: 'POST' });
+}
+
+/**
+ * Edita o PROPRIO nome/foto (Reorganizacao Perfil/Configuracoes,
+ * 2026-08-27, aba Perfil). Ao menos um campo precisa vir preenchido.
+ */
+export function updateMyProfile(
+  changes: { name?: string; avatarUrl?: string },
+): Promise<{ tenantId: string; user: SessionUserInfo }> {
+  return request('/api/auth/me', { method: 'PATCH', body: JSON.stringify(changes) });
+}
+
+/** Nome da empresa (aba "Empresa" de Configuracoes). */
+export interface TenantInfo {
+  id: string;
+  name: string;
+}
+
+export function fetchTenant(): Promise<{ tenant: TenantInfo }> {
+  return request('/api/tenant');
+}
+
+/** Exige `tenant:manage` (hoje so OWNER) — a API devolve 403 para os demais papeis. */
+export function updateTenantName(name: string): Promise<{ tenant: TenantInfo }> {
+  return request('/api/tenant', { method: 'PATCH', body: JSON.stringify({ name }) });
 }
 
 // --- Gestao de usuarios (Milestone 5, Bloco M5F-3 — o "RH") ---

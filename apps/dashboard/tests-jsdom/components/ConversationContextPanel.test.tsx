@@ -109,6 +109,42 @@ describe('ConversationContextPanel (Redesign 2026-08-05, R3)', () => {
     expect(screen.queryByText(/Apelido WhatsApp/)).not.toBeInTheDocument();
   });
 
+  /**
+   * BUGFIX (achado real do fundador, 2026-08-27): sem contato salvo, o
+   * "nome" exibido no cabeçalho vira o TELEFONE (mais longo que um nome
+   * salvo curto) e podia quebrar para 2 linhas — o painel inteiro (largura
+   * fixa) ficava mais ALTO só por causa disso, um contato salvo e um não
+   * salvo produzindo cabeçalhos de tamanhos visivelmente diferentes.
+   * `truncate` (1 linha sempre, com reticências) fecha essa variação.
+   */
+  it('o nome do cabeçalho sempre trunca em 1 linha, salvo ou não (a altura do painel não pode variar)', () => {
+    mockUseConversationDetail.mockReturnValue({
+      conversation: buildConversation({ contactName: 'Maria Costa' }),
+      loading: false,
+      errorMessage: null,
+      refresh: jest.fn(),
+      applyUpdate: jest.fn(),
+    });
+    const { rerender, container } = render(
+      <ConversationContextPanel sessionName="vendas" conversationId="c1" />,
+    );
+    const unsavedName = container.querySelector('p.truncate.text-\\[15\\.5px\\]');
+    expect(unsavedName).toHaveClass('truncate');
+    expect(unsavedName).toHaveClass('w-full');
+
+    mockUseConversationDetail.mockReturnValue({
+      conversation: buildConversation({ savedContactName: 'Maria Salva' }),
+      loading: false,
+      errorMessage: null,
+      refresh: jest.fn(),
+      applyUpdate: jest.fn(),
+    });
+    rerender(<ConversationContextPanel sessionName="vendas" conversationId="c1" />);
+    const savedName = container.querySelector('p.truncate.text-\\[15\\.5px\\]');
+    expect(savedName).toHaveClass('truncate');
+    expect(savedName).toHaveClass('w-full');
+  });
+
   it('mostra o chip "Aguardando atendente" quando escalatedAt está presente', () => {
     mockUseConversationDetail.mockReturnValue({
       conversation: buildConversation({ escalatedAt: '2026-08-05T10:00:00.000Z' }),

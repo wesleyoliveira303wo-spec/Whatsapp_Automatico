@@ -1,66 +1,43 @@
-import { useState } from 'react';
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
 import SessionLayout from '@/components/SessionLayout';
-import SessionConnectionPanel from '@/components/SessionConnectionPanel';
-import UserManagementPanel from '@/components/UserManagementPanel';
-import AuditLogPanel from '@/components/AuditLogPanel';
-import { TabList, TabTrigger } from '@/components/ui/tabs-nav';
+import SettingsTabs, { resolveInitialTab, type SettingsTab } from '@/components/SettingsTabs';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 import type { ManagedUserRole } from '@/lib/clientApi';
 
-type SettingsTab = 'connection' | 'team' | 'audit';
-
-interface SettingsPageProps {
+interface SessionSettingsPageProps {
   tenantId: string;
   sessionName: string;
   role: ManagedUserRole | null;
+  hasUser: boolean;
   initialTab: SettingsTab;
 }
 
-function isSettingsTab(value: unknown): value is SettingsTab {
-  return value === 'connection' || value === 'team' || value === 'audit';
-}
-
-function canSeeTeam(role: ManagedUserRole | null): boolean {
-  return role === 'administrator' || role === 'owner';
-}
-
-function canSeeAudit(role: ManagedUserRole | null): boolean {
-  return role === 'manager' || role === 'administrator' || role === 'owner';
-}
-
 /**
- * Redesign 2026-08-05 (R2) — agrupa "Configurações" (conexão/QR), "Equipe" e
- * "Auditoria" sob um único item de rail, como abas. Diferente de `ai.tsx`
- * (gate único para a página inteira), aqui CADA aba tem seu PRÓPRIO gate —
- * "Conexão" é visível a qualquer papel (sempre foi), "Equipe" só
- * administrator/owner, "Auditoria" desde manager (`audit:read` já é mais
- * permissivo que `user:*`, ADR de F1.5 preservada). Por isso não há redirect
- * de página inteira: a página sempre renderiza, só as abas que o papel não
- * pode ver ficam de fora da `TabList` — a barreira real continua sendo a API.
+ * Configurações DENTRO de uma sessão — Reorganização Perfil/Configurações,
+ * 3ª rodada (2026-08-27, ver DECISIONS.md #106).
  *
- * Se a aba pedida por `?tab=` não é visível para o papel logado, cai em
- * "connection" (sempre visível) em vez de mostrar uma aba vazia/quebrada.
+ * Histórico curto desta rota, porque ela mudou de papel três vezes na mesma
+ * semana e o motivo importa:
+ * 1. Redesign 2026-08-05 (R2): nasceu com as abas Conexão/Equipe/Auditoria.
+ * 2. 1ª rodada desta reorganização: virou REDIRECT para `/settings` (nível
+ *    tenant), porque Equipe/Auditoria são do tenant inteiro, não daquele
+ *    WhatsApp.
+ * 3. AGORA: volta a ser página real — mas com o conteúdo NOVO
+ *    (`SettingsTabs`: Perfil/WhatsApps/Equipe/Auditoria). Motivo, reportado
+ *    pelo fundador ao testar: `/settings` era uma página SOLTA, sem
+ *    `SessionLayout`, então abrir Configurações fazia "sumir todo o menu à
+ *    esquerda" (Conversas/Pipeline/Campanhas/…) — o operador ficava sem
+ *    navegação, preso numa tela sem saída óbvia. Montada aqui, dentro de
+ *    `SessionLayout`, o rail continua visível e a engrenagem fica destacada
+ *    como qualquer outro destino.
  *
- * Rotas antigas `/sessions/:s` (Configurações), `/users` e `/audit-logs`
- * (arquivos preservados, viraram redirect) apontam para cá.
- *
- * 2026-08-15 (pedido do fundador): "Leads" (Fase L, Bloco L1b) SAIU daqui —
- * virou item próprio do rail principal (`ContactsPanel`, ver
- * `pages/sessions/[sessionName]/contacts.tsx`/`SessionRail.tsx`), renomeado
- * para "Contatos". Não é mais uma aba administrativa: é destino de trabalho
- * do dia a dia, no mesmo nível de Conversas/Pipeline.
- *
- * 2026-08-26 (pedido do fundador): "Tags" também SAIU daqui, mesmo motivo —
- * a gestão do catálogo (`TagsPanel`) migrou para dentro do botão "+ Tag" do
- * `ConversationTagPicker`, na dashboard de Conversas, junto de onde as tags
- * já eram atribuídas a um contato (mesmo padrão de Respostas Rápidas,
- * 2026-08-25). `?tab=tags` (se algum link antigo apontar aqui) cai no
- * default "connection" — `isSettingsTab` não reconhece mais o valor.
+ * O conteúdo é IDÊNTICO ao de `/settings` (mesmo `SettingsTabs`) — só a
+ * moldura muda. `/settings` continua existindo para o caso em que não há
+ * sessão nenhuma (tenant recém-criado, Workspace vazio).
  */
-export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (context) => {
+export const getServerSideProps: GetServerSideProps<SessionSettingsPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
   if (guard.kind === 'redirect') {
     return { redirect: guard.redirect };
@@ -71,70 +48,39 @@ export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (
     return { notFound: true };
   }
   const role = (session.user?.role as ManagedUserRole | undefined) ?? null;
-  const requestedTab = context.query?.tab;
-  let initialTab: SettingsTab = isSettingsTab(requestedTab) ? requestedTab : 'connection';
-  if (initialTab === 'team' && !canSeeTeam(role)) initialTab = 'connection';
-  if (initialTab === 'audit' && !canSeeAudit(role)) initialTab = 'connection';
-  return { props: { tenantId: session.tenantId, sessionName, role, initialTab } };
+  const hasUser = Boolean(session.user);
+  return {
+    props: {
+      tenantId: session.tenantId,
+      sessionName,
+      role,
+      hasUser,
+      initialTab: resolveInitialTab(context.query?.tab, role, hasUser),
+    },
+  };
 };
 
-export default function SettingsPage({
+export default function SessionSettingsPage({
   tenantId,
   sessionName,
   role,
+  hasUser,
   initialTab,
-}: SettingsPageProps): JSX.Element {
-  const [tab, setTab] = useState<SettingsTab>(initialTab);
-  const showTeam = canSeeTeam(role);
-  const showAudit = canSeeAudit(role);
-
+}: SessionSettingsPageProps): JSX.Element {
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
       <Head>
         <title>{pageTitle(`Configurações · ${sessionName}`)}</title>
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
-        <div className="max-w-[840px] px-6 pb-12 pt-5">
+        <div className="max-w-[900px] px-6 pb-16 pt-5">
           <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
             Configurações
           </h1>
           <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
-            Conexão, equipe e auditoria da sessão {sessionName}.
+            WhatsApps, equipe, auditoria e seu perfil pessoal.
           </p>
-
-          <div className="mb-5">
-            <TabList ariaLabel="Seção de Configurações" variant="underline">
-              <TabTrigger
-                active={tab === 'connection'}
-                variant="underline"
-                onClick={() => setTab('connection')}
-              >
-                Conexão
-              </TabTrigger>
-              {showTeam && (
-                <TabTrigger
-                  active={tab === 'team'}
-                  variant="underline"
-                  onClick={() => setTab('team')}
-                >
-                  Equipe
-                </TabTrigger>
-              )}
-              {showAudit && (
-                <TabTrigger
-                  active={tab === 'audit'}
-                  variant="underline"
-                  onClick={() => setTab('audit')}
-                >
-                  Auditoria
-                </TabTrigger>
-              )}
-            </TabList>
-          </div>
-
-          {tab === 'connection' && <SessionConnectionPanel sessionName={sessionName} />}
-          {tab === 'team' && showTeam && <UserManagementPanel />}
-          {tab === 'audit' && showAudit && <AuditLogPanel />}
+          <SettingsTabs role={role} hasUser={hasUser} initialTab={initialTab} />
         </div>
       </div>
     </SessionLayout>

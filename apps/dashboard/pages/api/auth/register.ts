@@ -97,11 +97,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  // `name`/`avatarUrl` (Reorganização Perfil/Configurações, 2026-08-27):
+  // sem copiar para o cookie, o nome informado no registro fica salvo no
+  // banco mas a UI segue mostrando o e-mail/suas iniciais até um relogin
+  // (achado real, testado no navegador nesta sessão).
   const sessionUser = {
     id: user.id,
     email: user.email,
     role: user.role,
     mustChangePassword: false,
+    ...(typeof user.name === 'string' ? { name: user.name } : {}),
+    ...(typeof user.avatarUrl === 'string' ? { avatarUrl: user.avatarUrl } : {}),
   };
   setSessionCookie(res, { tenantId, accessToken, refreshToken, user: sessionUser });
   res.status(201).json({ tenantId, user: sessionUser });

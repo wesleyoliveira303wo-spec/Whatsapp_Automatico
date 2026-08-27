@@ -27,7 +27,10 @@ describe('WhatsAppAccountCard (Milestone 6, Bloco M6G)', () => {
     render(<WhatsAppAccountCard session={buildSession()} />);
     expect(screen.getByText('vendas')).toBeInTheDocument();
     expect(screen.getByText('5511999999999')).toBeInTheDocument();
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/sessions/vendas');
+    expect(screen.getByRole('link', { name: /entrar em vendas/i })).toHaveAttribute(
+      'href',
+      '/sessions/vendas',
+    );
   });
 
   it('mostra "Número ainda não vinculado" quando não há telefone', () => {
@@ -70,5 +73,36 @@ describe('WhatsAppAccountCard (Milestone 6, Bloco M6G)', () => {
       <WhatsAppAccountCard session={buildSession({ phoneNumber: undefined })} />,
     );
     expect(container.querySelector('svg.lucide-smartphone')).toBeInTheDocument();
+  });
+
+  /**
+   * CORREÇÃO 2026-08-27 (pedido do fundador): "Gerenciar" era texto
+   * sublinhado revelado só no hover, dentro do MESMO link que o card
+   * inteiro — parecia clicável mas não tinha cara de botão, e um `<a>`
+   * dentro de outro `<a>` seria HTML inválido. Agora são DOIS alvos de
+   * clique DISTINTOS (nunca aninhados): a área de cima entra na sessão; o
+   * botão "Gerenciar" (sempre visível, com cara de botão de verdade — borda,
+   * fundo, padding) leva à descrição desta conexão.
+   */
+  it('"Gerenciar" é um botão de verdade, sempre visível (não depende de hover), que leva à descrição da sessão', () => {
+    render(<WhatsAppAccountCard session={buildSession()} />);
+    const manageLink = screen.getByRole('link', { name: /gerenciar/i });
+    expect(manageLink).toHaveAttribute(
+      'href',
+      '/sessions/vendas/settings?tab=whatsapps&session=vendas',
+    );
+    // "Cara de botão": renderizado via `Button asChild` — tem as classes de
+    // botão (borda), não é um texto solto com opacidade condicionada a hover.
+    expect(manageLink.className).toContain('border');
+    expect(manageLink.className).not.toContain('opacity-0');
+  });
+
+  it('os dois links do card são distintos e nunca aninhados (HTML válido)', () => {
+    render(<WhatsAppAccountCard session={buildSession()} />);
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(2);
+    // Nenhum link é ancestral do outro.
+    expect(links[0].contains(links[1])).toBe(false);
+    expect(links[1].contains(links[0])).toBe(false);
   });
 });

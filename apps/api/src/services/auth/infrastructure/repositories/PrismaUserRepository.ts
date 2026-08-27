@@ -55,6 +55,8 @@ interface UserRow {
   status: string;
   lastLoginAt: Date | null;
   mustChangePassword?: boolean;
+  name?: string | null;
+  avatarUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,6 +71,8 @@ function toDomain(row: UserRow): User {
     status: PRISMA_TO_STATUS[row.status] ?? 'suspended',
     lastLoginAt: row.lastLoginAt ?? undefined,
     mustChangePassword: row.mustChangePassword ?? false,
+    name: row.name ?? undefined,
+    avatarUrl: row.avatarUrl ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -93,6 +97,8 @@ export class PrismaUserRepository implements UserRepository {
         status: STATUS_TO_PRISMA[input.status],
         lastLoginAt: input.lastLoginAt ?? null,
         mustChangePassword: input.mustChangePassword ?? false,
+        name: input.name ?? null,
+        avatarUrl: input.avatarUrl ?? null,
       },
     });
     return toDomain(row);
@@ -152,6 +158,8 @@ export class PrismaUserRepository implements UserRepository {
     if (changes.lastLoginAt !== undefined) data.lastLoginAt = changes.lastLoginAt;
     if (changes.mustChangePassword !== undefined)
       data.mustChangePassword = changes.mustChangePassword;
+    if (changes.name !== undefined) data.name = changes.name;
+    if (changes.avatarUrl !== undefined) data.avatarUrl = changes.avatarUrl;
 
     const result = await this.prisma.user.updateMany({ where: { id }, data });
     if (result.count === 0) {

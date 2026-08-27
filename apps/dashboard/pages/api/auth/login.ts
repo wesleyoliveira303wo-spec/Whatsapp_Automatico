@@ -152,11 +152,16 @@ async function loginAsUser(res: NextApiResponse, email: string, password: string
   }
 
   const tenantId = user.tenantId;
+  // `name`/`avatarUrl` (Reorganização Perfil/Configurações, 2026-08-27) —
+  // mesmo motivo de `register.ts`: sem isto, quem já tem nome/foto salvos
+  // veria o e-mail/iniciais dele no avatar até editar o perfil de novo.
   const sessionUser = {
     id: user.id,
     email: user.email,
     role: user.role,
     mustChangePassword: user.mustChangePassword === true,
+    ...(typeof user.name === 'string' ? { name: user.name } : {}),
+    ...(typeof user.avatarUrl === 'string' ? { avatarUrl: user.avatarUrl } : {}),
   };
   setSessionCookie(res, { tenantId, accessToken, refreshToken, user: sessionUser });
   res.status(200).json({ tenantId, user: sessionUser });

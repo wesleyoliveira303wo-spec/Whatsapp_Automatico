@@ -1243,6 +1243,15 @@ model User {
   status       UserStatus @default(ACTIVE)
   lastLoginAt  DateTime?  @map("last_login_at")
 
+  /// Nome da pessoa (Reorganizacao Perfil/Configuracoes, 2026-08-27) — nao
+  /// existia ate aqui (o produto so tinha e-mail). Opcional: contas criadas
+  /// antes desta migration ficam `null` ate o dono preencher no Perfil.
+  name      String? @map("name")
+  /// URL de uma foto de perfil (upload de arquivo fica para uma rodada
+  /// futura — por ora, so URL, mesmo racional de nao inventar infraestrutura
+  /// de storage sem pedido explicito). Opcional, `null` = usa iniciais.
+  avatarUrl String? @map("avatar_url")
+
   /// Marca uma senha PROVISORIA (definida por um admin no convite/reset).
   /// Enquanto `true`, o usuario e obrigado a trocar a senha antes de usar o
   /// sistema — Milestone 5, Bloco M5E (D64). Default `false` para nao afetar

@@ -4,13 +4,17 @@ import { createFakeReq, createFakeRes } from '../../../testDoubles';
 
 describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
   const originalSecret = process.env.DASHBOARD_SESSION_SECRET;
+  const originalApiBaseUrl = process.env.API_BASE_URL;
 
   beforeEach(() => {
     process.env.DASHBOARD_SESSION_SECRET = Buffer.alloc(32, 11).toString('base64');
+    process.env.API_BASE_URL = 'http://api-de-teste:4000';
+    global.fetch = jest.fn();
   });
 
   afterAll(() => {
     process.env.DASHBOARD_SESSION_SECRET = originalSecret;
+    process.env.API_BASE_URL = originalApiBaseUrl;
   });
 
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
@@ -71,5 +75,145 @@ describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
     const body = JSON.stringify((res.json as jest.Mock).mock.calls[0][0]);
     expect(body).not.toContain('acc-1');
     expect(body).not.toContain('ref-1');
+  });
+});
+
+/**
+ * Access token FALSO que `getAccessTokenExpiration` consegue decodificar
+ * (3 segmentos, payload JSON com `exp`) — sem isso, `requireSession`
+ * considera o token "malformado" e dispara um refresh proativo (ver
+ * `needsRefresh`), poluindo o mock de `fetch` com uma chamada extra que
+ * nada tem a ver com o que este teste quer provar.
+ */
+function fakeAccessToken(expiresInSeconds = 900): string {
+  const payload = Buffer.from(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + expiresInSeconds }),
+  ).toString('base64url');
+  return `header.${payload}.sig`;
+}
+
+// Reorganização Perfil/Configurações (2026-08-27) — edição do próprio nome/foto.
+describe('PATCH /api/auth/me', () => {
+  const originalSecret = process.env.DASHBOARD_SESSION_SECRET;
+  const originalApiBaseUrl = process.env.API_BASE_URL;
+
+  beforeEach(() => {
+    process.env.DASHBOARD_SESSION_SECRET = Buffer.alloc(32, 11).toString('base64');
+    process.env.API_BASE_URL = 'http://api-de-teste:4000';
+    global.fetch = jest.fn();
+  });
+
+  afterAll(() => {
+    process.env.DASHBOARD_SESSION_SECRET = originalSecret;
+    process.env.API_BASE_URL = originalApiBaseUrl;
+  });
+
+  function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
+    const res = createFakeRes();
+    setSessionCookie(res, session);
+    const match = (res._headers['Set-Cookie'] as string).match(
+      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
+    );
+    return match![1];
+  }
+
+  const USER = {
+    id: 'user-1',
+    email: 'maria@empresa.com',
+    role: 'manager',
+    mustChangePassword: false,
+  };
+
+  it('sem sessao: 401', async () => {
+    const req = createFakeReq({ method: 'PATCH', cookies: {}, body: { name: 'Maria' } });
+    const res = createFakeRes();
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('sessao de MAQUINA (sem user): 403 user_session_required', async () => {
+    const cookie = cookieFor({ tenantId: 'tenant-1', apiKey: 'chave-1' });
+    const req = createFakeReq({
+      method: 'PATCH',
+      cookies: { [SESSION_COOKIE_NAME]: cookie },
+      body: { name: 'Maria' },
+    });
+    const res = createFakeRes();
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('corpo vazio: 400, sem chamar a API', async () => {
+    const cookie = cookieFor({
+      tenantId: 'tenant-1',
+      accessToken: fakeAccessToken(),
+      refreshToken: 'ref-1',
+      user: USER,
+    });
+    const req = createFakeReq({
+      method: 'PATCH',
+      cookies: { [SESSION_COOKIE_NAME]: cookie },
+      body: {},
+    });
+    const res = createFakeRes();
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('sucesso: repassa para a API com Bearer, regrava o cookie e devolve o user atualizado', async () => {
+    (fetch as jest.Mock).mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: async () => ({ user: { ...USER, name: 'Maria Silva' } }),
+    });
+    const accessToken = fakeAccessToken();
+    const cookie = cookieFor({
+      tenantId: 'tenant-1',
+      accessToken,
+      refreshToken: 'ref-1',
+      user: USER,
+    });
+    const req = createFakeReq({
+      method: 'PATCH',
+      cookies: { [SESSION_COOKIE_NAME]: cookie },
+      body: { name: 'Maria Silva' },
+    });
+    const res = createFakeRes();
+
+    await handler(req, res);
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('/api/tenants/tenant-1/auth/me', 'http://api-de-teste:4000'),
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: expect.objectContaining({ Authorization: `Bearer ${accessToken}` }),
+      }),
+    );
+    expect(res._headers['Set-Cookie']).toMatch(/wa_dashboard_session=/);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      user: { ...USER, name: 'Maria Silva' },
+    });
+  });
+
+  it('API 401: repassa 401', async () => {
+    (fetch as jest.Mock).mockResolvedValue({ status: 401, ok: false });
+    const cookie = cookieFor({
+      tenantId: 'tenant-1',
+      accessToken: fakeAccessToken(),
+      refreshToken: 'ref-1',
+      user: USER,
+    });
+    const req = createFakeReq({
+      method: 'PATCH',
+      cookies: { [SESSION_COOKIE_NAME]: cookie },
+      body: { name: 'Maria Silva' },
+    });
+    const res = createFakeRes();
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 });

@@ -201,6 +201,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { requirePermission },
       { HmacSha256ApiKeyHasher },
       { PrismaTenantRepository },
+      { createTenantRouter },
     ] = await Promise.all([
       import('@prisma/client'),
       import('./services/whatsapp/compositionRoot'),
@@ -227,6 +228,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       import('./shared/presentation/requirePermission'),
       import('./shared/security/infrastructure/HmacSha256ApiKeyHasher'),
       import('./shared/tenant/infrastructure/PrismaTenantRepository'),
+      import('./shared/tenant/presentation/tenantRouter'),
     ]);
     const { createWhatsAppSessionsComposition, createOutboundCommandConsumerWorker } =
       whatsappCompositionModule;
@@ -278,10 +280,11 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // caso so o plano maquina (chave) funciona, preservando o comportamento
     // atual do Dashboard/testes. `API_KEY_PEPPER` ja e garantido pelo guard
     // no topo desta funcao.
+    const tenantRepository = new PrismaTenantRepository(prisma);
     const authenticate = createAuthenticate(
       accessTokenService,
       new HmacSha256ApiKeyHasher(API_KEY_PEPPER),
-      new PrismaTenantRepository(prisma),
+      tenantRepository,
       logger,
     );
 
@@ -300,6 +303,15 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       // precisa de um ator identificável para consultar. Sem error handler
       // dedicado (rota só de leitura, sem erro de Domain esperado).
       app.use('/api/tenants/:tenantId/audit-logs', authenticate, authComposition.auditLogRouter);
+
+      // Reorganizacao Perfil/Configuracoes (2026-08-27) — aba "Empresa": nome
+      // do tenant. GET liberado a qualquer principal autenticado do tenant;
+      // PATCH exige `tenant:manage` (gate dentro do proprio router).
+      app.use(
+        '/api/tenants/:tenantId',
+        authenticate,
+        createTenantRouter(tenantRepository),
+      );
     }
 
     // D17 (levantamento arquitetural do Bloco 5) — cada error handler é

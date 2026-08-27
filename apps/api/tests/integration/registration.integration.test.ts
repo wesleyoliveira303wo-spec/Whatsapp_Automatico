@@ -93,6 +93,9 @@ describe('Integração real — registro Tenant+Owner (Fase Auth/Registro)', () 
     expect(user?.role).toBe('OWNER');
     expect(user?.tenantId).toBe(result.tenantId);
     expect(user?.mustChangePassword).toBe(false);
+    // Reorganizacao Perfil/Configuracoes (2026-08-27) — o nome informado no
+    // registro agora e persistido de verdade (antes so ia para a auditoria).
+    expect(user?.name).toBe('Maria Teste');
 
     expect(result.accessToken).toBeTruthy();
     expect(result.refreshToken).toBeTruthy();
