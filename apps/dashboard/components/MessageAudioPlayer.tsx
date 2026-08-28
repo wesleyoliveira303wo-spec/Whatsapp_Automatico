@@ -22,14 +22,46 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
+/** Número de barras da waveform — mesma densidade visual da referência. */
+const WAVEFORM_BAR_COUNT = 32;
+
+/**
+ * Alturas das barras da waveform, em porcentagem (30%–100%).
+ *
+ * DECORATIVO quanto à AMPLITUDE, por limitação real: a API entrega o
+ * binário do áudio, não os samples decodificados — desenhar a forma de onda
+ * verdadeira exigiria decodificar o arquivo inteiro no cliente (Web Audio
+ * API) só para pintar 32 barrinhas. O PROGRESSO, esse sim, é real (vem do
+ * `currentTime` do `<audio>`).
+ *
+ * Derivadas do `src` por um PRNG determinístico (LCG clássico) para que a
+ * mesma mensagem tenha sempre o mesmo desenho — uma waveform que muda a cada
+ * render pareceria defeito.
+ */
+function waveformHeights(seed: string, bars: number): number[] {
+  let state = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    state = (state * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  const heights: number[] = [];
+  for (let index = 0; index < bars; index += 1) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    heights.push(30 + ((state >>> 8) % 71));
+  }
+  return heights;
+}
+
 /**
  * Reskin 2026-08-06 — player de áudio da bolha de mensagem, no lugar do
  * `<audio controls>` nativo (que não tem como ser restilizado de forma
  * confiável entre navegadores). Continua sendo o MESMO elemento `<audio>`
  * por baixo (via ref, sem chrome nativo) — reprodução real, progresso e
- * duração reais via `timeupdate`/`loadedmetadata`, não decorativos. Sem
- * busca por clique na trilha (fora do escopo deste reskin; o mockup também
- * não interage com a trilha).
+ * duração reais via `timeupdate`/`loadedmetadata`, não decorativos.
+ *
+ * Reskin 2026-08-27 — a linha de progresso fina virou a waveform em barras
+ * da referência. Amplitude decorativa e determinística (ver
+ * `waveformHeights`); progresso real. Sem busca por clique na trilha —
+ * fora de escopo, e a referência também não interage com ela.
  */
 export default function MessageAudioPlayer({
   src,
@@ -72,6 +104,12 @@ export default function MessageAudioPlayer({
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
+  // `useMemo` não é necessário: `waveformHeights` é O(32) e o componente só
+  // re-renderiza a cada `timeupdate` — o custo é irrelevante e a alternativa
+  // acrescentaria um hook para nada.
+  const heights = waveformHeights(src, WAVEFORM_BAR_COUNT);
+  const playedBars = Math.round((progressPct / 100) * WAVEFORM_BAR_COUNT);
+
   return (
     <div
       className={cn(
@@ -92,14 +130,22 @@ export default function MessageAudioPlayer({
           <Play className="h-[13px] w-[13px]" fill="currentColor" aria-hidden="true" />
         )}
       </button>
-      <span className="relative h-[3px] w-[132px] shrink-0 rounded-full bg-current/[.14]">
-        <span
-          className={cn(
-            'absolute left-0 top-0 h-[3px] rounded-full',
-            outbound ? 'bg-chat-bubble-out-foreground/70' : 'bg-primary',
-          )}
-          style={{ width: `${progressPct}%` }}
-        />
+      <span className="flex h-[26px] shrink-0 items-center gap-[2px]" aria-hidden="true">
+        {heights.map((height, index) => (
+          <span
+            key={index}
+            data-waveform-bar
+            style={{ height: `${height}%` }}
+            className={cn(
+              'w-[2px] shrink-0 rounded-full',
+              index < playedBars
+                ? outbound
+                  ? 'bg-chat-bubble-out-foreground/70'
+                  : 'bg-primary'
+                : 'bg-chat-meta/40',
+            )}
+          />
+        ))}
       </span>
       <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
         {formatDuration(duration > 0 ? duration - currentTime : duration)}
