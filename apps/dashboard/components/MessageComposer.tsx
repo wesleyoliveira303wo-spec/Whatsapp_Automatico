@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import {
-  Paperclip,
+  Plus,
   X,
   FileText,
   MessageSquareText,
@@ -95,6 +95,15 @@ function errorMessageFor(error: unknown): string {
  * componente da tela antiga, reaproveitado aqui sem duplicar CRUD) dentro
  * do próprio popover; "Voltar" retorna à lista de inserção. A aba
  * "Respostas Rápidas" que existia em `ai.tsx` foi removida.
+ *
+ * Reskin 2026-08-27: a casca virou uma CÁPSULA fiel à referência (WhatsApp
+ * Web) — `+` para anexo, ícone discreto de respostas rápidas, textarea que
+ * cresce sozinha e botão de envio circular. Decisão explícita do fundador:
+ * o botão Enviar é FIXO (a referência troca por microfone quando o campo
+ * está vazio; aqui não há gravação de áudio, então o toggle prometeria uma
+ * função inexistente). Sem botão de emoji pelo mesmo motivo — o app não tem
+ * seletor. Nenhuma linha da lógica de envio/toast/anexo/respostas rápidas
+ * foi tocada neste reskin.
  */
 export default function MessageComposer({
   conversationId,
@@ -105,6 +114,22 @@ export default function MessageComposer({
   const [sending, setSending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Reskin 2026-08-27 — a casca virou uma cápsula, então a textarea não pode
+   * mais ter altura fixa de 2 linhas: começa com 1 e cresce com o conteúdo
+   * até o teto, quando passa a rolar internamente. Sem biblioteca — é só
+   * medir `scrollHeight` a cada mudança de texto.
+   */
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const MAX_TEXTAREA_HEIGHT_PX = 132; // ~6 linhas a 22px
+
+  useEffect(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    element.style.height = 'auto';
+    element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`;
+  }, [content]);
 
   // Fase 1, Bloco F1.9 — Respostas Rápidas: dropdown local (sem Radix novo,
   // mesmo racional já usado no projeto para evitar dependência/reestruturação
@@ -226,7 +251,7 @@ export default function MessageComposer({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
       {selectedFile && (
-        <div className="flex items-center gap-2 rounded-md border border-input bg-muted/50 px-2 py-1.5 text-sm">
+        <div className="flex items-center gap-2 self-start rounded-full border border-input bg-muted/50 px-3 py-1.5 text-sm">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="flex-1 truncate text-foreground">{selectedFile.name}</span>
           <button
@@ -239,10 +264,14 @@ export default function MessageComposer({
           </button>
         </div>
       )}
-      {/* Reskin 2026-08-06 — um único card (borda+raio+foco em anel translúcido)
-          envolve textarea + barra de ações, no lugar de botões soltos ao lado
-          de uma textarea com a própria borda. */}
-      <div className="rounded-xl border border-input bg-card px-3 pb-2 pt-2.5 focus-within:border-[#B9D3C8] focus-within:ring-[3px] focus-within:ring-primary/10">
+      {/*
+        Reskin 2026-08-27 — casca em CÁPSULA, fiel à referência: raio alto,
+        fundo claro, borda/sombra quase imperceptíveis, altura compacta e
+        controles pequenos que parecem parte da própria caixa. Os botões usam
+        `self-end` para continuarem ancorados embaixo enquanto a textarea
+        cresce.
+      */}
+      <div className="flex items-end gap-1 rounded-[22px] border border-input bg-card px-2 py-1.5 shadow-sm focus-within:border-primary/40 focus-within:ring-[3px] focus-within:ring-primary/10">
         <input
           ref={fileInputRef}
           type="file"
@@ -250,116 +279,112 @@ export default function MessageComposer({
           className="hidden"
           aria-label="Anexar arquivo"
         />
-        <textarea
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={selectedFile ? 'Legenda (opcional)…' : 'Escreva sua resposta…'}
-          rows={2}
-          maxLength={MAX_LENGTH}
-          className="min-h-[42px] w-full resize-none border-0 bg-transparent text-[13.5px] leading-[1.55] text-foreground outline-none"
-        />
-        <div className="mt-0.5 flex items-center gap-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 self-end rounded-full text-muted-foreground"
+          disabled={sending}
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Anexar arquivo"
+        >
+          <Plus className="h-5 w-5" aria-hidden="true" />
+        </Button>
+        <div ref={quickRepliesRef} className="relative shrink-0 self-end">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-[9px]"
+            className="h-9 w-9 rounded-full text-muted-foreground"
             disabled={sending}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="Anexar arquivo"
+            onClick={() =>
+              setShowQuickReplies((current) => {
+                if (current) setManagingQuickReplies(false);
+                return !current;
+              })
+            }
+            aria-label="Respostas rápidas"
           >
-            <Paperclip className="h-[17px] w-[17px]" aria-hidden="true" />
+            <MessageSquareText className="h-[17px] w-[17px]" aria-hidden="true" />
           </Button>
-          <div ref={quickRepliesRef} className="relative">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-[9px]"
-              disabled={sending}
-              onClick={() =>
-                setShowQuickReplies((current) => {
-                  if (current) setManagingQuickReplies(false);
-                  return !current;
-                })
-              }
-              aria-label="Respostas rápidas"
-            >
-              <MessageSquareText className="h-[17px] w-[17px]" aria-hidden="true" />
-            </Button>
-            {showQuickReplies &&
-              (managingQuickReplies ? (
-                <div className="fx-scroll absolute bottom-full left-0 mb-2 max-h-[420px] w-[460px] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-menu">
-                  <div className="mb-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Reflete criações/edições/remoções feitas dentro do
-                        // `QuickRepliesPanel` (que gerencia seu PRÓPRIO
-                        // `useQuickReplies`, independente deste) na lista de
-                        // inserção — sem isso, uma resposta recém-cadastrada
-                        // só apareceria depois de reabrir o dropdown do zero.
-                        setManagingQuickReplies(false);
-                        refreshQuickReplies();
-                      }}
-                      aria-label="Voltar para a lista de respostas rápidas"
-                      className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <span className="text-[13px] font-medium text-foreground">
-                      Gerenciar respostas rápidas
-                    </span>
-                  </div>
-                  <QuickRepliesPanel sessionName={sessionName} />
-                </div>
-              ) : (
-                <div className="absolute bottom-full left-0 mb-2 w-72 overflow-hidden rounded-xl border border-border bg-card shadow-menu">
-                  <div className="fx-scroll max-h-56 overflow-y-auto p-1.5">
-                    {quickReplies.length === 0 ? (
-                      <p className="p-2 text-xs text-muted-foreground">
-                        Nenhuma resposta rápida cadastrada.
-                      </p>
-                    ) : (
-                      quickReplies.map((quickReply) => (
-                        <button
-                          key={quickReply.id}
-                          type="button"
-                          onClick={() => insertQuickReply(quickReply.content)}
-                          className="block w-full truncate rounded-lg p-2 text-left text-[13px] text-foreground hover:bg-muted"
-                          title={quickReply.content}
-                        >
-                          {quickReply.content}
-                        </button>
-                      ))
-                    )}
-                  </div>
+          {showQuickReplies &&
+            (managingQuickReplies ? (
+              <div className="fx-scroll absolute bottom-full left-0 mb-2 max-h-[420px] w-[460px] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-menu">
+                <div className="mb-2 flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setManagingQuickReplies(true)}
-                    className="flex w-full items-center gap-1.5 border-t border-border/70 p-2 text-left text-[12.5px] font-medium text-primary hover:bg-muted"
+                    onClick={() => {
+                      // Reflete criações/edições/remoções feitas dentro do
+                      // `QuickRepliesPanel` (que gerencia seu PRÓPRIO
+                      // `useQuickReplies`, independente deste) na lista de
+                      // inserção — sem isso, uma resposta recém-cadastrada
+                      // só apareceria depois de reabrir o dropdown do zero.
+                      setManagingQuickReplies(false);
+                      refreshQuickReplies();
+                    }}
+                    aria-label="Voltar para a lista de respostas rápidas"
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-[6px] text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
-                    <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    Cadastrar / gerenciar respostas rápidas
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                   </button>
+                  <span className="text-[13px] font-medium text-foreground">
+                    Gerenciar respostas rápidas
+                  </span>
                 </div>
-              ))}
-          </div>
-          <div className="flex-1" />
-          <span className="mr-2 hidden whitespace-nowrap text-[11.5px] text-muted-foreground sm:inline">
-            Enter envia · Shift+Enter quebra linha
-          </span>
-          <Button
-            type="submit"
-            size="icon"
-            className="h-[34px] w-[34px] rounded-full shadow-cta"
-            disabled={!canSubmit}
-            aria-label={sending ? 'Enviando…' : 'Enviar'}
-          >
-            <Send className="h-4 w-4" aria-hidden="true" />
-          </Button>
+                <QuickRepliesPanel sessionName={sessionName} />
+              </div>
+            ) : (
+              <div className="absolute bottom-full left-0 mb-2 w-72 overflow-hidden rounded-xl border border-border bg-card shadow-menu">
+                <div className="fx-scroll max-h-56 overflow-y-auto p-1.5">
+                  {quickReplies.length === 0 ? (
+                    <p className="p-2 text-xs text-muted-foreground">
+                      Nenhuma resposta rápida cadastrada.
+                    </p>
+                  ) : (
+                    quickReplies.map((quickReply) => (
+                      <button
+                        key={quickReply.id}
+                        type="button"
+                        onClick={() => insertQuickReply(quickReply.content)}
+                        className="block w-full truncate rounded-lg p-2 text-left text-[13px] text-foreground hover:bg-muted"
+                        title={quickReply.content}
+                      >
+                        {quickReply.content}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setManagingQuickReplies(true)}
+                  className="flex w-full items-center gap-1.5 border-t border-border/70 p-2 text-left text-[12.5px] font-medium text-primary hover:bg-muted"
+                >
+                  <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  Cadastrar / gerenciar respostas rápidas
+                </button>
+              </div>
+            ))}
         </div>
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={selectedFile ? 'Legenda (opcional)…' : 'Escreva sua resposta…'}
+          title="Enter envia · Shift+Enter quebra linha"
+          rows={1}
+          maxLength={MAX_LENGTH}
+          className="fx-scroll max-h-[132px] min-h-[36px] flex-1 resize-none self-center border-0 bg-transparent px-1 py-2 text-[14.2px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          className="h-9 w-9 shrink-0 self-end rounded-full shadow-cta"
+          disabled={!canSubmit}
+          aria-label={sending ? 'Enviando…' : 'Enviar'}
+        >
+          <Send className="h-4 w-4" aria-hidden="true" />
+        </Button>
       </div>
     </form>
   );

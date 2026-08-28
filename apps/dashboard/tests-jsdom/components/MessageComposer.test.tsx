@@ -416,4 +416,50 @@ describe('MessageComposer (Milestone 6, Bloco M6E-2)', () => {
       });
     });
   });
+
+  describe('Reskin 2026-08-27 — casca em pill', () => {
+    it('o botão Enviar é FIXO: existe mesmo com o campo vazio (sem toggle de microfone)', () => {
+      render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+      expect(screen.getByRole('button', { name: 'Enviar' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /microfone|gravar/i })).not.toBeInTheDocument();
+    });
+
+    it('não existe botão de emoji (o app não tem seletor de emoji)', () => {
+      render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+      expect(screen.queryByRole('button', { name: /emoji/i })).not.toBeInTheDocument();
+    });
+
+    it('Enviar fica desabilitado sem texto e sem anexo, e habilita ao digitar', () => {
+      render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+      const send = screen.getByRole('button', { name: 'Enviar' });
+      expect(send).toBeDisabled();
+      fireEvent.change(screen.getByPlaceholderText(/Escreva sua resposta/), {
+        target: { value: 'oi' },
+      });
+      expect(send).toBeEnabled();
+    });
+
+    it('a casca é uma cápsula (raio alto), não um retângulo', () => {
+      const { container } = render(
+        <MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />,
+      );
+      expect(container.querySelector('.rounded-\\[22px\\]')).toBeInTheDocument();
+    });
+
+    it('a textarea começa com uma linha e cresce até o teto (sem virar caixa quadrada)', () => {
+      render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+      const textarea = screen.getByPlaceholderText(/Escreva sua resposta/) as HTMLTextAreaElement;
+      expect(textarea).toHaveAttribute('rows', '1');
+      expect(textarea.className).toContain('max-h-[132px]');
+    });
+
+    it('a dica "Enter envia" sai da UI e vira title da textarea', () => {
+      render(<MessageComposer conversationId="c1" sessionName="vendas" onSent={onSent} />);
+      expect(screen.queryByText(/Enter envia/)).not.toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Escreva sua resposta/)).toHaveAttribute(
+        'title',
+        'Enter envia · Shift+Enter quebra linha',
+      );
+    });
+  });
 });
