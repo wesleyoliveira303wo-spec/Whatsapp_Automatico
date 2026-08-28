@@ -150,4 +150,58 @@ describe('MessageTimeline (Milestone 6, Bloco M6E-2)', () => {
       expect(screen.getByText('25/07/2026')).toBeInTheDocument();
     });
   });
+
+  describe('Reskin 2026-08-27 — divisor de data e agrupamento', () => {
+    it('insere o divisor de data antes da primeira mensagem', () => {
+      const { container } = render(
+        <MessageTimeline
+          messages={[buildMessage({ occurredAt: '2020-03-15T10:00:00.000Z' })]}
+          interactions={null}
+          errorMessage={null}
+          onRetry={jest.fn()}
+        />,
+      );
+      const dividers = container.querySelectorAll('li[aria-hidden="true"]');
+      expect(dividers).toHaveLength(1);
+      expect(dividers[0].textContent).toMatch(/15\/03\/2020/);
+    });
+
+    it('não repete o divisor entre mensagens do mesmo dia', () => {
+      const { container } = render(
+        <MessageTimeline
+          messages={[
+            buildMessage({ id: 'm1', occurredAt: '2020-03-15T10:00:00.000Z' }),
+            buildMessage({ id: 'm2', occurredAt: '2020-03-15T11:00:00.000Z' }),
+          ]}
+          interactions={null}
+          errorMessage={null}
+          onRetry={jest.fn()}
+        />,
+      );
+      expect(container.querySelectorAll('li[aria-hidden="true"]')).toHaveLength(1);
+    });
+
+    it('mensagens consecutivas do MESMO lado ficam coladas; troca de lado abre respiro', () => {
+      const { container } = render(
+        <MessageTimeline
+          messages={[
+            buildMessage({ id: 'm1', direction: 'inbound' }),
+            buildMessage({ id: 'm2', direction: 'inbound' }),
+            buildMessage({ id: 'm3', direction: 'outbound' }),
+          ]}
+          interactions={null}
+          errorMessage={null}
+          onRetry={jest.fn()}
+        />,
+      );
+      // O primeiro <li> é o divisor de data (aria-hidden); as bolhas vêm depois.
+      const bubbles = Array.from(container.querySelectorAll('li')).filter(
+        (li) => !li.hasAttribute('aria-hidden'),
+      );
+      expect(bubbles).toHaveLength(3);
+      expect(bubbles[0]).toHaveClass('mt-[10px]'); // primeira do grupo
+      expect(bubbles[1]).toHaveClass('mt-[2px]'); // mesma direção da anterior
+      expect(bubbles[2]).toHaveClass('mt-[10px]'); // trocou de lado
+    });
+  });
 });

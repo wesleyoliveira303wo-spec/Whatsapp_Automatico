@@ -2,7 +2,8 @@ import { Fragment } from 'react';
 import MessageBubble from './MessageBubble';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
-import { formatDayDivider, isSameCalendarDay } from '@/lib/formatters';
+import { isSameCalendarDay } from '@/lib/formatters';
+import DateSeparator from './DateSeparator';
 import type { ConversationMessage, AiInteractionSummary } from '@/lib/clientApi';
 
 interface MessageTimelineProps {
@@ -29,6 +30,11 @@ interface MessageTimelineProps {
  * padrão WhatsApp/Telegram) inserido sempre que o dia muda entre uma
  * mensagem e a anterior (ou antes da primeira) — comparação por
  * `isSameCalendarDay`, puramente derivada de `occurredAt`, sem estado extra.
+ *
+ * Reskin 2026-08-27: o divisor virou o componente `DateSeparator` e o
+ * espaçamento entre bolhas passou a ser calculado aqui (`spacedFromPrevious`)
+ * — o `gap-2` uniforme foi removido: na referência, mensagens seguidas do
+ * mesmo lado ficam coladas e só a troca de turno abre respiro.
  */
 export default function MessageTimeline({
   messages,
@@ -74,22 +80,23 @@ export default function MessageTimeline({
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col">
       {messages.map((message, index) => {
         const previous = messages[index - 1];
         const showDivider =
           !previous || !isSameCalendarDay(previous.occurredAt, message.occurredAt);
+        // Reskin 2026-08-27 — respiro vertical só quando o "turno" muda
+        // (troca de lado, primeira mensagem, ou logo após um divisor de
+        // data). Mensagens seguidas do mesmo lado ficam coladas, como na
+        // referência.
+        const spacedFromPrevious =
+          !previous || showDivider || previous.direction !== message.direction;
         return (
           <Fragment key={message.id}>
-            {showDivider && (
-              <li className="flex justify-center py-1" aria-hidden="true">
-                <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                  {formatDayDivider(message.occurredAt)}
-                </span>
-              </li>
-            )}
+            {showDivider && <DateSeparator occurredAt={message.occurredAt} />}
             <MessageBubble
               message={message}
+              spacedFromPrevious={spacedFromPrevious}
               // CORREÇÃO 2026-08-18: `AiInteraction.messageId` é um campo de
               // DUPLO PROPÓSITO no backend — grava a mensagem INBOUND que
               // originou a geração (Fase 1, F1.4) até o envio outbound ter

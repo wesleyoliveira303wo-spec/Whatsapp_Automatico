@@ -9,6 +9,14 @@ interface MessageBubbleProps {
   message: ConversationMessage;
   /** Interacao de IA que GEROU esta mensagem (correlacao por `messageId`, D27) — presente so em outbound geradas pela IA. */
   aiInteraction?: AiInteractionSummary;
+  /**
+   * Reskin 2026-08-27 — `true` quando a mensagem anterior veio do OUTRO
+   * lado da conversa (ou não existe). Abre respiro vertical entre grupos,
+   * mantendo mensagens consecutivas do mesmo lado coladas — padrão da
+   * referência. Default `true` (comportamento espaçado) para quem renderiza
+   * uma bolha isolada, sem contexto de lista.
+   */
+  spacedFromPrevious?: boolean;
 }
 
 /** Classes de cor da bolha, direção-dependentes — mesmo par usado por texto/documento/áudio (Design System, tela Conversas). */
@@ -117,13 +125,23 @@ function MessageMediaContent({
  * (`providerMessageId` + assinar `messages.update` no `BaileysProvider`,
  * fora de escopo deste redesign) e prometeria algo que o produto não cumpre.
  */
-export default function MessageBubble({ message, aiInteraction }: MessageBubbleProps): JSX.Element {
+export default function MessageBubble({
+  message,
+  aiInteraction,
+  spacedFromPrevious = true,
+}: MessageBubbleProps): JSX.Element {
   const outbound = message.direction === 'outbound';
   const contentType = message.contentType ?? 'text';
   const isMedia = contentType !== 'text';
 
   return (
-    <li className={cn('flex flex-col', outbound ? 'items-end' : 'items-start')}>
+    <li
+      className={cn(
+        'flex flex-col',
+        spacedFromPrevious ? 'mt-[10px]' : 'mt-[2px]',
+        outbound ? 'items-end' : 'items-start',
+      )}
+    >
       {isMedia ? (
         <MessageMediaContent message={message} outbound={outbound} />
       ) : (
