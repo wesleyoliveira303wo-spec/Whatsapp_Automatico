@@ -234,6 +234,26 @@
 }
 
 /*
+ * Papel de parede do painel de conversa (pedido do fundador) — fundo estilo
+ * WhatsApp atrás da timeline de mensagens. A imagem fica no contêiner que NÃO
+ * rola (as mensagens rolam por cima, wallpaper fixo). `cover` + `center` evita
+ * emenda de tile (as artes não são seamless). Dois arquivos, um por tema —
+ * mesma composição, só a cor muda: claro = grafite sobre cinza-claro, escuro =
+ * grafite sobre quase-preto. `--panel` fica como cor de base caso a imagem
+ * demore/ falhe ao carregar.
+ */
+.chat-wallpaper {
+  background-color: hsl(var(--panel));
+  background-image: url('/chat-wallpaper-light.png');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+.dark .chat-wallpaper {
+  background-image: url('/chat-wallpaper-dark.png');
+}
+
+/*
  * Reskin 2026-08-27 — sombra da bolha de mensagem. Valor copiado da
  * referência (WhatsApp Web): quase imperceptível, serve só para descolar a
  * bolha do papel de parede. Não usa a escala `shadow-*` do Tailwind de

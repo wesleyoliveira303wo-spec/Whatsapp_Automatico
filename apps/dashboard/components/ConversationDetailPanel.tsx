@@ -253,7 +253,7 @@ export default function ConversationDetailPanel({
         <p className="border-b border-border px-4 py-2 text-sm text-destructive">{errorMessage}</p>
       )}
 
-      <div className="relative flex-1 min-h-0">
+      <div className="chat-wallpaper relative flex-1 min-h-0">
         {/*
           Reskin 2026-08-27 — margem lateral generosa no desktop (as bolhas
           não devem colar nas bordas, como na referência) e enxuta no mobile,

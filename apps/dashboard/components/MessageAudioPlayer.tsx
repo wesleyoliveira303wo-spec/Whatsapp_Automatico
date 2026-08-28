@@ -130,7 +130,7 @@ export default function MessageAudioPlayer({
           <Play className="h-[13px] w-[13px]" fill="currentColor" aria-hidden="true" />
         )}
       </button>
-      <span className="flex h-[26px] shrink-0 items-center gap-[2px]" aria-hidden="true">
+      <span className="flex h-[26px] min-w-0 flex-1 items-center gap-[2px] overflow-hidden" aria-hidden="true">
         {heights.map((height, index) => (
           <span
             key={index}
@@ -147,7 +147,7 @@ export default function MessageAudioPlayer({
           />
         ))}
       </span>
-      <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
+      <span className="shrink-0 text-[11.5px] tabular-nums text-chat-meta">
         {formatDuration(duration > 0 ? duration - currentTime : duration)}
       </span>
       {occurredAt && <MessageMeta occurredAt={occurredAt} status={status} />}

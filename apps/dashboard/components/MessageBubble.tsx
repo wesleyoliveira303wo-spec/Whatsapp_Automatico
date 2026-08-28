@@ -101,7 +101,7 @@ function MessageMediaContent({
           <img
             src={mediaUrl}
             alt={message.content || 'Imagem recebida'}
-            className="chat-bubble-shadow max-h-64 rounded-xl object-contain"
+            className="chat-bubble-shadow max-h-64 max-w-full rounded-xl object-contain"
           />
           <MessageMeta
             occurredAt={message.occurredAt}
@@ -114,7 +114,7 @@ function MessageMediaContent({
     case 'video':
       return (
         <div className={cn('relative', BUBBLE_MAX_WIDTH)}>
-          <video src={mediaUrl} controls className="chat-bubble-shadow max-h-64 rounded-xl" />
+          <video src={mediaUrl} controls className="chat-bubble-shadow max-h-64 max-w-full rounded-xl" />
           <MessageMeta
             occurredAt={message.occurredAt}
             status={status}
