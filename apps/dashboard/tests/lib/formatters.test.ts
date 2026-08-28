@@ -25,6 +25,7 @@ import {
   formatDayDivider,
   isSameCalendarDay,
   isSummaryOutdated,
+  formatMessageTime,
 } from '../../lib/formatters';
 
 describe('formatters (M2, Fase 4)', () => {
@@ -567,5 +568,21 @@ describe('formatCount (Onda 1 do redesign)', () => {
   it('abaixo de mil o resultado e identico ao anterior — nenhuma tela regride', () => {
     expect(formatCount(0)).toBe('0');
     expect(formatCount(42)).toBe('42');
+  });
+});
+
+describe('formatMessageTime (reskin 2026-08-27 — horário dentro da bolha)', () => {
+  it('devolve apenas hora e minuto, sem data e sem segundos', () => {
+    // 2026-07-24T12:31:00Z. O teste roda no fuso da máquina, então a asserção
+    // é sobre o FORMATO (HH:MM), não sobre o valor absoluto da hora.
+    expect(formatMessageTime('2026-07-24T12:31:00.000Z')).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it('devolve "—" para entrada ausente', () => {
+    expect(formatMessageTime(undefined)).toBe('—');
+  });
+
+  it('devolve "—" para string inválida', () => {
+    expect(formatMessageTime('não é uma data')).toBe('—');
   });
 });

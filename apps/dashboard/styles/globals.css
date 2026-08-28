@@ -93,6 +93,23 @@
     --warning-emphasis: 37 88% 29%;  /* NOVO #8A5809 */
 
     --destructive-emphasis: 5 55% 37%; /* NOVO #93342B */
+
+    /*
+     * Reskin 2026-08-27 — família de tokens EXCLUSIVA da tela de conversa
+     * (referência visual: WhatsApp Web). Deliberadamente separada dos tokens
+     * do Design System: a bolha enviada do WhatsApp é verde-CLARO com texto
+     * escuro, enquanto `--primary` do produto é verde-escuro com texto
+     * branco. Reaproveitar `--primary` aqui obrigaria a escolher entre
+     * fidelidade à referência e consistência do resto do app — tokens
+     * próprios resolvem os dois (decisão registrada na spec de 2026-08-27).
+     * Nenhuma outra tela usa `--chat-*`.
+     */
+    --chat-bubble-in: 0 0% 100%;              /* #FFFFFF — bolha recebida */
+    --chat-bubble-in-foreground: 153 20% 11%; /* mesmo texto primário do app */
+    --chat-bubble-out: 111 91% 91%;           /* #D9FDD3 — bolha enviada (WhatsApp) */
+    --chat-bubble-out-foreground: 153 20% 11%;
+    --chat-meta: 202 12% 45%;                 /* #667781 — horário/ticks dentro da bolha */
+    --chat-divider: 0 0% 100%;                /* pill de data ("Hoje"/"domingo") */
   }
 
   .dark {
@@ -160,6 +177,20 @@
      * folga, sem mudar a identidade da cor.
      */
     --destructive-emphasis: 3 55% 62%;
+
+    /*
+     * Reskin 2026-08-27 — variante escura dos tokens de chat, calibrada pelo
+     * WhatsApp Web escuro: bolha recebida em superfície elevada sobre
+     * `--panel`, bolha enviada no teal escuro (#005C4B) com texto claro —
+     * inversão deliberada do tema claro (lá o texto da bolha enviada é
+     * escuro), exatamente como a referência faz.
+     */
+    --chat-bubble-in: 222 20% 13%;
+    --chat-bubble-in-foreground: 210 40% 98%;
+    --chat-bubble-out: 169 100% 18%;          /* #005C4B */
+    --chat-bubble-out-foreground: 210 40% 98%;
+    --chat-meta: 202 10% 65%;
+    --chat-divider: 203 24% 15%;              /* #1D282F */
   }
 }
 
@@ -200,6 +231,21 @@
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+/*
+ * Reskin 2026-08-27 — sombra da bolha de mensagem. Valor copiado da
+ * referência (WhatsApp Web): quase imperceptível, serve só para descolar a
+ * bolha do papel de parede. Não usa a escala `shadow-*` do Tailwind de
+ * propósito — a menor delas (`shadow-sm`) já é forte demais e destoaria da
+ * estética plana da referência (Design System §4: sombra só para o que
+ * flutua de verdade).
+ */
+.chat-bubble-shadow {
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+.dark .chat-bubble-shadow {
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.2);
 }
 
 /*

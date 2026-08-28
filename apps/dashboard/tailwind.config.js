@@ -105,6 +105,18 @@ module.exports = {
           foreground: 'hsl(var(--destructive-foreground))',
           emphasis: 'hsl(var(--destructive-emphasis))',
         },
+        // Reskin 2026-08-27 — tokens EXCLUSIVOS da tela de conversa
+        // (referência WhatsApp Web). Ver comentário em globals.css:
+        // deliberadamente separados de `primary`/`muted`, que continuam
+        // servindo o resto do produto sem nenhuma mudança.
+        chat: {
+          'bubble-in': 'hsl(var(--chat-bubble-in))',
+          'bubble-in-foreground': 'hsl(var(--chat-bubble-in-foreground))',
+          'bubble-out': 'hsl(var(--chat-bubble-out))',
+          'bubble-out-foreground': 'hsl(var(--chat-bubble-out-foreground))',
+          meta: 'hsl(var(--chat-meta))',
+          divider: 'hsl(var(--chat-divider))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

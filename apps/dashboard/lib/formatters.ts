@@ -91,6 +91,23 @@ export function formatDateTime(iso: string | undefined): string {
   }).format(date);
 }
 
+/**
+ * Reskin 2026-08-27 — horário exibido DENTRO da bolha de mensagem, no padrão
+ * WhatsApp: só `HH:MM`. Distinto de `formatDateTime` (que devolve
+ * `DD/MM/AAAA HH:MM:SS`, longo demais para caber no canto de uma bolha e
+ * fora do padrão da referência visual). Mesmo contrato de degradação:
+ * `'—'` para entrada ausente/inválida.
+ */
+export function formatMessageTime(iso: string | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 // --- Milestone 3, Bloco 6 (D24/D27/D28): formatadores de conversas/IA ---
 // Mesmo racional da secao acima (M2, Fase 4): funcoes puras, sem React/DOM,
 // testaveis em `testEnvironment: 'node'` (D29).
