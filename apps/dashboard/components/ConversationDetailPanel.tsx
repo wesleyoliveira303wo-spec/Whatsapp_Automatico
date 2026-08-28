@@ -254,7 +254,16 @@ export default function ConversationDetailPanel({
       )}
 
       <div className="relative flex-1 min-h-0">
-        <div ref={scrollContainerRef} className="fx-scroll h-full overflow-y-auto p-4">
+        {/*
+          Reskin 2026-08-27 — margem lateral generosa no desktop (as bolhas
+          não devem colar nas bordas, como na referência) e enxuta no mobile,
+          onde cada pixel de largura conta. O papel de parede fica no
+          contêiner PAI, que não rola: só esta lista rola, por cima dele.
+        */}
+        <div
+          ref={scrollContainerRef}
+          className="fx-scroll h-full overflow-y-auto px-3 py-2 sm:px-6 lg:px-[7%]"
+        >
           <MessageTimeline
             messages={messages}
             interactions={interactions}

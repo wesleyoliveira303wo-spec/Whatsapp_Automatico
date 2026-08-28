@@ -271,7 +271,7 @@ export default function MessageComposer({
         `self-end` para continuarem ancorados embaixo enquanto a textarea
         cresce.
       */}
-      <div className="flex items-end gap-1 rounded-[22px] border border-input bg-card px-2 py-1.5 shadow-sm focus-within:border-primary/40 focus-within:ring-[3px] focus-within:ring-primary/10">
+      <div className="flex items-end gap-1 rounded-[22px] border border-input bg-card px-2 py-1 shadow-sm focus-within:border-primary/40 focus-within:ring-[3px] focus-within:ring-primary/10">
         <input
           ref={fileInputRef}
           type="file"
@@ -283,19 +283,19 @@ export default function MessageComposer({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-9 w-9 shrink-0 self-end rounded-full text-muted-foreground"
+          className="h-8 w-8 shrink-0 self-end rounded-full text-muted-foreground"
           disabled={sending}
           onClick={() => fileInputRef.current?.click()}
           aria-label="Anexar arquivo"
         >
-          <Plus className="h-5 w-5" aria-hidden="true" />
+          <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
         </Button>
         <div ref={quickRepliesRef} className="relative shrink-0 self-end">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-full text-muted-foreground"
+            className="h-8 w-8 rounded-full text-muted-foreground"
             disabled={sending}
             onClick={() =>
               setShowQuickReplies((current) => {
@@ -374,12 +374,12 @@ export default function MessageComposer({
           title="Enter envia · Shift+Enter quebra linha"
           rows={1}
           maxLength={MAX_LENGTH}
-          className="fx-scroll max-h-[132px] min-h-[36px] flex-1 resize-none self-center border-0 bg-transparent px-1 py-2 text-[14.2px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground"
+          className="fx-scroll max-h-[132px] min-h-[24px] flex-1 resize-none self-center border-0 bg-transparent px-1 py-1 text-[14.2px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground"
         />
         <Button
           type="submit"
           size="icon"
-          className="h-9 w-9 shrink-0 self-end rounded-full shadow-cta"
+          className="h-8 w-8 shrink-0 self-end rounded-full shadow-cta"
           disabled={!canSubmit}
           aria-label={sending ? 'Enviando…' : 'Enviar'}
         >
