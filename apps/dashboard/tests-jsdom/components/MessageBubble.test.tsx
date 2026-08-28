@@ -150,4 +150,121 @@ describe('MessageBubble (Fase 1, Bloco F1.1 — mídia)', () => {
     expect(screen.getByText('só texto')).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
+
+  describe('Reskin 2026-08-27 — fidelidade à referência', () => {
+    it('mensagem recebida: bolha clara à esquerda', () => {
+      const { container } = render(<MessageBubble message={buildMessage()} />);
+      expect(container.querySelector('li')).toHaveClass('items-start');
+      expect(container.querySelector('.bg-chat-bubble-in')).toBeInTheDocument();
+    });
+
+    it('mensagem enviada: bolha verde-clara à direita', () => {
+      const { container } = render(
+        <MessageBubble message={buildMessage({ direction: 'outbound' })} />,
+      );
+      expect(container.querySelector('li')).toHaveClass('items-end');
+      expect(container.querySelector('.bg-chat-bubble-out')).toBeInTheDocument();
+    });
+
+    it('horário aparece só como HH:MM (não a data completa)', () => {
+      render(<MessageBubble message={buildMessage()} />);
+      expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
+      expect(screen.queryByText(/\d{2}\/\d{2}\/\d{4}/)).not.toBeInTheDocument();
+    });
+
+    it('mensagem enviada: mostra o indicador "Enviado"', () => {
+      render(<MessageBubble message={buildMessage({ direction: 'outbound' })} />);
+      expect(screen.getByLabelText('Enviado')).toBeInTheDocument();
+    });
+
+    it('mensagem recebida: NÃO mostra indicador de entrega', () => {
+      render(<MessageBubble message={buildMessage()} />);
+      expect(screen.queryByLabelText('Enviado')).not.toBeInTheDocument();
+    });
+
+    it('nunca mostra check duplo de "lido" (o backend não tem esse dado)', () => {
+      render(<MessageBubble message={buildMessage({ direction: 'outbound' })} />);
+      expect(screen.queryByLabelText('Lido')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Entregue')).not.toBeInTheDocument();
+    });
+
+    it('selo "Gerada por IA" fica ACIMA da bolha, não dentro dela', () => {
+      const { container } = render(
+        <MessageBubble
+          message={buildMessage({ direction: 'outbound' })}
+          aiInteraction={{
+            id: 'i1',
+            tenantId: 't1',
+            conversationId: 'c1',
+            provider: 'gemini',
+            model: 'gemini-3.5-flash',
+            promptVersion: 'v4',
+            tokensInput: 1,
+            tokensOutput: 1,
+            costUsd: '0',
+            latencyMs: 1,
+            status: 'success',
+          }}
+        />,
+      );
+      const badge = screen.getByText(/Gerada por IA/);
+      const bubble = container.querySelector('.bg-chat-bubble-out') as HTMLElement;
+      expect(bubble).toBeInTheDocument();
+      expect(bubble.contains(badge)).toBe(false);
+    });
+
+    it('documento: mostra a extensão real derivada do nome do arquivo', () => {
+      render(
+        <MessageBubble
+          message={buildMessage({
+            contentType: 'document',
+            content: '',
+            media: {
+              mimeType: 'application/pdf',
+              url: 'https://mmg.whatsapp.net/x.enc',
+              mediaKeyEncrypted: 'enc:abc',
+              fileName: 'contrato.pdf',
+            },
+          })}
+        />,
+      );
+      expect(screen.getByText('PDF')).toBeInTheDocument();
+    });
+
+    it('documento: NUNCA inventa tamanho nem número de páginas', () => {
+      render(
+        <MessageBubble
+          message={buildMessage({
+            contentType: 'document',
+            content: '',
+            media: {
+              mimeType: 'application/pdf',
+              url: 'https://mmg.whatsapp.net/x.enc',
+              mediaKeyEncrypted: 'enc:abc',
+              fileName: 'contrato.pdf',
+            },
+          })}
+        />,
+      );
+      expect(screen.queryByText(/página/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/KB|MB/)).not.toBeInTheDocument();
+    });
+
+    it('imagem: horário aparece como chip sobreposto à mídia', () => {
+      const { container } = render(
+        <MessageBubble
+          message={buildMessage({
+            contentType: 'image',
+            content: '',
+            media: {
+              mimeType: 'image/jpeg',
+              url: 'https://mmg.whatsapp.net/x.enc',
+              mediaKeyEncrypted: 'enc:abc',
+            },
+          })}
+        />,
+      );
+      expect(container.querySelector('.bg-black\\/45')).toBeInTheDocument();
+    });
+  });
 });

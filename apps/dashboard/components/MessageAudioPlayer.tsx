@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import MessageMeta from './MessageMeta';
+import type { MessageDeliveryStatus } from './MessageStatus';
 
 interface MessageAudioPlayerProps {
   src: string;
   className?: string;
+  /** Reskin 2026-08-27 — direção da mensagem; muda a cor da trilha de progresso. */
+  outbound?: boolean;
+  /** Reskin 2026-08-27 — horário exibido dentro da própria moldura do áudio (nunca abaixo dela). */
+  occurredAt?: string;
+  /** Reskin 2026-08-27 — indicador de entrega, só em mensagens enviadas. */
+  status?: MessageDeliveryStatus;
 }
 
 function formatDuration(seconds: number): string {
@@ -26,6 +34,9 @@ function formatDuration(seconds: number): string {
 export default function MessageAudioPlayer({
   src,
   className,
+  outbound = false,
+  occurredAt,
+  status,
 }: MessageAudioPlayerProps): JSX.Element {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -64,7 +75,7 @@ export default function MessageAudioPlayer({
   return (
     <div
       className={cn(
-        'flex max-w-[66%] items-center gap-[11px] rounded-xl px-[13px] py-[9px] pl-2.5',
+        'flex items-center gap-[11px] rounded-xl px-[13px] py-[9px] pl-2.5',
         className,
       )}
     >
@@ -83,13 +94,17 @@ export default function MessageAudioPlayer({
       </button>
       <span className="relative h-[3px] w-[132px] shrink-0 rounded-full bg-current/[.14]">
         <span
-          className="absolute left-0 top-0 h-[3px] rounded-full bg-primary"
+          className={cn(
+            'absolute left-0 top-0 h-[3px] rounded-full',
+            outbound ? 'bg-chat-bubble-out-foreground/70' : 'bg-primary',
+          )}
           style={{ width: `${progressPct}%` }}
         />
       </span>
       <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
         {formatDuration(duration > 0 ? duration - currentTime : duration)}
       </span>
+      {occurredAt && <MessageMeta occurredAt={occurredAt} status={status} />}
     </div>
   );
 }
