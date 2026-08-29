@@ -35,3 +35,8 @@ design/.thumbnail
 # Artefatos de editor (ex.: lock file do Nautilus/GNOME em ambientes Linux).
 .fuse_hidden*
 worktrees/
+
+# Dados de prospeccao (listas de leads reais raspadas do Google Maps) —
+# material operacional do fundador, nao faz parte do produto e nao deve ir
+# para o repositorio.
+leads-prospeccao-google-maps/

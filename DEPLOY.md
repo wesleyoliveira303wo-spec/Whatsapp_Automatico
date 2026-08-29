@@ -167,8 +167,10 @@ sudo systemctl enable --now docker
 ☁️ Como usuário `deploy`:
 
 ```bash
-cd ~ && git clone https://github.com/wesleyoliveira303wo-spec/Whatsapp_Automatico.git francis
+cd ~ && git clone -b feat/operacao-local-docker https://github.com/wesleyoliveira303wo-spec/Whatsapp_Automatico.git francis
 ```
+
+> **Branch de deploy:** este primeiro deploy sai da branch `feat/operacao-local-docker`, não de `main`. `main` está vários commits atrás e não tem itens essenciais (`/health/ready`, estabilização F1.10, landing page). A consolidação em `main` é faxina posterior, sem urgência.
 
 Se o repositório for privado, o Git vai pedir usuário/token. Use um **Personal Access Token** do GitHub com escopo `repo` (Settings → Developer settings → Personal access tokens), nunca sua senha.
 
@@ -214,9 +216,20 @@ AI_PROVIDER=gemini
 GEMINI_API_KEY=<sua chave do Google AI Studio>
 AI_GEMINI_MODEL=gemini-3.5-flash
 AI_GEMINI_MAX_TOKENS=2048
-AI_PROMPT_VERSION=v1
+AI_PROMPT_VERSION=v10
 AI_HISTORY_LIMIT=20
 ```
+
+> **`AI_PROMPT_VERSION=v10`** é obrigatório e deliberado: sem esta linha o
+> worker cai em `v1` (só anti-alucinação, sem nenhuma postura de venda). `v10`
+> é a versão mais refinada em produção.
+>
+> **`AI_PROVIDER=gemini` (free tier)** é aceito para o piloto de poucos
+> clientes de baixo volume — custo US$ 0. Risco conhecido: a cota diária do
+> free tier pode travar respostas sob pico (ex.: muitos leads respondendo ao
+> mesmo tempo); nesse caso a conversa vira "aguardando atendente" (o fallback
+> funciona, só atrasa). Migrar para o tier pago do Gemini é trocar só a
+> cobrança na conta do Google — nenhuma mudança de `.env` além da chave.
 
 > `DATABASE_URL`, `REDIS_URL`, `API_BASE_URL` e `INTERNAL_API_BASE_URL` **não vão neste arquivo** — o `docker-compose.prod.yml` já os define com os hostnames corretos da rede interna do Docker. Colocá-los aqui com `localhost` quebraria a comunicação entre containers.
 
