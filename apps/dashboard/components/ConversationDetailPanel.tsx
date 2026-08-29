@@ -211,26 +211,24 @@ export default function ConversationDetailPanel({
           savedContactName={conversation.savedContactName}
           className="h-[34px] w-[34px] text-[12.5px]"
         />
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-[14.5px] font-semibold tracking-tight text-foreground">
-              <DisplayNameParts
-                {...formatContactDisplayNameParts(
-                  conversation.contactJid,
-                  conversation.contactName,
-                  conversation.savedContactName,
-                )}
-              />
-            </h2>
-            <ConversationStatusBadge
-              status={conversation.status}
-              escalatedAt={conversation.escalatedAt}
-              aiEnabled={aiEnabled}
+        {/* 2026-08-28 (pedido do fundador): removida a linha "Sessão: X" —
+            qual WhatsApp está aberto já é evidente pelo rail/URL. O cabeçalho
+            virou uma linha só: nome + selo de status, centralizados. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <h2 className="truncate text-[14.5px] font-semibold tracking-tight text-foreground">
+            <DisplayNameParts
+              {...formatContactDisplayNameParts(
+                conversation.contactJid,
+                conversation.contactName,
+                conversation.savedContactName,
+              )}
             />
-          </div>
-          <p className="mt-px truncate text-xs text-muted-foreground">
-            Sessão: {conversation.sessionName}
-          </p>
+          </h2>
+          <ConversationStatusBadge
+            status={conversation.status}
+            escalatedAt={conversation.escalatedAt}
+            aiEnabled={aiEnabled}
+          />
         </div>
         <ConversationActions
           conversationId={conversation.id}
@@ -253,16 +251,23 @@ export default function ConversationDetailPanel({
         <p className="border-b border-border px-4 py-2 text-sm text-destructive">{errorMessage}</p>
       )}
 
-      <div className="chat-wallpaper relative flex-1 min-h-0">
+      {/*
+        Reskin 2026-08-28 (pedido do fundador) — o papel de parede passou a
+        envolver TAMBÉM a barra do composer: era um contêiner só para a lista
+        de mensagens, agora é um flex-column que vai até o rodapé. A barra do
+        composer fica transparente (o wallpaper aparece atrás), e a cápsula
+        branca do `MessageComposer` "flutua" sobre ele — como no WhatsApp Web.
+      */}
+      <div className="chat-wallpaper relative flex min-h-0 flex-1 flex-col">
         {/*
           Reskin 2026-08-27 — margem lateral generosa no desktop (as bolhas
           não devem colar nas bordas, como na referência) e enxuta no mobile,
-          onde cada pixel de largura conta. O papel de parede fica no
-          contêiner PAI, que não rola: só esta lista rola, por cima dele.
+          onde cada pixel de largura conta. Só esta lista rola; a barra do
+          composer abaixo fica fixa, ambas por cima do papel de parede.
         */}
         <div
           ref={scrollContainerRef}
-          className="fx-scroll h-full overflow-y-auto px-3 py-2 sm:px-6 lg:px-[7%]"
+          className="fx-scroll min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-6 lg:px-[7%]"
         >
           <MessageTimeline
             messages={messages}
@@ -275,32 +280,32 @@ export default function ConversationDetailPanel({
           <button
             type="button"
             onClick={() => scrollToBottom('smooth')}
-            className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-md transition-colors hover:bg-muted"
+            className="absolute bottom-[74px] right-4 flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-md transition-colors hover:bg-muted"
           >
             <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
             Ir para mensagens recentes
           </button>
         )}
-      </div>
 
-      <div className="border-t border-border p-4">
-        {conversation.status === 'human' ? (
-          <MessageComposer
-            conversationId={conversation.id}
-            sessionName={sessionName}
-            onSent={refreshMessages}
-          />
-        ) : conversation.escalatedAt ? (
-          <p className="text-xs font-medium text-warning">
-            A IA pediu ajuda humana nesta conversa e continua respondendo enquanto ninguém assume.
-            Clique em &quot;Assumir conversa&quot; acima para atender você mesmo.
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            A IA está respondendo esta conversa. Clique em &quot;Assumir conversa&quot; acima para
-            responder você mesmo.
-          </p>
-        )}
+        <div className="shrink-0 px-3 py-2.5 sm:px-4">
+          {conversation.status === 'human' ? (
+            <MessageComposer
+              conversationId={conversation.id}
+              sessionName={sessionName}
+              onSent={refreshMessages}
+            />
+          ) : conversation.escalatedAt ? (
+            <p className="text-xs font-medium text-warning">
+              A IA pediu ajuda humana nesta conversa e continua respondendo enquanto ninguém
+              assume. Clique em &quot;Assumir conversa&quot; acima para atender você mesmo.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              A IA está respondendo esta conversa. Clique em &quot;Assumir conversa&quot; acima para
+              responder você mesmo.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

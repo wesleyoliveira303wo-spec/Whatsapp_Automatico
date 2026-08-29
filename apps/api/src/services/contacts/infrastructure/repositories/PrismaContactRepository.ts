@@ -190,7 +190,12 @@ export class PrismaContactRepository implements ContactRepository {
         ...(options.status === 'without_conversation' ? { conversations: { none: {} } } : {}),
         ...(options.status === 'opted_out' ? { optOutAt: { not: null } } : {}),
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      // 2026-08-28 (pedido do fundador): lista em ordem alfabética pelo nome
+      // salvo. `nulls: 'last'` joga para o fim os contatos criados
+      // automaticamente pelo WhatsApp que ainda não têm nome. `id` como
+      // desempate mantém a ordenação determinística para a paginação por
+      // cursor.
+      orderBy: [{ name: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
       take: options.limit + 1,
       ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
       include: {

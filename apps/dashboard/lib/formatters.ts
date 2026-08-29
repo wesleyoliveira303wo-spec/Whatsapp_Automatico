@@ -71,6 +71,24 @@ export function formatDisconnectReasonLabel(
 }
 
 /**
+ * Data curta (`DD/MM/AAAA`, sem hora) — Auditoria do Perfil (2026-08-28,
+ * `PERFIL_REDESIGN_PLAN.md` Fase 2): "Membro desde" quer só o dia, a
+ * precisão de segundo de `formatDateTime` é ruído para essa pergunta.
+ * Mesmo contrato de degradação dos demais formatadores: `'—'` para
+ * entrada ausente/inválida.
+ */
+export function formatShortDate(iso: string | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+/**
  * Formata uma data ISO 8601 (formato em que `apps/api` sempre serializa
  * `Date` via `JSON.stringify` — nunca chega ao browser como `Date` de
  * verdade) para `pt-BR`. Devolve `'—'` para `undefined`/string inválida —
@@ -578,7 +596,7 @@ export function formatPhoneNumber(contactJid: string): string {
     line.length === 9
       ? `${line.slice(0, 5)}-${line.slice(5)}`
       : `${line.slice(0, 4)}-${line.slice(4)}`;
-  return `+55 ${ddd} ${lineFormatted}`;
+  return `+55 (${ddd}) ${lineFormatted}`;
 }
 
 /**

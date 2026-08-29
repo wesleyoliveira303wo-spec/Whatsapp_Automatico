@@ -3,14 +3,19 @@ import { motion } from 'framer-motion';
 import { Loader2, LogOut, Pencil } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { useMe } from '@/hooks/useMe';
-import { fetchTenant, updateMyProfile, logout, ClientApiError } from '@/lib/clientApi';
+import { fetchTenant, updateMyProfile, updateTenantName, logout, ClientApiError } from '@/lib/clientApi';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import UserAvatar from '@/components/UserAvatar';
-import ChangePasswordForm from '@/components/ChangePasswordForm';
-import ThemeToggle from '@/components/ThemeToggle';
+import EditableAvatar from '@/components/EditableAvatar';
+import ChangePasswordModal from '@/components/ChangePasswordModal';
+import {
+  WorkingHoursSection,
+  BusinessSummarySection,
+  useAllBusinessProfiles,
+} from '@/components/BusinessOverviewSections';
 import { fadeInUp, staggerContainer } from '@/lib/motion';
+import { formatShortDate, formatDateTime } from '@/lib/formatters';
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Dono',
@@ -20,7 +25,7 @@ const ROLE_LABELS: Record<string, string> = {
   read_only: 'Somente leitura',
 };
 
-/** Um bloco de seção do Perfil — mesmo tratamento visual (cartão + título) nas 3 subseções. */
+/** Um bloco de seção do Perfil — mesmo tratamento visual (cartão + título) nas 2 subseções. */
 function ProfileSection({
   title,
   description,
@@ -43,31 +48,38 @@ function ProfileSection({
 }
 
 /**
- * Aba "Perfil" de Configurações (Reorganização Perfil/Configurações,
- * 2026-08-27) — a pessoa, não o workspace. Três subseções, conforme
- * auditoria (só o que o backend de fato suporta):
+ * Aba "Perfil" (Reorganização Perfil/Configurações, 2026-08-27;
+ * RECONSTRUÍDA na Auditoria do Perfil, 2026-08-28 — ver
+ * `PERFIL_REDESIGN_PLAN.md`, pedido explícito do fundador). A pessoa +
+ * a identidade comercial da empresa que ela representa — nunca
+ * administração técnica do workspace (isso é Configurações). 5 subseções:
  *
- * - Minha conta: nome/foto (editável, `PATCH /auth/me`) + e-mail/cargo/
- *   empresa/status (somente leitura — identidade e RBAC não se editam
- *   aqui, isso é `UserManagementService`/RH).
- * - Segurança: `ChangePasswordForm` reaproveitado (mesma lógica de
- *   `/change-password`) + Sair.
- * - Preferências: tema (`ThemeToggle`, já existente — por navegador, não
- *   por conta, ver auditoria). Notificações NÃO existem no backend hoje —
- *   não inventadas aqui.
+ * - Minha conta: foto (upload real via `EditableAvatar`) + nome (editável,
+ *   `PATCH /auth/me`) + e-mail/cargo (leitura) + membro desde/último acesso
+ *   (leitura). O tema (claro/escuro) fica só na barra da esquerda —
+ *   removido daqui (2026-08-28) para não ter dois controles da mesma coisa.
+ * - Informações da empresa: nome comercial (`Tenant.name`, mesmo campo que
+ *   morava em Configurações › Dados da empresa — SAIU de lá nesta rodada,
+ *   pedido explícito do fundador, nunca duas telas salvando o mesmo campo).
+ *   Editável só por quem tem `tenant:manage` (hoje owner) — `canManageCompany`.
+ * - Horário de atendimento: LEITURA, por sessão de WhatsApp — editado só no
+ *   Cérebro da IA (`WorkingHoursSection`, mesmo racional de
+ *   `AtendimentoSettingsTab`: nunca duas telas salvando o mesmo horário).
+ * - Sobre o negócio: resumo cacheado, gerado automaticamente quando o
+ *   Cérebro da IA é salvo (`BusinessSummarySection`/`BusinessSummaryService`
+ *   — nunca gerado aqui, só exibido).
+ * - Segurança: botão que abre `ChangePasswordModal` (era um formulário
+ *   sempre visível — pedido explícito do fundador: "não quero mais um
+ *   formulário enorme de senha aparecendo permanentemente na página") + Sair.
  *
- * A seção "Empresa" que existia aqui SAIU na Reestruturação de
- * Configurações, Fase 4 (2026-08-27): o nome do tenant é dado da EMPRESA,
- * não da pessoa, e agora vive em Configurações › Dados da empresa. Mantê-lo
- * nos dois lugares criaria duas telas salvando o mesmo campo. O nome da
- * empresa continua VISÍVEL aqui (linha "Cargo · Empresa"), como contexto de
- * leitura — só não é editável por aqui.
- *
- * `canManageCompany` continua no contrato (opcional, sem uso interno) para
- * não quebrar chamadores; será removido quando não houver mais nenhum.
+ * "Status" (sempre "Ativo" — quem está suspenso nunca chega a ver esta
+ * tela) foi substituído por membro desde/último acesso, que de fato
+ * agregam contexto.
  */
-export default function ProfileSettingsTab(_props: {
-  /** @deprecated Fase 4 (2026-08-27) — a edição do nome da empresa migrou para Configurações › Dados da empresa. */
+export default function ProfileSettingsTab({
+  canManageCompany = false,
+}: {
+  /** `tenant:manage` — hoje só owner. Controla se o nome comercial é editável aqui. */
   canManageCompany?: boolean;
 } = {}): JSX.Element | null {
   const router = useRouter();
@@ -75,7 +87,6 @@ export default function ProfileSettingsTab(_props: {
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
   /**
    * `useMe()` busca uma vez por montagem e não recarrega sozinho — sem
    * isto, salvar o nome mostraria "Perfil atualizado." mas o cabeçalho
@@ -90,18 +101,53 @@ export default function ProfileSettingsTab(_props: {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
 
+  // --- "Informações da empresa" (mudou de Configurações para cá, 2026-08-28) ---
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [companyNameDraft, setCompanyNameDraft] = useState('');
+  const [companySubmitting, setCompanySubmitting] = useState(false);
+  const [companyErrorMessage, setCompanyErrorMessage] = useState<string | null>(null);
+  const [companySuccessMessage, setCompanySuccessMessage] = useState<string | null>(null);
+
+  const businessProfiles = useAllBusinessProfiles();
+
   useEffect(() => {
     if (user) {
       setName(user.name ?? '');
-      setAvatarUrl(user.avatarUrl ?? '');
     }
   }, [user]);
 
   useEffect(() => {
     fetchTenant()
-      .then(({ tenant }) => setCompanyName(tenant.name))
+      .then(({ tenant }) => {
+        setCompanyName(tenant.name);
+        setCompanyNameDraft(tenant.name);
+      })
       .catch(() => setCompanyName(null));
   }, []);
+
+  async function handleSaveCompanyName(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setCompanyErrorMessage(null);
+    setCompanySuccessMessage(null);
+    if (companyNameDraft.trim() === '') return;
+
+    setCompanySubmitting(true);
+    try {
+      const { tenant } = await updateTenantName(companyNameDraft.trim());
+      setCompanyName(tenant.name);
+      setCompanyNameDraft(tenant.name);
+      setCompanySuccessMessage('Nome da empresa atualizado.');
+      setEditingCompany(false);
+    } catch (error) {
+      setCompanyErrorMessage(
+        error instanceof ClientApiError && error.status === 403
+          ? 'Só o dono da conta pode alterar o nome da empresa.'
+          : 'Não foi possível salvar. Tente novamente.',
+      );
+    } finally {
+      setCompanySubmitting(false);
+    }
+  }
 
   async function handleSaveProfile(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -109,9 +155,8 @@ export default function ProfileSettingsTab(_props: {
     setSuccessMessage(null);
     setSubmitting(true);
     try {
-      const { user: updated } = await updateMyProfile({ name, avatarUrl });
+      const { user: updated } = await updateMyProfile({ name });
       setSavedName(updated.name ?? '');
-      setSavedAvatarUrl(updated.avatarUrl ?? '');
       setSuccessMessage('Perfil atualizado.');
       setEditing(false);
     } catch (error) {
@@ -122,6 +167,28 @@ export default function ProfileSettingsTab(_props: {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /**
+   * Upload de foto (`EditableAvatar`) salva SOZINHO, assim que o arquivo é
+   * processado — independente do formulário de nome (`editing`) e do botão
+   * "Salvar" dele. Erros de rede/API aqui viram o mesmo texto de erro
+   * genérico do formulário; `EditableAvatar` é quem exibe (estado dele, não
+   * deste componente — ver docstring lá).
+   */
+  async function handleAvatarChange(dataUrl: string): Promise<void> {
+    try {
+      const { user: updated } = await updateMyProfile({ avatarUrl: dataUrl });
+      setSavedAvatarUrl(updated.avatarUrl ?? '');
+    } catch (error) {
+      // `EditableAvatar` exibe `error.message` — mensagens específicas por
+      // tipo de falha, mesmo padrão de `handleSaveProfile` acima.
+      throw new Error(
+        error instanceof ClientApiError
+          ? 'Não foi possível salvar. Tente novamente.'
+          : 'Não foi possível salvar. Verifique sua conexão.',
+      );
     }
   }
 
@@ -154,17 +221,16 @@ export default function ProfileSettingsTab(_props: {
     >
       <ProfileSection title="Minha conta">
         <div className="flex items-center gap-4">
-          <UserAvatar
+          <EditableAvatar
             email={user.email}
             name={displayName}
             avatarUrl={displayAvatarUrl}
-            className="h-14 w-14 text-base"
+            onChange={handleAvatarChange}
           />
           <div className="min-w-0">
             <p className="truncate font-semibold text-foreground">{displayName || user.email}</p>
             <p className="truncate text-sm text-muted-foreground">
               {ROLE_LABELS[user.role] ?? user.role}
-              {companyName && ` · ${companyName}`}
             </p>
           </div>
           {!editing && (
@@ -173,6 +239,7 @@ export default function ProfileSettingsTab(_props: {
               size="sm"
               className="ml-auto shrink-0"
               onClick={() => setEditing(true)}
+              aria-label="Editar nome"
             >
               <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
               Editar
@@ -192,22 +259,7 @@ export default function ProfileSettingsTab(_props: {
                 autoComplete="name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Seu nome"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="profileAvatarUrl" className="text-sm font-medium text-foreground">
-                URL da foto
-              </label>
-              <Input
-                id="profileAvatarUrl"
-                name="avatarUrl"
-                type="url"
-                autoComplete="photo"
-                spellCheck={false}
-                value={avatarUrl}
-                onChange={(event) => setAvatarUrl(event.target.value)}
-                placeholder="https://…"
+                placeholder="Seu nome…"
               />
             </div>
             {errorMessage && (
@@ -231,7 +283,6 @@ export default function ProfileSettingsTab(_props: {
                 onClick={() => {
                   setEditing(false);
                   setName(user.name ?? '');
-                  setAvatarUrl(user.avatarUrl ?? '');
                   setErrorMessage(null);
                 }}
               >
@@ -251,21 +302,125 @@ export default function ProfileSettingsTab(_props: {
           )
         )}
 
+        {user.mustChangePassword && (
+          <p className="mt-4 rounded-lg bg-warning/10 px-3 py-2.5 text-sm text-warning">
+            Senha provisória pendente — troque-a na seção Segurança abaixo.
+          </p>
+        )}
+
         <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4 text-sm">
           <div>
             <dt className="text-muted-foreground">E-mail</dt>
             <dd className="mt-0.5 truncate text-foreground">{user.email}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Status</dt>
-            <dd className="mt-0.5 text-foreground">
-              {user.mustChangePassword ? 'Senha provisória pendente' : 'Ativo'}
-            </dd>
+            <dt className="text-muted-foreground">Último acesso</dt>
+            <dd className="mt-0.5 text-foreground">{formatDateTime(user.lastLoginAt)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Membro desde</dt>
+            <dd className="mt-0.5 text-foreground">{formatShortDate(user.createdAt)}</dd>
           </div>
         </dl>
       </ProfileSection>
 
-      <ProfileSection title="Segurança" description="Troque sua senha ou saia da conta.">
+      <ProfileSection title="Informações da empresa">
+        {editingCompany ? (
+          <form onSubmit={handleSaveCompanyName} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="companyName" className="text-sm font-medium text-foreground">
+                Nome comercial
+              </label>
+              <Input
+                id="companyName"
+                name="organization"
+                autoComplete="organization"
+                value={companyNameDraft}
+                onChange={(event) => setCompanyNameDraft(event.target.value)}
+                required
+              />
+            </div>
+            {companyErrorMessage && (
+              <p
+                role="alert"
+                aria-live="polite"
+                className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
+              >
+                {companyErrorMessage}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button type="submit" size="sm" disabled={companySubmitting}>
+                {companySubmitting && (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                )}
+                {companySubmitting ? 'Salvando…' : 'Salvar'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setEditingCompany(false);
+                  setCompanyNameDraft(companyName ?? '');
+                  setCompanyErrorMessage(null);
+                }}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-muted-foreground">Nome comercial</p>
+              <p className="truncate font-medium text-foreground">{companyName ?? '—'}</p>
+            </div>
+            {canManageCompany && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setEditingCompany(true)}
+                aria-label="Editar nome comercial"
+              >
+                <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                Editar
+              </Button>
+            )}
+          </div>
+        )}
+        {!editingCompany && !canManageCompany && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Só o dono da conta pode alterar o nome da empresa.
+          </p>
+        )}
+        {!editingCompany && companySuccessMessage && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-4 rounded-lg border border-success/30 bg-success/5 px-3 py-2.5 text-sm text-success"
+          >
+            {companySuccessMessage}
+          </p>
+        )}
+      </ProfileSection>
+
+      <ProfileSection
+        title="Horário de atendimento"
+        description="Definido no Cérebro da IA de cada WhatsApp — aqui é só leitura."
+      >
+        <WorkingHoursSection {...businessProfiles} />
+      </ProfileSection>
+
+      <ProfileSection
+        title="Sobre o negócio"
+        description="Resumo gerado automaticamente a partir do que está configurado no Cérebro da IA."
+      >
+        <BusinessSummarySection {...businessProfiles} />
+      </ProfileSection>
+
+      <ProfileSection title="Segurança" description="Gerencie a segurança da sua conta.">
         {passwordMessage && (
           <p
             role="status"
@@ -275,20 +430,12 @@ export default function ProfileSettingsTab(_props: {
             {passwordMessage}
           </p>
         )}
-        <ChangePasswordForm onSuccess={() => setPasswordMessage('Senha atualizada.')} />
-        <div className="mt-5 border-t border-border pt-4">
+        <div className="flex flex-wrap gap-2">
+          <ChangePasswordModal onSuccess={() => setPasswordMessage('Senha atualizada.')} />
           <Button variant="outline" size="sm" onClick={() => void handleLogout()}>
             <LogOut className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
             Sair
           </Button>
-        </div>
-      </ProfileSection>
-
-
-      <ProfileSection title="Preferências" description="Aparência do Dashboard, neste navegador.">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-foreground">Tema escuro</span>
-          <ThemeToggle />
         </div>
       </ProfileSection>
     </motion.div>

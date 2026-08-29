@@ -1,21 +1,15 @@
 import Link from 'next/link';
-import { Building2, Clock, Smartphone, Users, ShieldCheck, ScrollText } from 'lucide-react';
+import { Clock, Smartphone, Users, ShieldCheck, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ManagedUserRole } from '@/lib/clientApi';
 
 /** Uma seção de Configurações. `id` é o segmento da URL (`/settings/:id`). */
-export type SettingsSectionId =
-  | 'empresa'
-  | 'atendimento'
-  | 'whatsapps'
-  | 'equipe'
-  | 'seguranca'
-  | 'auditoria';
+export type SettingsSectionId = 'atendimento' | 'whatsapps' | 'equipe' | 'seguranca' | 'auditoria';
 
 interface SectionDef {
   id: SettingsSectionId;
   label: string;
-  icon: typeof Building2;
+  icon: typeof Clock;
   /** Grupo que rotula esta seção na sidebar. */
   group: 'EMPRESA' | 'CANAIS' | 'PESSOAS' | 'REGISTROS';
   /** `undefined` = visível a qualquer papel autenticado. */
@@ -34,9 +28,12 @@ const isOwner = (role: ManagedUserRole | null): boolean => role === 'owner';
  * existir uma lista de seções na navegação e outra, divergente, no gate de
  * permissão (foi assim que a barra de abas antiga acabou mostrando formatos
  * diferentes por papel sem ninguém notar).
+ *
+ * "Dados da empresa" SAIU do catálogo na Auditoria do Perfil (2026-08-28,
+ * pedido explícito do fundador) — mudou para o Perfil (`ProfileSettingsTab`)
+ * junto com a identidade da pessoa. Ver docstring de `SettingsLayout`.
  */
 export const SETTINGS_SECTIONS: readonly SectionDef[] = [
-  { id: 'empresa', label: 'Dados da empresa', icon: Building2, group: 'EMPRESA' },
   { id: 'atendimento', label: 'Atendimento', icon: Clock, group: 'EMPRESA' },
   { id: 'whatsapps', label: 'WhatsApps', icon: Smartphone, group: 'CANAIS' },
   { id: 'equipe', label: 'Equipe', icon: Users, group: 'PESSOAS', requiresRole: canManageUsers },

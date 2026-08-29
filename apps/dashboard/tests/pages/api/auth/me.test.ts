@@ -52,12 +52,49 @@ describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
     expect(JSON.stringify((res.json as jest.Mock).mock.calls[0][0])).not.toContain('chave-secreta');
   });
 
-  it('sessao de PESSOA: devolve o user e NUNCA os tokens', () => {
+  it('sessao de PESSOA: devolve o user e NUNCA os tokens', async () => {
     const user = {
       id: 'user-1',
       email: 'maria@empresa.com',
       role: 'manager',
       mustChangePassword: false,
+      name: 'Maria',
+    };
+    // O GET agora enriquece o `user` com o perfil fresco da API (nome/foto).
+    (fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ user: { ...user, avatarUrl: 'data:image/jpeg;base64,AAAA' } }),
+    });
+    const cookie = cookieFor({
+      tenantId: 'tenant-1',
+      accessToken: 'acc-1',
+      refreshToken: 'ref-1',
+      user,
+    });
+    const req = createFakeReq({ method: 'GET', cookies: { [SESSION_COOKIE_NAME]: cookie } });
+    const res = createFakeRes();
+
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const returned = (res.json as jest.Mock).mock.calls[0][0];
+    expect(returned.tenantId).toBe('tenant-1');
+    expect(returned.user).toMatchObject({ id: 'user-1', email: 'maria@empresa.com', name: 'Maria' });
+    // A foto vem da API (nunca do cookie).
+    expect(returned.user.avatarUrl).toBe('data:image/jpeg;base64,AAAA');
+    const body = JSON.stringify(returned);
+    expect(body).not.toContain('acc-1');
+    expect(body).not.toContain('ref-1');
+  });
+
+  it('sessao de PESSOA + API fora do ar: devolve o user do cookie (sem foto), nunca erro', async () => {
+    (fetch as jest.Mock).mockRejectedValue(new Error('conexão recusada'));
+    const user = {
+      id: 'user-1',
+      email: 'maria@empresa.com',
+      role: 'manager',
+      mustChangePassword: false,
+      name: 'Maria',
     };
     const cookie = cookieFor({
       tenantId: 'tenant-1',
@@ -68,13 +105,10 @@ describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
     const req = createFakeReq({ method: 'GET', cookies: { [SESSION_COOKIE_NAME]: cookie } });
     const res = createFakeRes();
 
-    handler(req, res);
+    await handler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ tenantId: 'tenant-1', user });
-    const body = JSON.stringify((res.json as jest.Mock).mock.calls[0][0]);
-    expect(body).not.toContain('acc-1');
-    expect(body).not.toContain('ref-1');
   });
 });
 

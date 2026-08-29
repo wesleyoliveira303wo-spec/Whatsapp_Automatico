@@ -1035,6 +1035,18 @@ model AiBusinessProfile {
   /// trata "sem perfil" como `aiEnabled = true`, nunca `false`.
   aiEnabled Boolean @default(true) @map("ai_enabled")
 
+  /// Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md`) — resumo em
+  /// linguagem natural do `content` acima, gerado pela IA e CACHEADO aqui
+  /// (pedido explicito do fundador: "automatico e deve ficar salvo, atualizar
+  /// somente quando houver interacao no cerebro da IA"). Nunca gerado na
+  /// leitura (a aba Perfil so LE este campo) — so regenerado quando o
+  /// `content`/horario e salvo de novo via `PUT .../ai-profile`, ver
+  /// `BusinessSummaryService`. `null` = nunca gerado (perfil vazio, ou
+  /// `content` em branco) ou geracao falhou (nao derruba o salvamento do
+  /// Cerebro — so o resumo fica desatualizado ate a proxima edicao).
+  summary            String?   @db.Text @map("summary")
+  summaryGeneratedAt DateTime? @map("summary_generated_at")
+
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, sessionName])

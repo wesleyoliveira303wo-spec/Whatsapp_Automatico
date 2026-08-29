@@ -426,7 +426,7 @@ export default function AiProfilePanel({ sessionName }: AiProfilePanelProps): JS
           dado inventado: sem "versão"/"assistente guiado usado", porque não
           há sinal persistido pra isso) + Horário de atendimento. */}
       {activeTab === 'overview' && (
-        <div className="flex flex-col gap-5 xl:flex-row">
+        <div>
           <div className="min-w-0 flex-1 space-y-3.5">
             <div>
               <TabSectionHeader
@@ -600,54 +600,6 @@ export default function AiProfilePanel({ sessionName }: AiProfilePanelProps): JS
             </div>
             {/* ── Fim da seção de horário ──────────────────────────────────── */}
           </div>
-
-          {/* Coluna de dicas — usa o espaço extra da página mais larga (1040px,
-            era 780px) com conteúdo real em vez de vazio; texto vem do
-            mockup original ("Dicas para melhores respostas"). */}
-          <aside className="w-full shrink-0 xl:w-[260px]">
-            <div className="rounded-lg border border-border bg-card p-[18px]">
-              <h2 className="mb-3 text-[13px] font-semibold text-foreground">
-                Dicas para melhores respostas
-              </h2>
-              <ul className="space-y-2.5 text-[12.5px] leading-[1.5] text-muted-foreground">
-                <li className="flex gap-2">
-                  <span
-                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
-                    aria-hidden="true"
-                  />
-                  Seja claro e objetivo nas instruções.
-                </li>
-                <li className="flex gap-2">
-                  <span
-                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
-                    aria-hidden="true"
-                  />
-                  Inclua informações sobre seus serviços.
-                </li>
-                <li className="flex gap-2">
-                  <span
-                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
-                    aria-hidden="true"
-                  />
-                  Adicione respostas para objeções comuns na aba FAQ.
-                </li>
-                <li className="flex gap-2">
-                  <span
-                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
-                    aria-hidden="true"
-                  />
-                  Mantenha o tom de conversa natural.
-                </li>
-                <li className="flex gap-2">
-                  <span
-                    className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-primary"
-                    aria-hidden="true"
-                  />
-                  Revise e teste suas configurações.
-                </li>
-              </ul>
-            </div>
-          </aside>
         </div>
       )}
 

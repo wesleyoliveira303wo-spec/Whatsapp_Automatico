@@ -82,8 +82,8 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
   const [editingColor, setEditingColor] = useState<TagColor>('gray');
   const [savingEdit, setSavingEdit] = useState(false);
 
-  async function handleCreate(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  async function handleCreate(event?: FormEvent): Promise<void> {
+    event?.preventDefault();
     const trimmed = newName.trim();
     if (!trimmed) return;
     setCreating(true);
@@ -136,10 +136,15 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
 
   return (
     <div>
-      <form
-        onSubmit={handleCreate}
-        className="mb-3.5 flex flex-col gap-2.5 rounded-lg border border-border bg-card p-4"
-      >
+      {/*
+        2026-08-28 (bug do fundador): NÃO usar `<form>` aqui — este painel é
+        embutido no popover "Gerenciar tags" do `ConversationTagPicker`, que
+        pode viver dentro de outro `<form>`. `<form>` aninhado é HTML
+        inválido: o navegador descarta o de dentro e "Adicionar" acabava
+        submetendo o contêiner externo (a tag não era criada). `<div>` +
+        `onClick` + Enter no campo funciona embutido E na tela dedicada.
+      */}
+      <div className="mb-3.5 flex flex-col gap-2.5 rounded-lg border border-border bg-card p-4">
         <label htmlFor="newTagName" className="sr-only">
           Nome da tag
         </label>
@@ -147,16 +152,27 @@ export default function TagsPanel({ sessionName }: TagsPanelProps): JSX.Element 
           id="newTagName"
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void handleCreate();
+            }
+          }}
           placeholder="Nome da tag"
           maxLength={40}
-          required
           className="h-[34px] rounded-[9px] border-border bg-panel text-[13px]"
         />
         <ColorSwatchPicker value={newColor} onChange={setNewColor} />
-        <Button type="submit" size="cta" className="w-full" disabled={creating || !newName.trim()}>
+        <Button
+          type="button"
+          size="cta"
+          className="w-full"
+          disabled={creating || !newName.trim()}
+          onClick={() => void handleCreate()}
+        >
           {creating ? 'Adicionando…' : 'Adicionar'}
         </Button>
-      </form>
+      </div>
 
       {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
 

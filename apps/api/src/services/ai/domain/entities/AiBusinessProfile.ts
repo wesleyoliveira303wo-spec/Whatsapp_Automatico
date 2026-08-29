@@ -50,4 +50,13 @@ export interface AiBusinessProfile {
    * Ver `shouldAutoRespond` (`services/conversations/domain/policies`).
    */
   aiEnabled: boolean;
+  /**
+   * Auditoria do Perfil (2026-08-28) — resumo em linguagem natural do
+   * `content`, gerado pela IA e CACHEADO (nunca gerado na leitura). `null` =
+   * nunca gerado (perfil novo/vazio) ou a última geração falhou. Ver
+   * `BusinessSummaryService`.
+   */
+  summary: string | null;
+  /** Quando `summary` foi gerado pela última vez. `null` junto com `summary === null`. */
+  summaryGeneratedAt: Date | null;
 }

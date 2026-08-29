@@ -6,6 +6,7 @@ import {
   statusBadgeClassName,
   formatDisconnectReasonLabel,
   formatDateTime,
+  formatShortDate,
   formatConversationTimestamp,
   formatContactDisplayName,
   formatContactDisplayNameParts,
@@ -73,6 +74,27 @@ describe('formatters (M2, Fase 4)', () => {
     });
   });
 
+  // Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 2) —
+  // "Membro desde" quer só o dia; `formatDateTime` (com segundos) é ruído.
+  describe('formatShortDate', () => {
+    it("devolve '—' para undefined", () => {
+      expect(formatShortDate(undefined)).toBe('—');
+    });
+
+    it("devolve '—' para uma string inválida", () => {
+      expect(formatShortDate('não-é-uma-data')).toBe('—');
+    });
+
+    it('formata uma data ISO válida sem hora', () => {
+      // Meio-dia UTC — evita virar o dia em fusos com offset negativo (mesma
+      // cautela de `formatDateTime` acima: casar com o dia exige um horário
+      // longe da meia-noite, não a hora exata do host que roda o teste).
+      const formatted = formatShortDate('2026-01-15T12:00:00.000Z');
+      expect(formatted).toMatch(/15\/01\/2026/);
+      expect(formatted).not.toMatch(/:/); // sem hora, diferente de formatDateTime
+    });
+  });
+
   describe('formatConversationTimestamp (Milestone 6, Bloco M6H-2)', () => {
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(new Date('2026-07-24T15:00:00.000Z'));
@@ -107,24 +129,24 @@ describe('formatters (M2, Fase 4)', () => {
     // telefone é obrigatório — o apelido só complementa.
     it('sem nome salvo, combina telefone + apelido do WhatsApp (nunca só o apelido)', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', 'Maria Silva')).toBe(
-        '+55 11 99999-9999 · Maria Silva',
+        '+55 (11) 99999-9999 · Maria Silva',
       );
     });
 
     // O bug original: sem nome, a lista exibia os dígitos crus ("5511999999999"),
     // e não o telefone formatado — em 67% da base real.
     it('sem nome salvo nem apelido, mostra só o telefone FORMATADO, nunca os dígitos crus', () => {
-      expect(formatContactDisplayName('5511999999999@s.whatsapp.net')).toBe('+55 11 99999-9999');
+      expect(formatContactDisplayName('5511999999999@s.whatsapp.net')).toBe('+55 (11) 99999-9999');
     });
 
     it('ignora savedContactName/contactName quando são só espaços', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '   ', '   ')).toBe(
-        '+55 11 99999-9999',
+        '+55 (11) 99999-9999',
       );
     });
 
     it('formata também o celular sem o 9º dígito (12 dígitos), sem inventar um dígito', () => {
-      expect(formatContactDisplayName('556588887777@s.whatsapp.net')).toBe('+55 65 8888-7777');
+      expect(formatContactDisplayName('556588887777@s.whatsapp.net')).toBe('+55 (65) 8888-7777');
     });
 
     it('usa um rótulo curto para LID sem apelido, nunca o número gigante de privacidade', () => {
@@ -143,10 +165,10 @@ describe('formatters (M2, Fase 4)', () => {
 
     it('ignora um "nome"/apelido sem letra nem dígito (só emoji/pontuação) e usa o telefone', () => {
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '❤️')).toBe(
-        '+55 11 99999-9999',
+        '+55 (11) 99999-9999',
       );
       expect(formatContactDisplayName('5511999999999@s.whatsapp.net', '.')).toBe(
-        '+55 11 99999-9999',
+        '+55 (11) 99999-9999',
       );
     });
 
@@ -183,10 +205,11 @@ describe('formatters (M2, Fase 4)', () => {
       const apelidoGigante = 'A'.repeat(80);
       const resultado = formatContactDisplayName('5511999999999@s.whatsapp.net', apelidoGigante);
 
-      expect(resultado.startsWith('+55 11 99999-9999 · ')).toBe(true);
+      expect(resultado.startsWith('+55 (11) 99999-9999 · ')).toBe(true);
       expect(resultado.endsWith('…')).toBe(true);
-      // Prefixo do telefone (21 caracteres) + apelido truncado (até 40).
-      expect(resultado.length).toBeLessThanOrEqual(61);
+      // Prefixo do telefone (22 caracteres, com os parênteses do DDD) +
+      // apelido truncado (até 40).
+      expect(resultado.length).toBeLessThanOrEqual(62);
     });
   });
 
@@ -199,14 +222,14 @@ describe('formatters (M2, Fase 4)', () => {
 
     it('sem nome salvo, telefone vira primary e o apelido vira secondary', () => {
       expect(formatContactDisplayNameParts('5511999999999@s.whatsapp.net', 'Maria Silva')).toEqual({
-        primary: '+55 11 99999-9999',
+        primary: '+55 (11) 99999-9999',
         secondary: 'Maria Silva',
       });
     });
 
     it('sem nome salvo nem apelido, só primary (telefone), sem secondary', () => {
       expect(formatContactDisplayNameParts('5511999999999@s.whatsapp.net')).toEqual({
-        primary: '+55 11 99999-9999',
+        primary: '+55 (11) 99999-9999',
       });
     });
 
@@ -268,17 +291,17 @@ describe('formatters (M2, Fase 4)', () => {
 
     it('sem savedName, combina telefone + nickname', () => {
       expect(formatPersonLabel({ phoneE164: '5511999999999', nickname: 'Maria Silva' })).toBe(
-        '+55 11 99999-9999 · Maria Silva',
+        '+55 (11) 99999-9999 · Maria Silva',
       );
     });
 
     it('sem savedName nem nickname, mostra só o telefone formatado', () => {
-      expect(formatPersonLabel({ phoneE164: '5511999999999' })).toBe('+55 11 99999-9999');
+      expect(formatPersonLabel({ phoneE164: '5511999999999' })).toBe('+55 (11) 99999-9999');
     });
 
     it('ignora nickname sem letra nem dígito', () => {
       expect(formatPersonLabel({ phoneE164: '5511999999999', nickname: '❤️' })).toBe(
-        '+55 11 99999-9999',
+        '+55 (11) 99999-9999',
       );
     });
   });
@@ -298,14 +321,14 @@ describe('formatters (M2, Fase 4)', () => {
       expect(
         formatPersonLabelParts({ phoneE164: '5511999999999', nickname: 'Maria Silva' }),
       ).toEqual({
-        primary: '+55 11 99999-9999',
+        primary: '+55 (11) 99999-9999',
         secondary: 'Maria Silva',
       });
     });
 
     it('sem savedName nem nickname, só primary (telefone), sem secondary', () => {
       expect(formatPersonLabelParts({ phoneE164: '5511999999999' })).toEqual({
-        primary: '+55 11 99999-9999',
+        primary: '+55 (11) 99999-9999',
       });
     });
   });
@@ -442,11 +465,11 @@ describe('formatters (M2, Fase 4)', () => {
 
   describe('formatPhoneNumber (Redesign 2026-08-05, R3)', () => {
     it('formata um número brasileiro de 9 dígitos com máscara', () => {
-      expect(formatPhoneNumber('5511981224471@s.whatsapp.net')).toBe('+55 11 98122-4471');
+      expect(formatPhoneNumber('5511981224471@s.whatsapp.net')).toBe('+55 (11) 98122-4471');
     });
 
     it('formata um número brasileiro de 8 dígitos (linha fixa) com máscara', () => {
-      expect(formatPhoneNumber('551133334444@s.whatsapp.net')).toBe('+55 11 3333-4444');
+      expect(formatPhoneNumber('551133334444@s.whatsapp.net')).toBe('+55 (11) 3333-4444');
     });
 
     it('devolve o número cru quando não bate com o padrão BR (evita mascarar errado)', () => {

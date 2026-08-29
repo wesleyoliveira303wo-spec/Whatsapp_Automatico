@@ -25,7 +25,15 @@ export const app = express();
 const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10);
 app.set('trust proxy', Number.isFinite(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
 
-app.use(express.json());
+// Limite padrao do Express e 100kb — pequeno demais para `PATCH /auth/me`
+// desde que o avatar virou upload de verdade (2026-08-28, ver
+// `authRouter.ts`/`updateProfileBodySchema`): a foto e comprimida e
+// recortada em quadrado NO NAVEGADOR antes de virar `data:` URL base64,
+// mas mesmo uma miniatura pequena passa dos 100kb. 256kb da folga generosa
+// pra essa miniatura sem abrir a porta pra corpos JSON grandes de verdade —
+// upload de midia de conversa/campanha continua fora disto, em rotas com
+// corpo BRUTO dedicado (ver docstring de `sendMediaHeadersSchema`).
+app.use(express.json({ limit: '256kb' }));
 
 // Simple health check
 app.get('/health', (_req: Request, res: Response) => {
@@ -464,6 +472,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { ConversationSummaryService },
       { createConversationSummaryRouter },
       { createConversationSummaryErrorHandler },
+      { BusinessSummaryService },
     ] = await Promise.all([
       import('ioredis'),
       import('./services/ai/compositionRoot'),
@@ -480,6 +489,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       import('./services/ai/application/ConversationSummaryService'),
       import('./services/ai/presentation/conversationSummaryRouter'),
       import('./services/ai/presentation/conversationSummaryErrorHandler'),
+      import('./services/ai/application/BusinessSummaryService'),
     ]);
 
     // D19 (levantamento arquitetural do Bloco 5) — duas conexões `ioredis`
@@ -590,6 +600,57 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     );
     app.use('/api/tenants/:tenantId/ai-interactions', createAiInteractionsErrorHandler(logger));
 
+    // Provider de IA para chamadas SÍNCRONAS fora da fila BullMQ do
+    // autoresponder (`apps/api`, não `worker.ts` — mesmo racional completo
+    // no comentário perto de `conversationSummaryService`, mais abaixo).
+    // Construído AQUI (não só perto do resumo de conversa, como antes)
+    // porque a Auditoria do Perfil (2026-08-28) passou a reaproveitar o
+    // MESMO provider também para o resumo de NEGÓCIO
+    // (`businessSummaryService`, usado pelo `aiProfileRouter` logo abaixo).
+    const summaryProviderName = (process.env.AI_PROVIDER ?? 'claude') as 'claude' | 'gemini';
+    const summaryAiProvider = (() => {
+      try {
+        if (summaryProviderName === 'gemini') {
+          const { GEMINI_API_KEY, AI_GEMINI_MODEL, AI_GEMINI_MAX_TOKENS } = process.env;
+          if (!GEMINI_API_KEY || !AI_GEMINI_MODEL) return undefined;
+          return new AiProviderFactoryImpl(
+            {
+              gemini: {
+                apiKey: GEMINI_API_KEY,
+                model: AI_GEMINI_MODEL,
+                maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
+              },
+            },
+            logger.child({ module: 'gemini-provider' }),
+          ).create('gemini');
+        }
+        const { CLAUDE_API_KEY, AI_CLAUDE_MODEL, AI_CLAUDE_MAX_TOKENS } = process.env;
+        if (!CLAUDE_API_KEY || !AI_CLAUDE_MODEL) return undefined;
+        return new AiProviderFactoryImpl({
+          claude: {
+            apiKey: CLAUDE_API_KEY,
+            model: AI_CLAUDE_MODEL,
+            maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
+          },
+        }).create('claude');
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!summaryAiProvider) {
+      console.warn(
+        `Credenciais do provider "${summaryProviderName}" ausentes: resumo de conversa/negócio por IA desabilitado (ver .env.example) — o restante da API segue funcionando normalmente.`,
+      );
+    }
+    // Auditoria do Perfil (2026-08-28) — ver docstring completa em
+    // `BusinessSummaryService`. Passado ao `aiProfileRouter` para regenerar
+    // o resumo (fire-and-forget) a cada `PUT` bem-sucedido do Cérebro da IA.
+    const businessSummaryService = new BusinessSummaryService(
+      aiBusinessProfileService,
+      logger.child({ module: 'business-summary' }),
+      summaryAiProvider,
+    );
+
     // Base de Conhecimento (Nível 1) — o "Cérebro da IA". Migrada de rota
     // flat por tenant para ANINHADA por sessão (M6H-3, 2026-07-25) — mesmo
     // padrão de `whatsapp-sessions/:sessionName/...`. Só `authenticate` no
@@ -599,7 +660,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use(
       '/api/tenants/:tenantId/sessions/:sessionName/ai-profile',
       authenticate,
-      createAiProfileRouter(aiBusinessProfileService),
+      createAiProfileRouter(aiBusinessProfileService, businessSummaryService),
     );
     app.use(
       '/api/tenants/:tenantId/sessions/:sessionName/ai-profile',
@@ -742,47 +803,16 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // instancia seu PRÓPRIO `AiProviderFactoryImpl`, independente do que
     // `worker.ts` monta — gerar um resumo é `fetch` puro ao provider, sem
     // Baileys/socket, então não viola a ADR #54 (ela só proíbe o *worker* de
-    // tocar o Baileys). Degrada graciosamente (mesmo padrão de
+    // tocar o Baileys). `summaryAiProvider`/`summaryProviderName` (construídos
+    // mais acima, ver comentário perto de `createAiProfileRouter` — Auditoria
+    // do Perfil, 2026-08-28: o MESMO provider passou a ser reaproveitado
+    // também pelo resumo de NEGÓCIO, então a construção subiu para antes do
+    // primeiro consumidor) — degrada graciosamente (mesmo padrão de
     // `mediaDownloader`/`INTERNAL_API_SECRET` acima): sem as credenciais do
     // provider escolhido, o endpoint continua montado, mas
     // `ConversationSummaryService.generateSummary()` lança um erro claro
     // (503, ver `conversationSummaryErrorHandler`) em vez de a API inteira
     // recusar subir por causa de uma feature opcional.
-    const summaryProviderName = (process.env.AI_PROVIDER ?? 'claude') as 'claude' | 'gemini';
-    const summaryAiProvider = (() => {
-      try {
-        if (summaryProviderName === 'gemini') {
-          const { GEMINI_API_KEY, AI_GEMINI_MODEL, AI_GEMINI_MAX_TOKENS } = process.env;
-          if (!GEMINI_API_KEY || !AI_GEMINI_MODEL) return undefined;
-          return new AiProviderFactoryImpl(
-            {
-              gemini: {
-                apiKey: GEMINI_API_KEY,
-                model: AI_GEMINI_MODEL,
-                maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
-              },
-            },
-            logger.child({ module: 'gemini-provider' }),
-          ).create('gemini');
-        }
-        const { CLAUDE_API_KEY, AI_CLAUDE_MODEL, AI_CLAUDE_MAX_TOKENS } = process.env;
-        if (!CLAUDE_API_KEY || !AI_CLAUDE_MODEL) return undefined;
-        return new AiProviderFactoryImpl({
-          claude: {
-            apiKey: CLAUDE_API_KEY,
-            model: AI_CLAUDE_MODEL,
-            maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
-          },
-        }).create('claude');
-      } catch {
-        return undefined;
-      }
-    })();
-    if (!summaryAiProvider) {
-      console.warn(
-        `Credenciais do provider "${summaryProviderName}" ausentes: resumo de conversa por IA desabilitado (ver .env.example) — o restante da API segue funcionando normalmente.`,
-      );
-    }
     const conversationSummaryService = new ConversationSummaryService(
       conversationRepository,
       messageRepository,

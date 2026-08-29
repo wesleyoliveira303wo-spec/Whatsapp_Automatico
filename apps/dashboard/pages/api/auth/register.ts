@@ -108,6 +108,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     mustChangePassword: false,
     ...(typeof user.name === 'string' ? { name: user.name } : {}),
     ...(typeof user.avatarUrl === 'string' ? { avatarUrl: user.avatarUrl } : {}),
+    // `createdAt`/`lastLoginAt` (Auditoria do Perfil, 2026-08-28) — a API já
+    // devolve os dois em `PublicUser`; antes eram descartados aqui.
+    ...(typeof user.createdAt === 'string' ? { createdAt: user.createdAt } : {}),
+    ...(typeof user.lastLoginAt === 'string' ? { lastLoginAt: user.lastLoginAt } : {}),
   };
   setSessionCookie(res, { tenantId, accessToken, refreshToken, user: sessionUser });
   res.status(201).json({ tenantId, user: sessionUser });

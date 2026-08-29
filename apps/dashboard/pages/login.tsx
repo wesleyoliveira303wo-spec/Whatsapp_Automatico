@@ -1,9 +1,9 @@
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
-import { Zap, UserCheck, MessageCircle } from 'lucide-react';
 import LoginForm from '@/components/LoginForm';
 import FrancisLogo from '@/components/brand/FrancisLogo';
-import LoginChatPreview from '@/components/brand/LoginChatPreview';
+import AuthMarketingPanel from '@/components/brand/AuthMarketingPanel';
+import AuthFooter from '@/components/brand/AuthFooter';
 import { requirePageSession } from '@/lib/auth';
 import { BRAND, pageTitle } from '@/lib/brand';
 
@@ -11,85 +11,108 @@ import { BRAND, pageTitle } from '@/lib/brand';
  * Página de login (M2, Fase 4). Guard INVERTIDO: sessão válida no cookie
  * redireciona para `/`.
  *
- * Milestone 6, Bloco M6F (revisão de Product Design, ADR #72): layout de
- * tela dividida 40/60 — painel de marca à esquerda (só desktop) com marca em
- * destaque, headline comercial, mockup de conversa (comunica IA + WhatsApp +
- * atendimento) e benefícios; formulário num card premium à direita sobre
- * fundo suave. Toda a marca vem de `lib/brand.ts`. Mobile: só o card, com
- * marca compacta no topo.
+ * RECONSTRUÇÃO 2026-08-28 (pedido explícito do fundador, imagem de
+ * referência anexada) — substitui o layout do Milestone 6/Bloco M6F (painel
+ * verde sólido + card claro) por um split-screen ESCURO fixo, à parte do
+ * tema claro/escuro do resto do app: `className="dark"` no wrapper raiz
+ * aplica só AQUI os tokens de `.dark` de `globals.css` (mesmo mecanismo de
+ * cascata de CSS custom properties que o toggle de tema usa em `<html>`,
+ * só que escopado a esta subárvore) — nunca mexe em `localStorage`/na
+ * preferência do usuário para o resto do app. Os tokens escuros já
+ * existentes (fundo azul-marinho quase preto, verde vibrante como
+ * `--primary`, bordas azul-acinzentadas) bateram com a referência sem
+ * precisar de nenhuma cor nova — só reaproveitados.
+ *
+ * O painel de marca (logo/badge/headline/benefícios/mockup) mora em
+ * `AuthMarketingPanel` — compartilhado com `pages/register.tsx` (pedido do
+ * fundador: "a aba de registro ainda é a antiga, use a mesma regra nela").
+ *
+ * 2ª rodada (2026-08-28, mesmo pedido) — card do formulário reduzido
+ * (padding/gaps menores, `LoginForm` mais compacto): numa viewport de
+ * altura comum de notebook o card ficava mais alto que a tela e o fim
+ * (Google/Microsoft) saía cortado por baixo da dobra.
+ *
+ * 3ª rodada (2026-08-28, mesmo pedido: "suba o posicionamento" do card e do
+ * mockup do dashboard) — `lg:-translate-y-3` no card: a centralização
+ * vertical pura (`items-center`) deixava o card visualmente "baixo demais"
+ * na tela; um deslocamento fixo pequeno pra cima, só no desktop.
+ *
+ * 4ª rodada (2026-08-28, achado real do fundador) — o `overflow-y-auto`
+ * que a 2ª rodada pôs no `<main>` criou uma barra de rolagem PRÓPRIA bem na
+ * borda entre os dois painéis (feio, parecia "quebrado") — e ainda por
+ * cima impedia a PÁGINA de crescer o suficiente pra rolar até o mockup do
+ * dashboard (que vive no `<aside>`, fora do `<main>`), deixando-o cortado
+ * de verdade em telas baixas. Removido: agora é a PÁGINA inteira que rola
+ * (scrollbar única, na borda direita de verdade da janela) quando o
+ * conteúdo não cabe — nunca mais um scroll isolado no meio da tela.
+ *
+ * 5ª rodada (2026-08-28, mesmo pedido: "não cortado", card sempre
+ * centralizado) — a tentativa inicial (`lg:items-start` na linha +
+ * `lg:min-h-screen` no `<main>`) evitava o vão vazio, mas trocava o
+ * problema por outro: como `<aside>` (com o mockup) é bem mais alto que
+ * `<main>` (só o card), ao rolar a PÁGINA o `<main>` "acabava" antes do
+ * `<aside>` — sobrava um vão em branco à direita enquanto o painel
+ * esquerdo ainda tinha conteúdo pra mostrar. Corrigido com `position:
+ * sticky`: a linha volta ao `stretch` padrão (`<main>` fica da MESMA
+ * altura que `<aside>`, sem `items-start`/`min-h-screen`), e o cartão
+ * dentro do `<main>` fica `sticky top-1/2 -translate-y-1/2` — ele gruda
+ * centralizado na viewport durante TODA a extensão da rolagem da página
+ * (já que a caixa do `<main>` tem exatamente a altura da do `<aside>`),
+ * nunca sai de vista, nunca aparece cortado, e não cria nenhuma barra de
+ * rolagem própria (sticky não rola sozinho, só a página).
  */
-export const getServerSideProps: GetServerSideProps = async (context) => {
+interface LoginPageProps {
+  /** Calculado no servidor (não `new Date()` no componente) — evita um mismatch de hidratação bem no instante da virada do ano, por menor que seja a chance. */
+  currentYear: number;
+}
+
+export const getServerSideProps: GetServerSideProps<LoginPageProps> = async (context) => {
   const session = requirePageSession(context);
   if (session) {
-    return { redirect: { destination: '/', permanent: false } };
+    return { redirect: { destination: '/app', permanent: false } };
   }
-  return { props: {} };
+  return { props: { currentYear: new Date().getFullYear() } };
 };
 
-const HEADLINE = 'Nenhum cliente sem resposta.';
-const SUBCOPY =
-  'A IA do Francis atende na hora, qualifica o lead e chama você só quando realmente precisa.';
-
-const BENEFITS = [
-  { icon: Zap, text: 'Atende na hora, de dia e de noite' },
-  { icon: UserCheck, text: 'Passa pra você nos momentos que importam' },
-  { icon: MessageCircle, text: 'Tudo dentro do seu próprio WhatsApp' },
-];
-
-export default function LoginPage(): JSX.Element {
+export default function LoginPage({ currentYear }: LoginPageProps): JSX.Element {
   return (
-    <div className="flex min-h-screen">
+    <div className="dark flex min-h-screen flex-col bg-background text-foreground">
       <Head>
         <title>{pageTitle('Entrar')}</title>
       </Head>
 
-      {/* Painel de marca — só desktop, ~40% */}
-      <aside className="hidden w-2/5 flex-col justify-between overflow-y-auto bg-primary p-10 text-primary-foreground lg:flex xl:p-14">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm">
-            <FrancisLogo size={30} />
-          </div>
-          <div className="leading-tight">
-            <p className="text-xl font-semibold">{BRAND.name}</p>
-            <p className="mt-0.5 text-xs text-primary-foreground/70">{BRAND.tagline}</p>
-          </div>
-        </div>
+      <div className="flex flex-1 flex-col lg:flex-row">
+        <AuthMarketingPanel />
 
-        <div className="flex flex-col gap-7 py-8">
-          <div>
-            <h2 className="text-3xl font-semibold leading-tight tracking-tight">{HEADLINE}</h2>
-            <p className="mt-3 max-w-sm text-sm leading-relaxed text-primary-foreground/80">
-              {SUBCOPY}
-            </p>
+        {/* Formulário — sem `overflow-y-auto` aqui (ver docstring, 4ª
+            rodada): numa viewport baixa é a PÁGINA que rola, nunca só este
+            painel. Linha SEM `items-start` (5ª rodada): `<main>` fica
+            `stretch` (padrão), da MESMA altura que `<aside>` — e o card
+            dentro dele usa `sticky` pra se manter centralizado na viewport
+            durante toda a rolagem, sem depender de `<main>` ter a altura
+            exata de uma tela. */}
+        <main className="flex flex-1 items-center justify-center p-6 lg:block lg:px-12 lg:py-8">
+          {/* 6ª rodada (achado real do fundador: vão vazio enorme à direita
+              da tela) — `justify-center` do flex parou de valer quando
+              `<main>` virou `lg:block` (pro `sticky` funcionar, 5ª rodada);
+              sem isso o card, embora `w-full`, ficava colado à ESQUERDA de
+              `<main>` (comportamento padrão de bloco), sobrando um vão à
+              direita. `lg:mx-auto` devolve a centralização horizontal,
+              agora via margem, não via flex. */}
+          <div className="w-full max-w-[420px] lg:sticky lg:top-1/2 lg:mx-auto lg:-translate-y-1/2 lg:-mt-3">
+            {/* Marca compacta — só mobile */}
+            <div className="mb-6 flex items-center justify-center gap-2.5 lg:hidden">
+              <FrancisLogo size={40} />
+              <span className="text-lg font-semibold text-foreground">{BRAND.name}</span>
+            </div>
+            <div className="animate-in fade-in slide-in-from-bottom-2 rounded-[22px] border border-border bg-white/[0.015] p-7 duration-500 sm:p-8">
+              <LoginForm />
+            </div>
           </div>
-          <LoginChatPreview />
-        </div>
+        </main>
+      </div>
 
-        <ul className="flex flex-col gap-3.5">
-          {BENEFITS.map(({ icon: Icon, text }) => (
-            <li key={text} className="flex items-center gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15">
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <span className="text-sm text-primary-foreground/90">{text}</span>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
-      {/* Formulário — ~60% */}
-      <main className="flex flex-1 items-center justify-center bg-muted/30 p-6">
-        <div className="w-full max-w-md">
-          {/* Marca compacta — só mobile */}
-          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <FrancisLogo size={40} />
-            <span className="text-lg font-medium text-foreground">{BRAND.name}</span>
-          </div>
-          <div className="animate-in fade-in slide-in-from-bottom-2 rounded-2xl border border-border bg-card p-8 shadow-lg duration-500 sm:p-9">
-            <LoginForm />
-          </div>
-        </div>
-      </main>
+      <AuthFooter currentYear={currentYear} />
     </div>
   );
 }

@@ -48,6 +48,13 @@ export class RegistrationService {
     private readonly refreshTokenService: RefreshTokenService,
     private readonly auditLogRepository: AuditLogRepository,
     private readonly logger: Logger,
+    // Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 1):
+    // registro ja autentica na hora (emite tokens abaixo) — isso E um
+    // acesso, entao `lastLoginAt` deveria contar a partir daqui, nao so do
+    // `AuthService.login` por senha. Sem isto, uma conta que so se registrou
+    // e nunca fez login de novo mostraria "ultimo acesso" em branco mesmo
+    // estando ativamente conectada.
+    private readonly now: () => Date = () => new Date(),
   ) {}
 
   async register(input: RegisterInput, meta: AuthRequestMeta = {}): Promise<RegisterResult> {
@@ -73,6 +80,7 @@ export class RegistrationService {
     try {
       created = await this.prisma.$transaction(async (tx) => {
         const tenant = await tx.tenant.create({ data: { name: companyName } });
+        const loginAt = this.now();
         const userRow = await tx.user.create({
           data: {
             tenantId: tenant.id,
@@ -82,6 +90,7 @@ export class RegistrationService {
             status: 'ACTIVE',
             mustChangePassword: false,
             name,
+            lastLoginAt: loginAt,
           },
         });
         const user: User = {
@@ -93,6 +102,7 @@ export class RegistrationService {
           status: 'active',
           mustChangePassword: false,
           name: userRow.name ?? undefined,
+          lastLoginAt: userRow.lastLoginAt ?? undefined,
           createdAt: userRow.createdAt,
           updatedAt: userRow.updatedAt,
         };

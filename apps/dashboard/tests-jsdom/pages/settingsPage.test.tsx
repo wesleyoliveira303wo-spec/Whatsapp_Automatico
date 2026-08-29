@@ -53,7 +53,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
   it('URL sem seção: normaliza para a primeira seção visível', async () => {
     const result = await getServerSideProps(contextFor(userSession('owner')));
     expect(result).toEqual({
-      redirect: { destination: '/settings/empresa', permanent: false },
+      redirect: { destination: '/settings/atendimento', permanent: false },
     });
   });
 
@@ -69,7 +69,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
       contextFor(userSession('operator'), { section: ['equipe'] }),
     );
     expect(result).toEqual({
-      redirect: { destination: '/settings/empresa', permanent: false },
+      redirect: { destination: '/settings/atendimento', permanent: false },
     });
   });
 
@@ -83,7 +83,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
       contextFor(userSession('administrator'), { section: ['seguranca'] }),
     );
     expect(asAdmin).toEqual({
-      redirect: { destination: '/settings/empresa', permanent: false },
+      redirect: { destination: '/settings/atendimento', permanent: false },
     });
   });
 
@@ -97,7 +97,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
       contextFor(userSession('operator'), { section: ['auditoria'] }),
     );
     expect(asOperator).toEqual({
-      redirect: { destination: '/settings/empresa', permanent: false },
+      redirect: { destination: '/settings/atendimento', permanent: false },
     });
   });
 
@@ -106,7 +106,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
       contextFor(userSession('owner'), { section: ['inventada'] }),
     );
     expect(result).toEqual({
-      redirect: { destination: '/settings/empresa', permanent: false },
+      redirect: { destination: '/settings/atendimento', permanent: false },
     });
   });
 
@@ -125,11 +125,11 @@ describe('resolveSectionFromQuery — compatibilidade com o `?tab=` antigo', () 
     expect(resolveSectionFromQuery(undefined, 'team', 'owner')).toBe('equipe');
     expect(resolveSectionFromQuery(undefined, 'audit', 'owner')).toBe('auditoria');
     expect(resolveSectionFromQuery(undefined, 'whatsapps', 'owner')).toBe('whatsapps');
-    expect(resolveSectionFromQuery(undefined, 'company', 'owner')).toBe('empresa');
   });
 
-  it('`?tab=profile` (Perfil saiu de Configurações na Fase 4) cai numa seção de workspace', () => {
-    expect(resolveSectionFromQuery(undefined, 'profile', 'owner')).toBe('empresa');
+  it('`?tab=profile`/`?tab=company` (Perfil e Dados da empresa saíram de Configurações) caem na primeira seção visível', () => {
+    expect(resolveSectionFromQuery(undefined, 'profile', 'owner')).toBe('atendimento');
+    expect(resolveSectionFromQuery(undefined, 'company', 'owner')).toBe('atendimento');
   });
 
   it('a seção da URL tem precedência sobre o `?tab=` legado', () => {
@@ -137,6 +137,6 @@ describe('resolveSectionFromQuery — compatibilidade com o `?tab=` antigo', () 
   });
 
   it('`?tab=` legado também respeita o gate de papel', () => {
-    expect(resolveSectionFromQuery(undefined, 'team', 'operator')).toBe('empresa');
+    expect(resolveSectionFromQuery(undefined, 'team', 'operator')).toBe('atendimento');
   });
 });

@@ -4,6 +4,7 @@ import {
   AiBusinessProfileService,
   MAX_PROFILE_CONTENT_LENGTH,
 } from '../application/AiBusinessProfileService';
+import { BusinessSummaryService } from '../application/BusinessSummaryService';
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 
@@ -83,8 +84,22 @@ const setAiEnabledBodySchema = z.object({
  * o botão precisa de um clique só, sem exigir que o formulário completo do
  * Cérebro da IA já esteja carregado no cliente. Mesma permissão do `PUT`
  * (reusa `ai_profile:update` — é literalmente o mesmo recurso).
+ *
+ * `businessSummaryService` (Auditoria do Perfil, 2026-08-28) — OPCIONAL,
+ * mesmo padrão de degradação graciosa de `aiProvider` em
+ * `ConversationSummaryService`: sem ele, o `PUT` funciona normalmente, só
+ * não regenera o resumo. Quando presente, é chamado DEPOIS de responder
+ * `res.json` (fire-and-forget — nunca `await`ado): salvar o Cérebro da IA
+ * não pode ficar mais lento nem falhar por causa do resumo, que é um
+ * extra. Erros dentro dele já são absorvidos e logados por
+ * `BusinessSummaryService` — nada aqui precisa de `.catch()` redundante,
+ * mas um está presente por defesa em profundidade (nunca deixar uma
+ * promise solta virar um "unhandled rejection" caso o contrato mude).
  */
-export function createAiProfileRouter(aiBusinessProfileService: AiBusinessProfileService): Router {
+export function createAiProfileRouter(
+  aiBusinessProfileService: AiBusinessProfileService,
+  businessSummaryService?: BusinessSummaryService,
+): Router {
   const router = Router({ mergeParams: true });
 
   router.get(
@@ -133,6 +148,11 @@ export function createAiProfileRouter(aiBusinessProfileService: AiBusinessProfil
         },
       );
       res.status(200).json({ profile });
+
+      // Fire-and-forget — ver docstring de `businessSummaryService` acima.
+      businessSummaryService
+        ?.regenerate(params.tenantId, params.sessionName, body.content)
+        .catch(() => {});
     }),
   );
 

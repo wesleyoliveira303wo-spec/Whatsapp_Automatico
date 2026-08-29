@@ -83,7 +83,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       // só-mobile, sempre no DOM em jsdom) + o apelido num `<span>` próprio,
       // menor/mais claro (`DisplayNameParts`, ver `DisplayNameParts.test.tsx`).
       await waitFor(() => {
-        expect(screen.getAllByText('+55 21 98888-7777').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('+55 (21) 98888-7777').length).toBeGreaterThan(0);
       });
       expect(screen.getByText('Apelido WhatsApp')).toBeInTheDocument();
     });
@@ -99,7 +99,7 @@ describe('ContactsPanel (Fase L, Bloco L1b)', () => {
       // duplicada só-mobile (`sm:hidden`, sempre no DOM em jsdom) — ambas
       // mostram o mesmo telefone quando não há nome nem apelido.
       await waitFor(() => {
-        expect(screen.getAllByText('+55 21 98888-7777').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('+55 (21) 98888-7777').length).toBeGreaterThan(0);
       });
     });
 

@@ -62,7 +62,7 @@ export default function WhatsAppAccountCard({
           className="flex items-start justify-between gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Entrar em ${session.sessionName}`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {session.phoneNumber ? (
               <ContactAvatar
                 sessionName={session.sessionName}

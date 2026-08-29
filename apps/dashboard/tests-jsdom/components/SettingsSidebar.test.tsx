@@ -9,33 +9,35 @@
  *   a autorização do backend (ver `settingsPage.test.tsx` para o gate real
  *   de rota, e o RBAC da API para a barreira de verdade);
  * - links reais (`<a href>`), não `onClick` — deep-link, Ctrl+clique, F5.
+ *
+ * Auditoria do Perfil (2026-08-28, pedido explícito do fundador) — "Dados
+ * da empresa" SAIU do catálogo (mudou para o Perfil): 5 seções agora, não
+ * mais 6. O grupo EMPRESA continua existindo (com só "Atendimento" dentro).
  */
 import { render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import SettingsSidebar from '../../components/SettingsSidebar';
 
-jest.mock('next/router', () => ({ useRouter: () => ({ asPath: '/settings/empresa' }) }));
+jest.mock('next/router', () => ({ useRouter: () => ({ asPath: '/settings/atendimento' }) }));
 
 describe('SettingsSidebar', () => {
   const base = '/settings';
 
-  it('owner vê todas as 6 seções', () => {
-    render(<SettingsSidebar active="empresa" role="owner" basePath={base} />);
-    for (const label of [
-      'Dados da empresa',
-      'Atendimento',
-      'WhatsApps',
-      'Equipe',
-      'Segurança',
-      'Auditoria',
-    ]) {
+  it('owner vê todas as 5 seções', () => {
+    render(<SettingsSidebar active="atendimento" role="owner" basePath={base} />);
+    for (const label of ['Atendimento', 'WhatsApps', 'Equipe', 'Segurança', 'Auditoria']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
     }
   });
 
+  it('não mostra mais "Dados da empresa" — mudou para o Perfil', () => {
+    render(<SettingsSidebar active="atendimento" role="owner" basePath={base} />);
+    expect(screen.queryByRole('link', { name: 'Dados da empresa' })).not.toBeInTheDocument();
+  });
+
   it('operator vê só o que alcança — sem Equipe, Segurança ou Auditoria', () => {
-    render(<SettingsSidebar active="empresa" role="operator" basePath={base} />);
-    expect(screen.getByRole('link', { name: 'Dados da empresa' })).toBeInTheDocument();
+    render(<SettingsSidebar active="atendimento" role="operator" basePath={base} />);
+    expect(screen.getByRole('link', { name: 'Atendimento' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'WhatsApps' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Equipe' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Segurança' })).not.toBeInTheDocument();
@@ -43,21 +45,21 @@ describe('SettingsSidebar', () => {
   });
 
   it('manager vê Auditoria, mas não Equipe nem Segurança', () => {
-    render(<SettingsSidebar active="empresa" role="manager" basePath={base} />);
+    render(<SettingsSidebar active="atendimento" role="manager" basePath={base} />);
     expect(screen.getByRole('link', { name: 'Auditoria' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Equipe' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Segurança' })).not.toBeInTheDocument();
   });
 
   it('administrator vê Equipe e Auditoria, mas Segurança é só do owner', () => {
-    render(<SettingsSidebar active="empresa" role="administrator" basePath={base} />);
+    render(<SettingsSidebar active="atendimento" role="administrator" basePath={base} />);
     expect(screen.getByRole('link', { name: 'Equipe' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Auditoria' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Segurança' })).not.toBeInTheDocument();
   });
 
   it('grupos vazios não deixam rótulo órfão na tela', () => {
-    render(<SettingsSidebar active="empresa" role="operator" basePath={base} />);
+    render(<SettingsSidebar active="atendimento" role="operator" basePath={base} />);
     // PESSOAS e REGISTROS não têm item visível para operator.
     expect(screen.queryByText('PESSOAS')).not.toBeInTheDocument();
     expect(screen.queryByText('REGISTROS')).not.toBeInTheDocument();
@@ -66,7 +68,7 @@ describe('SettingsSidebar', () => {
   });
 
   it('cada item é um link real para a URL da seção (deep-link, Ctrl+clique)', () => {
-    render(<SettingsSidebar active="empresa" role="owner" basePath={base} />);
+    render(<SettingsSidebar active="atendimento" role="owner" basePath={base} />);
     expect(screen.getByRole('link', { name: 'Equipe' })).toHaveAttribute(
       'href',
       '/settings/equipe',
@@ -94,7 +96,7 @@ describe('SettingsSidebar', () => {
   });
 
   it('a navegação tem nome acessível próprio', () => {
-    render(<SettingsSidebar active="empresa" role="owner" basePath={base} />);
+    render(<SettingsSidebar active="atendimento" role="owner" basePath={base} />);
     const nav = screen.getByRole('navigation', { name: 'Seções de Configurações' });
     expect(within(nav).getAllByRole('link').length).toBeGreaterThan(0);
   });

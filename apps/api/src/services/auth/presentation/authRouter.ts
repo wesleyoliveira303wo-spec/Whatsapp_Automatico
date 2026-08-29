@@ -15,11 +15,27 @@ const changePasswordBodySchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(1),
 });
-/** Reorganizacao Perfil/Configuracoes (2026-08-27) — os dois campos sao OPCIONAIS (PATCH parcial); pelo menos um precisa vir, senao nao ha o que atualizar. */
+/**
+ * Reorganizacao Perfil/Configuracoes (2026-08-27) — os dois campos sao
+ * OPCIONAIS (PATCH parcial); pelo menos um precisa vir, senao nao ha o que
+ * atualizar.
+ *
+ * `avatarUrl` deixou de ser uma URL digitada (Auditoria do Perfil,
+ * 2026-08-28 — achado de UX real: colar um link era uma experiencia ruim
+ * pra "foto de perfil") e virou upload de arquivo de verdade: o navegador
+ * recorta em quadrado, redimensiona e comprime a imagem ANTES de enviar,
+ * entao o que chega aqui e sempre uma `data:image/jpeg;base64,...` — nunca
+ * mais um link http(s) solto. O teto de 2048 caracteres (suficiente pra uma
+ * URL) virou 200.000 (suficiente pra uma miniatura ~160x160 comprimida,
+ * com folga) — ainda uma miniatura, nunca a foto original em resolucao
+ * cheia; ver `lib/imageResize.ts` no Dashboard para os numeros exatos do
+ * lado do cliente. Continua aceitando um link http(s) tambem (nenhuma
+ * checagem de formato aqui) — nao ha necessidade de travar isso agora.
+ */
 const updateProfileBodySchema = z
   .object({
     name: z.string().trim().max(200).optional(),
-    avatarUrl: z.string().trim().max(2048).optional(),
+    avatarUrl: z.string().trim().max(200_000).optional(),
   })
   .refine((body) => body.name !== undefined || body.avatarUrl !== undefined, {
     message: 'informe name ou avatarUrl',

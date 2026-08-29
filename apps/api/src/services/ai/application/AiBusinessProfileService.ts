@@ -83,6 +83,26 @@ export class AiBusinessProfileService {
     return this.aiBusinessProfileRepository.setAiEnabled(tenantId, sessionName, aiEnabled);
   }
 
+  /**
+   * Auditoria do Perfil (2026-08-28) — grava o resumo gerado por
+   * `BusinessSummaryService`. Mesmo padrão de `setAiEnabled`: operação
+   * pontual, não passa pelo `upsert` do perfil inteiro.
+   */
+  async updateSummary(
+    tenantId: string,
+    sessionName: string,
+    summary: string | null,
+    summaryGeneratedAt: Date,
+  ): Promise<AiBusinessProfile> {
+    await this.assertTenantExists(tenantId);
+    return this.aiBusinessProfileRepository.updateSummary(
+      tenantId,
+      sessionName,
+      summary,
+      summaryGeneratedAt,
+    );
+  }
+
   private async assertTenantExists(tenantId: string): Promise<void> {
     const tenant = await this.tenantRepository.findById(tenantId);
     if (!tenant) {

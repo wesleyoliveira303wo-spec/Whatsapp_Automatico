@@ -39,13 +39,18 @@ interface SessionSettingsPageProps {
  * (mapeado para a seção equivalente), para não quebrar links já salvos.
  */
 
-/** `?tab=` da barra de abas antiga -> seção nova. Mantido para não quebrar links salvos. */
+/**
+ * `?tab=` da barra de abas antiga -> seção nova. Mantido para não quebrar
+ * links salvos. `profile`/`company` (Auditoria do Perfil, 2026-08-28: "Dados
+ * da empresa" também saiu de Configurações) não têm mais seção equivalente
+ * aqui — ficam de fora do mapa de propósito e caem no fallback de
+ * `resolveSectionFromQuery` (primeira seção visível), mesmo tratamento que
+ * `profile` já recebia desde que Perfil saiu.
+ */
 const LEGACY_TAB_TO_SECTION: Record<string, SettingsSectionId> = {
-  profile: 'empresa', // "Perfil" saiu de Configurações (Fase 4) — cai na 1ª seção de empresa
   whatsapps: 'whatsapps',
   team: 'equipe',
   audit: 'auditoria',
-  company: 'empresa',
 };
 
 export function resolveSectionFromQuery(

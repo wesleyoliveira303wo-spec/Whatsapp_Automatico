@@ -228,7 +228,7 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
     /** Linha como o Prisma devolve COM o `include` da conversa mais recente. */
     const ROW_WITH_CONVERSATIONS = { ...SAMPLE_ROW, conversations: [] as unknown[] };
 
-    it('lista por tenantId, ordenado por createdAt+id desc, sem filtro de busca', async () => {
+    it('lista por tenantId, em ordem alfabética pelo nome (nulls por último), sem filtro de busca', async () => {
       const prisma = createFakePrisma();
       prisma.whatsAppContact.findMany.mockResolvedValue([ROW_WITH_CONVERSATIONS]);
       const repo = new PrismaContactRepository(prisma as never);
@@ -238,7 +238,7 @@ describe('PrismaContactRepository (Fase L, Blocos L1/L1b)', () => {
       expect(prisma.whatsAppContact.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { tenantId: 'tenant-1' },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          orderBy: [{ name: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
           take: 21,
         }),
       );

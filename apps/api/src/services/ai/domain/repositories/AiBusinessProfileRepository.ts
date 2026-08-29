@@ -58,4 +58,19 @@ export interface AiBusinessProfileRepository {
     sessionName: string,
     aiEnabled: boolean,
   ): Promise<AiBusinessProfile>;
+
+  /**
+   * Auditoria do Perfil (2026-08-28) — grava o resumo gerado por
+   * `BusinessSummaryService`, SEM tocar `content`/horário/`aiEnabled`.
+   * Operação separada de `upsert` pelo mesmo motivo de `setAiEnabled`: quem
+   * chama isto (o próprio backend, depois de gerar o resumo) não deveria
+   * precisar reenviar o perfil inteiro. `summary: null` é um valor válido
+   * (geração falhou, ou o `content` está vazio — nada a resumir).
+   */
+  updateSummary(
+    tenantId: string,
+    sessionName: string,
+    summary: string | null,
+    summaryGeneratedAt: Date,
+  ): Promise<AiBusinessProfile>;
 }

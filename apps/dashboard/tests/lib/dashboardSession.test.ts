@@ -71,6 +71,44 @@ describe('dashboardSession', () => {
 
       expect(res._headers['Set-Cookie']).toMatch(/Secure/);
     });
+
+    /**
+     * Bug real 2026-08-28: `user.avatarUrl` (uma `data:` URI de foto de
+     * perfil, ~22 KB) ia inteiro para o payload do cookie, gerando um
+     * `Set-Cookie` de ~30 KB. O navegador descarta silenciosamente um cookie
+     * acima de ~4 KB — a sessão nunca "colava" e o usuário ficava preso num
+     * loop `/login` ⇄ `/`. O `avatarUrl` não pode ir no cookie.
+     */
+    it('NÃO coloca avatarUrl no cookie, mesmo que seja uma data: URI enorme', () => {
+      const hugeAvatar = `data:image/jpeg;base64,${'A'.repeat(60_000)}`;
+      const res = createFakeRes();
+      setSessionCookie(res, {
+        tenantId: 'tenant-1',
+        accessToken: 'a'.repeat(24),
+        refreshToken: 'r'.repeat(24),
+        user: {
+          id: 'user-1',
+          email: 'wesley@empresa.com',
+          role: 'owner',
+          mustChangePassword: false,
+          name: 'Wesley',
+          avatarUrl: hugeAvatar,
+        },
+      });
+
+      const cookieValue = extractCookieValue(res._headers['Set-Cookie'] as string);
+      // Cabe com folga no limite prático de ~4 KB do navegador.
+      expect(cookieValue.length).toBeLessThan(3800);
+
+      const back = readSessionFromRequest(
+        createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookieValue } }),
+      );
+      expect(back?.user?.avatarUrl).toBeUndefined();
+      // ...mas o resto da identidade continua intacto.
+      expect(back?.user?.name).toBe('Wesley');
+      expect(back?.user?.email).toBe('wesley@empresa.com');
+      expect(back?.user?.role).toBe('owner');
+    });
   });
 
   describe('readSessionFromRequest — casos de ausência/invalidade', () => {

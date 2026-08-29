@@ -6,7 +6,6 @@ import SettingsSidebar, {
 import WhatsAppsSettingsTab from '@/components/WhatsAppsSettingsTab';
 import UserManagementPanel from '@/components/UserManagementPanel';
 import AuditLogPanel from '@/components/AuditLogPanel';
-import CompanySettingsTab from '@/components/CompanySettingsTab';
 import AtendimentoSettingsTab from '@/components/AtendimentoSettingsTab';
 import SecuritySettingsTab from '@/components/SecuritySettingsTab';
 import { fadeIn } from '@/lib/motion';
@@ -20,10 +19,6 @@ interface SettingsLayoutProps {
 
 /** Título e subtítulo por seção — o `<h2>` some da barra e passa a titular o conteúdo. */
 const SECTION_COPY: Record<SettingsSectionId, { title: string; description: string }> = {
-  empresa: {
-    title: 'Dados da empresa',
-    description: 'Como sua empresa aparece para a equipe dentro do Francis.',
-  },
   atendimento: {
     title: 'Atendimento',
     description:
@@ -61,6 +56,13 @@ const SECTION_COPY: Record<SettingsSectionId, { title: string; description: stri
  * (`resolveSection`, em `SettingsSidebar`) antes de renderizar, então uma
  * URL proibida nunca chega a montar este componente. Aqui só se decide qual
  * painel exibir.
+ *
+ * "Dados da empresa" SAIU daqui na Auditoria do Perfil (2026-08-28, pedido
+ * explícito do fundador): o nome comercial da empresa é como a PESSOA
+ * apresenta seu negócio, não administração técnica do workspace — mudou
+ * para o Perfil (`ProfileSettingsTab` › "Informações da empresa"). Mesma
+ * fonte de dado de sempre (`Tenant.name`, `PATCH /tenant`) — nunca duas
+ * telas salvando o mesmo campo.
  */
 export default function SettingsLayout({
   section,
@@ -68,7 +70,6 @@ export default function SettingsLayout({
   basePath,
 }: SettingsLayoutProps): JSX.Element {
   const copy = SECTION_COPY[section];
-  const canManageCompany = role === 'owner';
 
   return (
     <div className="flex flex-col gap-6 sm:flex-row sm:gap-8">
@@ -88,7 +89,6 @@ export default function SettingsLayout({
           remonta naturalmente; a animação só suaviza a substituição.
         */}
         <motion.div key={section} variants={fadeIn} initial="hidden" animate="visible">
-          {section === 'empresa' && <CompanySettingsTab canManage={canManageCompany} />}
           {section === 'atendimento' && <AtendimentoSettingsTab />}
           {section === 'whatsapps' && <WhatsAppsSettingsTab />}
           {section === 'equipe' && <UserManagementPanel />}

@@ -13,7 +13,17 @@ import ThemeToggle from '@/components/ThemeToggle';
 import { cn } from '@/lib/utils';
 
 interface SessionRailProps {
-  sessionName: string;
+  /**
+   * Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 1) —
+   * agora OPCIONAL: `/perfil` não pertence a nenhuma sessão de WhatsApp
+   * (é da PESSOA), mas o fundador pediu explicitamente que o rail continue
+   * visível mesmo lá — só ESCONDENDO os itens que só fazem sentido dentro
+   * de uma sessão (Conversas/Contatos/Campanhas/Pipeline/Analytics/IA).
+   * Sem `sessionName`: o círculo do topo volta a ser a marca (leva ao
+   * Workspace) e "Configurações" aponta para `/settings` (nível tenant) em
+   * vez de `/sessions/:s/settings`.
+   */
+  sessionName?: string;
 }
 
 interface RailItem {
@@ -76,30 +86,32 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
   const { user } = useMe();
   const canManageUsers = user?.role === 'administrator' || user?.role === 'owner';
   const { countBySession } = useWaitingForHuman();
-  const waitingHere = countBySession[sessionName] ?? 0;
-  const { session } = useSessionDetail(sessionName);
+  const waitingHere = sessionName ? (countBySession[sessionName] ?? 0) : 0;
+  const { session } = useSessionDetail(sessionName ?? null);
 
-  const base = `/sessions/${encodeURIComponent(sessionName)}`;
-  const items: RailItem[] = [
-    { href: `${base}/conversations`, label: 'Conversas', icon: MessageSquare },
-    // Fase L (pedido do fundador, 2026-08-15): item próprio do rail, entre
-    // Conversas e Pipeline — antes vivia como aba "Leads" dentro de
-    // Configurações. Sem `requiresManager`: a base de contatos é consulta do
-    // dia a dia (permissão `contact:read` já libera desde OPERATOR); só a
-    // IMPORTAÇÃO em lote, dentro da própria tela, exige administrator/owner.
-    { href: `${base}/contacts`, label: 'Contatos', icon: Contact },
-    // Reorganização Contatos/Campanhas (2026-08-17, 2ª rodada — pedido do
-    // fundador): Campanhas volta a ser destino PRÓPRIO do rail — "Contatos"
-    // é CRM puro, "Campanhas" é a ferramenta de disparo, domínios separados
-    // de propósito (ver docstring de `CampaignsSidePanel`... removido; a
-    // criação/gestão de campanhas mora nas páginas `/campaigns`).
-    { href: `${base}/campaigns`, label: 'Campanhas', icon: Send },
-    { href: `${base}/pipeline`, label: 'Pipeline', icon: Kanban },
-    { href: `${base}/analytics`, label: 'Analytics', icon: BarChart3, requiresManager: true },
-    { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },
-  ];
+  const base = sessionName ? `/sessions/${encodeURIComponent(sessionName)}` : null;
+  const items: RailItem[] = base
+    ? [
+        { href: `${base}/conversations`, label: 'Conversas', icon: MessageSquare },
+        // Fase L (pedido do fundador, 2026-08-15): item próprio do rail, entre
+        // Conversas e Pipeline — antes vivia como aba "Leads" dentro de
+        // Configurações. Sem `requiresManager`: a base de contatos é consulta do
+        // dia a dia (permissão `contact:read` já libera desde OPERATOR); só a
+        // IMPORTAÇÃO em lote, dentro da própria tela, exige administrator/owner.
+        { href: `${base}/contacts`, label: 'Contatos', icon: Contact },
+        // Reorganização Contatos/Campanhas (2026-08-17, 2ª rodada — pedido do
+        // fundador): Campanhas volta a ser destino PRÓPRIO do rail — "Contatos"
+        // é CRM puro, "Campanhas" é a ferramenta de disparo, domínios separados
+        // de propósito (ver docstring de `CampaignsSidePanel`... removido; a
+        // criação/gestão de campanhas mora nas páginas `/campaigns`).
+        { href: `${base}/campaigns`, label: 'Campanhas', icon: Send },
+        { href: `${base}/pipeline`, label: 'Pipeline', icon: Kanban },
+        { href: `${base}/analytics`, label: 'Analytics', icon: BarChart3, requiresManager: true },
+        { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },
+      ]
+    : [];
 
-  const settingsHref = `${base}/settings`;
+  const settingsHref = base ? `${base}/settings` : '/settings';
   const settingsActive = router.asPath.startsWith(settingsHref);
 
   return (
@@ -122,27 +134,43 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
           se perde: vive em `/perfil`, area propria desde a Fase 4 da
           Reestruturação de Configurações.
       */}
-      <Link
-        href={`${settingsHref}/whatsapps?session=${encodeURIComponent(sessionName)}`}
-        title={`${sessionName} — dados desta conexão`}
-        aria-label={`${sessionName} — dados desta conexão`}
-        className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {session?.phoneNumber ? (
-          <ContactAvatar
-            sessionName={sessionName}
-            contactJid={`${session.phoneNumber}@s.whatsapp.net`}
-            className="h-[34px] w-[34px] text-[11px]"
-          />
-        ) : (
+      {/*
+        Sem sessão (2026-08-28, Auditoria do Perfil): não há "dados desta
+        conexão" pra levar — o círculo volta a ser a marca, link pro
+        Workspace, mesmo destino/título do `Header.tsx` genérico.
+      */}
+      {sessionName && base ? (
+        <Link
+          href={`${settingsHref}/whatsapps?session=${encodeURIComponent(sessionName)}`}
+          title={`${sessionName} — dados desta conexão`}
+          aria-label={`${sessionName} — dados desta conexão`}
+          className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {session?.phoneNumber ? (
+            <ContactAvatar
+              sessionName={sessionName}
+              contactJid={`${session.phoneNumber}@s.whatsapp.net`}
+              className="h-[34px] w-[34px] text-[11px]"
+            />
+          ) : (
+            <FrancisLogo size={16} />
+          )}
+          {session && (
+            <span className="absolute -bottom-0.5 -right-0.5">
+              <StatusDot status={session.status} className="border-2 border-background" />
+            </span>
+          )}
+        </Link>
+      ) : (
+        <Link
+          href="/app"
+          title="Voltar para Todos os WhatsApps"
+          aria-label="Voltar para Todos os WhatsApps"
+          className="relative mb-3.5 mt-0.5 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] bg-primary/10 text-primary transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <FrancisLogo size={16} />
-        )}
-        {session && (
-          <span className="absolute -bottom-0.5 -right-0.5">
-            <StatusDot status={session.status} className="border-2 border-background" />
-          </span>
-        )}
-      </Link>
+        </Link>
+      )}
 
       <nav className="flex flex-1 flex-col items-center gap-1">
         {items.map(({ href, label, icon: Icon, requiresManager }) => {

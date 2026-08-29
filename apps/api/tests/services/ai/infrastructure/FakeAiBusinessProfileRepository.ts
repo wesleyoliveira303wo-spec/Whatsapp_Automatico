@@ -65,6 +65,8 @@ export class FakeAiBusinessProfileRepository implements AiBusinessProfileReposit
       workingDays: data.workingDays ?? existing?.workingDays ?? 62,
       timezone: data.timezone ?? existing?.timezone ?? 'America/Sao_Paulo',
       aiEnabled: existing?.aiEnabled ?? true,
+      summary: existing?.summary ?? null,
+      summaryGeneratedAt: existing?.summaryGeneratedAt ?? null,
     };
     this.profiles.set(FakeAiBusinessProfileRepository.key(tenantId, sessionName), profile);
     return profile;
@@ -92,7 +94,28 @@ export class FakeAiBusinessProfileRepository implements AiBusinessProfileReposit
           workingDays: 62,
           timezone: 'America/Sao_Paulo',
           aiEnabled,
+          summary: null,
+          summaryGeneratedAt: null,
         };
+    this.profiles.set(key, profile);
+    return profile;
+  }
+
+  /** Auditoria do Perfil (2026-08-28) — espelha `PrismaAiBusinessProfileRepository.updateSummary`. */
+  async updateSummary(
+    tenantId: string,
+    sessionName: string,
+    summary: string | null,
+    summaryGeneratedAt: Date,
+  ): Promise<AiBusinessProfile> {
+    const key = FakeAiBusinessProfileRepository.key(tenantId, sessionName);
+    const existing = this.profiles.get(key);
+    if (!existing) {
+      throw new Error(
+        `updateSummary chamado sem perfil existente (${tenantId}/${sessionName}) — mesma pré-condição do repositório real (update, não upsert).`,
+      );
+    }
+    const profile: AiBusinessProfile = { ...existing, summary, summaryGeneratedAt };
     this.profiles.set(key, profile);
     return profile;
   }
@@ -123,6 +146,8 @@ export class FakeAiBusinessProfileRepository implements AiBusinessProfileReposit
       workingDays: offHoursOverrides?.workingDays ?? 62,
       timezone: offHoursOverrides?.timezone ?? 'America/Sao_Paulo',
       aiEnabled: offHoursOverrides?.aiEnabled ?? true,
+      summary: offHoursOverrides?.summary ?? null,
+      summaryGeneratedAt: offHoursOverrides?.summaryGeneratedAt ?? null,
     });
   }
 

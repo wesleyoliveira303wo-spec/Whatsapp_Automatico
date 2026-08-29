@@ -29,7 +29,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.status(401).json({ error: 'not_authenticated' });
       return;
     }
-    res.status(200).json({ tenantId: session.tenantId, user: session.user ?? null });
+
+    // Sessão de MÁQUINA (API key) ou sem pessoa: não há perfil a enriquecer.
+    if (!isUserSession(session)) {
+      res.status(200).json({ tenantId: session.tenantId, user: session.user ?? null });
+      return;
+    }
+
+    // A foto (`avatarUrl`) NÃO viaja no cookie — pode ser uma `data:` URI de
+    // ~200 KB e estouraria o limite do navegador, derrubando a sessão (bug
+    // 2026-08-28, ver `dashboardSession.toCookieSafeSession`). Para a UI ainda
+    // mostrar nome/foto atualizados, busca o perfil fresco da API aqui. Se a
+    // API falhar, devolve o que há no cookie (sem foto) — exibição degradada,
+    // nunca erro.
+    let enrichedUser = session.user;
+    try {
+      const meResponse = await fetch(
+        new URL(`/api/tenants/${encodeURIComponent(session.tenantId)}/auth/me`, getApiBaseUrl()),
+        { headers: { Authorization: `Bearer ${session.accessToken}` } },
+      );
+      if (meResponse.ok) {
+        const body = (await meResponse.json()) as { user?: Record<string, unknown> };
+        const fresh = body.user;
+        if (fresh && typeof fresh.id === 'string') {
+          enrichedUser = {
+            ...session.user,
+            name: typeof fresh.name === 'string' ? fresh.name : session.user.name,
+            avatarUrl: typeof fresh.avatarUrl === 'string' ? fresh.avatarUrl : undefined,
+            createdAt:
+              typeof fresh.createdAt === 'string' ? fresh.createdAt : session.user.createdAt,
+            lastLoginAt:
+              typeof fresh.lastLoginAt === 'string'
+                ? fresh.lastLoginAt
+                : session.user.lastLoginAt,
+          };
+        }
+      }
+    } catch {
+      // segue com o `user` do cookie
+    }
+
+    res.status(200).json({ tenantId: session.tenantId, user: enrichedUser });
     return;
   }
 

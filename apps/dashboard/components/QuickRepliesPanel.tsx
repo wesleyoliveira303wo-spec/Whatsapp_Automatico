@@ -58,8 +58,8 @@ export default function QuickRepliesPanel({ sessionName }: QuickRepliesPanelProp
   const [editingContent, setEditingContent] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
 
-  async function handleCreate(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  async function handleCreate(event?: FormEvent): Promise<void> {
+    event?.preventDefault();
     const trimmed = newContent.trim();
     if (!trimmed) return;
     setCreating(true);
@@ -110,10 +110,15 @@ export default function QuickRepliesPanel({ sessionName }: QuickRepliesPanelProp
 
   return (
     <div>
-      <form
-        onSubmit={handleCreate}
-        className="mb-3.5 flex gap-2 rounded-lg border border-border bg-card p-3.5"
-      >
+      {/*
+        2026-08-28 (bug do fundador): NÃO usar `<form>` aqui. Este painel é
+        embutido no dropdown "Gerenciar" do `MessageComposer`, que JÁ é um
+        `<form>` — `<form>` dentro de `<form>` é HTML inválido, o navegador
+        descarta o de dentro e o clique em "Adicionar" acabava submetendo o
+        composer (a resposta rápida não era criada). Um `<div>` + `onClick`
+        no botão + Enter no campo funciona embutido E na tela dedicada.
+      */}
+      <div className="mb-3.5 flex gap-2 rounded-lg border border-border bg-card p-3.5">
         <label htmlFor="newQuickReplyContent" className="sr-only">
           Nova resposta rápida
         </label>
@@ -121,20 +126,26 @@ export default function QuickRepliesPanel({ sessionName }: QuickRepliesPanelProp
           id="newQuickReplyContent"
           value={newContent}
           onChange={(event) => setNewContent(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void handleCreate();
+            }
+          }}
           rows={1}
           placeholder="Escreva uma nova resposta pronta…"
-          required
           className="h-[34px] flex-1 resize-none rounded-[9px] border-border bg-panel py-2 text-[13px] focus-visible:ring-[3px] focus-visible:ring-primary/10"
         />
         <Button
-          type="submit"
+          type="button"
           size="cta"
           className="shrink-0"
           disabled={creating || !newContent.trim()}
+          onClick={() => void handleCreate()}
         >
           {creating ? 'Adicionando…' : 'Adicionar'}
         </Button>
-      </form>
+      </div>
 
       {panelError && <p className="mb-3.5 text-sm text-destructive">{panelError}</p>}
 

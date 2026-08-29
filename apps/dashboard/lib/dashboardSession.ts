@@ -15,6 +15,15 @@ export interface DashboardSessionUser {
   /** Reorganizacao Perfil/Configuracoes (2026-08-27) — ausentes ate o usuario preencher no Perfil. */
   name?: string;
   avatarUrl?: string;
+  /**
+   * Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 2) — a
+   * API ja devolve `createdAt`/`lastLoginAt` em `PublicUser` desde sempre
+   * (e' so `Omit<User, 'passwordHash'>`); o BFF simplesmente descartava os
+   * dois campos ao montar `sessionUser` em login/register. ISO string (o
+   * cookie e' JSON; `Date` nao sobrevive a serializacao).
+   */
+  createdAt?: string;
+  lastLoginAt?: string;
 }
 
 /**
@@ -78,9 +87,46 @@ function serializeCookie(value: string, maxAgeSeconds: number): string {
   return parts.join('; ');
 }
 
-/** Grava o cookie de sessão cifrado na resposta — chamado só por `pages/api/auth/login.ts`. */
+/**
+ * ~4096 bytes é o teto prático de UM cookie no navegador (RFC 6265 §6.1
+ * recomenda suportar ao menos isso; Chrome/Firefox cortam por aí). Acima
+ * disso o navegador DESCARTA o `Set-Cookie` inteiro, em silêncio — a sessão
+ * nunca "cola" e o usuário fica preso num loop `/login` ⇄ `/` (bug real de
+ * 2026-08-28: `user.avatarUrl` era uma `data:` URI de ~22 KB dentro do
+ * payload, gerando um `Set-Cookie` de 30 KB). Ficamos com folga abaixo do
+ * limite.
+ */
+const MAX_SAFE_COOKIE_VALUE_BYTES = 3800;
+
+/**
+ * Remove do payload do cookie os campos que podem ser grandes demais. Hoje
+ * só `user.avatarUrl` — uma `data:` URI de foto de perfil de até ~200 KB
+ * (comprimida no cliente, ver `ProfileSettingsTab`/`EditableAvatar` e o teto
+ * de `updateProfileBodySchema` na API). O cookie carrega apenas identidade
+ * essencial + tokens; a foto é dado de EXIBIÇÃO e vem fresca de
+ * `/api/auth/me` (que consulta a API). `avatarUrl` ausente = nada a fazer.
+ */
+function toCookieSafeSession(session: DashboardSession): DashboardSession {
+  if (!session.user || session.user.avatarUrl === undefined) {
+    return session;
+  }
+  const { avatarUrl: _dropped, ...user } = session.user;
+  return { ...session, user };
+}
+
+/** Grava o cookie de sessão cifrado na resposta — chamado por `pages/api/auth/{login,register,me,change-password}.ts`. */
 export function setSessionCookie(res: NextApiResponse, session: DashboardSession): void {
-  const encrypted = encryptCookiePayload(getSessionSecret(), JSON.stringify(session));
+  const encrypted = encryptCookiePayload(
+    getSessionSecret(),
+    JSON.stringify(toCookieSafeSession(session)),
+  );
+  if (encrypted.length > MAX_SAFE_COOKIE_VALUE_BYTES) {
+    // Não lança (não quebrar o login) — mas registra: um cookie desse tamanho
+    // pode ser descartado pelo navegador e derrubar a sessão silenciosamente.
+    console.warn(
+      `[dashboardSession] cookie de sessão com ${encrypted.length} bytes ultrapassa o teto seguro de ${MAX_SAFE_COOKIE_VALUE_BYTES}; o navegador pode descartá-lo. Verifique o que está sendo colocado no payload.`,
+    );
+  }
   res.setHeader('Set-Cookie', serializeCookie(encrypted, SESSION_MAX_AGE_SECONDS));
 }
 
@@ -154,6 +200,10 @@ export function readSessionFromRequest(
           name: typeof parsed.user.name === 'string' ? parsed.user.name : undefined,
           avatarUrl:
             typeof parsed.user.avatarUrl === 'string' ? parsed.user.avatarUrl : undefined,
+          createdAt:
+            typeof parsed.user.createdAt === 'string' ? parsed.user.createdAt : undefined,
+          lastLoginAt:
+            typeof parsed.user.lastLoginAt === 'string' ? parsed.user.lastLoginAt : undefined,
         },
       };
     }

@@ -118,6 +118,14 @@ export interface SessionUserInfo {
   /** Reorganizacao Perfil/Configuracoes (2026-08-27) — ausentes ate o usuario preencher. */
   name?: string;
   avatarUrl?: string;
+  /**
+   * Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 2) — ISO
+   * string. `lastLoginAt` so e' gravado em login por senha e no registro
+   * (ver `RegistrationService`/`AuthService.login`); ausente para contas
+   * antigas que nunca trocaram a senha nem relogaram desde a migration.
+   */
+  createdAt?: string;
+  lastLoginAt?: string;
 }
 
 /**
@@ -331,6 +339,15 @@ export interface AiBusinessProfile {
    * normal — só a resposta AUTOMÁTICA para).
    */
   aiEnabled: boolean;
+  /**
+   * Auditoria do Perfil (2026-08-28) — resumo em linguagem natural do
+   * `content`, gerado pela IA e cacheado (ver `BusinessSummaryService` na
+   * API). `null` = nunca gerado (perfil vazio/novo) ou a última geração
+   * falhou. Nunca gerado ao ler este campo — só quando o perfil é salvo.
+   */
+  summary: string | null;
+  /** Quando `summary` foi gerado pela última vez. `null` junto com `summary === null`. */
+  summaryGeneratedAt: string | null;
 }
 
 /** F1.8 — campos opcionais para salvar o perfil. Campos não informados preservam o valor já gravado. */

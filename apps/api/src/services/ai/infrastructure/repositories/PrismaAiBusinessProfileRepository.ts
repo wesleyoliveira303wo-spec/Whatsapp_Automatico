@@ -25,6 +25,8 @@ interface AiBusinessProfileRow {
   workingDays: number;
   timezone: string;
   aiEnabled: boolean;
+  summary: string | null;
+  summaryGeneratedAt: Date | null;
 }
 
 function toDomain(row: AiBusinessProfileRow): AiBusinessProfile {
@@ -40,6 +42,8 @@ function toDomain(row: AiBusinessProfileRow): AiBusinessProfile {
     workingDays: row.workingDays,
     timezone: row.timezone,
     aiEnabled: row.aiEnabled,
+    summary: row.summary,
+    summaryGeneratedAt: row.summaryGeneratedAt,
   };
 }
 
@@ -121,6 +125,24 @@ export class PrismaAiBusinessProfileRepository implements AiBusinessProfileRepos
       where: { tenantId_sessionName: { tenantId, sessionName } },
       create: { tenantId, sessionName, content: '', aiEnabled },
       update: { aiEnabled },
+    });
+    return toDomain(row);
+  }
+
+  /**
+   * `update` (não `upsert`) de propósito: só é chamado depois de um `upsert`
+   * bem-sucedido no mesmo fluxo (`saveProfile` → `BusinessSummaryService`),
+   * então a linha sempre já existe — ver docstring do método na porta.
+   */
+  async updateSummary(
+    tenantId: string,
+    sessionName: string,
+    summary: string | null,
+    summaryGeneratedAt: Date,
+  ): Promise<AiBusinessProfile> {
+    const row = await this.prisma.aiBusinessProfile.update({
+      where: { tenantId_sessionName: { tenantId, sessionName } },
+      data: { summary, summaryGeneratedAt },
     });
     return toDomain(row);
   }

@@ -101,6 +101,52 @@ describe('Integração real — registro Tenant+Owner (Fase Auth/Registro)', () 
     expect(result.refreshToken).toBeTruthy();
   });
 
+  // Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 1) —
+  // achado real: registro ja autentica na hora (emite tokens acima), mas
+  // `lastLoginAt` so era gravado em `AuthService.login` por senha. Uma
+  // conta que so se registrou e nunca relogou mostraria "ultimo acesso" em
+  // branco, apesar de estar ativamente conectada desde o registro.
+  it('registro conta como acesso: grava lastLoginAt na hora, nao so no login por senha', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+    const email = uniqueEmail('ultimo-acesso');
+    createdEmails.push(email);
+    const registeredAt = new Date('2026-08-28T12:00:00.000Z');
+
+    const passwordHasher = new ScryptPasswordHasher();
+    const accessTokenService = new Hs256AccessTokenService('segredo-teste-registro-1234567890', 900);
+    const refreshTokenService = new RefreshTokenService(
+      new PrismaRefreshTokenRepository(prisma),
+      new Sha256RefreshTokenCodec(),
+      7 * 24 * 60 * 60 * 1000,
+    );
+    const serviceWithFixedClock = new RegistrationService(
+      prisma,
+      passwordHasher,
+      accessTokenService,
+      refreshTokenService,
+      new PrismaAuditLogRepository(prisma),
+      new NoopLogger(),
+      () => registeredAt,
+    );
+
+    const result = await serviceWithFixedClock.register({
+      name: 'Ultimo Acesso',
+      email,
+      password: 'senha-forte-123',
+      companyName: 'Empresa Ultimo Acesso',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    createdTenantIds.push(result.tenantId);
+
+    expect(result.user.lastLoginAt).toEqual(registeredAt);
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user?.lastLoginAt).toEqual(registeredAt);
+  });
+
   it('e-mail ja em uso -> ok:false, NENHUM tenant novo e criado (atomicidade)', async () => {
     if (!databaseAvailable) {
       console.warn('Postgres indisponível — pulando teste de integração real.');

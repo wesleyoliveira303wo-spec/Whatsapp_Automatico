@@ -57,10 +57,10 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'segredo' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar na minha conta' }));
     await waitFor(() => {
       expect(clientApi.loginWithPassword).toHaveBeenCalledWith('a@b.com', 'segredo');
-      expect(push).toHaveBeenCalledWith('/');
+      expect(push).toHaveBeenCalledWith('/app');
     });
   });
 
@@ -71,7 +71,7 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'provisoria' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar na minha conta' }));
     await waitFor(() => {
       expect(push).toHaveBeenCalledWith('/change-password');
     });
@@ -84,7 +84,7 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'a@b.com' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'errada' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar na minha conta' }));
     await waitFor(() => {
       expect(screen.getByText('E-mail ou senha inválidos.')).toBeInTheDocument();
     });
@@ -92,7 +92,40 @@ describe('LoginForm (Milestone 6, Bloco M6F)', () => {
 
   it('mostra o link "Criar minha conta" no modo pessoa, apontando para /register', () => {
     render(<LoginForm />);
-    const link = screen.getByRole('link', { name: 'Criar minha conta' });
+    const link = screen.getByRole('link', { name: 'Criar conta' });
     expect(link).toHaveAttribute('href', '/register');
+  });
+
+  // Reconstrução 2026-08-28 (pedido do fundador, imagem de referência) —
+  // "Lembrar de mim"/Google/Microsoft/"Esqueci minha senha" são UI nova sem
+  // backend por trás (nenhum provedor OAuth configurado, nenhum fluxo de
+  // autoatendimento de senha existe) — ver docstring do componente.
+  it('"Lembrar de mim" é um checkbox de verdade, com estado local', () => {
+    render(<LoginForm />);
+    const checkbox = screen.getByRole('checkbox', { name: 'Lembrar de mim' }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('"Esqueci minha senha" não é um controle interativo (sem fluxo por trás ainda)', () => {
+    render(<LoginForm />);
+    expect(screen.queryByRole('link', { name: 'Esqueci minha senha' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Esqueci minha senha' })).not.toBeInTheDocument();
+    expect(screen.getByText('Esqueci minha senha')).toBeInTheDocument();
+  });
+
+  it('Google/Microsoft aparecem desabilitados — UI pronta, sem provedor OAuth configurado', () => {
+    render(<LoginForm />);
+    expect(screen.getByRole('button', { name: /Google/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Microsoft/ })).toBeDisabled();
+  });
+
+  it('mostra o cabeçalho "Bem-vindo de volta!" com a nova mensagem de apoio', () => {
+    render(<LoginForm />);
+    expect(screen.getByText('Bem-vindo de volta!')).toBeInTheDocument();
+    expect(
+      screen.getByText('Entre para continuar automatizando suas conversas.'),
+    ).toBeInTheDocument();
   });
 });

@@ -157,4 +157,51 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     render(<SessionRail sessionName="vendas" />);
     expect(screen.getByLabelText('Configurações').className).toContain('text-muted-foreground');
   });
+
+  /**
+   * Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 1) —
+   * pedido explícito do fundador: em `/perfil` (fora de qualquer sessão de
+   * WhatsApp) o rail deve continuar visível, só ESCONDENDO os itens que só
+   * fazem sentido dentro de uma sessão. Antes desta rodada, `/perfil`
+   * simplesmente não tinha rail nenhum.
+   */
+  describe('sem sessão (pedido do fundador, 2026-08-28: rail visível também em /perfil)', () => {
+    beforeEach(() => {
+      mockAsPath = '/perfil';
+    });
+
+    it('esconde Conversas/Contatos/Campanhas/Pipeline/Analytics/IA — não fazem sentido sem sessão', () => {
+      mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'owner' } });
+      render(<SessionRail />);
+      expect(screen.queryByLabelText('Conversas')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Contatos')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Campanhas')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Pipeline')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Analytics')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('IA')).not.toBeInTheDocument();
+    });
+
+    it('mantém Meu perfil, tema e Configurações — válidos em qualquer lugar', () => {
+      mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'owner' } });
+      render(<SessionRail />);
+      expect(screen.getByLabelText('Meu perfil')).toBeInTheDocument();
+      expect(screen.getByLabelText('Configurações')).toBeInTheDocument();
+    });
+
+    it('Configurações aponta para /settings (nível tenant), não /sessions/:s/settings', () => {
+      mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'owner' } });
+      render(<SessionRail />);
+      expect(screen.getByLabelText('Configurações')).toHaveAttribute('href', '/settings');
+    });
+
+    it('o círculo do topo volta a ser a marca, com link para o Workspace', () => {
+      mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'owner' } });
+      render(<SessionRail />);
+      const link = screen.getByLabelText('Voltar para Todos os WhatsApps');
+      expect(link).toHaveAttribute('href', '/app');
+      // Nunca chama `useSessionDetail` com sessão nenhuma para não pedir
+      // dados de conexão que não existem aqui.
+      expect(mockUseSessionDetail).toHaveBeenCalledWith(null);
+    });
+  });
 });

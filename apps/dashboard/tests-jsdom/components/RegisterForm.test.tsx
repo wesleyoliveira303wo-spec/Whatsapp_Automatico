@@ -47,7 +47,7 @@ describe('RegisterForm (Fase Auth/Registro)', () => {
         'senha-forte-123',
         'Minha Empresa',
       );
-      expect(push).toHaveBeenCalledWith('/');
+      expect(push).toHaveBeenCalledWith('/app');
     });
   });
 
@@ -71,5 +71,15 @@ describe('RegisterForm (Fase Auth/Registro)', () => {
     render(<RegisterForm />);
     const link = screen.getByRole('link', { name: 'Entrar' });
     expect(link).toHaveAttribute('href', '/login');
+  });
+
+  // Reconstrução 2026-08-28 (pedido do fundador: "use a mesma regra" do
+  // login no registro) — mesmo cabeçalho com ícone/heading do LoginForm.
+  it('mostra o cabeçalho "Criar sua conta" com a mensagem de apoio', () => {
+    render(<RegisterForm />);
+    expect(screen.getByText('Criar sua conta')).toBeInTheDocument();
+    expect(
+      screen.getByText('Comece a atender pelo Francis em menos de um minuto.'),
+    ).toBeInTheDocument();
   });
 });

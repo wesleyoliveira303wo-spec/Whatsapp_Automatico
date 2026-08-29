@@ -88,7 +88,7 @@ describe('ConversationContextPanel (Redesign 2026-08-05, R3)', () => {
     render(<ConversationContextPanel sessionName="vendas" conversationId="c1" />);
     // O telefone aparece duas vezes (cabeçalho + linha auxiliar do "Salvar
     // contato") — `DisplayNameParts` bota cada parte num `<span>` próprio.
-    expect(screen.getAllByText('+55 11 98122-4471')).toHaveLength(2);
+    expect(screen.getAllByText('+55 (11) 98122-4471')).toHaveLength(2);
     expect(screen.getByText('Maria Costa')).toBeInTheDocument();
     expect(screen.getByText(/Cliente há/)).toBeInTheDocument();
   });

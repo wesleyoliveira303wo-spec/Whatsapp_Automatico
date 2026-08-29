@@ -7,11 +7,13 @@ import {
   AiBusinessProfileService,
   MAX_PROFILE_CONTENT_LENGTH,
 } from '../../../../src/services/ai/application/AiBusinessProfileService';
+import { BusinessSummaryService } from '../../../../src/services/ai/application/BusinessSummaryService';
 import { Principal, RequestWithPrincipal } from '../../../../src/shared/presentation/authenticate';
 import { UserRole } from '../../../../src/services/auth/domain/entities/User';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAiBusinessProfileRepository } from '../infrastructure/FakeAiBusinessProfileRepository';
+import { FakeAiProvider } from '../infrastructure/FakeAiProviderFactory';
 
 /**
  * Testes do aiProfileRouter (Base de Conhecimento, Nível 1): thin router +
@@ -26,7 +28,10 @@ import { FakeAiBusinessProfileRepository } from '../infrastructure/FakeAiBusines
  */
 const SESSION = 'sessao-1';
 
-function buildApp(principal?: Principal): {
+function buildApp(
+  principal?: Principal,
+  aiProvider?: FakeAiProvider,
+): {
   app: express.Express;
   profiles: FakeAiBusinessProfileRepository;
 } {
@@ -34,6 +39,13 @@ function buildApp(principal?: Principal): {
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
   const profiles = new FakeAiBusinessProfileRepository();
   const service = new AiBusinessProfileService(profiles, tenantRepository, new NoopLogger());
+  // Auditoria do Perfil (2026-08-28) — `businessSummaryService` OPCIONAL
+  // (mesma degradação graciosa de `aiProvider` em outros lugares do
+  // projeto): a maioria dos testes deste arquivo não passa nenhum, então o
+  // `PUT` continua funcionando idêntico a antes desta rodada.
+  const businessSummaryService = aiProvider
+    ? new BusinessSummaryService(service, new NoopLogger(), aiProvider, () => FIXED_NOW)
+    : undefined;
 
   const app = express();
   app.use(express.json());
@@ -43,13 +55,20 @@ function buildApp(principal?: Principal): {
       if (principal) (req as RequestWithPrincipal).principal = principal;
       next();
     },
-    createAiProfileRouter(service),
+    createAiProfileRouter(service, businessSummaryService),
   );
   app.use(
     '/api/tenants/:tenantId/sessions/:sessionName/ai-profile',
     createAiProfileErrorHandler(new NoopLogger()),
   );
   return { app, profiles };
+}
+
+const FIXED_NOW = new Date('2026-08-28T12:00:00.000Z');
+
+/** Espera o próximo "tick" de microtasks — o `.regenerate()` fire-and-forget do router roda depois de `res.json`, então o teste precisa dar uma chance ao event loop antes de checar o efeito colateral. */
+async function flushMicrotasks(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 function person(role: UserRole): Principal {
@@ -199,6 +218,79 @@ describe('aiProfileRouter (Base de Conhecimento — Nível 1, por sessão desde 
         .send({ content: 'x', workingDays: 128 });
 
       expect(response.status).toBe(400);
+    });
+
+    // Auditoria do Perfil (2026-08-28) — "automático e deve ficar salvo,
+    // atualizar somente quando houver interação no cérebro da IA".
+    describe('regeneração do resumo do negócio (fire-and-forget)', () => {
+      it('PUT bem-sucedido regenera o resumo em segundo plano', async () => {
+        const aiProvider = new FakeAiProvider();
+        aiProvider.setNextResult({
+          content: 'A empresa é uma barbearia.',
+          model: 'fake-model',
+          tokensInput: 5,
+          tokensOutput: 6,
+        });
+        const { app, profiles } = buildApp(person('administrator'), aiProvider);
+
+        const response = await request(app)
+          .put(path('tenant-1'))
+          .send({ content: 'Barbearia do João. Corte R$ 40.' });
+        expect(response.status).toBe(200);
+        // O `PUT` já respondeu — o resumo ainda não precisa ter sido
+        // gravado neste ponto (é isso que "fire-and-forget" significa).
+        await flushMicrotasks();
+
+        expect(aiProvider.generateReplyCalls).toHaveLength(1);
+        const persisted = await profiles.findByTenantAndSession('tenant-1', SESSION);
+        expect(persisted?.summary).toBe('A empresa é uma barbearia.');
+        expect(persisted?.summaryGeneratedAt).toEqual(FIXED_NOW);
+      });
+
+      it('sem businessSummaryService (não configurado): PUT funciona normalmente, sem tentar gerar resumo', async () => {
+        const { app } = buildApp(person('administrator'));
+
+        const response = await request(app)
+          .put(path('tenant-1'))
+          .send({ content: 'Barbearia do João.' });
+
+        expect(response.status).toBe(200);
+        await flushMicrotasks();
+        // Não lançou, não travou — não há provider pra checar chamadas, e
+        // já é isso que este teste confirma (nenhum erro no meio do caminho).
+      });
+
+      it('content vazio (apaga o Cérebro): regenera mesmo assim, limpando o resumo', async () => {
+        const aiProvider = new FakeAiProvider();
+        const { app, profiles } = buildApp(person('administrator'), aiProvider);
+        await profiles.seed('tenant-1', SESSION, 'antigo');
+        await profiles.updateSummary('tenant-1', SESSION, 'resumo antigo', new Date());
+
+        const response = await request(app).put(path('tenant-1')).send({ content: '' });
+        expect(response.status).toBe(200);
+        await flushMicrotasks();
+
+        expect(aiProvider.generateReplyCalls).toHaveLength(0);
+        const persisted = await profiles.findByTenantAndSession('tenant-1', SESSION);
+        expect(persisted?.summary).toBeNull();
+      });
+
+      it('falha do provider ao regenerar: PUT já respondeu 200 antes — não afeta o salvamento do Cérebro', async () => {
+        const aiProvider = new FakeAiProvider();
+        aiProvider.setNextError(new Error('provider fora do ar'));
+        const { app, profiles } = buildApp(person('administrator'), aiProvider);
+
+        const response = await request(app)
+          .put(path('tenant-1'))
+          .send({ content: 'Barbearia do João.' });
+
+        expect(response.status).toBe(200);
+        expect(response.body.profile.content).toBe('Barbearia do João.');
+        await flushMicrotasks();
+
+        const persisted = await profiles.findByTenantAndSession('tenant-1', SESSION);
+        expect(persisted?.content).toBe('Barbearia do João.');
+      });
     });
   });
 

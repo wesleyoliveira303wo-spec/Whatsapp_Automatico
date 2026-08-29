@@ -184,7 +184,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
 
       // Duas partes em elementos separados (`DisplayNameParts`) — o apelido
       // sai menor/mais claro, ver `DisplayNameParts.test.tsx`.
-      expect(screen.getByText('+55 21 97777-6666')).toBeInTheDocument();
+      expect(screen.getByText('+55 (21) 97777-6666')).toBeInTheDocument();
       expect(screen.getByText('Apelido WhatsApp')).toBeInTheDocument();
       expect(screen.queryByText('contact-2')).not.toBeInTheDocument();
     });
@@ -204,7 +204,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       });
       await renderPanel();
 
-      expect(screen.getByText('+55 21 96666-5555')).toBeInTheDocument();
+      expect(screen.getByText('+55 (21) 96666-5555')).toBeInTheDocument();
       expect(screen.getByText('Nome da planilha')).toBeInTheDocument();
     });
 
