@@ -8,6 +8,7 @@ import { SendingEngineNotConfiguredError } from '../domain/errors/SendingEngineN
 import { CampaignMediaTooLargeError } from '../domain/errors/CampaignMediaTooLargeError';
 import { CampaignMediaTypeMismatchError } from '../domain/errors/CampaignMediaTypeMismatchError';
 import { CampaignMediaNotFoundError } from '../domain/errors/CampaignMediaNotFoundError';
+import { LeadMessageGenerationUnavailableError } from '../domain/errors/LeadMessageGenerationUnavailableError';
 
 /**
  * Middleware de erro para `createCampaignsRouter` — Fase L, Blocos L3/L4.
@@ -49,6 +50,16 @@ export function createCampaignsErrorHandler(logger: Logger): ErrorRequestHandler
     }
     if (error instanceof SendingEngineNotConfiguredError) {
       res.status(503).json({ error: 'sending_engine_not_configured', message: error.message });
+      return;
+    }
+    // Fase de Prospecção IA (2026-08-29) — mesmo racional/mesmo status de
+    // `SendingEngineNotConfiguredError`: ambiente sem credenciais de IA
+    // configuradas (ver `index.ts`).
+    if (error instanceof LeadMessageGenerationUnavailableError) {
+      res.status(503).json({
+        error: 'lead_message_generation_unavailable',
+        message: error.message,
+      });
       return;
     }
     // Fase L, Bloco L8 (mídia na campanha) — mesmos códigos/status de

@@ -5,6 +5,9 @@ import { asyncHandler, validateOrRespond } from '../../../shared/presentation/ht
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 import { RequestWithPrincipal } from '../../../shared/presentation/authenticate';
 import { CampaignService, MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES } from '../application/CampaignService';
+import { GenerateLeadMessagesService } from '../application/GenerateLeadMessagesService';
+import { LeadSiteStatus } from '../domain/entities/EnrichedLead';
+import { parseEnrichedLeadsCsv } from '../domain/policies/parseEnrichedLeadsCsv';
 
 /** Teto do corpo do upload de planilha de destinatários — mesmo valor de `MAX_IMPORT_UPLOAD_BYTES` (`contactsRouter.ts`), texto puro. */
 export const MAX_RECIPIENTS_CSV_BYTES = 5 * 1024 * 1024;
@@ -33,6 +36,35 @@ const listRecipientsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().trim().min(1).optional(),
   status: z.enum(['pending', 'sent', 'failed', 'skipped', 'replied']).optional(),
+});
+
+/**
+ * Corpo de `POST /leads/generate-messages` — Fase de Prospecção IA
+ * (2026-08-29). Espelha `EnrichedLead` (mesmo formato usado manualmente em
+ * `leads-prospeccao-google-maps/`), validado aqui na borda HTTP.
+ */
+const enrichedLeadSchema = z.object({
+  companyName: z.string().trim().min(1),
+  category: z.string().trim().min(1),
+  neighborhood: z.string().trim().min(1),
+  siteStatus: z.enum(
+    ['Sem Site', 'Apenas Redes Sociais', 'Com Site'] satisfies readonly [
+      LeadSiteStatus,
+      ...LeadSiteStatus[],
+    ],
+  ),
+  googleRating: z.number().min(0).max(5).optional(),
+  reviewCount: z.number().int().min(0),
+  mainPainPoint: z.string().trim().min(1),
+  socialProofTrigger: z.string().trim().optional(),
+  recommendedTone: z.string().trim().min(1),
+  openingHooks: z.array(z.string().trim().min(1)).default([]),
+  recommendedCta: z.string().trim().min(1),
+  rawPhone: z.string().trim().min(1),
+});
+
+const generateLeadMessagesBodySchema = z.object({
+  leads: z.array(enrichedLeadSchema).min(1).max(500),
 });
 
 const rawPhoneRecipientSchema = z.object({
@@ -105,7 +137,10 @@ function actorUserId(req: Request): string | undefined {
  * `CampaignService.startCampaign()` (`SendingEngineNotConfiguredError`,
  * 503), não aqui.
  */
-export function createCampaignsRouter(campaignService: CampaignService): Router {
+export function createCampaignsRouter(
+  campaignService: CampaignService,
+  generateLeadMessagesService: GenerateLeadMessagesService,
+): Router {
   const router = Router({ mergeParams: true });
 
   router.get(
@@ -196,6 +231,53 @@ export function createCampaignsRouter(campaignService: CampaignService): Router 
 
       const report = campaignService.parseRecipientsCsv(req.body);
       res.status(200).json(report);
+    }),
+  );
+
+  /**
+   * `POST /leads/parse-csv` — Fase de Prospecção IA (2026-08-29). Só
+   * PARSEIA (nunca persiste), mesmo padrão de `/parse-recipients-csv`, mas
+   * para o formato de lead ENRIQUECIDO (dor/gatilho/tom/ganchos/CTA) —
+   * ver `parseEnrichedLeadsCsv`.
+   */
+  router.post(
+    '/leads/parse-csv',
+    requirePermission('campaign:manage'),
+    text({ type: () => true, limit: MAX_RECIPIENTS_CSV_BYTES }),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(tenantIdParamSchema, req.params, res);
+      if (!params) return;
+      if (typeof req.body !== 'string' || req.body.trim().length === 0) {
+        res.status(400).json({
+          error: 'empty_body',
+          message: 'O corpo da requisição precisa ser o arquivo CSV (não vazio).',
+        });
+        return;
+      }
+
+      const report = parseEnrichedLeadsCsv(req.body);
+      res.status(200).json(report);
+    }),
+  );
+
+  /**
+   * `POST /leads/generate-messages` — Fase de Prospecção IA (2026-08-29).
+   * Gera a mensagem 1 de cada lead (Seções 2/5/6 do playbook) e devolve
+   * rascunhos para revisão humana — NUNCA cria campanha nem persiste nada.
+   * O operador aprova/edita e só então manda os textos aprovados em
+   * `phoneRecipients[].personalizedMessage` de `POST /` (ver Task 6).
+   */
+  router.post(
+    '/leads/generate-messages',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(tenantIdParamSchema, req.params, res);
+      if (!params) return;
+      const body = validateOrRespond(generateLeadMessagesBodySchema, req.body, res);
+      if (!body) return;
+
+      const drafts = await generateLeadMessagesService.generate(body.leads);
+      res.status(200).json({ drafts });
     }),
   );
 

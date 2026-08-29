@@ -676,6 +676,60 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use('/api/tenants/:tenantId/contacts', authenticate, contacts.contactsRouter);
     app.use('/api/tenants/:tenantId/contacts', contacts.contactsErrorHandler);
 
+    // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
+    // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)
+    // instancia seu PRÓPRIO `AiProviderFactoryImpl`, independente do que
+    // `worker.ts` monta — gerar um resumo é `fetch` puro ao provider, sem
+    // Baileys/socket, então não viola a ADR #54 (ela só proíbe o *worker* de
+    // tocar o Baileys). Degrada graciosamente (mesmo padrão de
+    // `mediaDownloader`/`INTERNAL_API_SECRET` acima): sem as credenciais do
+    // provider escolhido, o endpoint continua montado, mas
+    // `ConversationSummaryService.generateSummary()` lança um erro claro
+    // (503, ver `conversationSummaryErrorHandler`) em vez de a API inteira
+    // recusar subir por causa de uma feature opcional.
+    //
+    // Fase de Prospecção IA (2026-08-29) — construído AQUI (antes de
+    // `campaigns`, e não mais logo antes de `ConversationSummaryService`
+    // mais abaixo) porque `createCampaignsComposition` também passou a
+    // reaproveitar esta MESMA instância (`leadMessageAiProvider`, ver
+    // `compositionRoot.ts`) para `GenerateLeadMessagesService` — precisa
+    // existir antes do primeiro uso.
+    const summaryProviderName = (process.env.AI_PROVIDER ?? 'claude') as 'claude' | 'gemini';
+    const summaryAiProvider = (() => {
+      try {
+        if (summaryProviderName === 'gemini') {
+          const { GEMINI_API_KEY, AI_GEMINI_MODEL, AI_GEMINI_MAX_TOKENS } = process.env;
+          if (!GEMINI_API_KEY || !AI_GEMINI_MODEL) return undefined;
+          return new AiProviderFactoryImpl(
+            {
+              gemini: {
+                apiKey: GEMINI_API_KEY,
+                model: AI_GEMINI_MODEL,
+                maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
+              },
+            },
+            logger.child({ module: 'gemini-provider' }),
+          ).create('gemini');
+        }
+        const { CLAUDE_API_KEY, AI_CLAUDE_MODEL, AI_CLAUDE_MAX_TOKENS } = process.env;
+        if (!CLAUDE_API_KEY || !AI_CLAUDE_MODEL) return undefined;
+        return new AiProviderFactoryImpl({
+          claude: {
+            apiKey: CLAUDE_API_KEY,
+            model: AI_CLAUDE_MODEL,
+            maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
+          },
+        }).create('claude');
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!summaryAiProvider) {
+      console.warn(
+        `Credenciais do provider "${summaryProviderName}" ausentes: resumo de conversa por IA e geração de mensagens de prospecção por IA desabilitados (ver .env.example) — o restante da API segue funcionando normalmente.`,
+      );
+    }
+
     // Fase L, Bloco L3 — campanhas: TENANT-WIDE na URL (mesmo racional de
     // Contatos acima). RBAC POR ROTA (campaign:read na leitura,
     // campaign:manage na criação/materialização/start/pause/cancel).
@@ -686,7 +740,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     const { ContactLookupImpl } =
       await import('./services/contacts/infrastructure/ContactLookupImpl');
     const contactLookup = new ContactLookupImpl(contacts.contactRepository);
-    const campaigns = createCampaignsComposition(prisma, logger, contactLookup);
+    const campaigns = createCampaignsComposition(prisma, logger, contactLookup, summaryAiProvider);
     app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);
     app.use('/api/tenants/:tenantId/campaigns', campaigns.campaignsErrorHandler);
 
@@ -737,52 +791,6 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       logger,
     );
 
-    // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
-    // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)
-    // instancia seu PRÓPRIO `AiProviderFactoryImpl`, independente do que
-    // `worker.ts` monta — gerar um resumo é `fetch` puro ao provider, sem
-    // Baileys/socket, então não viola a ADR #54 (ela só proíbe o *worker* de
-    // tocar o Baileys). Degrada graciosamente (mesmo padrão de
-    // `mediaDownloader`/`INTERNAL_API_SECRET` acima): sem as credenciais do
-    // provider escolhido, o endpoint continua montado, mas
-    // `ConversationSummaryService.generateSummary()` lança um erro claro
-    // (503, ver `conversationSummaryErrorHandler`) em vez de a API inteira
-    // recusar subir por causa de uma feature opcional.
-    const summaryProviderName = (process.env.AI_PROVIDER ?? 'claude') as 'claude' | 'gemini';
-    const summaryAiProvider = (() => {
-      try {
-        if (summaryProviderName === 'gemini') {
-          const { GEMINI_API_KEY, AI_GEMINI_MODEL, AI_GEMINI_MAX_TOKENS } = process.env;
-          if (!GEMINI_API_KEY || !AI_GEMINI_MODEL) return undefined;
-          return new AiProviderFactoryImpl(
-            {
-              gemini: {
-                apiKey: GEMINI_API_KEY,
-                model: AI_GEMINI_MODEL,
-                maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
-              },
-            },
-            logger.child({ module: 'gemini-provider' }),
-          ).create('gemini');
-        }
-        const { CLAUDE_API_KEY, AI_CLAUDE_MODEL, AI_CLAUDE_MAX_TOKENS } = process.env;
-        if (!CLAUDE_API_KEY || !AI_CLAUDE_MODEL) return undefined;
-        return new AiProviderFactoryImpl({
-          claude: {
-            apiKey: CLAUDE_API_KEY,
-            model: AI_CLAUDE_MODEL,
-            maxTokens: AI_CLAUDE_MAX_TOKENS ? Number(AI_CLAUDE_MAX_TOKENS) : undefined,
-          },
-        }).create('claude');
-      } catch {
-        return undefined;
-      }
-    })();
-    if (!summaryAiProvider) {
-      console.warn(
-        `Credenciais do provider "${summaryProviderName}" ausentes: resumo de conversa por IA desabilitado (ver .env.example) — o restante da API segue funcionando normalmente.`,
-      );
-    }
     const conversationSummaryService = new ConversationSummaryService(
       conversationRepository,
       messageRepository,

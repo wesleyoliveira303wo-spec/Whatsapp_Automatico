@@ -10,6 +10,8 @@ import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLo
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeCampaignRepository } from '../infrastructure/FakeCampaignRepository';
 import { FakeCampaignSendDispatcher } from '../infrastructure/FakeCampaignSendDispatcher';
+import { FakeAiProvider } from '../../ai/infrastructure/FakeAiProviderFactory';
+import { GenerateLeadMessagesService } from '../../../../src/services/campaigns/application/GenerateLeadMessagesService';
 
 /**
  * Testes do campaignsRouter — Fase L, Blocos L3/L4: RBAC por rota
@@ -21,11 +23,12 @@ import { FakeCampaignSendDispatcher } from '../infrastructure/FakeCampaignSendDi
  */
 function buildApp(
   principal?: Principal,
-  options: { withDispatcher?: boolean } = {},
+  options: { withDispatcher?: boolean; withoutAiProvider?: boolean } = {},
 ): {
   app: express.Express;
   campaigns: FakeCampaignRepository;
   dispatcher?: FakeCampaignSendDispatcher;
+  aiProvider: FakeAiProvider;
 } {
   const tenantRepository = new FakeTenantRepository();
   tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
@@ -33,6 +36,10 @@ function buildApp(
   const campaigns = new FakeCampaignRepository();
   const dispatcher = options.withDispatcher ? new FakeCampaignSendDispatcher() : undefined;
   const service = new CampaignService(campaigns, tenantRepository, new NoopLogger(), dispatcher);
+  const aiProvider = new FakeAiProvider();
+  const generateLeadMessagesService = new GenerateLeadMessagesService(
+    options.withoutAiProvider ? undefined : aiProvider,
+  );
 
   const app = express();
   app.use(express.json());
@@ -42,10 +49,10 @@ function buildApp(
       if (principal) (req as RequestWithPrincipal).principal = principal;
       next();
     },
-    createCampaignsRouter(service),
+    createCampaignsRouter(service, generateLeadMessagesService),
   );
   app.use('/api/tenants/:tenantId/campaigns', createCampaignsErrorHandler(new NoopLogger()));
-  return { app, campaigns, dispatcher };
+  return { app, campaigns, dispatcher, aiProvider };
 }
 
 function person(role: UserRole): Principal {
@@ -829,6 +836,90 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       const response = await request(app).get(`${basePath('tenant-1')}/${campaignId}/media`);
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  // --- Fase de Prospecção IA (2026-08-29) ---
+
+  describe('POST /leads/parse-csv (campaign:manage)', () => {
+    it('devolve leads + inválidos, sem persistir nada', async () => {
+      const { app } = buildApp(person('administrator'));
+      const csv = [
+        'Nome da Empresa,Categoria,Bairro,Status do Site,Nota Google,Qtd Avaliações,Dor Principal Identificada,Gatilho de Prova Social,Tom Recomendado,Ganchos de Abertura,CTA Recomendado,Telefone',
+        'Adega Barril do Recreio,Restaurante português,Recreio dos Bandeirantes,Sem Site,4.3,3096,Dor qualquer.,Gatilho qualquer.,Tom qualquer.,Gancho único,CTA qualquer.,+55 21 2437-4428',
+      ].join('\n');
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/leads/parse-csv`)
+        .set('Content-Type', 'text/plain')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body.leads).toHaveLength(1);
+      expect(response.body.leads[0].companyName).toBe('Adega Barril do Recreio');
+    });
+  });
+
+  describe('POST /leads/generate-messages (campaign:manage)', () => {
+    it('devolve um rascunho por lead, sem criar campanha', async () => {
+      const { app, aiProvider } = buildApp(person('administrator'));
+      aiProvider.setNextResult({
+        content: 'Mensagem gerada para teste.',
+        model: 'fake-model',
+        tokensInput: 5,
+        tokensOutput: 10,
+      });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/leads/generate-messages`)
+        .send({
+          leads: [
+            {
+              companyName: 'Adega Barril do Recreio',
+              category: 'Restaurante português',
+              neighborhood: 'Recreio dos Bandeirantes',
+              siteStatus: 'Sem Site',
+              googleRating: 4.3,
+              reviewCount: 3096,
+              mainPainPoint: 'Dor qualquer.',
+              socialProofTrigger: 'Gatilho qualquer.',
+              recommendedTone: 'Tom qualquer.',
+              openingHooks: ['Gancho único'],
+              recommendedCta: 'CTA qualquer.',
+              rawPhone: '+55 21 2437-4428',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.drafts).toHaveLength(1);
+      expect(response.body.drafts[0].message).toBe('Mensagem gerada para teste.');
+    });
+
+    it('sem AiProvider configurado (modo degradado): 503', async () => {
+      const { app } = buildApp(person('administrator'), { withoutAiProvider: true });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/leads/generate-messages`)
+        .send({
+          leads: [
+            {
+              companyName: 'Adega Barril do Recreio',
+              category: 'Restaurante português',
+              neighborhood: 'Recreio dos Bandeirantes',
+              siteStatus: 'Sem Site',
+              reviewCount: 0,
+              mainPainPoint: 'Dor qualquer.',
+              recommendedTone: 'Tom qualquer.',
+              openingHooks: ['Gancho único'],
+              recommendedCta: 'CTA qualquer.',
+              rawPhone: '+55 21 2437-4428',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(503);
+      expect(response.body.error).toBe('lead_message_generation_unavailable');
     });
   });
 });
