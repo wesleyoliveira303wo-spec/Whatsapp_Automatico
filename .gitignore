@@ -34,3 +34,4 @@ design/.thumbnail
 
 # Artefatos de editor (ex.: lock file do Nautilus/GNOME em ambientes Linux).
 .fuse_hidden*
+.worktrees/
