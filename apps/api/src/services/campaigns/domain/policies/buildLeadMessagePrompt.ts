@@ -41,7 +41,7 @@ export function buildLeadMessagePrompt(
 2. Termine SEMPRE em uma pergunta aberta OU em uma frase com reticências (um pensamento em aberto) — nunca em uma afirmação fechada, nunca em uma chamada para ação de venda.
 3. Nunca escreva a frase "vocês não têm site" (ou qualquer variação literal disso, tipo "percebi que não tem site"/"vi que não tem página") — se o negócio não tem site, reformule sempre como curiosidade/oportunidade sobre COMO o cliente encontra o negócio hoje, nunca como uma crítica ou constatação de falha.
 4. Nunca invente dado: use só nota, quantidade de avaliações, nome e bairro exatamente como informados abaixo. Se nota/quantidade de avaliações não forem informadas, NÃO cite nenhum número — não invente "boa reputação" nem aproxime um valor.
-5. Tom da mensagem: ${lead.recommendedTone}
+5. Tom da mensagem: siga o tom recomendado informado na mensagem do usuário.
 6. ${SKELETON_INSTRUCTIONS[variation.skeleton]}
 7. Responda APENAS com o texto final da mensagem, sem aspas, sem comentário, sem prefixo como "Mensagem:".`;
 
@@ -61,6 +61,7 @@ export function buildLeadMessagePrompt(
       ? `Prova social real: ${lead.socialProofTrigger} (nota ${lead.googleRating}, ${lead.reviewCount} avaliações)`
       : 'Prova social: NENHUMA ainda (negócio sem histórico de resenhas no Google) — não cite números de classificação nem contagem de resenhas.',
     `Dor principal identificada: ${lead.mainPainPoint}`,
+    `Tom recomendado: ${lead.recommendedTone}`,
     `Estrutura da mensagem: ${SKELETON_INSTRUCTIONS[variation.skeleton]}`,
     `Gancho de abertura a usar (adapte a redação, mas mantenha a ideia): ${chosenHook}`,
   ];

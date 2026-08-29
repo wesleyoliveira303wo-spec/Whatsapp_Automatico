@@ -13,6 +13,22 @@ export interface LeadMessageDraft {
 }
 
 /**
+ * Achado 5 (revisão final, 2026-08-29): quando `aiProvider.generateReply`
+ * rejeita para UM lead do lote, os leads que já geraram rascunho com
+ * sucesso não podem ser descartados — só o lead específico entra aqui,
+ * com o motivo, e o loop continua para os demais.
+ */
+export interface LeadMessageFailure {
+  companyName: string;
+  reason: string;
+}
+
+export interface GenerateLeadMessagesResult {
+  drafts: LeadMessageDraft[];
+  failures: LeadMessageFailure[];
+}
+
+/**
  * Gera a mensagem 1 (abertura) de cada lead de um lote — Fase de
  * Prospecção IA (2026-08-29). NUNCA persiste nada (mesmo racional de
  * `CampaignService.parseRecipientsCsv`): o resultado é só para o operador
@@ -27,12 +43,13 @@ export interface LeadMessageDraft {
 export class GenerateLeadMessagesService {
   constructor(private readonly aiProvider?: AiProvider) {}
 
-  async generate(leads: EnrichedLead[]): Promise<LeadMessageDraft[]> {
+  async generate(leads: EnrichedLead[]): Promise<GenerateLeadMessagesResult> {
     if (!this.aiProvider) {
       throw new LeadMessageGenerationUnavailableError();
     }
 
     const drafts: LeadMessageDraft[] = [];
+    const failures: LeadMessageFailure[] = [];
     for (let index = 0; index < leads.length; index += 1) {
       const lead = leads[index];
       const phoneE164 = normalizePhoneToE164(lead.rawPhone);
@@ -42,17 +59,26 @@ export class GenerateLeadMessagesService {
 
       const variation = pickMessageVariation(index, lead.openingHooks.length);
       const { systemPrompt, userMessage } = buildLeadMessagePrompt(lead, variation);
-      const result = await this.aiProvider.generateReply({
-        systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      });
+      try {
+        const result = await this.aiProvider.generateReply({
+          systemPrompt,
+          messages: [{ role: 'user', content: userMessage }],
+        });
 
-      drafts.push({
-        companyName: lead.companyName,
-        phoneE164,
-        message: result.content.trim(),
-      });
+        drafts.push({
+          companyName: lead.companyName,
+          phoneE164,
+          message: result.content.trim(),
+        });
+      } catch (error) {
+        // Achado 5: uma falha da IA em UM lead nunca pode jogar fora os
+        // rascunhos já computados dos demais leads do mesmo lote.
+        failures.push({
+          companyName: lead.companyName,
+          reason: error instanceof Error ? error.message : 'Erro desconhecido ao gerar mensagem.',
+        });
+      }
     }
-    return drafts;
+    return { drafts, failures };
   }
 }

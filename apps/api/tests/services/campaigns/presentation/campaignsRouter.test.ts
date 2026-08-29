@@ -896,6 +896,57 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       expect(response.body.drafts[0].message).toBe('Mensagem gerada para teste.');
     });
 
+    it('Achado 5: lote com 51 leads é rejeitado com 400 (teto atual é 50)', async () => {
+      const { app } = buildApp(person('administrator'));
+      const lead = {
+        companyName: 'Adega Barril do Recreio',
+        category: 'Restaurante português',
+        neighborhood: 'Recreio dos Bandeirantes',
+        siteStatus: 'Sem Site',
+        reviewCount: 0,
+        mainPainPoint: 'Dor qualquer.',
+        recommendedTone: 'Tom qualquer.',
+        openingHooks: ['Gancho único'],
+        recommendedCta: 'CTA qualquer.',
+        rawPhone: '+55 21 2437-4428',
+      };
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/leads/generate-messages`)
+        .send({ leads: Array.from({ length: 51 }, () => ({ ...lead })) });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('Achado 5: lote com 50 leads (teto atual) é aceito', async () => {
+      const { app, aiProvider } = buildApp(person('administrator'));
+      aiProvider.setNextResult({
+        content: 'Mensagem gerada para teste.',
+        model: 'fake-model',
+        tokensInput: 5,
+        tokensOutput: 10,
+      });
+      const lead = {
+        companyName: 'Adega Barril do Recreio',
+        category: 'Restaurante português',
+        neighborhood: 'Recreio dos Bandeirantes',
+        siteStatus: 'Sem Site',
+        reviewCount: 0,
+        mainPainPoint: 'Dor qualquer.',
+        recommendedTone: 'Tom qualquer.',
+        openingHooks: ['Gancho único'],
+        recommendedCta: 'CTA qualquer.',
+        rawPhone: '+55 21 2437-4428',
+      };
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/leads/generate-messages`)
+        .send({ leads: Array.from({ length: 50 }, () => ({ ...lead })) });
+
+      expect(response.status).toBe(200);
+      expect(response.body.drafts).toHaveLength(50);
+    });
+
     it('sem AiProvider configurado (modo degradado): 503', async () => {
       const { app } = buildApp(person('administrator'), { withoutAiProvider: true });
 

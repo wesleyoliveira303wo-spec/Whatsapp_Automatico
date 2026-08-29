@@ -374,7 +374,8 @@ export class FakeCampaignRepository implements CampaignRepository {
     const [mostRecent] = candidates;
     if (!mostRecent) return undefined;
     const campaign = this.campaigns.get(mostRecent.campaignId);
-    return campaign ? { messageSent: campaign.messageTemplate } : undefined;
+    if (!campaign) return undefined;
+    return { messageSent: mostRecent.personalizedMessage ?? campaign.messageTemplate };
   }
 
   // --- Fase L, Bloco L7 (métricas) ---

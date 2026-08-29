@@ -604,9 +604,9 @@ export class PrismaCampaignRepository implements CampaignRepository {
     const row = await this.prisma.campaignRecipient.findFirst({
       where: { tenantId, conversationId, status: { in: ['SENT', 'REPLIED'] } },
       orderBy: { sentAt: 'desc' },
-      select: { campaign: { select: { messageTemplate: true } } },
+      select: { personalizedMessage: true, campaign: { select: { messageTemplate: true } } },
     });
-    return row ? { messageSent: row.campaign.messageTemplate } : undefined;
+    return row ? { messageSent: row.personalizedMessage ?? row.campaign.messageTemplate } : undefined;
   }
 
   // --- Fase L, Bloco L7 (métricas) ---

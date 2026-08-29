@@ -68,6 +68,163 @@ describe('parseEnrichedLeadsCsv (Fase de Prospecção IA)', () => {
     expect(result.leads[0].reviewCount).toBe(0);
   });
 
+  it('nota com vírgula decimal (Excel pt-BR, CSV ; delimitado) parseia como 4.3, não trunca para 4', () => {
+    // Excel pt-BR exporta CSV delimitado por ";" justamente porque "," já é o
+    // separador decimal daquele locale — por isso este teste usa ";" (o
+    // `detectDelimiter` de `csvParsing.ts` decide pelo cabeçalho).
+    const semicolonHeader = HEADER.replace(/,/g, ';');
+    const csv = [
+      semicolonHeader,
+      [
+        'Adega Barril do Recreio',
+        'Restaurante português',
+        'Recreio dos Bandeirantes',
+        'Sem Site',
+        '4,3',
+        '10',
+        'Dor qualquer.',
+        'Gatilho qualquer.',
+        'Tom qualquer.',
+        'Gancho único',
+        'CTA qualquer.',
+        '+55 21 90000-0000',
+      ].join(';'),
+    ].join('\n');
+
+    const result = parseEnrichedLeadsCsv(csv);
+
+    expect(result.invalid).toEqual([]);
+    expect(result.leads[0].googleRating).toBe(4.3);
+  });
+
+  it('nota garbled (texto não numérico) vira undefined, nunca um número inventado', () => {
+    const csv = [
+      HEADER,
+      [
+        'Adega Barril do Recreio',
+        'Restaurante português',
+        'Recreio dos Bandeirantes',
+        'Sem Site',
+        'quatro vírgula três',
+        '10',
+        'Dor qualquer.',
+        'Gatilho qualquer.',
+        'Tom qualquer.',
+        'Gancho único',
+        'CTA qualquer.',
+        '+55 21 90000-0000',
+      ].join(','),
+    ].join('\n');
+
+    const result = parseEnrichedLeadsCsv(csv);
+
+    expect(result.invalid).toEqual([]);
+    expect(result.leads[0].googleRating).toBeUndefined();
+  });
+
+  it('Qtd Avaliações garbled (não numérico) vai para invalid — nunca vira 0 silenciosamente', () => {
+    const csv = [
+      HEADER,
+      [
+        'Adega Barril do Recreio',
+        'Restaurante português',
+        'Recreio dos Bandeirantes',
+        'Sem Site',
+        '4.3',
+        'muitas',
+        'Dor qualquer.',
+        'Gatilho qualquer.',
+        'Tom qualquer.',
+        'Gancho único',
+        'CTA qualquer.',
+        '+55 21 90000-0000',
+      ].join(','),
+    ].join('\n');
+
+    const result = parseEnrichedLeadsCsv(csv);
+
+    expect(result.leads).toHaveLength(0);
+    expect(result.invalid).toHaveLength(1);
+    expect(result.invalid[0].reason).toBe('qtd_avaliacoes_invalida');
+  });
+
+  it('cabeçalho na ordem correta continua parseando normalmente (regressão)', () => {
+    const csv = [
+      HEADER,
+      [
+        'Empresa X',
+        'Categoria X',
+        'Bairro X',
+        'Sem Site',
+        '4.5',
+        '5',
+        'Dor.',
+        'Gatilho.',
+        'Tom.',
+        'Gancho',
+        'CTA.',
+        '+55 21 90000-0001',
+      ].join(','),
+    ].join('\n');
+
+    const result = parseEnrichedLeadsCsv(csv);
+
+    expect(result.headerError).toBeUndefined();
+    expect(result.leads).toHaveLength(1);
+  });
+
+  it('cabeçalho com colunas fora de ordem retorna headerError e zero leads (não parseia como lixo)', () => {
+    const shuffledHeader =
+      'Categoria,Nome da Empresa,Bairro,Status do Site,Nota Google,Qtd Avaliações,Dor Principal Identificada,Gatilho de Prova Social,Tom Recomendado,Ganchos de Abertura,CTA Recomendado,Telefone';
+    const csv = [
+      shuffledHeader,
+      [
+        'Restaurante',
+        'Empresa X',
+        'Bairro X',
+        'Sem Site',
+        '4.5',
+        '5',
+        'Dor.',
+        'Gatilho.',
+        'Tom.',
+        'Gancho',
+        'CTA.',
+        '+55 21 90000-0001',
+      ].join(','),
+    ].join('\n');
+
+    const result = parseEnrichedLeadsCsv(csv);
+
+    expect(result.headerError).toBeDefined();
+    expect(result.leads).toHaveLength(0);
+    expect(result.invalid).toHaveLength(0);
+  });
+
+  it('CSV sem linha de cabeçalho (só dados) também falha com headerError', () => {
+    const csv = [
+      [
+        'Empresa X',
+        'Categoria X',
+        'Bairro X',
+        'Sem Site',
+        '4.5',
+        '5',
+        'Dor.',
+        'Gatilho.',
+        'Tom.',
+        'Gancho',
+        'CTA.',
+        '+55 21 90000-0001',
+      ].join(','),
+    ].join('\n');
+
+    const result = parseEnrichedLeadsCsv(csv);
+
+    expect(result.headerError).toBeDefined();
+    expect(result.leads).toHaveLength(0);
+  });
+
   it('linha com Status do Site inválido vai para invalid, nunca quebra o parse inteiro', () => {
     const csv = [
       HEADER,

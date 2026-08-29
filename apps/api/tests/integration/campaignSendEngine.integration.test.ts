@@ -418,6 +418,68 @@ describe('Integração real — motor de envio de campanha (Fase L, Bloco L4)', 
     expect(origin).toBeUndefined();
   });
 
+  it('findOriginByConversationId devolve personalizedMessage do destinatário quando presente, não o messageTemplate genérico', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha personalizada',
+      messageTemplate: 'Mensagem genérica do template',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      {
+        contactId: 'contact-personalizado',
+        status: 'pending',
+        personalizedMessage: 'Oi João, vi que sua loja não tem site ainda.',
+      },
+    ]);
+    const [recipient] = await campaignRepository.listPendingRecipients(tenantId, campanha.id);
+    await campaignRepository.markRecipientSent(tenantId, recipient.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-personalizada',
+    });
+
+    const origin = await campaignRepository.findOriginByConversationId(
+      tenantId,
+      'conversa-personalizada',
+    );
+
+    expect(origin).toEqual({ messageSent: 'Oi João, vi que sua loja não tem site ainda.' });
+  });
+
+  it('findOriginByConversationId devolve messageTemplate quando o destinatário não tem personalizedMessage (sem regressão)', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const campanha = await campaignRepository.create({
+      tenantId,
+      sessionName: 'sessao-a',
+      name: 'Campanha sem personalização',
+      messageTemplate: 'Mensagem genérica do template',
+    });
+    await campaignRepository.createRecipients(tenantId, campanha.id, [
+      { contactId: 'contact-sem-personalizacao', status: 'pending' },
+    ]);
+    const [recipient] = await campaignRepository.listPendingRecipients(tenantId, campanha.id);
+    await campaignRepository.markRecipientSent(tenantId, recipient.id, {
+      attemptedAt: new Date(),
+      conversationId: 'conversa-sem-personalizacao',
+    });
+
+    const origin = await campaignRepository.findOriginByConversationId(
+      tenantId,
+      'conversa-sem-personalizacao',
+    );
+
+    expect(origin).toEqual({ messageSent: 'Mensagem genérica do template' });
+  });
+
   // --- Fase L, Bloco L7 (métricas) ---
 
   it('getMetrics cruza campaign_recipients + whatsapp_conversations + ai_interactions contra o banco real', async () => {

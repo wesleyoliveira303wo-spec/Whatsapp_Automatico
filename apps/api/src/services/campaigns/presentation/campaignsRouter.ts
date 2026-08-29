@@ -63,8 +63,20 @@ const enrichedLeadSchema = z.object({
   rawPhone: z.string().trim().min(1),
 });
 
+/**
+ * `.max(50)` (Achado 5 da revisão final, 2026-08-29): `GenerateLeadMessagesService.generate`
+ * roda sequencialmente, um `await aiProvider.generateReply` por lead, dentro
+ * de UMA requisição HTTP síncrona — a um custo realista de 2-5s por chamada,
+ * 500 leads seriam 15-40 minutos de requisição, sem timeout nem
+ * concorrência. 50 leads é um teto que ainda completa em uma janela de
+ * requisição razoável (na pior hipótese, minutos, não dezenas de minutos).
+ * Separadamente, 500 já era praticamente inatingível de qualquer forma: o
+ * `express.json()` (`apps/api/src/index.ts`) usa o limite padrão de 100KB, e
+ * um `EnrichedLead` populado serializa a ~500-800 bytes — ou seja, a
+ * requisição já levaria um 413 bem antes de chegar a 500 leads.
+ */
 const generateLeadMessagesBodySchema = z.object({
-  leads: z.array(enrichedLeadSchema).min(1).max(500),
+  leads: z.array(enrichedLeadSchema).min(1).max(50),
 });
 
 const rawPhoneRecipientSchema = z.object({
@@ -276,8 +288,8 @@ export function createCampaignsRouter(
       const body = validateOrRespond(generateLeadMessagesBodySchema, req.body, res);
       if (!body) return;
 
-      const drafts = await generateLeadMessagesService.generate(body.leads);
-      res.status(200).json({ drafts });
+      const { drafts, failures } = await generateLeadMessagesService.generate(body.leads);
+      res.status(200).json({ drafts, failures });
     }),
   );
 
