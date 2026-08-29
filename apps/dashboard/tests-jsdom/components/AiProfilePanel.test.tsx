@@ -54,7 +54,12 @@ describe('AiProfilePanel (Cérebro da IA v3 — 4 abas)', () => {
     // Cabeçalho padronizado (2026-08-26) — `TabSectionHeader` desenha um
     // `<h2>` "Visão geral" (mesmo texto do rótulo da aba, mas role distinta).
     expect(screen.getByRole('heading', { name: 'Visão geral' })).toBeInTheDocument();
-    expect(screen.getByText('Horário de atendimento')).toBeInTheDocument();
+    // "Horário de atendimento" aparece duas vezes na aba Visão geral (o
+    // OverviewStatCard e o título da seção editável) — ancoramos no switch,
+    // que é único e identifica a seção sem ambiguidade.
+    expect(
+      screen.getByRole('switch', { name: /Enviar aviso automático/i }),
+    ).toBeInTheDocument();
     // Conteúdo carregado não fica visível na Visão geral (é a aba Conhecimento) —
     // mas o resumo reflete que a base NÃO está vazia.
     expect(screen.getByText('Preenchida')).toBeInTheDocument();
@@ -249,7 +254,12 @@ describe('AiProfilePanel — Horário de atendimento (F1.8, agora na aba Visão 
     render(<AiProfilePanel sessionName="vendas" />);
     await waitFor(() => expect(screen.queryByText('Carregando…')).not.toBeInTheDocument());
 
-    expect(screen.getByText('Horário de atendimento')).toBeInTheDocument();
+    // "Horário de atendimento" aparece duas vezes na aba Visão geral (o
+    // OverviewStatCard e o título da seção editável) — ancoramos no switch,
+    // que é único e identifica a seção sem ambiguidade.
+    expect(
+      screen.getByRole('switch', { name: /Enviar aviso automático/i }),
+    ).toBeInTheDocument();
     const toggle = screen.getByRole('switch', { name: /Enviar aviso automático/i });
     expect(toggle).not.toBeChecked();
     // Com toggle desligado, os campos de configuração não aparecem
