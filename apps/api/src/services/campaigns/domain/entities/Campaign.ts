@@ -75,6 +75,13 @@ export interface CampaignRecipient {
   /** Nome opcional trazido pela planilha/lista manual — só existe junto de `phoneE164`. */
   name?: string;
   /**
+   * Fase de Prospecção IA (2026-08-29) — quando presente, o envio real
+   * (`CampaignSendJobProcessor`) usa ESTE texto em vez de
+   * `Campaign.messageTemplate` para este destinatário. `undefined` =
+   * comportamento de sempre (usa o template da campanha).
+   */
+  personalizedMessage?: string;
+  /**
    * Padronização de exibição de contato (2026-08-20) — quando `contactId` é
    * definido, o Contato salvo resolvido EM LOTE por `listRecipients` (nunca
    * linha a linha, nunca nos demais métodos deste repositório — só a leitura
