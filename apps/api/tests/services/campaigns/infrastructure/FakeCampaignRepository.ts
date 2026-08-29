@@ -339,6 +339,7 @@ export class FakeCampaignRepository implements CampaignRepository {
       conversationId: data.conversationId,
       attemptedAt: data.attemptedAt,
       createdAt: data.createdAt ?? FIXED_NOW,
+      personalizedMessage: data.personalizedMessage,
     });
     return id;
   }
