@@ -119,6 +119,7 @@ export class FakeCampaignRepository implements CampaignRepository {
         name: draft.name,
         status: draft.status,
         skipReason: draft.skipReason,
+        personalizedMessage: draft.personalizedMessage,
         createdAt: FIXED_NOW,
       });
     }
