@@ -301,6 +301,32 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
           }),
         ).rejects.toThrow(NoRecipientsSelectedError);
       });
+
+      it('repassa personalizedMessage de um destinatário solto (planilha) até o destinatário materializado', async () => {
+        const { service, campaigns } = buildSutWithLookup();
+        const createRecipientsSpy = jest.spyOn(campaigns, 'createRecipients');
+
+        await service.createCampaign({
+          tenantId: 'tenant-1',
+          sessionName: 'sessao-1',
+          name: 'Prospecção IA — lote 1',
+          messageTemplate: 'Template genérico (não usado por quem tem personalizedMessage)',
+          contactIds: [],
+          phoneRecipients: [
+            {
+              rawPhone: '+55 21 98765-4321',
+              name: 'Restaurante Exemplo',
+              personalizedMessage: 'Mensagem única gerada pela IA para este lead.',
+            },
+          ],
+        });
+
+        const [, , recipients] = createRecipientsSpy.mock.calls.at(-1)!;
+        expect(recipients).toHaveLength(1);
+        expect(recipients[0].personalizedMessage).toBe(
+          'Mensagem única gerada pela IA para este lead.',
+        );
+      });
     });
   });
 

@@ -149,10 +149,12 @@ export class CampaignService {
     // operador na prévia (Seção 2/Seção 4); um cliente HTTP direto mandando
     // lixo não deveria derrubar a criação inteira.
     const phoneToName = new Map<string, string | undefined>();
+    const phoneToPersonalizedMessage = new Map<string, string | undefined>();
     for (const recipient of input.phoneRecipients ?? []) {
       const phoneE164 = normalizePhoneToE164(recipient.rawPhone);
       if (!phoneE164 || phoneToName.has(phoneE164)) continue;
       phoneToName.set(phoneE164, recipient.name);
+      phoneToPersonalizedMessage.set(phoneE164, recipient.personalizedMessage);
     }
 
     // Telefones que já são um Contato conhecido "viram" origem (A) — nunca
@@ -164,10 +166,15 @@ export class CampaignService {
         : new Map<string, string>();
 
     const looseRecipients: { phoneE164: string; name?: string }[] = [];
+    const contactPersonalizedMessages = new Map<string, string>();
     for (const phone of phones) {
       const existingContactId = resolvedContactIds.get(phone);
       if (existingContactId) {
         contactIds.add(existingContactId);
+        const personalizedMessage = phoneToPersonalizedMessage.get(phone);
+        if (personalizedMessage) {
+          contactPersonalizedMessages.set(existingContactId, personalizedMessage);
+        }
       } else {
         looseRecipients.push({ phoneE164: phone, name: phoneToName.get(phone) });
       }
@@ -204,9 +211,10 @@ export class CampaignService {
       .map((contactId) => {
         const eligibility = eligibilityByContactId.get(contactId)!;
         const skipReason = determineSkipReason(eligibility);
+        const personalizedMessage = contactPersonalizedMessages.get(contactId);
         return skipReason
           ? { contactId, status: 'skipped' as const, skipReason }
-          : { contactId, status: 'pending' as const };
+          : { contactId, status: 'pending' as const, personalizedMessage };
       });
 
     // Destinatários sem Contato nunca têm como ser checados contra opt-out/
@@ -216,6 +224,7 @@ export class CampaignService {
     const looseDrafts: CampaignRecipientDraft[] = looseRecipients.map((recipient) => ({
       phoneE164: recipient.phoneE164,
       name: recipient.name,
+      personalizedMessage: phoneToPersonalizedMessage.get(recipient.phoneE164),
       status: 'pending' as const,
     }));
 
