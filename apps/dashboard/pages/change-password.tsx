@@ -26,7 +26,7 @@ export const getServerSideProps: GetServerSideProps<ChangePasswordPageProps> = a
     return { redirect: { destination: '/login', permanent: false } };
   }
   if (!session.user) {
-    return { redirect: { destination: '/', permanent: false } };
+    return { redirect: { destination: '/app', permanent: false } };
   }
   return { props: { mustChange: session.user.mustChangePassword } };
 };
@@ -49,7 +49,7 @@ export default function ChangePasswordPage({ mustChange }: ChangePasswordPagePro
           <h1 className="mb-5 text-xl font-semibold tracking-tight text-foreground">
             Trocar senha
           </h1>
-          <ChangePasswordForm mustChange={mustChange} onSuccess={() => void router.push('/')} />
+          <ChangePasswordForm mustChange={mustChange} onSuccess={() => void router.push('/app')} />
         </div>
       </div>
     </div>

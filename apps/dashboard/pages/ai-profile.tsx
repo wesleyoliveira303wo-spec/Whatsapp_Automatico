@@ -7,7 +7,7 @@ import type { GetServerSideProps } from 'next';
  * para o Workspace em vez de dar 404 num link/favorito antigo.
  */
 export const getServerSideProps: GetServerSideProps = async () => {
-  return { redirect: { destination: '/', permanent: false } };
+  return { redirect: { destination: '/app', permanent: false } };
 };
 
 export default function DeprecatedAiProfileRedirect(): null {

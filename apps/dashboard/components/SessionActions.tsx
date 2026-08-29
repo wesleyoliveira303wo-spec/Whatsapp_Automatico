@@ -78,7 +78,7 @@ export default function SessionActions({ sessionName, status }: SessionActionsPr
     try {
       await removeSession(sessionName);
       setConfirmOpen(false);
-      await router.push('/');
+      await router.push('/app');
     } catch (error) {
       const message =
         error instanceof ClientApiError

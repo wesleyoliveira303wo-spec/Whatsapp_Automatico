@@ -1,175 +1,124 @@
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
-import { motion } from 'framer-motion';
-import { staggerContainer } from '@/lib/motion';
-import { Plus, Smartphone } from 'lucide-react';
-import Header from '@/components/Header';
-import ConnectWhatsAppDialog from '@/components/ConnectWhatsAppDialog';
-import WhatsAppAccountCard from '@/components/WhatsAppAccountCard';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import EmptyState from '@/components/states/EmptyState';
-import { requireProtectedPageSession } from '@/lib/auth';
-import { callApi } from '@/lib/apiClient';
-import { useSessionsList } from '@/hooks/useSessionsList';
-import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
-import { pageTitle } from '@/lib/brand';
-
-interface HomeProps {
-  tenantId: string;
-}
+import { requirePageSession } from '@/lib/auth';
+import { APP_HOME } from '@/lib/routes';
+import { BRAND, pageTitle } from '@/lib/brand';
+import { HERO, TRUST_CHIPS } from '@/lib/landingContent';
+import LandingNav from '@/components/landing/LandingNav';
+import LandingHero from '@/components/landing/LandingHero';
+import LandingFooter from '@/components/landing/LandingFooter';
+import {
+  Beneficios,
+  ComoFunciona,
+  Confianca,
+  CtaFinal,
+  Diferencial,
+  Faq,
+  IaSection,
+  Planos,
+  Problema,
+  Recursos,
+  Solucao,
+  TrustStrip,
+} from '@/components/landing/LandingSections';
 
 /**
- * Workspace — nível 1 de navegação (Milestone 6, Bloco M6H-1, ADR #74).
- * A ÚNICA função desta tela é administrar sessões do WhatsApp: nenhuma
- * `Sidebar`, nenhum atalho de Conversas/Analytics/Cérebro da IA/Equipe — isso
- * tudo vive dentro de CADA sessão (`SessionLayout`), acessível só depois de
- * escolher qual WhatsApp administrar. Página protegida:
- * `getServerSideProps` exige sessão válida antes de renderizar.
+ * `/` — LANDING PAGE pública (2026-08-29). Antes desta data, `/` era o
+ * Workspace (agora em `/app`, ver `lib/routes.ts`).
  *
- * Cada card mostra um indicador simples e real: conversas aguardando
- * atendimento humano NAQUELA sessão (`useWaitingForHuman().countBySession` —
- * dado que já chega no cliente, sem endpoint novo). "Quantidade de conversas"
- * e "IA ativa" (pedidos originalmente) ficam de fora por ora: o primeiro
- * exigiria um endpoint de contagem que ainda não existe, e o segundo não tem
- * nenhum estado real por trás (não existe hoje um botão de pausar a IA por
- * sessão) — mostrar os dois seria inventar dado, não indicador.
+ * `getServerSideProps` só faz o desvio de quem já está logado — nenhuma
+ * chamada à API, nenhum dado dinâmico: a página é estática na prática.
+ * Visitante anônimo vê a landing; visitante logado vai para o app (ou para
+ * a troca de senha obrigatória, se for o caso).
+ *
+ * Tema: a landing é ESCURA por decisão de design (mesma casca das telas de
+ * `/login` e `/register` — a jornada landing → cadastro é um produto só).
+ * `className="dark"` no wrapper raiz escopa os tokens de `.dark`
+ * (`globals.css`) só aqui, sem tocar `localStorage`/a preferência do resto
+ * do app — mesmo mecanismo já usado em `pages/login.tsx`.
  */
-export const getServerSideProps: GetServerSideProps<HomeProps> = async (context) => {
-  const guard = requireProtectedPageSession(context);
-  if (guard.kind === 'redirect') {
-    return { redirect: guard.redirect };
-  }
+interface LandingPageProps {
+  currentYear: number;
+}
 
-  /**
-   * MESCLAGEM 2026-08-27 (4ª/5ª rodadas, pedido do fundador): esta tela e a
-   * aba "WhatsApps" de Configurações ficaram quase idênticas — mesma
-   * aparência, mesma lista — o que confundia de verdade. A lista passou a
-   * viver em Configurações (`WhatsAppsSettingsTab`), e esta rota deixou de
-   * ser um destino: manda para a LISTA de lá (`/settings/whatsapps`, sem
-   * `?session=`), que é a tela de entrada pedida pelo fundador — com o rail
-   * lateral já presente, mostrando todas as conexões para escolher em qual
-   * entrar. Precisa de UMA sessão só para compor a URL (o caminho é
-   * `/sessions/:s/settings`); qual delas é indiferente, pois a lista mostra
-   * todas.
-   *
-   * Continua renderizando (não redireciona) em UM caso: tenant sem NENHUMA
-   * sessão — é onde se conecta o primeiro WhatsApp, e sem esta tela não
-   * haveria por onde começar.
-   *
-   * Falha ABERTA de propósito: se a listagem falhar (API fora do ar, token
-   * expirado), renderiza a tela de sempre em vez de estourar — o estado de
-   * erro/carregamento já é tratado por `useSessionsList` no cliente.
-   */
-  try {
-    const { status, body } = await callApi<{ sessions?: { sessionName?: unknown }[] }>(
-      guard.session,
-      '',
-    );
-    const first = status === 200 ? body?.sessions?.[0]?.sessionName : undefined;
-    if (typeof first === 'string' && first !== '') {
-      return {
-        redirect: {
-          destination: `/sessions/${encodeURIComponent(first)}/settings/whatsapps`,
-          permanent: false,
-        },
-      };
-    }
-  } catch {
-    // segue para a tela normal
+export const getServerSideProps: GetServerSideProps<LandingPageProps> = async (context) => {
+  const session = requirePageSession(context);
+  if (session) {
+    const destination = session.user?.mustChangePassword ? '/change-password' : APP_HOME;
+    return { redirect: { destination, permanent: false } };
   }
-
-  return { props: { tenantId: guard.session.tenantId } };
+  return { props: { currentYear: new Date().getFullYear() } };
 };
 
-export default function Home({ tenantId }: HomeProps): JSX.Element {
-  const { sessions, loading, errorMessage, connected } = useSessionsList();
-  const { countBySession } = useWaitingForHuman();
+const TITLE = `${BRAND.name} — Atendimento no WhatsApp com IA que atende, organiza e escala`;
 
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: BRAND.name,
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web',
+  description: BRAND.description,
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'BRL',
+    description: 'Plano Grátis — 1 número de WhatsApp, IA treinável, pipeline e analytics.',
+  },
+};
+
+export default function LandingPage({ currentYear }: LandingPageProps): JSX.Element {
   return (
-    <div className="flex h-screen flex-col bg-muted/30">
+    <div className="dark min-h-screen bg-background text-foreground antialiased [color-scheme:dark]">
       <Head>
-        <title>{pageTitle('WhatsApps')}</title>
+        <title>{pageTitle(TITLE)}</title>
+        <meta name="description" content={HERO.subtitle} />
+        <meta name="robots" content="index,follow" />
+        <meta name="theme-color" content="#070c18" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content={BRAND.name} />
+        <meta property="og:title" content={TITLE} />
+        <meta property="og:description" content={HERO.subtitle} />
+        <meta property="og:image" content="/logo-francis.png" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={TITLE} />
+        <meta name="twitter:description" content={HERO.subtitle} />
       </Head>
-      <Header tenantId={tenantId} />
-      <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            {/*
-              ONDA 1 DO REDESIGN (2026-08-22) — `text-2xl` (24px) não existe
-              na escala tipográfica do Design System (`DESIGN_SYSTEM.md` §3:
-              "escala fixa — nunca inventar um tamanho fora desta lista":
-              21/17/15.5-13/12.5/11.5). O Workspace é a PRIMEIRA tela que
-              todo cliente novo vê, e era a única com um tamanho de título
-              inventado — 21px é o passo real da escala para "Título de tela
-              (H1)", já usado em Pipeline/Analytics/Contatos/Campanhas.
-            */}
-            <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
-              Seus WhatsApps
-            </h1>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              Conecte e gerencie os números que o Francis atende.
-            </p>
-          </div>
-          {sessions.length > 0 && (
-            <ConnectWhatsAppDialog
-              trigger={
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Conectar WhatsApp
-                </Button>
-              }
-            />
-          )}
-        </div>
 
-        {!connected && <p className="mb-4 text-sm text-warning">Reconectando ao servidor…</p>}
-        {errorMessage && <p className="mb-4 text-sm text-destructive">{errorMessage}</p>}
+      {/*
+        JSON-LD fora do <Head> de propósito: o next/head não é o lugar
+        recomendado para <script>. Como DOM normal, o Next renderiza sem
+        avisos. Conteúdo 100% estático (sem entrada de usuário).
+      */}
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
 
-        {loading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <Skeleton className="h-32 w-full rounded-xl" />
-            <Skeleton className="h-32 w-full rounded-xl" />
-            <Skeleton className="h-32 w-full rounded-xl" />
-          </div>
-        ) : sessions.length === 0 ? (
-          <EmptyState
-            icon={Smartphone}
-            title="Conecte seu primeiro WhatsApp"
-            description="Escaneie um QR Code para o Francis começar a atender seus clientes automaticamente."
-            action={
-              <ConnectWhatsAppDialog
-                trigger={
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                    Conectar WhatsApp
-                  </Button>
-                }
-              />
-            }
-          />
-        ) : (
-          /*
-            Onda 2 do redesign (2026-08-23) — o Workspace é a PRIMEIRA tela
-            depois do login; os cards entrando em cascata é a primeira
-            impressão de movimento do produto inteiro. Ver `lib/motion.ts`.
-          */
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
-          >
-            {sessions.map((session) => (
-              <WhatsAppAccountCard
-                key={session.id}
-                session={session}
-                waitingCount={countBySession[session.sessionName] ?? 0}
-              />
-            ))}
-          </motion.div>
-        )}
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:ring-2 focus:ring-ring"
+      >
+        Pular para o conteúdo
+      </a>
+      <LandingNav />
+      <main id="conteudo">
+        <LandingHero />
+        <TrustStrip chips={TRUST_CHIPS} />
+        <Problema />
+        <Solucao />
+        <Recursos />
+        <IaSection />
+        <ComoFunciona />
+        <Beneficios />
+        <Diferencial />
+        <Confianca />
+        <Planos />
+        <Faq />
+        <CtaFinal />
       </main>
+      <LandingFooter year={currentYear} />
     </div>
   );
 }

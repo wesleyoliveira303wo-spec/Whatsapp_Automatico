@@ -57,7 +57,7 @@ export default function SettingsPage({ role, section }: SettingsPageProps): JSX.
       {/* Cabeçalho enxuto — mesma casca de `SessionHeader`, mas de nível tenant. */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background pl-4 pr-3.5">
         <Link
-          href="/"
+          href="/app"
           className="flex w-fit items-center gap-2.5"
           title="Voltar para Todos os WhatsApps"
         >

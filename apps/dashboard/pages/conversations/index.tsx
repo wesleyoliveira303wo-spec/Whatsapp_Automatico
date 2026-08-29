@@ -8,7 +8,7 @@ import type { GetServerSideProps } from 'next';
  * num link/favorito antigo.
  */
 export const getServerSideProps: GetServerSideProps = async () => {
-  return { redirect: { destination: '/', permanent: false } };
+  return { redirect: { destination: '/app', permanent: false } };
 };
 
 export default function DeprecatedConversationsRedirect(): null {

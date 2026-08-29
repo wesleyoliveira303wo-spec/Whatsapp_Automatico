@@ -55,7 +55,7 @@ describe('SessionActions (Milestone 6, Bloco M6E-1)', () => {
 
     await waitFor(() => {
       expect(clientApi.removeSession).toHaveBeenCalledWith('vendas');
-      expect(push).toHaveBeenCalledWith('/');
+      expect(push).toHaveBeenCalledWith('/app');
     });
   });
 });

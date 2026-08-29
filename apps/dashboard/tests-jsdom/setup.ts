@@ -25,6 +25,27 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 }
 
 /**
+ * Landing page (2026-08-29) — `IntersectionObserver` tambem nao existe no
+ * jsdom. Stub defensivo, mesmo racional do `ResizeObserver` acima: qualquer
+ * componente que venha a observar interseccao (o `Reveal` da landing ja teve
+ * versoes assim) monta sem quebrar; os testes verificam conteudo/estrutura,
+ * nunca visibilidade real de scroll.
+ */
+class IntersectionObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+  takeRecords(): [] {
+    return [];
+  }
+}
+
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  (globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver =
+    IntersectionObserverStub;
+}
+
+/**
  * Onda 2 do redesign (2026-08-23) — desliga TODA animacao do framer-motion
  * nos testes.
  *

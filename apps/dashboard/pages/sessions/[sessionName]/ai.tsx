@@ -36,7 +36,7 @@ export const getServerSideProps: GetServerSideProps<AiPageProps> = async (contex
   const { session } = guard;
   const role = session.user?.role;
   if (role !== 'administrator' && role !== 'owner') {
-    return { redirect: { destination: '/', permanent: false } };
+    return { redirect: { destination: '/app', permanent: false } };
   }
   const sessionName = context.params?.sessionName;
   if (typeof sessionName !== 'string') {

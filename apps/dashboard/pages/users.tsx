@@ -7,7 +7,7 @@ import type { GetServerSideProps } from 'next';
  * vez de dar 404 num link/favorito antigo.
  */
 export const getServerSideProps: GetServerSideProps = async () => {
-  return { redirect: { destination: '/', permanent: false } };
+  return { redirect: { destination: '/app', permanent: false } };
 };
 
 export default function DeprecatedUsersRedirect(): null {

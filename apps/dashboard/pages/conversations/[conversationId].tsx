@@ -10,7 +10,7 @@ import type { GetServerSideProps } from 'next';
  * custo não justificado para um link legado).
  */
 export const getServerSideProps: GetServerSideProps = async () => {
-  return { redirect: { destination: '/', permanent: false } };
+  return { redirect: { destination: '/app', permanent: false } };
 };
 
 export default function DeprecatedConversationDetailRedirect(): null {
