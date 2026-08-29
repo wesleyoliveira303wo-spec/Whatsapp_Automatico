@@ -38,6 +38,8 @@ const listRecipientsQuerySchema = z.object({
 const rawPhoneRecipientSchema = z.object({
   rawPhone: z.string().trim().min(1),
   name: z.string().trim().min(1).max(200).optional(),
+  /** Fase de Prospecção IA (2026-08-29) — texto já aprovado pelo operador, gerado por `POST /leads/generate-messages`. */
+  personalizedMessage: z.string().trim().min(1).max(4000).optional(),
 });
 
 /**

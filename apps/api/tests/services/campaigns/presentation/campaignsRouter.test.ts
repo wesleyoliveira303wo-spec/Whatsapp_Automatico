@@ -209,6 +209,37 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
 
       expect(response.status).toBe(400);
     });
+
+    it('aceita personalizedMessage em phoneRecipients e repassa até o destinatário criado', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const created = await request(app)
+        .post(basePath('tenant-1'))
+        .send({
+          sessionName: 'sessao-1',
+          name: 'Prospecção IA — lote 1',
+          messageTemplate: 'Template genérico',
+          contactIds: [],
+          phoneRecipients: [
+            {
+              rawPhone: '+55 21 98765-4321',
+              name: 'Restaurante Exemplo',
+              personalizedMessage: 'Mensagem única gerada pela IA para este lead.',
+            },
+          ],
+        });
+
+      expect(created.status).toBe(201);
+
+      const recipients = await request(app).get(
+        `${basePath('tenant-1')}/${created.body.campaign.id}/recipients`,
+      );
+
+      expect(recipients.status).toBe(200);
+      expect(recipients.body.recipients[0].personalizedMessage).toBe(
+        'Mensagem única gerada pela IA para este lead.',
+      );
+    });
   });
 
   describe('GET /:campaignId (campaign:read)', () => {
