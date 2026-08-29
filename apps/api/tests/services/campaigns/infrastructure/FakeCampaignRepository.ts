@@ -119,6 +119,7 @@ export class FakeCampaignRepository implements CampaignRepository {
         name: draft.name,
         status: draft.status,
         skipReason: draft.skipReason,
+        personalizedMessage: draft.personalizedMessage,
         createdAt: FIXED_NOW,
       });
     }
@@ -339,6 +340,7 @@ export class FakeCampaignRepository implements CampaignRepository {
       conversationId: data.conversationId,
       attemptedAt: data.attemptedAt,
       createdAt: data.createdAt ?? FIXED_NOW,
+      personalizedMessage: data.personalizedMessage,
     });
     return id;
   }
@@ -372,7 +374,8 @@ export class FakeCampaignRepository implements CampaignRepository {
     const [mostRecent] = candidates;
     if (!mostRecent) return undefined;
     const campaign = this.campaigns.get(mostRecent.campaignId);
-    return campaign ? { messageSent: campaign.messageTemplate } : undefined;
+    if (!campaign) return undefined;
+    return { messageSent: mostRecent.personalizedMessage ?? campaign.messageTemplate };
   }
 
   // --- Fase L, Bloco L7 (métricas) ---

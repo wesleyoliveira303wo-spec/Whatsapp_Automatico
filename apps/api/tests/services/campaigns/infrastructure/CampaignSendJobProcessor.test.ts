@@ -132,6 +132,29 @@ describe('CampaignSendJobProcessor (Fase L, Bloco L4)', () => {
     expect(sender.calls[0].media).toBeUndefined();
   });
 
+  // Fase de Prospecção IA (2026-08-29) — um destinatário com
+  // `personalizedMessage` (gerado por `GenerateLeadMessagesService`) recebe
+  // ESSE texto no lugar do `messageTemplate` da campanha.
+  it('usa CampaignRecipient.personalizedMessage no lugar de Campaign.messageTemplate, quando presente', async () => {
+    const { processor, campaigns, sender } = buildSut();
+    const campaignId = campaigns.seedCampaign({
+      tenantId: 'tenant-1',
+      sessionName: 'sessao',
+      status: 'running',
+    });
+    const recipientId = campaigns.seedRecipient({
+      tenantId: 'tenant-1',
+      campaignId,
+      contactId: 'contact-1',
+      personalizedMessage: 'Mensagem só deste lead, gerada pela IA.',
+    });
+
+    await processor.process({ tenantId: 'tenant-1', campaignId, recipientId });
+
+    expect(sender.calls).toHaveLength(1);
+    expect(sender.calls[0].content).toBe('Mensagem só deste lead, gerada pela IA.');
+  });
+
   it('campanha não RUNNING: não envia nada, destinatário continua pending', async () => {
     const { processor, campaigns, sender } = buildSut();
     const campaignId = campaigns.seedCampaign({

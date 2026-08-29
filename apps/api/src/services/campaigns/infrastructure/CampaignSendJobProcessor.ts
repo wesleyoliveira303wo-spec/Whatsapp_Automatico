@@ -101,11 +101,17 @@ export class CampaignSendJobProcessor {
       ? await this.campaignRepository.getMediaContent(data.tenantId, data.campaignId)
       : undefined;
 
+    // Fase de Prospecção IA (2026-08-29) — um destinatário com
+    // `personalizedMessage` (gerado por `GenerateLeadMessagesService` a
+    // partir de um lead enriquecido) recebe ESSE texto; sem ele, o
+    // comportamento é o de sempre (`campaign.messageTemplate`, igual para
+    // todos os destinatários da campanha).
+    const messageToSend = recipient.personalizedMessage ?? campaign.messageTemplate;
     const result = await this.campaignMessageSender.send(
       data.tenantId,
       campaign.sessionName,
       { contactId: recipient.contactId, phoneE164: recipient.phoneE164, name: recipient.name },
-      campaign.messageTemplate,
+      messageToSend,
       media,
     );
     const attemptedAt = new Date();

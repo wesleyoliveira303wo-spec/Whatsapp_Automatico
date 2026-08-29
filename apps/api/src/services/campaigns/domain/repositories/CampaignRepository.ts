@@ -29,6 +29,8 @@ export interface CampaignRecipientDraft {
   contactId?: string;
   phoneE164?: string;
   name?: string;
+  /** Fase de Prospecção IA (2026-08-29) — ver `CampaignRecipient.personalizedMessage`. */
+  personalizedMessage?: string;
   status: 'pending' | 'skipped';
   skipReason?: string;
 }

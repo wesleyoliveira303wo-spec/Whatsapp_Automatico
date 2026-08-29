@@ -639,7 +639,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     })();
     if (!summaryAiProvider) {
       console.warn(
-        `Credenciais do provider "${summaryProviderName}" ausentes: resumo de conversa/negócio por IA desabilitado (ver .env.example) — o restante da API segue funcionando normalmente.`,
+        `Credenciais do provider "${summaryProviderName}" ausentes: resumo de conversa/negócio por IA e geração de mensagens de prospecção por IA desabilitados (ver .env.example) — o restante da API segue funcionando normalmente.`,
       );
     }
     // Auditoria do Perfil (2026-08-28) — ver docstring completa em
@@ -737,6 +737,14 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use('/api/tenants/:tenantId/contacts', authenticate, contacts.contactsRouter);
     app.use('/api/tenants/:tenantId/contacts', contacts.contactsErrorHandler);
 
+    // Fase de Prospecção IA (2026-08-29) — `createCampaignsComposition`
+    // reaproveita a MESMA `summaryAiProvider` já construída bem acima neste
+    // arquivo (ver comentário perto de `createAiProfileRouter`) para
+    // `GenerateLeadMessagesService`. Nenhuma instância nova aqui — a
+    // relocação de `summaryAiProvider` para antes do primeiro consumidor já
+    // foi feita pela Auditoria do Perfil (2026-08-28); esta feature só passou
+    // a ser mais um consumidor da mesma variável.
+
     // Fase L, Bloco L3 — campanhas: TENANT-WIDE na URL (mesmo racional de
     // Contatos acima). RBAC POR ROTA (campaign:read na leitura,
     // campaign:manage na criação/materialização/start/pause/cancel).
@@ -747,7 +755,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     const { ContactLookupImpl } =
       await import('./services/contacts/infrastructure/ContactLookupImpl');
     const contactLookup = new ContactLookupImpl(contacts.contactRepository);
-    const campaigns = createCampaignsComposition(prisma, logger, contactLookup);
+    const campaigns = createCampaignsComposition(prisma, logger, contactLookup, summaryAiProvider);
     app.use('/api/tenants/:tenantId/campaigns', authenticate, campaigns.campaignsRouter);
     app.use('/api/tenants/:tenantId/campaigns', campaigns.campaignsErrorHandler);
 
@@ -806,13 +814,14 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // tocar o Baileys). `summaryAiProvider`/`summaryProviderName` (construídos
     // mais acima, ver comentário perto de `createAiProfileRouter` — Auditoria
     // do Perfil, 2026-08-28: o MESMO provider passou a ser reaproveitado
-    // também pelo resumo de NEGÓCIO, então a construção subiu para antes do
-    // primeiro consumidor) — degrada graciosamente (mesmo padrão de
-    // `mediaDownloader`/`INTERNAL_API_SECRET` acima): sem as credenciais do
-    // provider escolhido, o endpoint continua montado, mas
-    // `ConversationSummaryService.generateSummary()` lança um erro claro
-    // (503, ver `conversationSummaryErrorHandler`) em vez de a API inteira
-    // recusar subir por causa de uma feature opcional.
+    // também pelo resumo de NEGÓCIO e, desde a Fase de Prospecção IA
+    // [2026-08-29], por `GenerateLeadMessagesService`, então a construção
+    // subiu para antes do primeiro consumidor) — degrada graciosamente
+    // (mesmo padrão de `mediaDownloader`/`INTERNAL_API_SECRET` acima): sem
+    // as credenciais do provider escolhido, o endpoint continua montado,
+    // mas `ConversationSummaryService.generateSummary()` lança um erro
+    // claro (503, ver `conversationSummaryErrorHandler`) em vez de a API
+    // inteira recusar subir por causa de uma feature opcional.
     const conversationSummaryService = new ConversationSummaryService(
       conversationRepository,
       messageRepository,

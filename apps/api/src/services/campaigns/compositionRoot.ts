@@ -10,6 +10,8 @@ import { CampaignRepository } from './domain/repositories/CampaignRepository';
 import { CampaignMessageSender } from './domain/providers/CampaignMessageSender';
 import { ContactLookup } from './domain/ports/ContactLookup';
 import { CampaignService } from './application/CampaignService';
+import { GenerateLeadMessagesService } from './application/GenerateLeadMessagesService';
+import { AiProvider } from '../ai/domain/providers/AiProvider';
 import { createCampaignsRouter } from './presentation/campaignsRouter';
 import { createCampaignsErrorHandler } from './presentation/campaignsErrorHandler';
 import { BullMqCampaignSendDispatcher } from './infrastructure/dispatchers/BullMqCampaignSendDispatcher';
@@ -51,6 +53,13 @@ export function createCampaignsComposition(
    * nunca quebra.
    */
   contactLookup?: ContactLookup,
+  /**
+   * Fase de Prospecção IA (2026-08-29) — mesmo `AiProvider` síncrono já
+   * construído em `index.ts` (`summaryAiProvider`), reaproveitado aqui.
+   * `undefined` = geração de mensagens desabilitada, mas o resto do
+   * bounded context (campanhas normais) continua funcionando.
+   */
+  leadMessageAiProvider?: AiProvider,
 ): CampaignsComposition {
   const campaignRepository = new PrismaCampaignRepository(prisma);
   const tenantRepository = new PrismaTenantRepository(prisma);
@@ -62,7 +71,8 @@ export function createCampaignsComposition(
     undefined,
     contactLookup,
   );
-  const campaignsRouter = createCampaignsRouter(campaignService);
+  const generateLeadMessagesService = new GenerateLeadMessagesService(leadMessageAiProvider);
+  const campaignsRouter = createCampaignsRouter(campaignService, generateLeadMessagesService);
   const campaignsErrorHandler = createCampaignsErrorHandler(logger);
 
   return { campaignRepository, campaignService, campaignsRouter, campaignsErrorHandler };

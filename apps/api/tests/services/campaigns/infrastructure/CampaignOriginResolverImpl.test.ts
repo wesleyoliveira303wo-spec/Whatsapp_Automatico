@@ -26,6 +26,29 @@ describe('CampaignOriginResolverImpl (Fase L, Bloco L6)', () => {
     expect(origin).toEqual({ messageSent: 'Olá! Promoção especial.' });
   });
 
+  it('prioriza personalizedMessage do destinatário sobre o messageTemplate da campanha', async () => {
+    const campaigns = new FakeCampaignRepository();
+    const campaignId = campaigns.seedCampaign({
+      tenantId: 'tenant-1',
+      sessionName: 'sessao',
+      messageTemplate: 'Olá! Promoção especial.',
+    });
+    campaigns.seedRecipient({
+      tenantId: 'tenant-1',
+      campaignId,
+      contactId: 'contact-1',
+      status: 'sent',
+      conversationId: 'conversation-personalizada',
+      sentAt: new Date(),
+      personalizedMessage: 'Olá João, vi que sua loja não tem site ainda.',
+    });
+    const resolver = new CampaignOriginResolverImpl(campaigns, new NoopLogger());
+
+    const origin = await resolver.findOrigin('tenant-1', 'conversation-personalizada');
+
+    expect(origin).toEqual({ messageSent: 'Olá João, vi que sua loja não tem site ainda.' });
+  });
+
   it('devolve undefined quando a conversa não tem origem de campanha', async () => {
     const campaigns = new FakeCampaignRepository();
     const resolver = new CampaignOriginResolverImpl(campaigns, new NoopLogger());

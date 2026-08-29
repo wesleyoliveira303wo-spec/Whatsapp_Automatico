@@ -19,6 +19,8 @@ import { mapImportRows, InvalidImportRow } from '../../../contacts/domain/contac
 export interface RawPhoneRecipient {
   rawPhone: string;
   name?: string;
+  /** Fase de Prospecção IA (2026-08-29) — ver `CampaignRecipient.personalizedMessage`. */
+  personalizedMessage?: string;
 }
 
 export interface ParseRecipientsCsvResult {

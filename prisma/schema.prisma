@@ -445,6 +445,12 @@ model CampaignRecipient {
   /// Nome opcional trazido pela planilha/lista manual (coluna "nome" do CSV,
   /// ou digitado junto do número) — só existe junto de `phoneE164`.
   name           String?
+  /// Fase de Prospecção IA (2026-08-29) — quando presente, substitui
+  /// `Campaign.messageTemplate` SÓ para este destinatário (ver
+  /// `CampaignSendJobProcessor.process`). Gerado por
+  /// `GenerateLeadMessagesService` a partir de um lead enriquecido
+  /// (dor/gatilho/tom/ganchos/CTA) — nunca escrito à mão pelo operador.
+  personalizedMessage String? @db.Text @map("personalized_message")
   status         CampaignRecipientStatus @default(PENDING)
   skipReason     String?                 @map("skip_reason")
   errorMessage   String?                 @db.Text @map("error_message")

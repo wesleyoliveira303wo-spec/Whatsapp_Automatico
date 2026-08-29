@@ -140,6 +140,7 @@ interface CampaignRecipientRow {
   contactId: string | null;
   phoneE164: string | null;
   name: string | null;
+  personalizedMessage: string | null;
   status: string;
   skipReason: string | null;
   errorMessage: string | null;
@@ -200,6 +201,7 @@ function recipientToDomain(
     contactId: row.contactId ?? undefined,
     phoneE164: row.phoneE164 ?? undefined,
     name: row.name ?? undefined,
+    personalizedMessage: row.personalizedMessage ?? undefined,
     contact,
     status: RECIPIENT_STATUS_FROM_PRISMA[row.status] ?? 'pending',
     skipReason: row.skipReason ?? undefined,
@@ -354,6 +356,7 @@ export class PrismaCampaignRepository implements CampaignRepository {
         contactId: recipient.contactId ?? null,
         phoneE164: recipient.phoneE164 ?? null,
         name: recipient.name ?? null,
+        personalizedMessage: recipient.personalizedMessage ?? null,
         status: RECIPIENT_STATUS_TO_PRISMA[recipient.status],
         skipReason: recipient.skipReason ?? null,
       })),
@@ -601,9 +604,9 @@ export class PrismaCampaignRepository implements CampaignRepository {
     const row = await this.prisma.campaignRecipient.findFirst({
       where: { tenantId, conversationId, status: { in: ['SENT', 'REPLIED'] } },
       orderBy: { sentAt: 'desc' },
-      select: { campaign: { select: { messageTemplate: true } } },
+      select: { personalizedMessage: true, campaign: { select: { messageTemplate: true } } },
     });
-    return row ? { messageSent: row.campaign.messageTemplate } : undefined;
+    return row ? { messageSent: row.personalizedMessage ?? row.campaign.messageTemplate } : undefined;
   }
 
   // --- Fase L, Bloco L7 (métricas) ---
