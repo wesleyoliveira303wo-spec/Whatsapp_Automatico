@@ -15,13 +15,14 @@ import '@testing-library/jest-dom';
 import ConversationFilterTabs from '../../components/ConversationFilterTabs';
 
 describe('ConversationFilterTabs (Redesign 2026-08-05, R3)', () => {
-  it('renderiza as 5 opções', () => {
+  it('renderiza as 6 opções (Menu "⋮" da conversa, 2026-08-29, adicionou "Arquivadas")', () => {
     render(<ConversationFilterTabs value="all" onChange={jest.fn()} />);
     expect(screen.getByText('Todas')).toBeInTheDocument();
     expect(screen.getByText('Não lidas')).toBeInTheDocument();
     expect(screen.getByText('Aguardando')).toBeInTheDocument();
     expect(screen.getByText('IA')).toBeInTheDocument();
     expect(screen.getByText('Humano')).toBeInTheDocument();
+    expect(screen.getByText('Arquivadas')).toBeInTheDocument();
   });
 
   it('marca aria-pressed=true só na opção ativa', () => {
