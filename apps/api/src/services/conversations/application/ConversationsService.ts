@@ -55,6 +55,13 @@ export interface ListConversationsOptions {
   needsHumanAttention?: boolean;
   /** ADR #94 (2026-08-01) — filtra por dentro/fora do funil comercial (ver `ConversationRepository.FindAllByTenantOptions`). Ausente = sem filtro. */
   excludedFromPipeline?: boolean;
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — filtra por arquivada/não arquivada
+   * (ver `ConversationRepository.FindAllByTenantOptions`). Diferente de
+   * `excludedFromPipeline`: aqui SEMPRE há um valor efetivo — default
+   * `false` (não arquivadas), nunca "sem filtro".
+   */
+  archived?: boolean;
 }
 
 /**
@@ -453,6 +460,7 @@ export class ConversationsService {
       sessionName: options.sessionName,
       needsHumanAttention: options.needsHumanAttention,
       excludedFromPipeline: options.excludedFromPipeline,
+      archived: options.archived ?? false,
     });
   }
 

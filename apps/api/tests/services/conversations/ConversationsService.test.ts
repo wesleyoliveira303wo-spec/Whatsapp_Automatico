@@ -33,6 +33,7 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
     stageSetBy: 'ai',
     stageUpdatedAt: new Date('2026-07-10T12:00:00Z'),
     excludedFromPipeline: false,
+    archived: false,
     tags: [],
     createdAt: new Date('2026-07-10T12:00:00Z'),
     updatedAt: new Date('2026-07-10T12:00:00Z'),
@@ -319,6 +320,9 @@ describe('ConversationsService', () => {
         status: undefined,
         limit: 50,
         cursor: undefined,
+        // Menu "⋮" da conversa (2026-08-29) — listConversations() sempre
+        // passa um boolean explícito ao repositório (default false).
+        archived: false,
       });
     });
 
@@ -332,6 +336,7 @@ describe('ConversationsService', () => {
         status: undefined,
         limit: 200,
         cursor: undefined,
+        archived: false,
       });
     });
 
@@ -349,6 +354,7 @@ describe('ConversationsService', () => {
         status: 'human',
         limit: 10,
         cursor: 'conversation-anterior',
+        archived: false,
       });
     });
 

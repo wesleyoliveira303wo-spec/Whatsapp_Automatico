@@ -128,6 +128,9 @@ export class MessageIngestionService implements MessageReceivedHandler {
         // ADR #94 (2026-08-01) — toda conversa nasce dentro do funil
         // comercial; só um humano marca o contrário depois.
         excludedFromPipeline: false,
+        // Menu "⋮" da conversa (2026-08-29) — toda conversa nasce visível
+        // (não arquivada); só um humano arquiva depois.
+        archived: false,
         createdAt: message.receivedAt,
         updatedAt: message.receivedAt,
         // Redesign 2026-08-05 (R4) — não lido pelo `create` do Prisma (tags

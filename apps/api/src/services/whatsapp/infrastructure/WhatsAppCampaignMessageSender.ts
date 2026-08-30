@@ -176,6 +176,9 @@ export class WhatsAppCampaignMessageSender implements CampaignMessageSender {
         stageSetBy: 'ai',
         stageUpdatedAt: new Date(),
         excludedFromPipeline: false,
+        // Menu "⋮" da conversa (2026-08-29) — toda conversa nasce visível
+        // (não arquivada); só um humano arquiva depois.
+        archived: false,
         aiSummaryMessageCount: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
