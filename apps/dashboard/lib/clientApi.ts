@@ -1241,6 +1241,14 @@ export interface ConversationSummary {
    * `false` por padrão.
    */
   excludedFromPipeline: boolean;
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — `true` = fora da lista principal de
+   * Conversas (filtro padrão), sem apagar nada. Reversível. `false` por
+   * padrão — toda conversa nasce visível.
+   */
+  archived: boolean;
+  /** Quando `archived` foi definido `true` pela última vez — ausente quando `archived: false`. */
+  archivedAt?: string;
   /** Fase 1, Bloco F1.7 (2026-08-01) — trecho da última mensagem (qualquer direção), para a linha da lista de Conversas. Ausente só numa conversa sem nenhuma mensagem ainda. */
   lastMessagePreview?: string;
   /** Acompanha `lastMessagePreview` (ISO 8601). */
@@ -1362,6 +1370,11 @@ export interface FetchConversationsOptions {
   needsHumanAttention?: boolean;
   /** ADR #94 (2026-08-01) — `true`/`false` filtra dentro/fora do funil comercial; ausente = sem filtro. */
   excludedFromPipeline?: boolean;
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — `true` lista só as arquivadas;
+   * `false` (default do consumidor padrão) lista só as NÃO arquivadas.
+   */
+  archived?: boolean;
 }
 
 export function fetchConversations(
@@ -1375,6 +1388,7 @@ export function fetchConversations(
   if (options.needsHumanAttention) params.set('needsHumanAttention', 'true');
   if (options.excludedFromPipeline !== undefined)
     params.set('excludedFromPipeline', String(options.excludedFromPipeline));
+  if (options.archived !== undefined) params.set('archived', String(options.archived));
   const query = params.toString();
   return request(`/api/conversations${query ? `?${query}` : ''}`);
 }
@@ -1477,6 +1491,18 @@ export function markConversationAsRead(conversationId: string): Promise<Conversa
   });
 }
 
+/** Menu "⋮" da conversa (2026-08-29) — marca manualmente como não lida (oposto de `markConversationAsRead`). */
+export function markConversationAsUnread(conversationId: string): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/unread`, {
+    method: 'POST',
+  });
+}
+
+/** Menu "⋮" da conversa (2026-08-29) — exclusão DEFINITIVA. Sem desfazer. */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  await request(`/api/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' });
+}
+
 /**
  * Pipeline de CRM (Milestone 6, Bloco M6H-5) — move a conversa para um novo
  * estágio (board Kanban, arrastar card entre colunas). Grava
@@ -1521,6 +1547,17 @@ export function setConversationExcludedFromPipeline(
   return request(`/api/conversations/${encodeURIComponent(conversationId)}/exclude-from-pipeline`, {
     method: 'POST',
     body: JSON.stringify({ excluded }),
+  });
+}
+
+/** Menu "⋮" da conversa (2026-08-29) — arquiva (some da lista principal) ou desarquiva, sem apagar nada. */
+export function archiveConversation(
+  conversationId: string,
+  archived: boolean,
+): Promise<ConversationSummary> {
+  return request(`/api/conversations/${encodeURIComponent(conversationId)}/archive`, {
+    method: 'POST',
+    body: JSON.stringify({ archived }),
   });
 }
 
