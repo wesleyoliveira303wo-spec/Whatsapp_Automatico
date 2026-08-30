@@ -18,6 +18,12 @@ import { toast } from '@/components/ui/use-toast';
 interface SaveContactButtonProps {
   conversation: ConversationSummary;
   onUpdated: (conversation: ConversationSummary) => void;
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — gatilho customizado (ex.: um item de
+   * menu) para abrir o MESMO diálogo de "Salvar contato", em vez do ícone
+   * padrão do painel de contexto. `undefined` = comportamento de sempre.
+   */
+  trigger?: React.ReactNode;
 }
 
 /**
@@ -41,6 +47,7 @@ interface SaveContactButtonProps {
 export default function SaveContactButton({
   conversation,
   onUpdated,
+  trigger,
 }: SaveContactButtonProps): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(conversation.savedContactName ?? conversation.contactName ?? '');
@@ -88,15 +95,19 @@ export default function SaveContactButton({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <button
-        type="button"
-        aria-label="Salvar contato"
-        title="Salvar contato"
-        onClick={() => handleOpenChange(true)}
-        className="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
-      >
-        <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
+      {trigger ? (
+        <span onClick={() => handleOpenChange(true)}>{trigger}</span>
+      ) : (
+        <button
+          type="button"
+          aria-label="Salvar contato"
+          title="Salvar contato"
+          onClick={() => handleOpenChange(true)}
+          className="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+        >
+          <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Salvar contato</DialogTitle>

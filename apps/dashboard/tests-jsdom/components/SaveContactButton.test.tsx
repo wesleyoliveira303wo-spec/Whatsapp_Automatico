@@ -190,4 +190,37 @@ describe('SaveContactButton (retrofit visual 2026-08-18)', () => {
     );
     expect(screen.getByRole('button', { name: 'Salvar contato' })).toBeInTheDocument();
   });
+
+  it('com prop "trigger", renderiza o gatilho customizado em vez do ícone padrão', () => {
+    render(
+      <SaveContactButton
+        conversation={buildConversation()}
+        onUpdated={onUpdated}
+        trigger={<button type="button">Abrir salvar contato</button>}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Abrir salvar contato' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Salvar contato' })).not.toBeInTheDocument();
+  });
+
+  it('sem prop "trigger", continua mostrando o ícone padrão (retrocompatibilidade)', () => {
+    render(<SaveContactButton conversation={buildConversation()} onUpdated={onUpdated} />);
+
+    expect(screen.getByRole('button', { name: 'Salvar contato' })).toBeInTheDocument();
+  });
+
+  it('clicar no gatilho customizado abre o mesmo modal', () => {
+    render(
+      <SaveContactButton
+        conversation={buildConversation()}
+        onUpdated={onUpdated}
+        trigger={<button type="button">Abrir salvar contato</button>}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir salvar contato' }));
+
+    expect(screen.getByLabelText('Nome')).toBeInTheDocument();
+  });
 });
