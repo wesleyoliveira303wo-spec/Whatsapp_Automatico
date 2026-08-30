@@ -66,4 +66,49 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
  */
 MotionGlobalConfig.skipAnimations = true;
 
+/**
+ * DropdownMenu do Radix (2026-08-29, achado real do fundador — substituiu o
+ * menu "⋮" feito à mão de `CampaignsPanel.tsx` por
+ * `@radix-ui/react-dropdown-menu` pra resolver um bug de vazamento visual da
+ * coluna "Ações" contra o painel lateral). O Radix abre o menu no
+ * `onPointerDown` do gatilho (nunca no `onClick`) — e este jsdom (20.0.3)
+ * não implementa o CONSTRUTOR `PointerEvent` (confirmado: `new
+ * window.PointerEvent(...)` lança "is not a constructor"). Sem isso,
+ * `fireEvent.pointerDown` do Testing Library cai pra um `Event` genérico,
+ * sem `pointerType`/`button`/`pointerId` — os campos que o handler do Radix
+ * confere antes de abrir — e o menu nunca aparecia nos testes. Mesma classe
+ * de "API que só existe no browser de verdade" do `ResizeObserver`/
+ * `IntersectionObserver` acima: aqui a peça que falta é o CONSTRUTOR em si,
+ * não um método solto, então o polyfill é a classe inteira (mínima, só os
+ * campos que o Radix lê), não um stub de método.
+ */
+class PointerEventPolyfill extends MouseEvent {
+  public readonly pointerId: number;
+  public readonly pointerType: string;
+  public readonly isPrimary: boolean;
+
+  constructor(type: string, params: PointerEventInit = {}) {
+    super(type, params);
+    this.pointerId = params.pointerId ?? 1;
+    this.pointerType = params.pointerType ?? 'mouse';
+    this.isPrimary = params.isPrimary ?? true;
+  }
+}
+
+if (typeof globalThis.PointerEvent === 'undefined') {
+  (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventPolyfill;
+}
+if (typeof Element.prototype.hasPointerCapture === 'undefined') {
+  Element.prototype.hasPointerCapture = (): boolean => false;
+}
+if (typeof Element.prototype.setPointerCapture === 'undefined') {
+  Element.prototype.setPointerCapture = (): void => {};
+}
+if (typeof Element.prototype.releasePointerCapture === 'undefined') {
+  Element.prototype.releasePointerCapture = (): void => {};
+}
+if (typeof Element.prototype.scrollIntoView === 'undefined') {
+  Element.prototype.scrollIntoView = (): void => {};
+}
+
 export {};

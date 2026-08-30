@@ -237,8 +237,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
     expect(screen.queryByRole('link', { name: 'Ver' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-    const link = screen.getByRole('link', { name: 'Ver detalhes' });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+    const link = screen.getByRole('menuitem', { name: 'Ver detalhes' });
     expect(link).toHaveAttribute('href', '/sessions/vendas/campaigns/campaign-1');
   });
 
@@ -273,8 +273,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
     await renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar campanha' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Cancelar campanha' }));
     expect(clientApi.cancelCampaign).not.toHaveBeenCalled();
     expect(screen.getByText('Cancelar esta campanha?')).toBeInTheDocument();
 
@@ -296,8 +296,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
     await renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-    expect(screen.queryByRole('button', { name: 'Excluir campanha' })).not.toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+    expect(screen.queryByRole('menuitem', { name: 'Excluir campanha' })).not.toBeInTheDocument();
   });
 
   it('menu "⋮" → Excluir campanha pede confirmação, chama a API e recarrega a lista', async () => {
@@ -305,8 +305,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
     await renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Excluir campanha' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir campanha' }));
     expect(clientApi.deleteCampaign).not.toHaveBeenCalled();
     expect(screen.getByText('Excluir esta campanha?')).toBeInTheDocument();
 
@@ -324,8 +324,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     it('campanha COMPLETED sem nenhum FAILED: não mostra "Reabrir campanha" (mockDefaults, failed: 0)', async () => {
       await renderPanel();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-      expect(screen.queryByRole('button', { name: 'Reabrir campanha' })).not.toBeInTheDocument();
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+      expect(screen.queryByRole('menuitem', { name: 'Reabrir campanha' })).not.toBeInTheDocument();
     });
 
     it('campanha RUNNING: nunca mostra "Reabrir campanha", mesmo com FAILED > 0', async () => {
@@ -354,8 +354,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
       await renderPanel();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-      expect(screen.queryByRole('button', { name: 'Reabrir campanha' })).not.toBeInTheDocument();
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+      expect(screen.queryByRole('menuitem', { name: 'Reabrir campanha' })).not.toBeInTheDocument();
     });
 
     it('campanha COMPLETED com FAILED > 0: mostra o botão, pede confirmação, chama a API e recarrega', async () => {
@@ -381,8 +381,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
       await renderPanel();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Mais ações' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Reabrir campanha' }));
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Reabrir campanha' }));
       expect(clientApi.reopenCampaign).not.toHaveBeenCalled();
       expect(screen.getByText('Reabrir esta campanha?')).toBeInTheDocument();
 

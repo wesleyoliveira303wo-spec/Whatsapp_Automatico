@@ -23,6 +23,21 @@
  * ts-jest pede para não usar mais) foi removida. Zero mudança de
  * comportamento de teste; ver DECISIONS.md.
  */
+/**
+ * Achado real (2026-08-30) — `design/uploads/Whatsapp-automatico/` é uma
+ * cópia inteira duplicada do repositório (resíduo de um upload de uma skill
+ * de design anterior), com seus PRÓPRIOS `package.json` de mesmo nome
+ * (`api`/`dashboard`/`whatsapp-automatico`). O `jest-haste-map` (que
+ * construiria o registro de módulos, INDEPENDENTE de `testMatch`) varria essa
+ * árvore inteira de novo, gerando colisão de nome de módulo E inflando o
+ * tempo de qualquer execução de teste de segundos para minutos (achado ao
+ * investigar por que `npx jest --testPathPattern "CampaignsPanel"` (antes
+ * ~6s) passou a travar/exceder timeouts de 60-180s sem motivo aparente no
+ * código). Ignorado explicitamente em CADA projeto (Jest não tem uma chave
+ * compartilhada entre `projects`) — nunca varrido, sem precisar apagar nada.
+ */
+const IGNORE_DESIGN_UPLOADS = ['<rootDir>/design/'];
+
 module.exports = {
   projects: [
     {
@@ -33,6 +48,7 @@ module.exports = {
         '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/apps/api/tsconfig.json' }],
       },
       moduleFileExtensions: ['ts', 'js', 'json', 'node'],
+      modulePathIgnorePatterns: IGNORE_DESIGN_UPLOADS,
     },
     {
       displayName: 'dashboard',
@@ -42,6 +58,7 @@ module.exports = {
         '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/apps/dashboard/tsconfig.json' }],
       },
       moduleFileExtensions: ['ts', 'tsx', 'js', 'json', 'node'],
+      modulePathIgnorePatterns: IGNORE_DESIGN_UPLOADS,
     },
     /**
      * TERCEIRO projeto (Milestone 4, Bloco M4E — D49/ADR #59): primeira
@@ -84,6 +101,7 @@ module.exports = {
         '^@/(.*)$': '<rootDir>/apps/dashboard/$1',
       },
       moduleFileExtensions: ['ts', 'tsx', 'js', 'json', 'node'],
+      modulePathIgnorePatterns: IGNORE_DESIGN_UPLOADS,
     },
   ],
 };

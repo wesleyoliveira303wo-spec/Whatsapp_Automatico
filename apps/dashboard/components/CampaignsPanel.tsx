@@ -48,6 +48,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import {
   Table,
   TableHeader,
   TableBody,
@@ -339,8 +345,6 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
     campaign: Campaign;
   } | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [rowMenuId, setRowMenuId] = useState<string | null>(null);
-  const rowMenuRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -424,17 +428,6 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
   useEffect(() => {
     setPage(1);
   }, [search, statusFilter, sortOption]);
-
-  useEffect(() => {
-    if (!rowMenuId) return;
-    const handleClickOutside = (event: MouseEvent): void => {
-      if (rowMenuRef.current && !rowMenuRef.current.contains(event.target as Node)) {
-        setRowMenuId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [rowMenuId]);
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -883,75 +876,65 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                             primária) era parte da causa da coluna "Ações" mudar de
                             largura entre linhas. */}
 
-                              <div
-                                className="relative"
-                                ref={rowMenuId === campaign.id ? rowMenuRef : undefined}
-                              >
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  aria-label="Mais ações"
-                                  onClick={() =>
-                                    setRowMenuId((current) =>
-                                      current === campaign.id ? null : campaign.id,
-                                    )
-                                  }
-                                >
-                                  <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
-                                </Button>
-                                {rowMenuId === campaign.id && (
-                                  <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    aria-label="Mais ações"
+                                  >
+                                    <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-44">
+                                  <DropdownMenuItem asChild>
                                     <Link
                                       href={`/sessions/${encodeURIComponent(sessionName)}/campaigns/${encodeURIComponent(campaign.id)}`}
-                                      className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-foreground hover:bg-muted"
-                                      onClick={() => setRowMenuId(null)}
+                                      className="text-foreground"
                                     >
                                       Ver detalhes
                                     </Link>
-                                    {canCancel && (
+                                  </DropdownMenuItem>
+                                  {canCancel && (
+                                    <DropdownMenuItem asChild>
                                       <button
                                         type="button"
-                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-destructive hover:bg-destructive/10"
-                                        onClick={() => {
-                                          setRowMenuId(null);
-                                          setConfirmAction({ type: 'cancel', campaign });
-                                        }}
+                                        className="gap-2 text-destructive focus:bg-destructive/10"
+                                        onClick={() => setConfirmAction({ type: 'cancel', campaign })}
                                       >
                                         <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
                                         Cancelar campanha
                                       </button>
-                                    )}
-                                    {canReopen && (
+                                    </DropdownMenuItem>
+                                  )}
+                                  {canReopen && (
+                                    <DropdownMenuItem asChild>
                                       <button
                                         type="button"
-                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-foreground hover:bg-muted"
-                                        onClick={() => {
-                                          setRowMenuId(null);
-                                          setConfirmAction({ type: 'reopen', campaign });
-                                        }}
+                                        className="gap-2 text-foreground"
+                                        onClick={() => setConfirmAction({ type: 'reopen', campaign })}
                                       >
                                         <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                                         Reabrir campanha
                                       </button>
-                                    )}
-                                    {campaign.status !== 'running' && (
+                                    </DropdownMenuItem>
+                                  )}
+                                  {campaign.status !== 'running' && (
+                                    <DropdownMenuItem asChild>
                                       <button
                                         type="button"
-                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-destructive hover:bg-destructive/10"
-                                        onClick={() => {
-                                          setRowMenuId(null);
-                                          setConfirmAction({ type: 'delete', campaign });
-                                        }}
+                                        className="gap-2 text-destructive focus:bg-destructive/10"
+                                        onClick={() => setConfirmAction({ type: 'delete', campaign })}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                         Excluir campanha
                                       </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </TableCell>
                         </TableRow>
