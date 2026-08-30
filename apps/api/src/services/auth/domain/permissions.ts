@@ -14,6 +14,15 @@ export type Permission =
   | 'conversation:resume_any'
   /** DECLARADA MAS NUNCA APLICADA — reatribuir conversa a outro atendente nao existe no produto (sem rota, servico ou tela). Nao e falha de seguranca. */
   | 'conversation:reassign'
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — excluir uma conversa é IRREVERSÍVEL
+   * (apaga histórico de mensagens de verdade, diferente de `archived`, que
+   * só esconde). Mesmo nível de risco de `campaign:manage` (uma ação errada
+   * atinge um dado que não volta) — reservada a ADMINISTRATOR+, não
+   * `message:send` (operator+, usado pelas outras ações desta tela, todas
+   * reversíveis).
+   */
+  | 'conversation:delete'
   | 'message:send'
   | 'session:read'
   | 'session:connect'
@@ -141,6 +150,9 @@ const ADMINISTRATOR: readonly Permission[] = [
   // custar o numero do WhatsApp). LER campanhas ja esta liberado desde
   // OPERATOR (`campaign:read` acima).
   'campaign:manage',
+  // Menu "⋮" da conversa (2026-08-29) — excluir é IRREVERSÍVEL, mesmo nível
+  // de risco de campaign:manage acima.
+  'conversation:delete',
 ];
 
 /**
