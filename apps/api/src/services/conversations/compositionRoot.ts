@@ -12,6 +12,7 @@ import { MessageRepository } from './domain/repositories/MessageRepository';
 import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './infrastructure/queues/AiReplyQueue';
 import { BullMqAiReplyScheduler } from './infrastructure/schedulers/BullMqAiReplyScheduler';
 import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
+import { TenantPlanFromTenantRepository } from './infrastructure/repositories/TenantPlanFromTenantRepository';
 import { InMemorySlidingWindowAiRateLimiter } from './infrastructure/repositories/InMemorySlidingWindowAiRateLimiter';
 import { MessageIngestionService } from './application/MessageIngestionService';
 import { PrismaContactRepository } from '../contacts/infrastructure/repositories/PrismaContactRepository';
@@ -179,6 +180,10 @@ export function createConversationsComposition(
   );
   const optOutDetector = new KeywordOptOutDetector(contactConsentService, logger);
 
+  // Lançamento suave (2026-08-31) — Trava de plano. Envolve o
+  // `tenantRepository` compartilhado já instanciado acima (nenhuma conexão
+  // nova) numa porta estreita (ver `TenantPlanRepository`).
+  const tenantPlanRepository = new TenantPlanFromTenantRepository(tenantRepository);
   const messageIngestionService = new MessageIngestionService(
     conversationRepository,
     messageRepository,
@@ -187,6 +192,7 @@ export function createConversationsComposition(
     aiRateLimiter,
     contactResolver,
     optOutDetector,
+    tenantPlanRepository,
   );
   // Instância explícita (não o default do construtor) — precisa ser
   // RETIDA/EXPOSTA para `index.ts` injetar a MESMA nela em

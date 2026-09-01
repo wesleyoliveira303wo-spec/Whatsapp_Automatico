@@ -24,12 +24,13 @@ describe('PrismaTenantRepository', () => {
       });
     });
 
-    it('deve mapear a linha encontrada para a entidade Tenant (id, name, apiKeyHash)', async () => {
+    it('deve mapear a linha encontrada para a entidade Tenant (id, name, apiKeyHash, plan)', async () => {
       const prisma = createFakePrisma();
       prisma.tenant.findUnique.mockResolvedValue({
         id: 'tenant-1',
         name: 'Empresa Teste',
         apiKeyHash: 'hash-abc',
+        plan: 'PRO',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -37,9 +38,30 @@ describe('PrismaTenantRepository', () => {
 
       const result = await repo.findById('tenant-1');
 
-      // Só os 3 campos da entidade reduzida — createdAt/updatedAt do banco
-      // não devem vazar para o Domain (ver Tenant.ts).
-      expect(result).toEqual({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: 'hash-abc' });
+      // Só os campos da entidade reduzida — createdAt/updatedAt do banco não
+      // devem vazar para o Domain (ver Tenant.ts). `plan` do banco (SCREAMING)
+      // vira a união literal do Domain (lowercase).
+      expect(result).toEqual({
+        id: 'tenant-1',
+        name: 'Empresa Teste',
+        apiKeyHash: 'hash-abc',
+        plan: 'pro',
+      });
+    });
+
+    it('deve mapear o Plano Grátis (FREE -> "free") — o default de todo tenant', async () => {
+      const prisma = createFakePrisma();
+      prisma.tenant.findUnique.mockResolvedValue({
+        id: 'tenant-1',
+        name: 'Empresa Teste',
+        apiKeyHash: null,
+        plan: 'FREE',
+      });
+      const repo = new PrismaTenantRepository(prisma as never);
+
+      const result = await repo.findById('tenant-1');
+
+      expect(result?.plan).toBe('free');
     });
 
     it('deve mapear apiKeyHash null corretamente (tenant sem chave emitida)', async () => {
@@ -48,6 +70,7 @@ describe('PrismaTenantRepository', () => {
         id: 'tenant-1',
         name: 'Empresa Teste',
         apiKeyHash: null,
+        plan: 'FREE',
       });
       const repo = new PrismaTenantRepository(prisma as never);
 
@@ -77,12 +100,18 @@ describe('PrismaTenantRepository', () => {
         id: 'tenant-1',
         name: 'Empresa Teste',
         apiKeyHash: 'hash-abc',
+        plan: 'FREE',
       });
       const repo = new PrismaTenantRepository(prisma as never);
 
       const result = await repo.findByApiKeyHash('hash-abc');
 
-      expect(result).toEqual({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash: 'hash-abc' });
+      expect(result).toEqual({
+        id: 'tenant-1',
+        name: 'Empresa Teste',
+        apiKeyHash: 'hash-abc',
+        plan: 'free',
+      });
     });
   });
 
@@ -95,6 +124,7 @@ describe('PrismaTenantRepository', () => {
         id: 'tenant-1',
         name: 'Novo Nome',
         apiKeyHash: null,
+        plan: 'FREE',
       });
       const repo = new PrismaTenantRepository(prisma as never);
 
@@ -104,7 +134,7 @@ describe('PrismaTenantRepository', () => {
         where: { id: 'tenant-1' },
         data: { name: 'Novo Nome' },
       });
-      expect(result).toEqual({ id: 'tenant-1', name: 'Novo Nome', apiKeyHash: null });
+      expect(result).toEqual({ id: 'tenant-1', name: 'Novo Nome', apiKeyHash: null, plan: 'free' });
     });
 
     it('devolve undefined quando o tenant nao existe', async () => {

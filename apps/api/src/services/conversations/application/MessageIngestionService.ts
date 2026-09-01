@@ -11,7 +11,9 @@ import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
 import { OptOutDetector } from '../domain/repositories/OptOutDetector';
 import { CampaignReplyTracker } from '../domain/repositories/CampaignReplyTracker';
+import { TenantPlanRepository } from '../domain/repositories/TenantPlanRepository';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
+import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   isWaitingForHumanUnowned,
@@ -77,6 +79,10 @@ export class MessageIngestionService implements MessageReceivedHandler {
     // Fase L, Bloco L2 — opt-out automático por palavra-chave. Porta estreita
     // (ver `OptOutDetector`), mesmo racional de `ContactResolver`.
     private readonly optOutDetector: OptOutDetector,
+    // Lançamento suave (2026-08-31) — Trava de plano. Porta estreita (ver
+    // `TenantPlanRepository`), mesmo racional de `AiAvailabilityRepository`:
+    // este Service só precisa saber "o plano permite resposta automática?".
+    private readonly tenantPlanRepository: TenantPlanRepository,
     private readonly botReactivationSilenceMs: number = DEFAULT_BOT_REACTIVATION_SILENCE_MS,
     /**
      * Fase L, Bloco L6 — OPCIONAL (mesmo padrão de `mediaSender` em
@@ -240,7 +246,14 @@ export class MessageIngestionService implements MessageReceivedHandler {
         message.tenantId,
         message.sessionName,
       );
-      if (shouldAutoRespond(effectiveConversation, sessionAiEnabled)) {
+      // Trava de plano (Lançamento suave, 2026-08-31): tenant no Plano Grátis
+      // não gera resposta automática. A mensagem já foi persistida/exibida
+      // acima (passos 1-3) — só não vira trabalho de IA, exatamente como o
+      // Botão POWER desligado.
+      const tenantPlanAllowsAutoReply = planPermiteUso(
+        await this.tenantPlanRepository.getPlan(message.tenantId),
+      );
+      if (shouldAutoRespond(effectiveConversation, sessionAiEnabled, tenantPlanAllowsAutoReply)) {
         // Fase 1, Bloco F1.10 — segundo portão, IMEDIATAMENTE antes de gerar
         // custo de IA: `shouldAutoRespond` já decidiu que a IA DEVERIA
         // responder; `aiRateLimiter` decide se isso não excede o ritmo

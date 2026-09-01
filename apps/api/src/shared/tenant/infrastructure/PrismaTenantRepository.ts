@@ -1,7 +1,18 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, TenantPlan as PrismaTenantPlan } from '@prisma/client';
 
 import { Tenant } from '../domain/Tenant';
+import { TenantPlan } from '../domain/TenantPlan';
 import { TenantRepository } from '../domain/TenantRepository';
+
+/**
+ * Mapa enum do banco (SCREAMING) -> união literal do Domain (lowercase),
+ * mesmo padrão de `STAGE_TO_DOMAIN`/`UserRole` no resto do projeto.
+ */
+const PLAN_TO_DOMAIN: Record<PrismaTenantPlan, TenantPlan> = {
+  FREE: 'free',
+  PRO: 'pro',
+  ENTERPRISE: 'enterprise',
+};
 
 /**
  * Shape mínimo lido do banco — só os campos que `Tenant` (Domain) de fato usa
@@ -11,6 +22,7 @@ interface TenantRow {
   id: string;
   name: string;
   apiKeyHash: string | null;
+  plan: PrismaTenantPlan;
 }
 
 function toDomain(row: TenantRow): Tenant {
@@ -18,6 +30,7 @@ function toDomain(row: TenantRow): Tenant {
     id: row.id,
     name: row.name,
     apiKeyHash: row.apiKeyHash,
+    plan: PLAN_TO_DOMAIN[row.plan],
   };
 }
 

@@ -6,6 +6,8 @@ import IORedis from 'ioredis';
 
 import { PrismaConversationRepository } from './services/conversations/infrastructure/repositories/PrismaConversationRepository';
 import { PrismaMessageRepository } from './services/conversations/infrastructure/repositories/PrismaMessageRepository';
+import { TenantPlanFromTenantRepository } from './services/conversations/infrastructure/repositories/TenantPlanFromTenantRepository';
+import { PrismaTenantRepository } from './shared/tenant/infrastructure/PrismaTenantRepository';
 import {
   AI_REPLY_QUEUE_NAME,
   AiReplyJobData,
@@ -144,6 +146,11 @@ async function main(): Promise<void> {
   const messageRepository = new PrismaMessageRepository(prisma);
   const aiInteractionRepository = new PrismaAiInteractionRepository(prisma);
   const aiBusinessProfileRepository = new PrismaAiBusinessProfileRepository(prisma);
+  // Lançamento suave (2026-08-31) — Trava de plano: o worker re-checa o
+  // plano do tenant antes de gerar a resposta (ver `AiReplyJobProcessor`).
+  const tenantPlanRepository = new TenantPlanFromTenantRepository(
+    new PrismaTenantRepository(prisma),
+  );
 
   // Só o provider escolhido é configurado na factory — os demais nem entram no
   // mapa (pedir um provider não configurado lança AiProviderNotSupportedError).
@@ -274,6 +281,8 @@ async function main(): Promise<void> {
     // para `ConversationAiService` (Cérebro da IA) — re-checagem do estado
     // ATUAL antes de gerar a resposta (ver docstring de `process()`).
     aiBusinessProfileRepository,
+    // Lançamento suave (2026-08-31) — Trava de plano.
+    tenantPlanRepository,
     AI_HISTORY_LIMIT ? Number(AI_HISTORY_LIMIT) : undefined,
     // Cérebro da IA v3, Fase 3 (2026-08-26): 4 params intermediários no
     // default (humanHandoffMessage/handoffNoticeRepeatAfterMs/now/sessionGapMs)

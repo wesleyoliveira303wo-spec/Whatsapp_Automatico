@@ -1,10 +1,19 @@
 import { Tenant } from '../../../src/shared/tenant/domain/Tenant';
+import { TenantPlan } from '../../../src/shared/tenant/domain/TenantPlan';
 import { TenantRepository } from '../../../src/shared/tenant/domain/TenantRepository';
 
 /**
  * Fake compartilhado do `TenantRepository` — em memória, sem Prisma/Postgres.
  * Reaproveitável por qualquer teste fora de `shared/tenant` (ex.:
  * `WhatsAppSessionService`, middleware de auth) via import relativo.
+ *
+ * TRAVA DE PLANO (2026-08-31): `seed(...)` aceita `plan` opcional e, quando
+ * omitido, assume `'pro'` — um tenant de teste é um cliente pagante a menos
+ * que o teste diga o contrário. Isso preserva o comportamento pré-plano
+ * (antes da Trava a IA sempre respondia); só os testes que exercitam
+ * especificamente o Plano Grátis passam `plan: 'free'` explicitamente.
+ * `create(...)` devolve `'free'` — simula um tenant novo de verdade
+ * (`Tenant.plan` = `@default(FREE)` no banco).
  */
 export class FakeTenantRepository implements TenantRepository {
   private tenants = new Map<string, Tenant>();
@@ -18,7 +27,12 @@ export class FakeTenantRepository implements TenantRepository {
   }
 
   async create(input: { name: string }): Promise<Tenant> {
-    const tenant: Tenant = { id: `tenant-${this.tenants.size + 1}`, name: input.name, apiKeyHash: null };
+    const tenant: Tenant = {
+      id: `tenant-${this.tenants.size + 1}`,
+      name: input.name,
+      apiKeyHash: null,
+      plan: 'free',
+    };
     this.tenants.set(tenant.id, tenant);
     return tenant;
   }
@@ -31,8 +45,11 @@ export class FakeTenantRepository implements TenantRepository {
     return updated;
   }
 
-  /** Helper de teste, não faz parte da interface de produção. */
-  seed(tenant: Tenant): void {
-    this.tenants.set(tenant.id, tenant);
+  /**
+   * Helper de teste, não faz parte da interface de produção. `plan` é
+   * opcional — omitido, assume `'pro'` (ver docstring da classe).
+   */
+  seed(tenant: Omit<Tenant, 'plan'> & { plan?: TenantPlan }): void {
+    this.tenants.set(tenant.id, { ...tenant, plan: tenant.plan ?? 'pro' });
   }
 }

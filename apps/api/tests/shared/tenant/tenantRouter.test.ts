@@ -20,7 +20,12 @@ function buildApp(): { app: Express; access: Hs256AccessTokenService; tenants: F
   const access = new Hs256AccessTokenService(SECRET, 900);
   const hasher = new FakeApiKeyHasher();
   const tenants = new FakeTenantRepository();
-  tenants.seed({ id: 'tenant-1', name: 'Empresa Original', apiKeyHash: hasher.hash('chave-1') });
+  tenants.seed({
+    id: 'tenant-1',
+    name: 'Empresa Original',
+    apiKeyHash: hasher.hash('chave-1'),
+    plan: 'free',
+  });
 
   const authenticate = createAuthenticate(access, hasher, tenants, new NoopLogger());
 
@@ -38,14 +43,16 @@ describe('tenantRouter (Reorganizacao Perfil/Configuracoes)', () => {
       expect(res.status).toBe(401);
     });
 
-    it('qualquer papel autenticado ve o nome do tenant', async () => {
+    it('qualquer papel autenticado ve o nome e o plano do tenant', async () => {
       const { app, access } = buildApp();
       const token = access.issue({ userId: 'u1', tenantId: 'tenant-1', role: 'operator' });
       const res = await request(app)
         .get('/api/tenants/tenant-1')
         .set('authorization', `Bearer ${token}`);
       expect(res.status).toBe(200);
-      expect(res.body.tenant).toEqual({ id: 'tenant-1', name: 'Empresa Original' });
+      // Trava de plano (Lançamento suave, 2026-08-31) — o Dashboard lê `plan`
+      // deste endpoint para decidir o que liberar/bloquear na UI.
+      expect(res.body.tenant).toEqual({ id: 'tenant-1', name: 'Empresa Original', plan: 'free' });
     });
 
     it('tenant inexistente: 404', async () => {

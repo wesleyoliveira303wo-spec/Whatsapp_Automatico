@@ -34,7 +34,10 @@ export function createTenantRouter(tenantRepository: TenantRepository): Router {
         res.status(404).json({ error: 'tenant_not_found' });
         return;
       }
-      res.status(200).json({ tenant: { id: tenant.id, name: tenant.name } });
+      // `plan` (Trava de plano, Lançamento suave/2026-08-31): o Dashboard lê
+      // este campo para decidir o que liberar/bloquear na UI para um tenant
+      // no Plano Grátis. Sem endpoint novo — só mais um campo aqui.
+      res.status(200).json({ tenant: { id: tenant.id, name: tenant.name, plan: tenant.plan } });
     }),
   );
 

@@ -76,13 +76,18 @@ describe('requireApiKey', () => {
     const hasher = new FakeApiKeyHasher();
     const tenantRepository = new FakeTenantRepository();
     const apiKeyHash = hasher.hash('chave-valida');
-    tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash });
+    tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash, plan: 'pro' });
     const app = buildApp(hasher, tenantRepository, new NoopLogger());
 
     const response = await request(app).get('/protegido').set('x-api-key', 'chave-valida');
 
     expect(response.status).toBe(200);
-    expect(response.body.tenant).toEqual({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash });
+    expect(response.body.tenant).toEqual({
+      id: 'tenant-1',
+      name: 'Empresa Teste',
+      apiKeyHash,
+      plan: 'pro',
+    });
   });
 
   it('com API key válida e :tenantId na rota IGUAL ao tenant autenticado, segue para o handler', async () => {

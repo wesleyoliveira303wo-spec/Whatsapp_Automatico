@@ -11,6 +11,7 @@ import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionR
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 import { FakeAiPreferencesRepository } from './infrastructure/FakeAiPreferencesRepository';
 import { FakeOutboundMessageDispatcher } from '../whatsapp/infrastructure/FakeOutboundMessageDispatcher';
+import { FakeTenantPlanRepository } from '../conversations/FakeTenantPlanRepository';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 
 const TENANT_ID = 'tenant-1';
@@ -79,6 +80,7 @@ function buildSut(
   aiInteractionRepository: FakeAiInteractionRepository;
   outboundDispatcher: FakeOutboundMessageDispatcher;
   aiBusinessProfileRepository: FakeAiBusinessProfileRepository;
+  tenantPlanRepository: FakeTenantPlanRepository;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
@@ -86,6 +88,9 @@ function buildSut(
   const aiInteractionRepository = new FakeAiInteractionRepository();
   const outboundDispatcher = new FakeOutboundMessageDispatcher();
   const aiBusinessProfileRepository = new FakeAiBusinessProfileRepository();
+  // Trava de plano (Lançamento suave/2026-08-31) — default `'pro'`, ver
+  // `FakeTenantPlanRepository`.
+  const tenantPlanRepository = new FakeTenantPlanRepository();
   const conversationAiService = new ConversationAiService(
     aiProviderFactory,
     'claude',
@@ -107,6 +112,7 @@ function buildSut(
           PROMPT_VERSION,
           new NoopLogger(),
           aiBusinessProfileRepository,
+          tenantPlanRepository,
           undefined,
           undefined,
           options.handoffNoticeRepeatAfterMs,
@@ -122,6 +128,7 @@ function buildSut(
           PROMPT_VERSION,
           new NoopLogger(),
           aiBusinessProfileRepository,
+          tenantPlanRepository,
           historyLimit,
           undefined,
           options.handoffNoticeRepeatAfterMs,
@@ -138,6 +145,7 @@ function buildSut(
     aiInteractionRepository,
     outboundDispatcher,
     aiBusinessProfileRepository,
+    tenantPlanRepository,
   };
 }
 
@@ -512,6 +520,26 @@ describe('AiReplyJobProcessor', () => {
 
       expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(1);
       expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+    });
+
+    // Lançamento suave (2026-08-31) — Trava de plano: defesa em profundidade,
+    // o tenant pode ter sido rebaixado para o Plano Grátis DEPOIS que o job
+    // já estava na fila.
+    it('tenant rebaixado para o Plano Grátis DEPOIS do job enfileirado: não gera resposta nem despacha na re-checagem', async () => {
+      const {
+        processor,
+        conversationRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+        tenantPlanRepository,
+      } = buildSut();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      tenantPlanRepository.setPlan('free');
+
+      await processor.process(buildJobData());
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
     });
   });
 

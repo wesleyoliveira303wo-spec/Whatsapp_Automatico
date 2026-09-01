@@ -32,7 +32,23 @@ import { Conversation } from '../entities/Conversation';
  * automática: não desconecta o WhatsApp, não pausa a ingestão de mensagens,
  * não esconde nada da Dashboard, não impede o envio manual do atendente —
  * todos esses fluxos vivem fora desta função e continuam intocados.
+ *
+ * Lançamento suave (2026-08-31) — Trava de plano: quarta condição,
+ * `tenantPlanAllowsAutoReply`. Mesmo padrão do `sessionAiEnabled` — quem
+ * chama resolve `planPermiteUso(tenant.plan)` (via `TenantRepository`) e
+ * passa aqui. Um tenant no Plano Grátis nunca gera resposta automática de
+ * IA; a mensagem ainda é ingerida e aparece na Dashboard (fluxo intocado),
+ * só não vira trabalho de IA — exatamente como o Botão POWER desligado.
  */
-export function shouldAutoRespond(conversation: Conversation, sessionAiEnabled: boolean): boolean {
-  return conversation.status === 'bot' && !conversation.excludedFromPipeline && sessionAiEnabled;
+export function shouldAutoRespond(
+  conversation: Conversation,
+  sessionAiEnabled: boolean,
+  tenantPlanAllowsAutoReply: boolean,
+): boolean {
+  return (
+    conversation.status === 'bot' &&
+    !conversation.excludedFromPipeline &&
+    sessionAiEnabled &&
+    tenantPlanAllowsAutoReply
+  );
 }

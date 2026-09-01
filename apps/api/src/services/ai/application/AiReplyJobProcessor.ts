@@ -21,6 +21,8 @@ import { PromptVersion } from '../domain/PromptVersion';
 import { splitReplyIntoParagraphs } from '../domain/messageSplitting';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
 import { AiPreferencesRepository } from '../domain/repositories/AiPreferencesRepository';
+import { TenantPlanRepository } from '../../conversations/domain/repositories/TenantPlanRepository';
+import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
 import { ConversationAiService } from './ConversationAiService';
 
 /**
@@ -80,12 +82,13 @@ const DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS = 6 * 60 * 60 * 1000;
  * 1. Busca a `Conversation` via `ConversationRepository.findById()`. Se não
  *    existir mais (ex.: dado inconsistente, exclusão concorrente), descarta
  *    o job silenciosamente (loga e retorna) — não há para quem responder.
- * 2. RE-CHECA `shouldAutoRespond(conversation, sessionAiEnabled)` — a MESMA
- *    função de Domain já usada por `MessageIngestionService` ao enfileirar
- *    (Bloco 2), mas chamada de novo aqui, agora com o estado ATUAL da
- *    conversa E da IA da sessão (Fase 1, 2026-08-07: Botão POWER — lido de
- *    `AiBusinessProfileRepository`, mesma fonte usada pelo restante deste
- *    fluxo para o Cérebro da IA). Cobre o
+ * 2. RE-CHECA `shouldAutoRespond(conversation, sessionAiEnabled,
+ *    tenantPlanAllowsAutoReply)` — a MESMA função de Domain já usada por
+ *    `MessageIngestionService` ao enfileirar (Bloco 2), mas chamada de novo
+ *    aqui, agora com o estado ATUAL da conversa, da IA da sessão (Fase 1,
+ *    2026-08-07: Botão POWER, lido de `AiBusinessProfileRepository`) e do
+ *    plano do tenant (Lançamento suave, 2026-08-31: Trava de plano, lido de
+ *    `TenantPlanRepository`). Cobre o
  *    risco explícito da Milestone (§5: "Job na fila processado depois que a
  *    conversa já foi escalonada") — um job pode ter sido enfileirado quando
  *    a conversa ainda estava em modo `'bot'` e, por qualquer atraso da fila
@@ -157,6 +160,12 @@ export class AiReplyJobProcessor {
     private readonly promptVersion: PromptVersion,
     private readonly logger: Logger,
     private readonly aiBusinessProfileRepository: AiBusinessProfileRepository,
+    // Lançamento suave (2026-08-31) — Trava de plano: re-checa o plano do
+    // tenant aqui também, não só em `MessageIngestionService` ao enfileirar
+    // (mesmo racional já usado para `status`/Botão POWER: a fila pode
+    // demorar, e o tenant pode ter sido rebaixado para o Plano Grátis
+    // DEPOIS que este job já estava na fila).
+    private readonly tenantPlanRepository: TenantPlanRepository,
     private readonly historyLimit: number = DEFAULT_HISTORY_LIMIT,
     private readonly humanHandoffMessage: string = DEFAULT_HUMAN_HANDOFF_MESSAGE,
     // CORREÇÃO 2026-08-18 — ver docstring de `DEFAULT_HANDOFF_NOTICE_REPEAT_AFTER_MS`.
@@ -201,14 +210,20 @@ export class AiReplyJobProcessor {
       conversation.sessionName,
     );
     const sessionAiEnabled = profile?.aiEnabled ?? true;
+    // Trava de plano (Lançamento suave, 2026-08-31) — re-checa aqui também
+    // (ver docstring do parâmetro no construtor).
+    const tenantPlanAllowsAutoReply = planPermiteUso(
+      await this.tenantPlanRepository.getPlan(data.tenantId),
+    );
 
-    if (!shouldAutoRespond(conversation, sessionAiEnabled)) {
+    if (!shouldAutoRespond(conversation, sessionAiEnabled, tenantPlanAllowsAutoReply)) {
       this.logger.info(
-        'Job ai-reply descartado: conversa não está mais em modo bot, fora do funil, ou IA da sessão desligada (re-checagem)',
+        'Job ai-reply descartado: conversa não está mais em modo bot, fora do funil, IA da sessão desligada, ou plano do tenant não permite (re-checagem)',
         {
           ...data,
           status: conversation.status,
           sessionAiEnabled,
+          tenantPlanAllowsAutoReply,
         },
       );
       return;

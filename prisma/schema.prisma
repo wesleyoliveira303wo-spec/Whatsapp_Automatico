@@ -162,6 +162,10 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// Trava de plano (Lancamento suave, 2026-08-31) — ver enum `TenantPlan`.
+  /// Todo tenant (existente e novo, via `/register`) nasce `FREE`.
+  plan TenantPlan @default(FREE)
+
   /// Hash da API key emitida para este tenant (Production Hardening, Bloco
   /// 1) — nunca a chave em texto plano. `null` até uma chave ser emitida
   /// (provisionamento continua manual nesta milestone; ver
@@ -1235,6 +1239,21 @@ enum UserStatus {
   SUSPENDED
 
   @@map("user_status")
+}
+
+/// Plano de um tenant — Trava de plano do Lancamento suave (2026-08-31, ver
+/// `CONTEXT.md` e `docs/specs/2026-08-31-lancamento-suave.md`). `FREE` =
+/// so visualizacao (conecta WhatsApp e ve as mensagens); `PRO`/`ENTERPRISE`
+/// = uso completo. Todo tenant nasce `FREE`; ativar Pro/Enterprise e manual
+/// (script `setTenantPlan`) enquanto nao ha billing automatico. Mapeado para
+/// a uniao literal do Domain (`'free'|'pro'|'enterprise'`) via Record em
+/// `PrismaTenantRepository`, mesmo padrao de `UserRole`.
+enum TenantPlan {
+  FREE
+  PRO
+  ENTERPRISE
+
+  @@map("tenant_plan")
 }
 
 // ---------- Models (Auth / Multiusuario — Milestone 5, Bloco M5A) ----------

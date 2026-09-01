@@ -10,6 +10,7 @@ import {
   FakeOptOutDetector,
   FakeCampaignReplyTracker,
 } from './testDoubles';
+import { FakeTenantPlanRepository } from './FakeTenantPlanRepository';
 
 function buildSut(): {
   sut: MessageIngestionService;
@@ -20,6 +21,7 @@ function buildSut(): {
   aiRateLimiter: FakeAiRateLimiter;
   contactResolver: FakeContactResolver;
   optOutDetector: FakeOptOutDetector;
+  tenantPlanRepository: FakeTenantPlanRepository;
   campaignReplyTracker: FakeCampaignReplyTracker;
 } {
   const conversationRepository = new FakeConversationRepository();
@@ -29,6 +31,9 @@ function buildSut(): {
   const aiRateLimiter = new FakeAiRateLimiter();
   const contactResolver = new FakeContactResolver();
   const optOutDetector = new FakeOptOutDetector();
+  // Trava de plano (Lançamento suave/2026-08-31) — default `'pro'`, ver
+  // `FakeTenantPlanRepository`.
+  const tenantPlanRepository = new FakeTenantPlanRepository();
   const campaignReplyTracker = new FakeCampaignReplyTracker();
   const sut = new MessageIngestionService(
     conversationRepository,
@@ -38,6 +43,7 @@ function buildSut(): {
     aiRateLimiter,
     contactResolver,
     optOutDetector,
+    tenantPlanRepository,
     undefined,
     campaignReplyTracker,
   );
@@ -50,6 +56,7 @@ function buildSut(): {
     aiRateLimiter,
     contactResolver,
     optOutDetector,
+    tenantPlanRepository,
     campaignReplyTracker,
   };
 }
@@ -285,6 +292,45 @@ describe('MessageIngestionService', () => {
         aiAvailabilityRepository.setEnabled('tenant-1', 'outra-sessao', false);
 
         await sut.handle(buildInboundMessage({ sessionName: 'default' }));
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      });
+    });
+
+    // Lançamento suave (2026-08-31) — Trava de plano.
+    describe('Trava de plano (Tenant.plan)', () => {
+      it('Plano Grátis: NÃO agenda resposta de IA, mesmo com a conversa em modo bot e a IA da sessão ligada', async () => {
+        const { sut, aiReplyScheduler, tenantPlanRepository } = buildSut();
+        tenantPlanRepository.setPlan('free');
+
+        await sut.handle(buildInboundMessage());
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+      });
+
+      it('Plano Grátis: a mensagem é persistida e a conversa criada normalmente (só-leitura, não perde a mensagem)', async () => {
+        const { sut, conversationRepository, messageRepository, tenantPlanRepository } = buildSut();
+        tenantPlanRepository.setPlan('free');
+
+        await sut.handle(buildInboundMessage());
+
+        expect(conversationRepository.getAll()).toHaveLength(1);
+        expect(messageRepository.getAll()).toHaveLength(1);
+      });
+
+      it('Plano Pro (default do fake): agenda resposta normalmente', async () => {
+        const { sut, aiReplyScheduler } = buildSut();
+
+        await sut.handle(buildInboundMessage());
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      });
+
+      it('Plano Enterprise: agenda resposta normalmente', async () => {
+        const { sut, aiReplyScheduler, tenantPlanRepository } = buildSut();
+        tenantPlanRepository.setPlan('enterprise');
+
+        await sut.handle(buildInboundMessage());
 
         expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
       });
@@ -674,6 +720,7 @@ describe('MessageIngestionService', () => {
       const aiRateLimiter = new FakeAiRateLimiter();
       const contactResolver = new FakeContactResolver();
       const optOutDetector = new FakeOptOutDetector();
+      const tenantPlanRepository = new FakeTenantPlanRepository();
       const sutWithoutTracker = new MessageIngestionService(
         conversationRepository,
         messageRepository,
@@ -682,6 +729,7 @@ describe('MessageIngestionService', () => {
         aiRateLimiter,
         contactResolver,
         optOutDetector,
+        tenantPlanRepository,
       ); // sem `campaignReplyTracker`
 
       await expect(sutWithoutTracker.handle(buildInboundMessage())).resolves.toBeUndefined();
@@ -696,6 +744,7 @@ describe('MessageIngestionService', () => {
       const aiRateLimiter = new FakeAiRateLimiter();
       const contactResolver = new FakeContactResolver();
       const optOutDetector = new FakeOptOutDetector();
+      const tenantPlanRepository = new FakeTenantPlanRepository();
       const sutLateWired = new MessageIngestionService(
         conversationRepository,
         messageRepository,
@@ -704,6 +753,7 @@ describe('MessageIngestionService', () => {
         aiRateLimiter,
         contactResolver,
         optOutDetector,
+        tenantPlanRepository,
       );
       const lateTracker = new FakeCampaignReplyTracker();
       sutLateWired.setCampaignReplyTracker(lateTracker);

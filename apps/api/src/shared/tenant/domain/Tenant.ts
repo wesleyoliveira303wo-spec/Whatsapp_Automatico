@@ -8,6 +8,8 @@
  * princípio já aplicado em `WhatsAppSession`, que também não carrega objetos
  * de relação do Prisma).
  */
+import { TenantPlan } from './TenantPlan';
+
 export interface Tenant {
   id: string;
   name: string;
@@ -15,4 +17,10 @@ export interface Tenant {
    * emitida — provisionamento de tenant e emissão de chave continuam
    * manuais nesta milestone (sem endpoint HTTP, ver Production Hardening). */
   apiKeyHash: string | null;
+  /**
+   * Trava de plano (Lançamento suave, 2026-08-31, ver `planPermiteUso` e
+   * `CONTEXT.md`). Sempre presente — a coluna do banco é `NOT NULL DEFAULT
+   * 'FREE'`. Um tenant novo (via `/register`) nasce `'free'`.
+   */
+  plan: TenantPlan;
 }
