@@ -5,9 +5,11 @@
  * testável. Nada aqui é inventado — cada recurso citado existe no produto
  * (ver CLAUDE.md §18 / DECISIONS.md).
  *
- * Preços: Grátis = R$ 0 (o registro self-serve é gratuito hoje). Pro =
- * R$ 99/mês, ainda "em breve" (o plano não foi construído) — decisão do
- * fundador, 2026-08-29.
+ * Preços (Lançamento suave, T5 — ver `CONTEXT.md`): Grátis = R$ 0 (só
+ * visualização — a IA NÃO responde), Pro = R$ 99/mês (1 número, uso
+ * completo), Enterprise = R$ 349/mês (até 5 números). Sem cobrança
+ * automática: o cliente cria a conta Grátis e ativa o plano pago falando
+ * com o comercial no WhatsApp (21) 98292-5941 (Billing manual).
  */
 
 export const NAV_LINKS = [
@@ -189,18 +191,17 @@ export const CONFIANCA = {
 
 export const PLANOS = {
   eyebrow: 'Planos',
-  title: 'Comece grátis. Escale quando fizer sentido.',
+  title: 'Comece grátis. Ative o Pro quando quiser a IA atendendo.',
   free: {
     name: 'Grátis',
     price: 'R$ 0',
     period: '/ sempre',
-    tagline: 'Pra começar a atender com IA hoje.',
+    tagline: 'Conecte um WhatsApp e veja as mensagens chegando. A IA não responde.',
     features: [
       '1 número de WhatsApp',
-      'IA treinável (Cérebro + assistente guiado)',
-      'Atendimento humano com handoff',
-      'Pipeline automático e Analytics',
-      'Contatos, tags e respostas rápidas',
+      'Mensagens dos clientes na Dashboard em tempo real',
+      'Explore Cérebro da IA, Pipeline, Campanhas e Analytics por dentro',
+      'A IA não responde e você não envia mensagens pela Dashboard',
     ],
     cta: 'Criar conta grátis',
   },
@@ -208,19 +209,35 @@ export const PLANOS = {
     name: 'Pro',
     price: 'R$ 99',
     period: '/ mês',
-    badge: 'Em breve',
-    tagline: 'Pra quem vai escalar o atendimento.',
+    highlight: true,
+    tagline: 'O atendimento com IA funcionando de verdade, em 1 número.',
     features: [
-      'Tudo do plano Grátis',
-      'Vários números de WhatsApp',
-      'Campanhas em volume',
-      'Prioridade no atendimento',
+      '1 número de WhatsApp, uso completo',
+      'A IA responde seus clientes automaticamente',
+      'Atendimento humano com handoff (texto e mídia)',
+      'Pipeline automático, Campanhas e Analytics',
+      'Contatos, tags, respostas rápidas e resumo de conversa',
     ],
     cta: 'Criar conta grátis',
-    ctaNote: 'Comece no Grátis e ative o Pro quando lançar.',
+    ctaNote:
+      'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Pro.',
+  },
+  enterprise: {
+    name: 'Enterprise',
+    price: 'R$ 349',
+    period: '/ mês',
+    tagline: 'Para quem atende em vários números de WhatsApp.',
+    features: [
+      'Até 5 números de WhatsApp',
+      'Tudo do plano Pro em cada número',
+      'Cada número com seu próprio Cérebro da IA e funil',
+    ],
+    cta: 'Criar conta grátis',
+    ctaNote:
+      'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Enterprise.',
   },
   footnote:
-    'Plano Pro em breve. O plano Grátis não tem compromisso e você pode cancelar quando quiser.',
+    'A cobrança é combinada direto com o comercial (Pix). O plano Grátis não tem compromisso e você pode cancelar quando quiser.',
 } as const;
 
 export const FAQ = {

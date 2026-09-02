@@ -347,7 +347,7 @@ export function Planos(): JSX.Element {
           {PLANOS.title}
         </h2>
       </Reveal>
-      <div className="mt-10 grid max-w-3xl gap-5 sm:grid-cols-2">
+      <div className="mt-10 grid gap-5 lg:grid-cols-3">
         <Reveal>
           <div className="flex h-full flex-col rounded-2xl border border-border bg-card p-7">
             <p className="text-sm font-semibold">{PLANOS.free.name}</p>
@@ -356,7 +356,7 @@ export function Planos(): JSX.Element {
               <span className="text-[13px] text-muted-foreground">{PLANOS.free.period}</span>
             </p>
             <p className="mt-2 text-sm text-muted-foreground">{PLANOS.free.tagline}</p>
-            <Button asChild className="mt-5 w-full">
+            <Button asChild variant="outline" className="mt-5 w-full">
               <Link href="/register">{PLANOS.free.cta}</Link>
             </Button>
             <PlanFeatureList features={PLANOS.free.features} />
@@ -365,7 +365,7 @@ export function Planos(): JSX.Element {
         <Reveal delay={0.08}>
           <div className="relative flex h-full flex-col rounded-2xl border border-primary/30 bg-primary/[0.05] p-7">
             <span className="absolute right-4 top-4 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
-              {PLANOS.pro.badge}
+              Mais popular
             </span>
             <p className="text-sm font-semibold">{PLANOS.pro.name}</p>
             <p className="mt-2.5 flex items-baseline gap-1.5">
@@ -373,11 +373,28 @@ export function Planos(): JSX.Element {
               <span className="text-[13px] text-muted-foreground">{PLANOS.pro.period}</span>
             </p>
             <p className="mt-2 text-sm text-muted-foreground">{PLANOS.pro.tagline}</p>
-            <Button asChild variant="outline" className="mt-5 w-full">
+            <Button asChild className="mt-5 w-full">
               <Link href="/register">{PLANOS.pro.cta}</Link>
             </Button>
             <p className="mt-2 text-center text-xs text-muted-foreground">{PLANOS.pro.ctaNote}</p>
             <PlanFeatureList features={PLANOS.pro.features} />
+          </div>
+        </Reveal>
+        <Reveal delay={0.16}>
+          <div className="flex h-full flex-col rounded-2xl border border-border bg-card p-7">
+            <p className="text-sm font-semibold">{PLANOS.enterprise.name}</p>
+            <p className="mt-2.5 flex items-baseline gap-1.5">
+              <span className="text-4xl font-bold tracking-tight">{PLANOS.enterprise.price}</span>
+              <span className="text-[13px] text-muted-foreground">{PLANOS.enterprise.period}</span>
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{PLANOS.enterprise.tagline}</p>
+            <Button asChild variant="outline" className="mt-5 w-full">
+              <Link href="/register">{PLANOS.enterprise.cta}</Link>
+            </Button>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              {PLANOS.enterprise.ctaNote}
+            </p>
+            <PlanFeatureList features={PLANOS.enterprise.features} />
           </div>
         </Reveal>
       </div>
