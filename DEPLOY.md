@@ -1,5 +1,10 @@
 # DEPLOY — Produção na Hostinger VPS (beta fechado)
 
+> **Alternativa de custo zero (T9):** para subir numa VM Oracle Cloud Always Free,
+> com Caddy e HTTPS automático em `<ip>.sslip.io` (sem domínio, sem VPS paga),
+> use **[`DEPLOY_ORACLE.md`](DEPLOY_ORACLE.md)** — ou rode o assistente
+> `bash scripts/deploy-t9-wizard.sh`, que gera o `.env` e guia o passo a passo.
+
 Runbook completo do primeiro deploy. Arquitetura aprovada: **1 VPS Hostinger KVM 2**, Docker Compose com 5 containers, Nginx no host com Let's Encrypt.
 
 > **Convenção usada em todo o documento:**

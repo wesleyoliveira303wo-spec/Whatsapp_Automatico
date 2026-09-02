@@ -1,0 +1,40 @@
+# Caddy — proxy reverso com HTTPS automático para o deploy T9.
+#
+# Alvo (ver DEPLOY_ORACLE.md): uma VM Oracle Cloud Always Free, SEM domínio
+# próprio. O host é `<ip-com-tracos>.sslip.io` (sslip.io resolve
+# `1-2-3-4.sslip.io` -> `1.2.3.4`), e o Caddy tira sozinho um certificado
+# Let's Encrypt para esse host via desafio HTTP-01 na porta 80.
+#
+# Roteamento:
+#   /health e /health/*  -> container `api`   (UptimeRobot bate em /health/ready)
+#   todo o resto         -> container `dashboard` (Next.js, que é o BFF — o
+#                            navegador NUNCA fala direto com a `api`)
+#
+# `SITE_HOST` e `ACME_EMAIL` vêm do `.env` (bloco `environment:` do
+# docker-compose.caddy.yml).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_HOST} {
+	encode zstd gzip
+
+	# Sonda de saúde da API (liveness em /health, readiness em /health/ready).
+	# É o único caminho que NÃO vai para o dashboard.
+	@health path /health /health/*
+	handle @health {
+		reverse_proxy api:4000
+	}
+
+	# Aplicação: o dashboard serve a UI E as rotas de BFF (`/api/*` do Next.js).
+	handle {
+		reverse_proxy dashboard:3000
+	}
+
+	# Log de acesso em JSON no stdout do container (docker compose logs caddy).
+	log {
+		output stdout
+		format json
+	}
+}

@@ -1,0 +1,42 @@
+# Overlay: coloca o Caddy na frente da aplicação, com HTTPS automático.
+#
+# Uso NA VM (junto do compose de produção):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.caddy.yml up -d --build
+#
+# É a alternativa ao "Nginx no host" descrito em DEPLOY.md, para o alvo do
+# T9 (VM Oracle Cloud Always Free, sem domínio próprio — host `<ip>.sslip.io`).
+# O Caddy entra na MESMA rede do compose, então alcança `api` e `dashboard`
+# pelos nomes de serviço; os binds `127.0.0.1:4000/3000` do compose de
+# produção seguem existindo só para depurar de dentro da VM e não conflitam.
+#
+# Portas 80/443 precisam estar abertas na Security List da VCN E no firewall
+# da instância (netfilter) — ver DEPLOY_ORACLE.md, as imagens Ubuntu da
+# Oracle bloqueiam tudo por padrão.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      # Host público: `<ip-com-tracos>.sslip.io` (ex.: 129-159-1-2.sslip.io).
+      SITE_HOST: ${SITE_HOST}
+      # E-mail para o Let's Encrypt (avisos de expiração/problemas).
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persiste o certificado emitido — sem isto, cada `up` recomeça o ACME
+      # e você bate no rate limit do Let's Encrypt.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - dashboard
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
