@@ -19,6 +19,13 @@ import ConversationDetailPanel from '../../components/ConversationDetailPanel';
 import * as clientApi from '../../lib/clientApi';
 import type { ConversationMessage, ConversationSummary } from '../../lib/clientApi';
 
+// Menu "⋮" da conversa (2026-08-29) — ConversationHeaderMenu usa useRouter
+// (redirecionamento após excluir), mesmo padrão de mock já usado em
+// SessionActions.test.tsx.
+jest.mock('next/router', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}));
+
 jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   // Fase 1, Bloco F1.10: `useConversationDetail` passou a usar
@@ -123,6 +130,18 @@ describe('ConversationDetailPanel — scroll', () => {
     // Estado inicial: nunca mostra o botão de "ir para recentes" — a
     // abertura já posiciona no fim.
     expect(screen.queryByText('Ir para mensagens recentes')).not.toBeInTheDocument();
+  });
+
+  it('cabeçalho mostra o menu "⋮" no lugar do antigo botão de atualizar isolado', async () => {
+    (clientApi.fetchConversationMessages as jest.Mock).mockResolvedValue({
+      messages: [buildMessage('m1', 'oi')],
+    });
+
+    render(<ConversationDetailPanel sessionName="vendas" conversationId="c1" />);
+    await flushMicrotasks();
+
+    expect(screen.getByRole('button', { name: 'Mais ações' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Atualizar conversa' })).not.toBeInTheDocument();
   });
 
   it('NÃO reposiciona o scroll num poll sem mensagem nova, mesmo com o operador tendo rolado pra cima', async () => {
