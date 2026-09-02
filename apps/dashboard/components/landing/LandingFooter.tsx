@@ -4,9 +4,8 @@ import { BRAND } from '@/lib/brand';
 
 /**
  * Landing page (2026-08-29) — rodapé. Só links que existem de verdade:
- * âncoras da própria página, `/login` e `/register`. Termos e Privacidade
- * ficam marcados "(em breve)" — essas páginas ainda não existem, e o brief
- * proíbe inventar link.
+ * âncoras da própria página, `/login`, `/register` e, desde o T6 do
+ * Lançamento suave, `/termos` e `/privacidade`.
  */
 const PRODUTO = [
   { href: '#recursos', label: 'Recursos' },
@@ -57,13 +56,21 @@ export default function LandingFooter({ year }: { year: number }): JSX.Element {
             </ul>
           </nav>
 
-          <div>
+          <nav aria-label="Legal">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Legal</p>
-            <ul className="mt-3.5 flex flex-col gap-2.5 text-sm text-muted-foreground/70">
-              <li>Termos de uso <span className="text-xs">(em breve)</span></li>
-              <li>Privacidade <span className="text-xs">(em breve)</span></li>
+            <ul className="mt-3.5 flex flex-col gap-2.5 text-sm text-muted-foreground">
+              <li>
+                <Link href="/termos" className="transition-colors hover:text-foreground">
+                  Termos de uso
+                </Link>
+              </li>
+              <li>
+                <Link href="/privacidade" className="transition-colors hover:text-foreground">
+                  Privacidade
+                </Link>
+              </li>
             </ul>
-          </div>
+          </nav>
         </div>
 
         <p className="mt-12 border-t border-border/60 pt-6 text-xs text-muted-foreground/70">

@@ -58,4 +58,18 @@ describe('LandingPage', () => {
     const footer = screen.getByRole('contentinfo');
     expect(within(footer).getByText(/© 2026 Francis/)).toBeInTheDocument();
   });
+
+  it('rodapé linka /termos e /privacidade (T6 — não mais "em breve")', () => {
+    render(<LandingPage currentYear={2026} />);
+    const footer = screen.getByRole('contentinfo');
+    expect(within(footer).getByRole('link', { name: 'Termos de uso' })).toHaveAttribute(
+      'href',
+      '/termos',
+    );
+    expect(within(footer).getByRole('link', { name: 'Privacidade' })).toHaveAttribute(
+      'href',
+      '/privacidade',
+    );
+    expect(within(footer).queryByText(/\(em breve\)/i)).not.toBeInTheDocument();
+  });
 });

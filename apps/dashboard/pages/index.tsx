@@ -63,7 +63,8 @@ const JSON_LD = {
     '@type': 'Offer',
     price: '0',
     priceCurrency: 'BRL',
-    description: 'Plano Grátis — 1 número de WhatsApp, IA treinável, pipeline e analytics.',
+    description:
+      'Plano Grátis — conecte 1 número de WhatsApp e acompanhe as mensagens. A IA responde no Plano Pro.',
   },
 };
 
