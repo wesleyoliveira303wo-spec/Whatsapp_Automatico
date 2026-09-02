@@ -7,6 +7,7 @@ import { CampaignNotFoundError } from '../../../../src/services/campaigns/domain
 import { NoRecipientsSelectedError } from '../../../../src/services/campaigns/domain/errors/NoRecipientsSelectedError';
 import { InvalidCampaignTransitionError } from '../../../../src/services/campaigns/domain/errors/InvalidCampaignTransitionError';
 import { SendingEngineNotConfiguredError } from '../../../../src/services/campaigns/domain/errors/SendingEngineNotConfiguredError';
+import { CampaignRequiresPaidPlanError } from '../../../../src/services/campaigns/domain/errors/CampaignRequiresPaidPlanError';
 import { CampaignMediaTooLargeError } from '../../../../src/services/campaigns/domain/errors/CampaignMediaTooLargeError';
 import { CampaignMediaTypeMismatchError } from '../../../../src/services/campaigns/domain/errors/CampaignMediaTypeMismatchError';
 import { CampaignMediaNotFoundError } from '../../../../src/services/campaigns/domain/errors/CampaignMediaNotFoundError';
@@ -590,6 +591,84 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
 
       expect(campaign.status).toBe('running');
       expect(dispatcher.scheduled).toHaveLength(1);
+    });
+  });
+
+  describe('Trava de plano (T3, Lançamento suave 2026-08-31)', () => {
+    function buildFreeSut(): {
+      service: CampaignService;
+      campaigns: FakeCampaignRepository;
+      dispatcher: FakeCampaignSendDispatcher;
+    } {
+      const tenants = new FakeTenantRepository();
+      tenants.seed({ id: 'tenant-1', name: 'Empresa Grátis', apiKeyHash: 'hash', plan: 'free' });
+      const campaigns = new FakeCampaignRepository();
+      const dispatcher = new FakeCampaignSendDispatcher();
+      const service = new CampaignService(campaigns, tenants, new NoopLogger(), dispatcher);
+      return { service, campaigns, dispatcher };
+    }
+
+    it('startCampaign(): tenant free é recusado com CampaignRequiresPaidPlanError, sem agendar nada', async () => {
+      const { service, campaigns, dispatcher } = buildFreeSut();
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      await expect(service.startCampaign('tenant-1', campaignId)).rejects.toThrow(
+        CampaignRequiresPaidPlanError,
+      );
+      expect(dispatcher.scheduled).toHaveLength(0);
+    });
+
+    it('reopenCampaign(): tenant free é recusado com CampaignRequiresPaidPlanError', async () => {
+      const { service, campaigns } = buildFreeSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'completed',
+      });
+      campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-1',
+        status: 'failed',
+      });
+
+      await expect(service.reopenCampaign('tenant-1', campaignId)).rejects.toThrow(
+        CampaignRequiresPaidPlanError,
+      );
+    });
+
+    it.each(['pro', 'enterprise'] as const)(
+      'startCampaign(): tenant %s inicia normalmente',
+      async (plan) => {
+        const tenants = new FakeTenantRepository();
+        tenants.seed({ id: 'tenant-1', name: 'Empresa Paga', apiKeyHash: 'hash', plan });
+        const campaigns = new FakeCampaignRepository();
+        const dispatcher = new FakeCampaignSendDispatcher();
+        const service = new CampaignService(campaigns, tenants, new NoopLogger(), dispatcher);
+        const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+        campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+        const campaign = await service.startCampaign('tenant-1', campaignId);
+
+        expect(campaign.status).toBe('running');
+        expect(dispatcher.scheduled).toHaveLength(1);
+      },
+    );
+
+    it('criar/rascunhar campanha continua liberado para tenant free', async () => {
+      const { service, campaigns } = buildFreeSut();
+      campaigns.seedEligibility('contact-1', neutral);
+
+      const result = await service.createCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        name: 'Rascunho grátis',
+        messageTemplate: 'Oi',
+        contactIds: ['contact-1'],
+      });
+
+      expect(result.campaign.status).toBe('draft');
     });
   });
 

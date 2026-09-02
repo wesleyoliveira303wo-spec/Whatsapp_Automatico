@@ -5,6 +5,7 @@ import { CampaignNotFoundError } from '../domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../domain/errors/NoRecipientsSelectedError';
 import { InvalidCampaignTransitionError } from '../domain/errors/InvalidCampaignTransitionError';
 import { SendingEngineNotConfiguredError } from '../domain/errors/SendingEngineNotConfiguredError';
+import { CampaignRequiresPaidPlanError } from '../domain/errors/CampaignRequiresPaidPlanError';
 import { CampaignMediaTooLargeError } from '../domain/errors/CampaignMediaTooLargeError';
 import { CampaignMediaTypeMismatchError } from '../domain/errors/CampaignMediaTypeMismatchError';
 import { CampaignMediaNotFoundError } from '../domain/errors/CampaignMediaNotFoundError';
@@ -50,6 +51,12 @@ export function createCampaignsErrorHandler(logger: Logger): ErrorRequestHandler
     }
     if (error instanceof SendingEngineNotConfiguredError) {
       res.status(503).json({ error: 'sending_engine_not_configured', message: error.message });
+      return;
+    }
+    // Trava de plano (T3, Lançamento suave): disparo de campanha é recurso
+    // pago — tenant `free` recebe 403 (não um erro de ambiente).
+    if (error instanceof CampaignRequiresPaidPlanError) {
+      res.status(403).json({ error: 'campaign_requires_paid_plan', message: error.message });
       return;
     }
     // Fase de Prospecção IA (2026-08-29) — mesmo racional/mesmo status de

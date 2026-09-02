@@ -1,6 +1,8 @@
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
+import { Tenant } from '../../../shared/tenant/domain/Tenant';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
+import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
 import {
   Campaign,
   CampaignRecipientSummary,
@@ -12,6 +14,7 @@ import { CampaignNotFoundError } from '../domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../domain/errors/NoRecipientsSelectedError';
 import { InvalidCampaignTransitionError } from '../domain/errors/InvalidCampaignTransitionError';
 import { SendingEngineNotConfiguredError } from '../domain/errors/SendingEngineNotConfiguredError';
+import { CampaignRequiresPaidPlanError } from '../domain/errors/CampaignRequiresPaidPlanError';
 import { CampaignMediaTooLargeError } from '../domain/errors/CampaignMediaTooLargeError';
 import { CampaignMediaTypeMismatchError } from '../domain/errors/CampaignMediaTypeMismatchError';
 import { CampaignMediaNotFoundError } from '../domain/errors/CampaignMediaNotFoundError';
@@ -316,7 +319,7 @@ export class CampaignService {
    * método rodar de novo e reagendá-lo.
    */
   async startCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
-    await this.assertTenantExists(tenantId);
+    await this.assertTenantPlanAllowsSending(tenantId);
     if (!this.campaignSendDispatcher) {
       throw new SendingEngineNotConfiguredError();
     }
@@ -350,7 +353,7 @@ export class CampaignService {
    * estavam pendentes + os recém-resetados).
    */
   async reopenCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
-    await this.assertTenantExists(tenantId);
+    await this.assertTenantPlanAllowsSending(tenantId);
     if (!this.campaignSendDispatcher) {
       throw new SendingEngineNotConfiguredError();
     }
@@ -587,11 +590,30 @@ export class CampaignService {
     return media;
   }
 
-  private async assertTenantExists(tenantId: string): Promise<void> {
+  private async assertTenantExists(tenantId: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findById(tenantId);
     if (!tenant) {
       this.logger.warn('Operação de campanha recusada: tenant inexistente', { tenantId });
       throw new TenantNotFoundError(tenantId);
     }
+    return tenant;
+  }
+
+  /**
+   * Trava de plano (T3, Lançamento suave 2026-08-31): só um tenant pago
+   * (`pro`/`enterprise`) pode DISPARAR uma campanha. Criar/rascunhar/calcular
+   * destinatários continua liberado para todos — ver
+   * `CampaignRequiresPaidPlanError`. Fonte única da regra: `planPermiteUso`.
+   */
+  private async assertTenantPlanAllowsSending(tenantId: string): Promise<Tenant> {
+    const tenant = await this.assertTenantExists(tenantId);
+    if (!planPermiteUso(tenant.plan)) {
+      this.logger.warn('Disparo de campanha recusado: Plano Grátis', {
+        tenantId,
+        plan: tenant.plan,
+      });
+      throw new CampaignRequiresPaidPlanError();
+    }
+    return tenant;
   }
 }

@@ -23,7 +23,11 @@ import { GenerateLeadMessagesService } from '../../../../src/services/campaigns/
  */
 function buildApp(
   principal?: Principal,
-  options: { withDispatcher?: boolean; withoutAiProvider?: boolean } = {},
+  options: {
+    withDispatcher?: boolean;
+    withoutAiProvider?: boolean;
+    tenant1Plan?: 'free' | 'pro' | 'enterprise';
+  } = {},
 ): {
   app: express.Express;
   campaigns: FakeCampaignRepository;
@@ -31,7 +35,12 @@ function buildApp(
   aiProvider: FakeAiProvider;
 } {
   const tenantRepository = new FakeTenantRepository();
-  tenantRepository.seed({ id: 'tenant-1', name: 'Empresa Um', apiKeyHash: 'hash' });
+  tenantRepository.seed({
+    id: 'tenant-1',
+    name: 'Empresa Um',
+    apiKeyHash: 'hash',
+    plan: options.tenant1Plan,
+  });
   tenantRepository.seed({ id: 'tenant-2', name: 'Empresa Dois', apiKeyHash: 'hash-2' });
   const campaigns = new FakeCampaignRepository();
   const dispatcher = options.withDispatcher ? new FakeCampaignSendDispatcher() : undefined;
@@ -426,6 +435,20 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
       expect(response.status).toBe(200);
       expect(response.body.campaign.status).toBe('running');
       expect(dispatcher!.scheduled).toHaveLength(1);
+    });
+
+    it('tenant no Plano Grátis: 403 campaign_requires_paid_plan (T3, Lançamento suave)', async () => {
+      const { app, campaigns } = buildApp(person('administrator'), {
+        withDispatcher: true,
+        tenant1Plan: 'free',
+      });
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      const response = await request(app).post(`${basePath('tenant-1')}/${campaignId}/start`);
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('campaign_requires_paid_plan');
     });
 
     it('sem motor de envio configurado (modo degradado): 503', async () => {
