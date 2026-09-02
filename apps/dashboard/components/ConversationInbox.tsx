@@ -71,6 +71,11 @@ export default function ConversationInbox({
   const statusParam: ConversationStatus | undefined =
     filter === 'bot' || filter === 'human' ? filter : undefined;
   const needsHumanAttentionParam = filter === 'waiting' ? true : undefined;
+  // Menu "⋮" da conversa (2026-08-29) — diferente de needsHumanAttentionParam,
+  // `archived` é SEMPRE um boolean explícito do lado da API (nunca "sem
+  // filtro"): só a aba "Arquivadas" manda `true`, qualquer outra manda
+  // `false` (a inbox geral nunca deveria misturar arquivadas com visíveis).
+  const archivedParam = filter === 'archived';
 
   const {
     conversations,
@@ -81,7 +86,7 @@ export default function ConversationInbox({
     loadingMore,
     hasMore,
     applyLocalUpdate,
-  } = useConversationsList(statusParam, sessionName, needsHumanAttentionParam);
+  } = useConversationsList(statusParam, sessionName, needsHumanAttentionParam, archivedParam);
 
   const visibleConversations = useMemo(() => {
     let list = conversations;

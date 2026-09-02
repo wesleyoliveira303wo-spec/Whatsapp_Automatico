@@ -93,6 +93,7 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
     stageSetBy: 'ai',
     stageUpdatedAt: new Date('2026-07-10T12:00:00Z'),
     excludedFromPipeline: false,
+    archived: false,
     tags: [],
     createdAt: new Date('2026-07-10T12:00:00Z'),
     updatedAt: new Date('2026-07-10T12:00:00Z'),
@@ -434,6 +435,198 @@ describe('Integração authenticate + RBAC + conversationsRouter (M3 Bloco 5 / M
 
     expect(response.status).toBe(200);
     expect(response.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c-dentro']);
+  });
+
+  // --- POST .../unread (Menu "⋮" da conversa, 2026-08-29) ---
+
+  it('POST .../unread marca como não lida', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ unreadCount: 0 }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/unread')
+      .set('x-api-key', 'chave-tenant-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.unreadCount).toBeGreaterThan(0);
+  });
+
+  it('marcar como não lida em conversa inexistente -> 404 conversation_not_found', async () => {
+    const { app } = buildApp();
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversa-inexistente/unread')
+      .set('x-api-key', 'chave-tenant-1');
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: 'conversation_not_found' });
+  });
+
+  // --- POST .../archive (Menu "⋮" da conversa, 2026-08-29) ---
+
+  it('POST .../archive arquiva/desarquiva conforme o corpo', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ archived: false }));
+
+    const archiveResponse = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/archive')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ archived: true });
+    expect(archiveResponse.status).toBe(200);
+    expect(archiveResponse.body).toMatchObject({ archived: true });
+
+    const unarchiveResponse = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/archive')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ archived: false });
+    expect(unarchiveResponse.status).toBe(200);
+    expect(unarchiveResponse.body).toMatchObject({ archived: false });
+  });
+
+  it('Operator (crachá) também pode arquivar (message:send, sem exigir ownership)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(
+      buildConversation({ status: 'human', assignedToUserId: 'op-2', archived: false }),
+    );
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/archive')
+      .set('authorization', bearer(access, 'op-1', 'operator'))
+      .send({ archived: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ archived: true });
+  });
+
+  it('ReadOnly NÃO pode arquivar -> 403 forbidden (RBAC)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/archive')
+      .set('authorization', bearer(access, 'ro-1', 'read_only'))
+      .send({ archived: true });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'forbidden' });
+  });
+
+  it('POST .../archive rejeita corpo sem "archived" booleano -> 400 invalid_params', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversation-1/archive')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: 'invalid_params' });
+  });
+
+  it('arquivar conversa inexistente -> 404 conversation_not_found', async () => {
+    const { app } = buildApp();
+    const response = await request(app)
+      .post('/api/tenants/tenant-1/conversations/conversa-inexistente/archive')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ archived: true });
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: 'conversation_not_found' });
+  });
+
+  it('[IDOR] chave do tenant-1 não arquiva conversa do tenant-2 (403)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ tenantId: 'tenant-2' }));
+
+    const response = await request(app)
+      .post('/api/tenants/tenant-2/conversations/conversation-1/archive')
+      .set('x-api-key', 'chave-tenant-1')
+      .send({ archived: true });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
+  });
+
+  it('GET / com ?archived=true lista só as arquivadas', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ id: 'c-arquivada', archived: true }));
+    conversationRepository.seed(buildConversation({ id: 'c-visivel', archived: false }));
+
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/conversations?archived=true')
+      .set('x-api-key', 'chave-tenant-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c-arquivada']);
+  });
+
+  it('GET / sem "archived" na query filtra archived:false por padrão', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ id: 'c-arquivada', archived: true }));
+    conversationRepository.seed(buildConversation({ id: 'c-visivel', archived: false }));
+
+    const response = await request(app)
+      .get('/api/tenants/tenant-1/conversations')
+      .set('x-api-key', 'chave-tenant-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.conversations.map((c: { id: string }) => c.id)).toEqual(['c-visivel']);
+  });
+
+  // --- DELETE .../:conversationId (Menu "⋮" da conversa, 2026-08-29 — exclusão IRREVERSÍVEL) ---
+
+  it('chave da empresa (plano máquina) exclui a conversa definitivamente (204)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .delete('/api/tenants/tenant-1/conversations/conversation-1')
+      .set('x-api-key', 'chave-tenant-1');
+
+    expect(response.status).toBe(204);
+    expect(await conversationRepository.findById('conversation-1')).toBeUndefined();
+  });
+
+  it('Administrator (crachá) também pode excluir (conversation:delete)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .delete('/api/tenants/tenant-1/conversations/conversation-1')
+      .set('authorization', bearer(access, 'admin-1', 'administrator'));
+
+    expect(response.status).toBe(204);
+  });
+
+  it('Operator NÃO pode excluir -> 403 forbidden (conversation:delete é ADMINISTRATOR+, não message:send)', async () => {
+    const { app, conversationRepository, access } = buildApp();
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app)
+      .delete('/api/tenants/tenant-1/conversations/conversation-1')
+      .set('authorization', bearer(access, 'op-1', 'operator'));
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'forbidden' });
+  });
+
+  it('excluir conversa inexistente -> 404 conversation_not_found', async () => {
+    const { app } = buildApp();
+    const response = await request(app)
+      .delete('/api/tenants/tenant-1/conversations/conversa-inexistente')
+      .set('x-api-key', 'chave-tenant-1');
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ error: 'conversation_not_found' });
+  });
+
+  it('[IDOR] chave do tenant-1 não exclui conversa do tenant-2 (403)', async () => {
+    const { app, conversationRepository } = buildApp();
+    conversationRepository.seed(buildConversation({ tenantId: 'tenant-2' }));
+
+    const response = await request(app)
+      .delete('/api/tenants/tenant-2/conversations/conversation-1')
+      .set('x-api-key', 'chave-tenant-1');
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: 'tenant_mismatch' });
   });
 
   // --- POST .../save-contact (retrofit visual 2026-08-18, botão "Salvar contato") ---

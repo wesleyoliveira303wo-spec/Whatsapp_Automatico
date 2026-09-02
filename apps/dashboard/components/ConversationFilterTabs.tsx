@@ -1,4 +1,4 @@
-export type ConversationFilterValue = 'all' | 'unread' | 'waiting' | 'bot' | 'human';
+export type ConversationFilterValue = 'all' | 'unread' | 'waiting' | 'bot' | 'human' | 'archived';
 
 interface ConversationFilterTabsProps {
   value: ConversationFilterValue;
@@ -11,6 +11,10 @@ const OPTIONS: Array<{ label: string; value: ConversationFilterValue }> = [
   { label: 'Aguardando', value: 'waiting' },
   { label: 'IA', value: 'bot' },
   { label: 'Humano', value: 'human' },
+  // Menu "⋮" da conversa (2026-08-29) — aba dedicada às conversas
+  // arquivadas (some da lista principal quando marcada, mas nunca fica
+  // sem lugar pra achar depois).
+  { label: 'Arquivadas', value: 'archived' },
 ];
 
 /**

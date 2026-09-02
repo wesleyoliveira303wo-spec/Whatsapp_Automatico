@@ -38,10 +38,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Reforma do escalonamento (2026-07-25) — mesmo racional, congelado no momento da conexão.
   const needsHumanAttention =
     typeof req.query.needsHumanAttention === 'string' ? req.query.needsHumanAttention : undefined;
+  // Menu "⋮" da conversa (2026-08-29) — mesmo racional, congelado no momento da conexão.
+  const archived = typeof req.query.archived === 'string' ? req.query.archived : undefined;
 
   runSsePoller(req, res, () =>
     callConversationsApi(session, '', {
-      query: { status, limit, sessionName, needsHumanAttention },
+      query: { status, limit, sessionName, needsHumanAttention, archived },
     }),
   );
 }

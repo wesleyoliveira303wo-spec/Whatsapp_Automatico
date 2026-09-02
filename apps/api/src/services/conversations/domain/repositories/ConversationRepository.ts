@@ -43,6 +43,17 @@ export interface FindAllByTenantOptions {
    * conversas, incluindo as marcadas — só o Pipeline/Analytics as escondem).
    */
   excludedFromPipeline?: boolean;
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — quando `false` (default do
+   * consumidor padrão, a inbox geral), filtra fora as conversas com
+   * `archived: true`. `true` = só as arquivadas (aba "Arquivadas").
+   * Diferente de `excludedFromPipeline` (que é opt-in/sem filtro por
+   * padrão): aqui o CHAMADOR (`ConversationsService.listConversations`)
+   * sempre passa um valor explícito, nunca `undefined` — não existe hoje
+   * nenhum consumidor que precise ver arquivadas e não-arquivadas juntas
+   * numa mesma lista.
+   */
+  archived: boolean;
 }
 
 /** Página de resultado de `findAllByTenant` — `nextCursor` ausente indica que não há próxima página. */
@@ -264,6 +275,15 @@ export interface ConversationRepository {
   markAsRead(tenantId: string, conversationId: string): Promise<Conversation | undefined>;
 
   /**
+   * Menu "⋮" da conversa (2026-08-29) — marca manualmente como não lida
+   * (`unreadCount: 1`, suficiente para o indicador visual acender; não é
+   * uma contagem real de mensagens não vistas, é uma marcação do operador
+   * — mesmo espírito de "marcar e-mail como não lido"). `undefined` se a
+   * conversa não existir/não pertencer ao tenant.
+   */
+  markAsUnread(tenantId: string, conversationId: string): Promise<Conversation | undefined>;
+
+  /**
    * Grava `stage`/`stageSetBy`/`stageUpdatedAt` de uma conversa — pipeline
    * de CRM (Milestone 6, Bloco M6H-5, 2026-07-30). Usado tanto por ação
    * humana explícita (`ConversationsService.updateStage`, sempre permitida,
@@ -303,6 +323,27 @@ export interface ConversationRepository {
     conversationId: string,
     excluded: boolean,
   ): Promise<Conversation | undefined>;
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — grava `archived`/`archivedAt` juntos
+   * (`true` + `now()`, ou `false` + `null`). `undefined` se a conversa não
+   * existir/não pertencer ao tenant.
+   */
+  setArchived(
+    tenantId: string,
+    conversationId: string,
+    archived: boolean,
+  ): Promise<Conversation | undefined>;
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — remove a conversa DEFINITIVAMENTE.
+   * `WhatsAppMessage`/`WhatsAppConversationTag` vinculadas somem junto via
+   * `onDelete: Cascade` já existente no schema. `CampaignRecipient.conversationId`
+   * (sem FK, acoplamento fraco de propósito) fica como referência solta —
+   * aceitável, mesmo padrão já documentado ali. Devolve `true` se algo foi
+   * apagado, `false` se a conversa não existia/não pertencia ao tenant.
+   */
+  deleteById(tenantId: string, conversationId: string): Promise<boolean>;
 
   /**
    * Grava o resumo da conversa gerado pela IA (Redesign 2026-08-05, R5) —

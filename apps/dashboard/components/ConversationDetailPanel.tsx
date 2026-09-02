@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowDown, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowDown } from 'lucide-react';
 import ConversationStatusBadge from './ConversationStatusBadge';
 import ConversationActions from './ConversationActions';
 import MessageTimeline from './MessageTimeline';
@@ -15,6 +15,7 @@ import { formatContactDisplayNameParts } from '@/lib/formatters';
 import { markConversationAsRead, type ConversationSummary } from '@/lib/clientApi';
 import ContactAvatar from './ContactAvatar';
 import DisplayNameParts from './DisplayNameParts';
+import ConversationHeaderMenu from './ConversationHeaderMenu';
 
 interface ConversationDetailPanelProps {
   sessionName: string;
@@ -238,15 +239,12 @@ export default function ConversationDetailPanel({
           excludedFromPipeline={conversation.excludedFromPipeline}
           onUpdated={applyUpdate}
         />
-        <button
-          type="button"
-          title="Atualizar"
-          aria-label="Atualizar conversa"
-          onClick={refresh}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <ConversationHeaderMenu
+          conversation={conversation}
+          sessionName={sessionName}
+          onUpdated={applyUpdate}
+          onRefresh={refresh}
+        />
       </div>
 
       {errorMessage && (

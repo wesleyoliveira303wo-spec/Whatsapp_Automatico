@@ -58,6 +58,13 @@ export interface ListConversationsOptions {
   needsHumanAttention?: boolean;
   /** ADR #94 (2026-08-01) — filtra por dentro/fora do funil comercial (ver `ConversationRepository.FindAllByTenantOptions`). Ausente = sem filtro. */
   excludedFromPipeline?: boolean;
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — filtra por arquivada/não arquivada
+   * (ver `ConversationRepository.FindAllByTenantOptions`). Diferente de
+   * `excludedFromPipeline`: aqui SEMPRE há um valor efetivo — default
+   * `false` (não arquivadas), nunca "sem filtro".
+   */
+  archived?: boolean;
 }
 
 /**
@@ -456,6 +463,7 @@ export class ConversationsService {
       sessionName: options.sessionName,
       needsHumanAttention: options.needsHumanAttention,
       excludedFromPipeline: options.excludedFromPipeline,
+      archived: options.archived ?? false,
     });
   }
 
@@ -573,6 +581,20 @@ export class ConversationsService {
   }
 
   /**
+   * Menu "⋮" da conversa (2026-08-29) — marca manualmente como não lida.
+   * Sem `ConversationActor`/auditoria (mesmo racional de `markAsRead`: é uma
+   * ação de leitura/visualização do dia a dia, não uma mudança de negócio).
+   */
+  async markAsUnread(tenantId: string, conversationId: string): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    const updated = await this.conversationRepository.markAsUnread(tenantId, conversationId);
+    if (!updated) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    return updated;
+  }
+
+  /**
    * `POST .../conversations/:id/stage` — pipeline de CRM (Milestone 6, Bloco
    * M6H-5): move a conversa manualmente para um novo estágio (board Kanban,
    * arrastar card entre colunas). SEMPRE grava `stageSetBy: 'human'` — é o
@@ -649,6 +671,58 @@ export class ConversationsService {
       meta,
     );
     return updated;
+  }
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — arquiva/desarquiva (some/reaparece
+   * na lista principal de Conversas, sem apagar nada). Mesmo padrão de
+   * `setExcludedFromPipeline`: com `ConversationActor`/auditoria, porque é
+   * uma decisão operacional explícita, não uma ação de leitura passiva.
+   */
+  async setArchived(
+    tenantId: string,
+    conversationId: string,
+    archived: boolean,
+    actor: ConversationActor = { canResumeAny: true },
+    meta: ConversationActionMeta = {},
+  ): Promise<Conversation> {
+    await this.assertTenantExists(tenantId);
+    const updated = await this.conversationRepository.setArchived(
+      tenantId,
+      conversationId,
+      archived,
+    );
+    if (!updated) {
+      throw new ConversationNotFoundError(conversationId);
+    }
+    await this.audit(
+      tenantId,
+      actor.userId,
+      archived ? 'conversation.archived' : 'conversation.unarchived',
+      conversationId,
+      meta,
+    );
+    return updated;
+  }
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — exclusão DEFINITIVA. Auditoria
+   * ANTES de apagar (senão o registro de auditoria referenciaria uma
+   * conversa que já não existe mais mid-operação — ordem deliberada,
+   * diferente dos outros métodos, que auditam depois do sucesso).
+   */
+  async deleteConversation(
+    tenantId: string,
+    conversationId: string,
+    actor: ConversationActor = { canResumeAny: true },
+    meta: ConversationActionMeta = {},
+  ): Promise<void> {
+    await this.assertTenantExists(tenantId);
+    await this.audit(tenantId, actor.userId, 'conversation.deleted', conversationId, meta);
+    const deleted = await this.conversationRepository.deleteById(tenantId, conversationId);
+    if (!deleted) {
+      throw new ConversationNotFoundError(conversationId);
+    }
   }
 
   /**

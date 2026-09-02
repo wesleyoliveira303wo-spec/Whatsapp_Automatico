@@ -128,6 +128,14 @@ export interface Conversation {
    */
   excludedFromPipeline: boolean;
   /**
+   * Menu "⋮" da conversa (2026-08-29) — `true` = fora da lista principal de
+   * Conversas (filtro padrão), sem apagar nada. Reversível. `false` por
+   * padrão — toda conversa nasce visível.
+   */
+  archived: boolean;
+  /** Quando `archived` foi definido `true` pela última vez — `undefined` quando `archived: false`. */
+  archivedAt?: Date;
+  /**
    * Fase 1, Bloco F1.7 (2026-08-01) — trecho da última mensagem (qualquer
    * direção), para a lista de Conversas. Denormalizado, gravado por
    * `PrismaMessageRepository.create()` (único ponto de escrita — ver

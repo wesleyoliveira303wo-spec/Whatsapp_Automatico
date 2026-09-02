@@ -694,6 +694,18 @@ model WhatsAppConversation {
   /// (marcar um cliente de verdade como "não comercial") é pior que não
   /// marcar nada.
   excludedFromPipeline Boolean @default(false) @map("excluded_from_pipeline")
+  /// Menu "⋮" da conversa (2026-08-29) — "Arquivar" some da lista principal
+  /// de Conversas (filtro `archived: false` por padrão na listagem geral),
+  /// SEM apagar nada — histórico de mensagens continua 100% acessível, só
+  /// sai da tela padrão (mesmo racional ORTOGONAL de `excludedFromPipeline`
+  /// acima, mas para outro propósito: aquele é sobre RELEVÂNCIA COMERCIAL,
+  /// este é sobre RUÍDO NA CAIXA DE ENTRADA). Reversível a qualquer momento
+  /// (desarquivar). `false`/`null` por padrão — toda conversa nasce visível.
+  archived   Boolean   @default(false)
+  /// Quando `archived` foi definido `true` pela última vez — `null` quando
+  /// `archived: false` (mesmo padrão de `escalatedAt`: o timestamp só existe
+  /// enquanto o estado que ele descreve está ativo).
+  archivedAt DateTime? @map("archived_at")
   /// Fase 1, Bloco F1.7 (2026-08-01) — trecho da ÚLTIMA mensagem (qualquer
   /// direção, inbound ou outbound), para a linha da lista de Conversas
   /// (padrão Intercom/Slack/WhatsApp Web: "prévia" ao lado do horário).

@@ -34,6 +34,7 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
     stageSetBy: 'ai',
     stageUpdatedAt: new Date('2026-07-10T12:00:00Z'),
     excludedFromPipeline: false,
+    archived: false,
     tags: [],
     createdAt: new Date('2026-07-10T12:00:00Z'),
     updatedAt: new Date('2026-07-10T12:00:00Z'),
@@ -320,6 +321,9 @@ describe('ConversationsService', () => {
         status: undefined,
         limit: 50,
         cursor: undefined,
+        // Menu "⋮" da conversa (2026-08-29) — listConversations() sempre
+        // passa um boolean explícito ao repositório (default false).
+        archived: false,
       });
     });
 
@@ -333,6 +337,7 @@ describe('ConversationsService', () => {
         status: undefined,
         limit: 200,
         cursor: undefined,
+        archived: false,
       });
     });
 
@@ -350,6 +355,7 @@ describe('ConversationsService', () => {
         status: 'human',
         limit: 10,
         cursor: 'conversation-anterior',
+        archived: false,
       });
     });
 
@@ -829,6 +835,78 @@ describe('ConversationsService', () => {
       await expect(service.markAsRead('tenant-inexistente', 'conversation-1')).rejects.toThrow(
         TenantNotFoundError,
       );
+    });
+  });
+
+  describe('markAsUnread() (Menu "⋮" da conversa, 2026-08-29)', () => {
+    it('marca a conversa como não lida (unreadCount > 0)', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(buildConversation({ unreadCount: 0 }));
+
+      const result = await service.markAsUnread('tenant-1', 'conversation-1');
+
+      expect(result.unreadCount).toBeGreaterThan(0);
+    });
+
+    it('lanca ConversationNotFoundError quando a conversa nao existe', async () => {
+      const { service } = buildService();
+
+      await expect(
+        service.markAsUnread('tenant-1', 'conversa-inexistente'),
+      ).rejects.toBeInstanceOf(ConversationNotFoundError);
+    });
+  });
+
+  describe('setArchived() (Menu "⋮" da conversa, 2026-08-29)', () => {
+    it('arquiva a conversa e grava archivedAt', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(buildConversation({ archived: false }));
+
+      const result = await service.setArchived('tenant-1', 'conversation-1', true);
+
+      expect(result.archived).toBe(true);
+      expect(result.archivedAt).toBeDefined();
+    });
+
+    it('desarquivar limpa archivedAt', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(
+        buildConversation({ archived: true, archivedAt: new Date('2026-08-01T00:00:00Z') }),
+      );
+
+      const result = await service.setArchived('tenant-1', 'conversation-1', false);
+
+      expect(result.archived).toBe(false);
+      expect(result.archivedAt).toBeUndefined();
+    });
+
+    it('lanca ConversationNotFoundError quando a conversa nao existe', async () => {
+      const { service } = buildService();
+
+      await expect(
+        service.setArchived('tenant-1', 'conversa-inexistente', true),
+      ).rejects.toBeInstanceOf(ConversationNotFoundError);
+    });
+  });
+
+  describe('deleteConversation() (Menu "⋮" da conversa, 2026-08-29)', () => {
+    it('remove a conversa de verdade', async () => {
+      const { service, conversationRepository } = buildService();
+      conversationRepository.seed(buildConversation());
+
+      await service.deleteConversation('tenant-1', 'conversation-1');
+
+      await expect(service.getConversation('tenant-1', 'conversation-1')).rejects.toBeInstanceOf(
+        ConversationNotFoundError,
+      );
+    });
+
+    it('lanca ConversationNotFoundError quando a conversa nao existe', async () => {
+      const { service } = buildService();
+
+      await expect(
+        service.deleteConversation('tenant-1', 'conversa-inexistente'),
+      ).rejects.toBeInstanceOf(ConversationNotFoundError);
     });
   });
 

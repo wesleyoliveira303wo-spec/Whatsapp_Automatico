@@ -22,6 +22,7 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
     stageSetBy: 'ai',
     stageUpdatedAt: new Date('2026-08-06T12:00:00Z'),
     excludedFromPipeline: false,
+    archived: false,
     tags: [],
     aiSummaryMessageCount: 0,
     createdAt: new Date('2026-08-06T12:00:00Z'),

@@ -71,6 +71,8 @@ interface WhatsAppConversationRow {
   stageSetBy: PrismaConversationStageSetBy;
   stageUpdatedAt: Date;
   excludedFromPipeline: boolean;
+  archived: boolean;
+  archivedAt: Date | null;
   lastMessagePreview: string | null;
   lastMessageAt: Date | null;
   aiSummary: string | null;
@@ -131,6 +133,8 @@ function toDomain(row: WhatsAppConversationRow): Conversation {
     stageSetBy: STAGE_SET_BY_TO_DOMAIN[row.stageSetBy],
     stageUpdatedAt: row.stageUpdatedAt,
     excludedFromPipeline: row.excludedFromPipeline,
+    archived: row.archived,
+    archivedAt: row.archivedAt ?? undefined,
     lastMessagePreview: row.lastMessagePreview ?? undefined,
     lastMessageAt: row.lastMessageAt ?? undefined,
     aiSummary: row.aiSummary ?? undefined,
@@ -315,7 +319,7 @@ export class PrismaConversationRepository implements ConversationRepository {
     tenantId: string,
     options: FindAllByTenantOptions,
   ): Promise<ConversationPage> {
-    const { status, limit, cursor, sessionName, needsHumanAttention, excludedFromPipeline } =
+    const { status, limit, cursor, sessionName, needsHumanAttention, excludedFromPipeline, archived } =
       options;
 
     const rows = await this.prisma.whatsAppConversation.findMany({
@@ -330,6 +334,10 @@ export class PrismaConversationRepository implements ConversationRepository {
         // ADR #94 (2026-08-01): filtro explícito só quando informado — a
         // inbox geral continua mostrando tudo por padrão.
         ...(excludedFromPipeline !== undefined ? { excludedFromPipeline } : {}),
+        // Menu "⋮" da conversa (2026-08-29) — diferente de excludedFromPipeline,
+        // este filtro é SEMPRE aplicado (o chamador sempre passa um boolean
+        // explícito, ver docstring da option).
+        archived,
       },
       // Ordenação por `lastMessageAt` (2026-08-01) — representa exclusivamente
       // a última mensagem trocada (qualquer direção/origem). Escrito em UM
@@ -462,6 +470,32 @@ export class PrismaConversationRepository implements ConversationRepository {
   }
 
   /**
+   * Menu "⋮" da conversa (2026-08-29) — ver docstring do port. Mesmo padrão
+   * de `markAsRead`: preserva `updatedAt` (marcar como não lida manualmente
+   * não deve bumpar a posição da conversa na fila ordenada por atividade).
+   */
+  async markAsUnread(tenantId: string, conversationId: string): Promise<Conversation | undefined> {
+    const current = await this.prisma.whatsAppConversation.findFirst({
+      where: { id: conversationId, tenantId },
+      select: { updatedAt: true },
+    });
+    if (!current) {
+      return undefined;
+    }
+
+    const result = await this.prisma.whatsAppConversation.updateMany({
+      where: { id: conversationId, tenantId },
+      data: { unreadCount: 1, updatedAt: current.updatedAt },
+    });
+
+    if (result.count === 0) {
+      return undefined;
+    }
+
+    return this.findById(conversationId);
+  }
+
+  /**
    * Pipeline de CRM (Milestone 6, Bloco M6H-5, 2026-07-30) — ver docstring
    * do port. `updateMany` pelo mesmo motivo dos demais métodos de escrita
    * (defesa em profundidade, `id` E `tenantId`). `stageUpdatedAt` sempre
@@ -511,6 +545,39 @@ export class PrismaConversationRepository implements ConversationRepository {
     }
 
     return this.findById(conversationId);
+  }
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — ver docstring do port. `updateMany`
+   * pelo mesmo motivo dos demais métodos de escrita (defesa em profundidade).
+   */
+  async setArchived(
+    tenantId: string,
+    conversationId: string,
+    archived: boolean,
+  ): Promise<Conversation | undefined> {
+    const result = await this.prisma.whatsAppConversation.updateMany({
+      where: { id: conversationId, tenantId },
+      data: { archived, archivedAt: archived ? new Date() : null },
+    });
+
+    if (result.count === 0) {
+      return undefined;
+    }
+
+    return this.findById(conversationId);
+  }
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — ver docstring do port. Remove a
+   * conversa DEFINITIVAMENTE (`deleteMany` + checar `count`, mesmo padrão de
+   * `PrismaCampaignRepository.deleteById`).
+   */
+  async deleteById(tenantId: string, conversationId: string): Promise<boolean> {
+    const result = await this.prisma.whatsAppConversation.deleteMany({
+      where: { id: conversationId, tenantId },
+    });
+    return result.count > 0;
   }
 
   async updateAiSummary(

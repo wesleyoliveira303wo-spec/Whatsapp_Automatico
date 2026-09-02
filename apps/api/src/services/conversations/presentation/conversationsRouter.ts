@@ -84,6 +84,18 @@ const listConversationsQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((value) => (value === undefined ? undefined : value === 'true')),
+  /**
+   * Menu "⋮" da conversa (2026-08-29) — `?archived=true` lista só as
+   * arquivadas; ausente/`false` (default) lista só as NÃO arquivadas —
+   * diferente de `excludedFromPipeline`, aqui SEMPRE há um valor efetivo
+   * (nunca "sem filtro"), porque a inbox geral nunca deveria misturar
+   * conversas arquivadas com não-arquivadas na mesma lista.
+   */
+  archived: z
+    .enum(['true', 'false'])
+    .optional()
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 const listMessagesQuerySchema = z.object({ limit: z.coerce.number().int().positive().optional() });
@@ -139,6 +151,11 @@ const updateStageBodySchema = z.object({
 /** Corpo do `POST .../exclude-from-pipeline` — ADR #94 (2026-08-01). */
 const setExcludedFromPipelineBodySchema = z.object({
   excluded: z.boolean(),
+});
+
+/** Corpo do `POST .../archive` — Menu "⋮" da conversa (2026-08-29). */
+const setArchivedBodySchema = z.object({
+  archived: z.boolean(),
 });
 
 /** Corpo do `POST .../save-contact` — retrofit visual 2026-08-18. `name` é opcional (contato pode ser salvo sem nome). */
@@ -404,6 +421,27 @@ export function createConversationsRouter(conversationsService: ConversationsSer
   );
 
   router.post(
+    '/:conversationId/unread',
+    // Menu "⋮" da conversa (2026-08-29) — mesma permissão de marcar como
+    // lida: quem já pode VER a conversa pode marcá-la como não lida.
+    requirePermission('conversation:read'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(conversationIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      const conversation = await conversationsService.markAsUnread(
+        params.tenantId,
+        params.conversationId,
+      );
+      res.status(200).json(conversation);
+    }),
+  );
+
+  router.post(
     '/:conversationId/stage',
     // Pipeline de CRM (Milestone 6, Bloco M6H-5): mover um card no board não
     // é uma ação de POSSE do atendimento (diferente de escalate/resume) —
@@ -456,6 +494,57 @@ export function createConversationsRouter(conversationsService: ConversationsSer
         toMeta(req),
       );
       res.status(200).json(conversation);
+    }),
+  );
+
+  router.post(
+    '/:conversationId/archive',
+    // Menu "⋮" da conversa (2026-08-29) — mesma permissão de mover um card
+    // no Pipeline/marcar exclude-from-pipeline (`message:send`): ação
+    // operacional do dia a dia, reversível, qualquer operador pode.
+    requirePermission('message:send'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(conversationIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(setArchivedBodySchema, req.body, res);
+      if (!body) return;
+
+      const conversation = await conversationsService.setArchived(
+        params.tenantId,
+        params.conversationId,
+        body.archived,
+        toActor(req),
+        toMeta(req),
+      );
+      res.status(200).json(conversation);
+    }),
+  );
+
+  router.delete(
+    '/:conversationId',
+    // Menu "⋮" da conversa (2026-08-29) — exclusão é IRREVERSÍVEL, permissão
+    // própria e mais restrita (`conversation:delete`, ADMINISTRATOR+), nunca
+    // `message:send` (usado pelas ações reversíveis desta mesma tela).
+    requirePermission('conversation:delete'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(conversationIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+
+      await conversationsService.deleteConversation(
+        params.tenantId,
+        params.conversationId,
+        toActor(req),
+        toMeta(req),
+      );
+      res.status(204).send();
     }),
   );
 

@@ -166,6 +166,58 @@ export class FakeConversationRepository implements ConversationRepository {
   }
 
   /**
+   * Menu "⋮" da conversa (2026-08-29). Espelha
+   * `PrismaConversationRepository.markAsUnread()`: seta `unreadCount: 1`,
+   * `undefined` se não existir/não pertencer ao tenant.
+   */
+  async markAsUnread(tenantId: string, conversationId: string): Promise<Conversation | undefined> {
+    const existing = this.conversations.get(conversationId);
+    if (!existing || existing.tenantId !== tenantId) {
+      return undefined;
+    }
+    const updated: Conversation = { ...existing, unreadCount: 1 };
+    this.conversations.set(conversationId, updated);
+    return updated;
+  }
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29). Espelha
+   * `PrismaConversationRepository.setArchived()`: grava `archived`/
+   * `archivedAt` juntos, `undefined` se não existir/não pertencer ao tenant.
+   */
+  async setArchived(
+    tenantId: string,
+    conversationId: string,
+    archived: boolean,
+  ): Promise<Conversation | undefined> {
+    const existing = this.conversations.get(conversationId);
+    if (!existing || existing.tenantId !== tenantId) {
+      return undefined;
+    }
+    const updated: Conversation = {
+      ...existing,
+      archived,
+      archivedAt: archived ? new Date() : undefined,
+    };
+    this.conversations.set(conversationId, updated);
+    return updated;
+  }
+
+  /**
+   * Menu "⋮" da conversa (2026-08-29). Espelha
+   * `PrismaConversationRepository.deleteById()`: `true` se algo foi
+   * removido, `false` se não existir/não pertencer ao tenant.
+   */
+  async deleteById(tenantId: string, conversationId: string): Promise<boolean> {
+    const existing = this.conversations.get(conversationId);
+    if (!existing || existing.tenantId !== tenantId) {
+      return false;
+    }
+    this.conversations.delete(conversationId);
+    return true;
+  }
+
+  /**
    * Pipeline de CRM (Milestone 6, Bloco M6H-5, 2026-07-30). Espelha
    * `PrismaConversationRepository.updateStage()`: `undefined` se não
    * existir/não pertencer ao tenant; sempre reescreve `stage`/`stageSetBy`/
@@ -202,8 +254,15 @@ export class FakeConversationRepository implements ConversationRepository {
     tenantId: string,
     options: FindAllByTenantOptions,
   ): Promise<ConversationPage> {
-    const { status, limit, cursor, sessionName, needsHumanAttention, excludedFromPipeline } =
-      options;
+    const {
+      status,
+      limit,
+      cursor,
+      sessionName,
+      needsHumanAttention,
+      excludedFromPipeline,
+      archived,
+    } = options;
 
     let filtered = Array.from(this.conversations.values())
       .filter((c) => c.tenantId === tenantId)
@@ -216,6 +275,9 @@ export class FakeConversationRepository implements ConversationRepository {
         (c) =>
           excludedFromPipeline === undefined || c.excludedFromPipeline === excludedFromPipeline,
       )
+      // Menu "⋮" da conversa (2026-08-29) — diferente de excludedFromPipeline,
+      // este filtro é SEMPRE aplicado (espelha `PrismaConversationRepository`).
+      .filter((c) => c.archived === archived)
       // Ordenação por `updatedAt` (não `createdAt`) desde 2026-07-25 — espelha
       // `PrismaConversationRepository.findAllByTenant` (ver docstring lá).
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime() || (a.id < b.id ? 1 : -1));

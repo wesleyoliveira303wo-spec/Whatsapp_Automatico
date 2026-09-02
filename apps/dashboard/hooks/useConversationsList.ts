@@ -58,11 +58,13 @@ export function useConversationsList(
   status?: ConversationStatus,
   sessionName?: string,
   needsHumanAttention?: boolean,
+  archived?: boolean,
 ): UseConversationsListResult {
   const query = new URLSearchParams();
   if (status) query.set('status', status);
   if (sessionName) query.set('sessionName', sessionName);
   if (needsHumanAttention) query.set('needsHumanAttention', 'true');
+  if (archived !== undefined) query.set('archived', String(archived));
   const queryString = query.toString();
   const streamUrl = `/api/conversations/stream${queryString ? `?${queryString}` : ''}`;
   const {
@@ -86,7 +88,7 @@ export function useConversationsList(
     setLoadedCursor(undefined);
     setLoadMoreError(null);
     setLocalOverrides({});
-  }, [status, sessionName, needsHumanAttention]);
+  }, [status, sessionName, needsHumanAttention, archived]);
 
   const applyLocalUpdate = useCallback((conversation: ConversationSummary) => {
     setLocalOverrides((overrides) => ({ ...overrides, [conversation.id]: conversation }));
@@ -127,7 +129,13 @@ export function useConversationsList(
     if (!effectiveCursor || loadingMore) return;
     setLoadingMore(true);
     setLoadMoreError(null);
-    fetchConversations({ status, sessionName, needsHumanAttention, cursor: effectiveCursor })
+    fetchConversations({
+      status,
+      sessionName,
+      needsHumanAttention,
+      archived,
+      cursor: effectiveCursor,
+    })
       .then((page) => {
         setLoadedPages((pages) => [...pages, page.conversations]);
         setLoadedCursor(page.nextCursor);
@@ -138,7 +146,7 @@ export function useConversationsList(
       .finally(() => {
         setLoadingMore(false);
       });
-  }, [effectiveCursor, loadingMore, status, sessionName, needsHumanAttention]);
+  }, [effectiveCursor, loadingMore, status, sessionName, needsHumanAttention, archived]);
 
   const merged = useMemo(
     () => mergeConversationPages(livePage, loadedPages),
