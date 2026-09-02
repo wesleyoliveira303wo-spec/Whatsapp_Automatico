@@ -2,6 +2,7 @@ import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
 import SessionLayout from '@/components/SessionLayout';
 import CampaignDetailPanel from '@/components/CampaignDetailPanel';
+import PlanGate from '@/components/PlanGate';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 
@@ -38,7 +39,9 @@ export default function CampaignDetailPage({
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
         <div className="max-w-[900px] px-6 pb-12 pt-5">
-          <CampaignDetailPanel sessionName={sessionName} campaignId={campaignId} />
+          <PlanGate feature="As Campanhas">
+            <CampaignDetailPanel sessionName={sessionName} campaignId={campaignId} />
+          </PlanGate>
         </div>
       </div>
     </SessionLayout>

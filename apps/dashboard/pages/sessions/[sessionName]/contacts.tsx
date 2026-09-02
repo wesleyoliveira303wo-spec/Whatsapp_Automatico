@@ -2,6 +2,7 @@ import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
 import SessionLayout from '@/components/SessionLayout';
 import ContactsPanel from '@/components/ContactsPanel';
+import PlanGate from '@/components/PlanGate';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 import type { ManagedUserRole } from '@/lib/clientApi';
@@ -57,7 +58,9 @@ export default function ContactsPage({
             Gerencie seus contatos e mantenha seu relacionamento sempre organizado.
           </p>
 
-          <ContactsPanel canManage={canManage} />
+          <PlanGate feature="Os Contatos">
+            <ContactsPanel canManage={canManage} />
+          </PlanGate>
         </div>
       </div>
     </SessionLayout>

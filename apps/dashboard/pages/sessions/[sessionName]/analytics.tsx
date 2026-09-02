@@ -4,6 +4,7 @@ import Head from 'next/head';
 import { motion } from 'framer-motion';
 import { staggerContainer } from '@/lib/motion';
 import SessionLayout from '@/components/SessionLayout';
+import PlanGate from '@/components/PlanGate';
 import AnalyticsRangePicker from '@/components/AnalyticsRangePicker';
 import MetricCard from '@/components/MetricCard';
 import ChartCard from '@/components/ChartCard';
@@ -89,6 +90,7 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
         <div className="max-w-[1120px] px-6 pb-10 pt-5">
+          <PlanGate feature="O Analytics">
           <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
             <div>
               <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
@@ -223,6 +225,7 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
               />
             </ChartCard>
           </div>
+          </PlanGate>
         </div>
       </div>
     </SessionLayout>

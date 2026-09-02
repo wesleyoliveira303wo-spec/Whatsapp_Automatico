@@ -3,6 +3,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import SessionLayout from '@/components/SessionLayout';
 import CampaignCreateForm from '@/components/CampaignCreateForm';
+import PlanGate from '@/components/PlanGate';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 
@@ -52,7 +53,9 @@ export default function CampaignCreatePage({
           <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
             Combine contatos salvos, uma planilha e/ou números digitados manualmente.
           </p>
-          <CampaignCreateForm sessionName={sessionName} onClose={backToList} />
+          <PlanGate feature="As Campanhas">
+            <CampaignCreateForm sessionName={sessionName} onClose={backToList} />
+          </PlanGate>
         </div>
       </div>
     </SessionLayout>

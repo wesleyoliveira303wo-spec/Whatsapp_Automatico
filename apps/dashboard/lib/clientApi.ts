@@ -187,10 +187,19 @@ export function updateMyProfile(
   return request('/api/auth/me', { method: 'PATCH', body: JSON.stringify(changes) });
 }
 
-/** Nome da empresa (aba "Empresa" de Configuracoes). */
+/** Plano do tenant — Trava de plano (Lançamento suave). Espelha `TenantPlan` da API. */
+export type TenantPlan = 'free' | 'pro' | 'enterprise';
+
+/** Nome da empresa (aba "Empresa" de Configuracoes) + plano (T4 — Trava de plano). */
 export interface TenantInfo {
   id: string;
   name: string;
+  /**
+   * `GET /api/tenants/:tenantId` devolve `plan` desde o #2 (T1). Opcional aqui
+   * só por robustez com respostas antigas em cache — o Dashboard trata a
+   * ausência como "não é grátis" (não bloqueia nada por engano).
+   */
+  plan?: TenantPlan;
 }
 
 export function fetchTenant(): Promise<{ tenant: TenantInfo }> {

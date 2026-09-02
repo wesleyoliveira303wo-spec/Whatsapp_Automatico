@@ -2,6 +2,7 @@ import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
 import SessionLayout from '@/components/SessionLayout';
 import PipelineBoard from '@/components/PipelineBoard';
+import PlanGate from '@/components/PlanGate';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 
@@ -41,7 +42,9 @@ export default function PipelinePage({ tenantId, sessionName }: PipelinePageProp
         <title>{pageTitle(`Pipeline · ${sessionName}`)}</title>
       </Head>
       <div className="h-full">
-        <PipelineBoard sessionName={sessionName} />
+        <PlanGate feature="O Pipeline" className="m-6">
+          <PipelineBoard sessionName={sessionName} />
+        </PlanGate>
       </div>
     </SessionLayout>
   );

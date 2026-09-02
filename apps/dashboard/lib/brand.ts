@@ -23,6 +23,20 @@ export const BRAND = {
     'Atendimento no WhatsApp com IA — atende, responde e chama um humano quando precisa.',
 } as const;
 
+/**
+ * WhatsApp do comercial (Lançamento suave — Billing manual). Um cliente que
+ * quer o Plano Pro/Enterprise chama este número para combinar o pagamento
+ * (Pix) e ter o plano ativado no banco. Formato E.164 sem "+", pronto para
+ * `https://wa.me/<numero>`.
+ */
+export const COMMERCIAL_WHATSAPP = '5521982925941';
+
+/** Link `wa.me` para falar com o comercial, opcionalmente com mensagem pré-preenchida. */
+export function commercialWhatsAppLink(message?: string): string {
+  const base = `https://wa.me/${COMMERCIAL_WHATSAPP}`;
+  return message ? `${base}?text=${encodeURIComponent(message)}` : base;
+}
+
 /** Separador padrão entre o título da página e o nome da marca. */
 const TITLE_SEPARATOR = ' · ';
 

@@ -2,6 +2,7 @@ import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
 import SessionLayout from '@/components/SessionLayout';
 import AiProfilePanel from '@/components/AiProfilePanel';
+import PlanGate from '@/components/PlanGate';
 import { requireProtectedPageSession } from '@/lib/auth';
 import { pageTitle } from '@/lib/brand';
 
@@ -60,7 +61,9 @@ export default function AiPage({ tenantId, sessionName }: AiPageProps): JSX.Elem
             O que o Francis sabe sobre o seu negócio.
           </p>
 
-          <AiProfilePanel sessionName={sessionName} />
+          <PlanGate feature="O Cérebro da IA">
+            <AiProfilePanel sessionName={sessionName} />
+          </PlanGate>
         </div>
       </div>
     </SessionLayout>

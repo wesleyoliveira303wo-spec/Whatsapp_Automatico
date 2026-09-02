@@ -3,6 +3,7 @@ import SessionRail from '@/components/SessionRail';
 import SessionHeader from '@/components/SessionHeader';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
 import { AiToggleProvider } from '@/contexts/AiToggleContext';
+import { PlanProvider } from '@/contexts/PlanContext';
 
 interface SessionLayoutProps {
   tenantId: string;
@@ -41,23 +42,25 @@ interface SessionLayoutProps {
  */
 export default function SessionLayout({ sessionName, children }: SessionLayoutProps): JSX.Element {
   return (
-    <AiToggleProvider sessionName={sessionName}>
-      <div className="flex h-screen flex-col bg-background">
-        <SessionHeader sessionName={sessionName} />
-        <div className="flex flex-1 overflow-hidden">
-          <SessionRail sessionName={sessionName} />
-          {/*
-            Onda 3 do redesign (2026-08-23) — raio de dano contido: se a
-            TELA (Conversas, Pipeline, Analytics...) quebrar, cabeçalho e
-            rail continuam de pé, e o operador ainda consegue navegar para
-            outra tela sem precisar de F5. Ver docstring de
-            `AppErrorBoundary` para o achado real que motivou isto.
-          */}
-          <main className="flex-1 overflow-y-auto">
-            <AppErrorBoundary>{children}</AppErrorBoundary>
-          </main>
+    <PlanProvider>
+      <AiToggleProvider sessionName={sessionName}>
+        <div className="flex h-screen flex-col bg-background">
+          <SessionHeader sessionName={sessionName} />
+          <div className="flex flex-1 overflow-hidden">
+            <SessionRail sessionName={sessionName} />
+            {/*
+              Onda 3 do redesign (2026-08-23) — raio de dano contido: se a
+              TELA (Conversas, Pipeline, Analytics...) quebrar, cabeçalho e
+              rail continuam de pé, e o operador ainda consegue navegar para
+              outra tela sem precisar de F5. Ver docstring de
+              `AppErrorBoundary` para o achado real que motivou isto.
+            */}
+            <main className="flex-1 overflow-y-auto">
+              <AppErrorBoundary>{children}</AppErrorBoundary>
+            </main>
+          </div>
         </div>
-      </div>
-    </AiToggleProvider>
+      </AiToggleProvider>
+    </PlanProvider>
   );
 }

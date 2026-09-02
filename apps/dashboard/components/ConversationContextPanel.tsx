@@ -7,6 +7,7 @@ import ConversationSummarySection from './ConversationSummarySection';
 import SaveContactButton from './SaveContactButton';
 import DisplayNameParts from './DisplayNameParts';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useIsFreePlan } from '@/contexts/PlanContext';
 import { useConversationDetail } from '@/hooks/useConversationDetail';
 import { useAiInteractions } from '@/hooks/useAiInteractions';
 import {
@@ -48,6 +49,7 @@ export default function ConversationContextPanel({
   conversationId,
   aiEnabled = true,
 }: ConversationContextPanelProps): JSX.Element {
+  const isFreePlan = useIsFreePlan();
   const { conversation, loading, applyUpdate } = useConversationDetail(conversationId);
   const {
     interactions,
@@ -125,18 +127,28 @@ export default function ConversationContextPanel({
         </div>
       </div>
 
-      <div className="border-b border-border px-5 py-4">
-        <ConversationTagPicker
-          sessionName={sessionName}
-          conversationId={conversationId}
-          tags={conversation.tags}
-          onChange={(tags) => applyUpdate({ ...conversation, tags })}
-        />
-      </div>
+      {isFreePlan ? (
+        <div className="border-b border-border px-5 py-4">
+          <p className="text-[12.5px] text-muted-foreground">
+            Etiquetas e resumo por IA fazem parte do Plano Pro.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="border-b border-border px-5 py-4">
+            <ConversationTagPicker
+              sessionName={sessionName}
+              conversationId={conversationId}
+              tags={conversation.tags}
+              onChange={(tags) => applyUpdate({ ...conversation, tags })}
+            />
+          </div>
 
-      <div className="border-b border-border px-5 py-4">
-        <ConversationSummarySection conversation={conversation} onUpdated={applyUpdate} />
-      </div>
+          <div className="border-b border-border px-5 py-4">
+            <ConversationSummarySection conversation={conversation} onUpdated={applyUpdate} />
+          </div>
+        </>
+      )}
 
       <details className="group px-5 pb-6 pt-4" open>
         <summary className="flex cursor-pointer list-none items-center justify-between">

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { sendConversationMessage, sendConversationMedia, ClientApiError } from '@/lib/clientApi';
 import { useQuickReplies } from '@/hooks/useQuickReplies';
+import { useIsFreePlan } from '@/contexts/PlanContext';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 import QuickRepliesPanel from '@/components/QuickRepliesPanel';
@@ -134,6 +135,7 @@ export default function MessageComposer({
   // Fase 1, Bloco F1.9 — Respostas Rápidas: dropdown local (sem Radix novo,
   // mesmo racional já usado no projeto para evitar dependência/reestruturação
   // sem necessidade — ex. `<select>` nativo em `UserManagementPanel`).
+  const isFreePlan = useIsFreePlan();
   const { quickReplies, refresh: refreshQuickReplies } = useQuickReplies(sessionName);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [managingQuickReplies, setManagingQuickReplies] = useState(false);
@@ -291,23 +293,27 @@ export default function MessageComposer({
           <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
         </Button>
         <div ref={quickRepliesRef} className="relative shrink-0 self-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full text-muted-foreground"
-            disabled={sending}
-            onClick={() =>
-              setShowQuickReplies((current) => {
-                if (current) setManagingQuickReplies(false);
-                return !current;
-              })
-            }
-            aria-label="Respostas rápidas"
-          >
-            <MessageSquareText className="h-[17px] w-[17px]" aria-hidden="true" />
-          </Button>
-          {showQuickReplies &&
+          {/* T4 (Trava de plano): respostas rápidas é recurso do Plano Pro — some no Grátis. */}
+          {!isFreePlan && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-muted-foreground"
+              disabled={sending}
+              onClick={() =>
+                setShowQuickReplies((current) => {
+                  if (current) setManagingQuickReplies(false);
+                  return !current;
+                })
+              }
+              aria-label="Respostas rápidas"
+            >
+              <MessageSquareText className="h-[17px] w-[17px]" aria-hidden="true" />
+            </Button>
+          )}
+          {!isFreePlan &&
+            showQuickReplies &&
             (managingQuickReplies ? (
               <div className="fx-scroll absolute bottom-full left-0 mb-2 max-h-[420px] w-[460px] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-menu">
                 <div className="mb-2 flex items-center gap-1.5">
