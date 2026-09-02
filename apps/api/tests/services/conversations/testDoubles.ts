@@ -397,6 +397,17 @@ export class FakeMessageRepository implements MessageRepository {
   }
 
   /**
+   * Helper de teste (mesmo padrão de `FakeConversationRepository.seed`):
+   * insere a mensagem EXATAMENTE como recebida, PRESERVANDO o `id`. Use
+   * quando o teste precisa depois ler a mensagem de volta por um `id`
+   * conhecido (`findById`) — diferente de `create()`, que descarta o `id`
+   * informado e gera `message-N`.
+   */
+  seed(message: Message): void {
+    this.messages.push(message);
+  }
+
+  /**
    * Feature de transcrição de áudio (2026-08-24, aditivo). Espelha
    * `PrismaMessageRepository.setAudioTranscript()`: escopado por
    * `tenantId`+`id`, silenciosamente ignora mensagem inexistente/de outro

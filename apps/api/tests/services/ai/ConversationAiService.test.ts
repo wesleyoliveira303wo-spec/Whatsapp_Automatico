@@ -906,7 +906,8 @@ describe('ConversationAiService', () => {
 
     it('extrai a transcrição do marcador e persiste via MessageRepository.setAudioTranscript', async () => {
       const { sut, aiProviderFactory, messageRepository } = buildSutWithAudioTranscript();
-      await messageRepository.create(buildAudioMessage());
+      // `seed` (não `create`) para preservar o id 'm-audio' que o `findById` abaixo usa.
+      messageRepository.seed(buildAudioMessage());
       aiProviderFactory.provider.setNextResult({
         content:
           'Legal! Você quer um site com carrinho de compras.\n' +
@@ -1110,7 +1111,8 @@ describe('ConversationAiService', () => {
 
     it('extrai a descrição do marcador e persiste via MessageRepository.setImageDescription', async () => {
       const { sut, aiProviderFactory, messageRepository } = buildSutWithImageDescription();
-      await messageRepository.create(buildImageMessageWithDescription());
+      // `seed` (não `create`) para preservar o id 'm-image' que o `findById` abaixo usa.
+      messageRepository.seed(buildImageMessageWithDescription());
       aiProviderFactory.provider.setNextResult({
         content:
           'Legal, recebi a foto da sua loja!\n' +
