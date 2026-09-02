@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createConversationsErrorHandler } from '../../../../src/services/conversations/presentation/conversationsErrorHandler';
 import { ConversationNotFoundError } from '../../../../src/services/conversations/domain/errors/ConversationNotFoundError';
 import { TenantNotFoundError } from '../../../../src/shared/tenant/domain/errors/TenantNotFoundError';
+import { AgentReplyRequiresPaidPlanError } from '../../../../src/services/conversations/domain/errors/AgentReplyRequiresPaidPlanError';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 
 function buildRes(): Response {
@@ -43,6 +44,23 @@ describe('createConversationsErrorHandler (Milestone 3, Bloco 5)', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'tenant_not_found' }));
+  });
+
+  it('[T2] mapeia AgentReplyRequiresPaidPlanError para 403 agent_reply_requires_paid_plan', () => {
+    const handler = createConversationsErrorHandler(new NoopLogger());
+    const res = buildRes();
+
+    handler(
+      new AgentReplyRequiresPaidPlanError(),
+      {} as Request,
+      res,
+      jest.fn() as NextFunction,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'agent_reply_requires_paid_plan' }),
+    );
   });
 
   it('mapeia qualquer outro erro para 500 e loga via Logger.error', () => {

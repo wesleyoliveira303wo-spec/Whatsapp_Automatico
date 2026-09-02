@@ -4,6 +4,7 @@ import { ConversationNotFoundError } from '../../../src/services/conversations/d
 import { Conversation } from '../../../src/services/conversations/domain/entities/Conversation';
 import { ConversationOwnershipError } from '../../../src/services/conversations/domain/errors/ConversationOwnershipError';
 import { ConversationNotHumanError } from '../../../src/services/conversations/domain/errors/ConversationNotHumanError';
+import { AgentReplyRequiresPaidPlanError } from '../../../src/services/conversations/domain/errors/AgentReplyRequiresPaidPlanError';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../auth/testDoubles';
@@ -534,6 +535,62 @@ describe('ConversationsService', () => {
         serviceSemDispatcher.sendAgentMessage('tenant-1', 'conversation-1', 'oi'),
       ).rejects.toThrow(/OutboundMessageDispatcher não configurado/);
     });
+  });
+
+  describe('Trava de plano (T2, Lançamento suave 2026-08-31)', () => {
+    const OP = { userId: 'op-1', canResumeAny: false };
+    const MEDIA = {
+      contentType: 'image' as const,
+      buffer: Buffer.from('bytes-da-imagem'),
+      mimeType: 'image/jpeg',
+      caption: 'foto',
+    };
+
+    it('tenant free: sendAgentMessage recusa com AgentReplyRequiresPaidPlanError e NÃO despacha', async () => {
+      const { service, conversationRepository, tenantRepository, outboundDispatcher } =
+        buildService();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Grátis', apiKeyHash: 'h', plan: 'free' });
+      conversationRepository.seed(buildConversation({ status: 'human', assignedToUserId: 'op-1' }));
+
+      await expect(
+        service.sendAgentMessage('tenant-1', 'conversation-1', 'oi', OP),
+      ).rejects.toThrow(AgentReplyRequiresPaidPlanError);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
+
+    it('tenant free: sendAgentMediaMessage recusa com AgentReplyRequiresPaidPlanError e NÃO chama o MediaSender', async () => {
+      const { service, conversationRepository, tenantRepository, mediaSender } = buildService();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Grátis', apiKeyHash: 'h', plan: 'free' });
+      conversationRepository.seed(
+        buildConversation({
+          status: 'human',
+          assignedToUserId: 'op-1',
+          sessionName: 'default',
+          contactJid: '5511999999999@s.whatsapp.net',
+        }),
+      );
+
+      await expect(
+        service.sendAgentMediaMessage('tenant-1', 'conversation-1', MEDIA, OP),
+      ).rejects.toThrow(AgentReplyRequiresPaidPlanError);
+      expect(mediaSender.sendCalls).toHaveLength(0);
+    });
+
+    it.each(['pro', 'enterprise'] as const)(
+      'tenant %s: sendAgentMessage envia normalmente',
+      async (plan) => {
+        const { service, conversationRepository, tenantRepository, outboundDispatcher } =
+          buildService();
+        tenantRepository.seed({ id: 'tenant-1', name: 'Paga', apiKeyHash: 'h', plan });
+        conversationRepository.seed(
+          buildConversation({ status: 'human', assignedToUserId: 'op-1' }),
+        );
+
+        await service.sendAgentMessage('tenant-1', 'conversation-1', 'oi', OP);
+
+        expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+      },
+    );
   });
 
   describe('sendAgentMediaMessage() — Fase 1, Bloco F1.3 (envio de mídia pelo operador)', () => {

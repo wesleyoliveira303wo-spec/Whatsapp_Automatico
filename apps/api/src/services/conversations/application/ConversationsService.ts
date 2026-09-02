@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto';
 
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
+import { Tenant } from '../../../shared/tenant/domain/Tenant';
+import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { AuditLogRepository } from '../../auth/domain/repositories/AuditLogRepository';
 import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/OutboundMessageDispatcher';
@@ -17,6 +19,7 @@ import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { ConversationNotFoundError } from '../domain/errors/ConversationNotFoundError';
 import { ConversationOwnershipError } from '../domain/errors/ConversationOwnershipError';
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
+import { AgentReplyRequiresPaidPlanError } from '../domain/errors/AgentReplyRequiresPaidPlanError';
 import { ConversationContactUnavailableError } from '../domain/errors/ConversationContactUnavailableError';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
 import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
@@ -177,7 +180,7 @@ export class ConversationsService {
     actor: ConversationActor = { canResumeAny: true },
     meta: ConversationActionMeta = {},
   ): Promise<void> {
-    await this.assertTenantExists(tenantId);
+    await this.assertTenantPlanAllowsAgentReply(tenantId);
     if (!this.outboundMessageDispatcher) {
       throw new Error(
         'OutboundMessageDispatcher não configurado para envio de mensagens do operador.',
@@ -244,7 +247,7 @@ export class ConversationsService {
     actor: ConversationActor = { canResumeAny: true },
     meta: ConversationActionMeta = {},
   ): Promise<Message> {
-    await this.assertTenantExists(tenantId);
+    await this.assertTenantPlanAllowsAgentReply(tenantId);
     if (!this.mediaSender) {
       throw new Error('MediaSender não configurado para envio de mídia do operador.');
     }
@@ -706,11 +709,30 @@ export class ConversationsService {
     return updated ?? { ...existing, contactId };
   }
 
-  private async assertTenantExists(tenantId: string): Promise<void> {
+  private async assertTenantExists(tenantId: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findById(tenantId);
     if (!tenant) {
       this.logger.warn('Operação de conversa recusada: tenant inexistente', { tenantId });
       throw new TenantNotFoundError(tenantId);
     }
+    return tenant;
+  }
+
+  /**
+   * Trava de plano (T2, Lançamento suave 2026-08-31): no Plano Grátis a tela
+   * de Conversas é só-leitura — o operador não responde pela Dashboard (texto
+   * nem mídia). `pro`/`enterprise` respondem normalmente. Fonte única da
+   * regra: `planPermiteUso`. Ver `AgentReplyRequiresPaidPlanError`.
+   */
+  private async assertTenantPlanAllowsAgentReply(tenantId: string): Promise<Tenant> {
+    const tenant = await this.assertTenantExists(tenantId);
+    if (!planPermiteUso(tenant.plan)) {
+      this.logger.warn('Resposta pela Dashboard recusada: Plano Grátis', {
+        tenantId,
+        plan: tenant.plan,
+      });
+      throw new AgentReplyRequiresPaidPlanError();
+    }
+    return tenant;
   }
 }

@@ -7,6 +7,7 @@ import MessageTimeline from './MessageTimeline';
 import MessageComposer from './MessageComposer';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
+import { useIsFreePlan } from '@/contexts/PlanContext';
 import { useConversationDetail } from '@/hooks/useConversationDetail';
 import { useMessagesTimeline } from '@/hooks/useMessagesTimeline';
 import { useAiInteractions } from '@/hooks/useAiInteractions';
@@ -56,6 +57,7 @@ export default function ConversationDetailPanel({
   onConversationUpdated,
   aiEnabled = true,
 }: ConversationDetailPanelProps): JSX.Element {
+  const isFreePlan = useIsFreePlan();
   const { conversation, loading, errorMessage, refresh, applyUpdate } =
     useConversationDetail(conversationId);
   const {
@@ -288,7 +290,12 @@ export default function ConversationDetailPanel({
         )}
 
         <div className="shrink-0 px-3 py-2.5 sm:px-4">
-          {conversation.status === 'human' ? (
+          {isFreePlan ? (
+            <p className="text-xs text-muted-foreground">
+              Responder pela Dashboard é um recurso do Plano Pro. No Plano Grátis você acompanha as
+              conversas, mas não envia mensagens por aqui.
+            </p>
+          ) : conversation.status === 'human' ? (
             <MessageComposer
               conversationId={conversation.id}
               sessionName={sessionName}

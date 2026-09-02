@@ -4,6 +4,7 @@ import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/Tenant
 import { ConversationNotFoundError } from '../domain/errors/ConversationNotFoundError';
 import { ConversationOwnershipError } from '../domain/errors/ConversationOwnershipError';
 import { ConversationNotHumanError } from '../domain/errors/ConversationNotHumanError';
+import { AgentReplyRequiresPaidPlanError } from '../domain/errors/AgentReplyRequiresPaidPlanError';
 import { MessageMediaNotFoundError } from '../domain/errors/MessageMediaNotFoundError';
 import { ConversationContactUnavailableError } from '../domain/errors/ConversationContactUnavailableError';
 import { AgentMediaTooLargeError } from '../domain/errors/AgentMediaTooLargeError';
@@ -50,6 +51,12 @@ export function createConversationsErrorHandler(logger: Logger): ErrorRequestHan
         error: 'conversation_not_human',
         message: 'Assuma a conversa (escalar para humano) antes de responder manualmente.',
       });
+      return;
+    }
+    // Trava de plano (T2, Lançamento suave): responder pela Dashboard é
+    // recurso pago — tenant `free` recebe 403.
+    if (error instanceof AgentReplyRequiresPaidPlanError) {
+      res.status(403).json({ error: 'agent_reply_requires_paid_plan', message: error.message });
       return;
     }
     if (error instanceof MessageMediaNotFoundError) {

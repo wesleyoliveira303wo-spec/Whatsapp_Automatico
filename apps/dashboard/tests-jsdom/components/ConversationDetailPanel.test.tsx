@@ -16,6 +16,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ConversationDetailPanel from '../../components/ConversationDetailPanel';
+import { PlanProvider } from '../../contexts/PlanContext';
 import * as clientApi from '../../lib/clientApi';
 import type { ConversationMessage, ConversationSummary } from '../../lib/clientApi';
 
@@ -29,6 +30,7 @@ jest.mock('../../lib/clientApi', () => ({
   fetchAiInteractions: jest.fn(),
   fetchContactAvatar: jest.fn(),
   markConversationAsRead: jest.fn(),
+  fetchTenant: jest.fn(),
 }));
 
 function buildConversation(overrides: Partial<ConversationSummary> = {}): ConversationSummary {
@@ -96,6 +98,9 @@ beforeEach(() => {
   (clientApi.fetchAiInteractions as jest.Mock).mockResolvedValue({ interactions: [] });
   (clientApi.fetchContactAvatar as jest.Mock).mockResolvedValue({ avatarUrl: undefined });
   (clientApi.markConversationAsRead as jest.Mock).mockResolvedValue(buildConversation());
+  (clientApi.fetchTenant as jest.Mock).mockResolvedValue({
+    tenant: { id: 't1', name: 'Empresa', plan: 'pro' },
+  });
 });
 
 afterEach(() => {
@@ -222,5 +227,56 @@ describe('ConversationDetailPanel — scroll', () => {
     await waitFor(() => expect(screen.getByText('nova mensagem enquanto lia')).toBeInTheDocument());
     expect(container.scrollTop).toBe(100);
     expect(screen.getByText('Ir para mensagens recentes')).toBeInTheDocument();
+  });
+});
+
+describe('ConversationDetailPanel — Trava de plano (T2, Lançamento suave)', () => {
+  it('tenant free: substitui o campo de resposta por um aviso de recurso pago (mesmo em conversa "human")', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'human' }),
+    );
+    (clientApi.fetchConversationMessages as jest.Mock).mockResolvedValue({
+      messages: [buildMessage('m1', 'oi')],
+    });
+    (clientApi.fetchTenant as jest.Mock).mockResolvedValue({
+      tenant: { id: 't1', name: 'Empresa', plan: 'free' },
+    });
+
+    render(
+      <PlanProvider>
+        <ConversationDetailPanel sessionName="vendas" conversationId="c1" />
+      </PlanProvider>,
+    );
+    await flushMicrotasks();
+
+    await waitFor(() =>
+      expect(screen.getByText(/Responder pela Dashboard é um recurso do Plano Pro/i)).toBeInTheDocument(),
+    );
+    // O composer (textarea) não é renderizado no Plano Grátis.
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('tenant pro: mostra o campo de resposta normalmente numa conversa "human"', async () => {
+    (clientApi.fetchConversation as jest.Mock).mockResolvedValue(
+      buildConversation({ status: 'human' }),
+    );
+    (clientApi.fetchConversationMessages as jest.Mock).mockResolvedValue({
+      messages: [buildMessage('m1', 'oi')],
+    });
+    (clientApi.fetchTenant as jest.Mock).mockResolvedValue({
+      tenant: { id: 't1', name: 'Empresa', plan: 'pro' },
+    });
+
+    render(
+      <PlanProvider>
+        <ConversationDetailPanel sessionName="vendas" conversationId="c1" />
+      </PlanProvider>,
+    );
+    await flushMicrotasks();
+
+    await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument());
+    expect(
+      screen.queryByText(/Responder pela Dashboard é um recurso do Plano Pro/i),
+    ).not.toBeInTheDocument();
   });
 });
