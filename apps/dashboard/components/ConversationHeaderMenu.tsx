@@ -8,6 +8,7 @@ import {
   Kanban,
   BotOff,
   Archive,
+  ArchiveRestore,
   Trash2,
   MoreVertical,
 } from 'lucide-react';
@@ -69,6 +70,13 @@ const STAGE_OPTIONS: { value: ConversationStage; label: string }[] = [
  * o estado resultante (`excludedFromPipeline: true`) já é visível/reversível
  * na coluna "Não cliente" do board de Pipeline, este item só é mais um ponto
  * de entrada para o MESMO estado, nunca "esconde sem lugar pra achar depois".
+ *
+ * "Arquivar"/"Desarquivar" (2026-09-02) — mutuamente exclusivos: só um dos
+ * dois aparece, conforme `conversation.archived`. "Arquivar" continua atrás
+ * de um diálogo de confirmação (esconde a conversa da lista principal, ação
+ * que o operador pode não querer no clique errado); "Desarquivar" é direto,
+ * sem diálogo — mesmo racional de "Marcar como não lida": é a ação inversa
+ * de algo já reversível, confirmar de novo só atrapalha.
  *
  * "Excluir" é DEFINITIVO (hard delete, sem lixeira) — exige digitar o nome
  * exibido do contato antes de habilitar o botão de confirmar, e SÓ o
@@ -156,6 +164,19 @@ export default function ConversationHeaderMenu({
       toast({ variant: 'success', title: 'Conversa arquivada' });
     } catch {
       toast({ variant: 'destructive', title: 'Não foi possível arquivar' });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleUnarchive(): Promise<void> {
+    setPending(true);
+    try {
+      const updated = await archiveConversation(conversation.id, false);
+      onUpdated(updated);
+      toast({ variant: 'success', title: 'Conversa desarquivada' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Não foi possível desarquivar' });
     } finally {
       setPending(false);
     }
@@ -250,16 +271,25 @@ export default function ConversationHeaderMenu({
               Ativar Não Cliente
             </button>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <button
-              type="button"
-              className="gap-2"
-              onClick={() => setTimeout(() => setArchiveDialogOpen(true), 0)}
-            >
-              <Archive className="h-3.5 w-3.5" aria-hidden="true" />
-              Arquivar
-            </button>
-          </DropdownMenuItem>
+          {conversation.archived ? (
+            <DropdownMenuItem asChild>
+              <button type="button" className="gap-2" onClick={() => void handleUnarchive()}>
+                <ArchiveRestore className="h-3.5 w-3.5" aria-hidden="true" />
+                Desarquivar
+              </button>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem asChild>
+              <button
+                type="button"
+                className="gap-2"
+                onClick={() => setTimeout(() => setArchiveDialogOpen(true), 0)}
+              >
+                <Archive className="h-3.5 w-3.5" aria-hidden="true" />
+                Arquivar
+              </button>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem asChild>
             <button
               type="button"

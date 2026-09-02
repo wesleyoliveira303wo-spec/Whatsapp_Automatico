@@ -200,6 +200,46 @@ describe('ConversationHeaderMenu', () => {
     expect(onUpdated).toHaveBeenCalledWith(updated);
   });
 
+  it('conversa já arquivada: mostra "Desarquivar" no lugar de "Arquivar"', () => {
+    render(
+      <ConversationHeaderMenu
+        conversation={buildConversation({ archived: true })}
+        sessionName="sessao-1"
+        onUpdated={() => {}}
+        onRefresh={() => {}}
+      />,
+    );
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Desarquivar' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Arquivar' })).not.toBeInTheDocument();
+  });
+
+  it('"Desarquivar" chama a API direto, sem diálogo de confirmação', async () => {
+    const onUpdated = jest.fn();
+    const updated = buildConversation({ archived: false });
+    (clientApi.archiveConversation as jest.Mock).mockResolvedValue(updated);
+
+    render(
+      <ConversationHeaderMenu
+        conversation={buildConversation({ archived: true })}
+        sessionName="sessao-1"
+        onUpdated={onUpdated}
+        onRefresh={() => {}}
+      />,
+    );
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Desarquivar' }));
+
+    await waitFor(() =>
+      expect(clientApi.archiveConversation).toHaveBeenCalledWith('conv-1', false),
+    );
+    expect(onUpdated).toHaveBeenCalledWith(updated);
+    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument();
+  });
+
   it('"Excluir": botão de confirmar fica desabilitado até digitar o nome do contato', async () => {
     render(
       <ConversationHeaderMenu
