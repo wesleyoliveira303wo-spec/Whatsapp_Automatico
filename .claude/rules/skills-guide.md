@@ -18,8 +18,7 @@ refatoração de tela, correção de bug visual. Também quando o fundador disse
 algo como "ficou feio", "não tá legal", "dá uma olhada nisso aqui".
 
 **Achados já conhecidos a não repetir:** falta de virtualização em listas
-grandes (Conversas, Pipeline); drag-and-drop do Pipeline sem alternativa de
-teclado.
+grandes (Conversas, Pipeline).
 
 ## `shadcn` (MCP)
 
@@ -62,6 +61,10 @@ com relevância direta comprovada neste projeto:
 
 ## Achados de auditoria pendentes (2026-08-22)
 
-- [ ] Alternativa de teclado para mover cards no Pipeline (hoje só drag).
+- [x] ~~Alternativa de teclado para mover cards no Pipeline~~ — JÁ EXISTE
+      desde a própria auditoria de 2026-08-22: cada `PipelineCard` tem um
+      `<select>` nativo de estágio, operável por teclado e leitor de tela,
+      compartilhando a mesma gravação do arrasto. O item ficou marcado como
+      pendente por engano (verificado em 2026-09-05).
 - [ ] Virtualizar lista de Conversas e colunas do Pipeline (limite de 50+ já
-      superado em uso real).
+      superado em uso real) — issue #15.
