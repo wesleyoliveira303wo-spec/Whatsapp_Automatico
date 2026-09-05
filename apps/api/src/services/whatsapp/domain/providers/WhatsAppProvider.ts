@@ -110,7 +110,17 @@ export interface WhatsAppProvider {
    * `getProfilePictureUrl` continua existindo e é implementado SOBRE este
    * método — nenhuma consulta duplicada.
    */
-  lookupProfilePicture(jid: string): Promise<ProfilePictureLookup>;
+  lookupProfilePicture(
+    jid: string,
+    /**
+     * Teto de espera desta consulta. O default (6s) protege quem está
+     * ESPERANDO na tela. A atualização em segundo plano do cache passa um
+     * valor bem maior: ninguém está esperando por ela, e a medição de
+     * 2026-09-05 mostrou que 6s derrubava 89% das consultas por tempo — não
+     * por ausência de foto.
+     */
+    timeoutMs?: number,
+  ): Promise<ProfilePictureLookup>;
 
   /**
    * Baixa e descriptografa o binário de uma mídia de mensagem (Fase 1,

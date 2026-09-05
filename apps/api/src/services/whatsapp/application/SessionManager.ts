@@ -287,8 +287,8 @@ export class SessionManager {
    * encontrada, se não existe, ou se não deu para perguntar. Ver
    * `WhatsAppProvider.lookupProfilePicture`.
    */
-  async lookupProfilePicture(jid: string): Promise<ProfilePictureLookup> {
-    return this.provider.lookupProfilePicture(jid);
+  async lookupProfilePicture(jid: string, timeoutMs?: number): Promise<ProfilePictureLookup> {
+    return this.provider.lookupProfilePicture(jid, timeoutMs);
   }
 
   /**

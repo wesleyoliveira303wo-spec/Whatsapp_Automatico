@@ -841,7 +841,10 @@ export class BaileysProvider implements WhatsAppProvider {
    * `getProfilePictureUrl` acima é um invólucro fino sobre ela, então existe
    * uma única implementação da consulta, não duas que podem divergir.
    */
-  async lookupProfilePicture(jid: string): Promise<ProfilePictureLookup> {
+  async lookupProfilePicture(
+    jid: string,
+    timeoutMs: number = PROFILE_PICTURE_TIMEOUT_MS,
+  ): Promise<ProfilePictureLookup> {
     if (!this.socket || this.currentStatus !== 'connected') {
       // CORREÇÃO 2026-07-30 (bug real: foto de perfil nunca aparece, mesmo
       // em contatos com foto pública confirmada): este retorno antecipado
@@ -875,7 +878,7 @@ export class BaileysProvider implements WhatsAppProvider {
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error('Timeout ao buscar foto de perfil')),
-            PROFILE_PICTURE_TIMEOUT_MS,
+            timeoutMs,
           ),
         ),
       ]);
