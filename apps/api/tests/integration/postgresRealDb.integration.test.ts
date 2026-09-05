@@ -5,6 +5,21 @@ import { PrismaClient } from '@prisma/client';
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
 /**
+ * Teto de tempo próprio para testes que falam com infraestrutura REAL.
+ *
+ * Medido (2026-09-05), não chutado: o `beforeAll` destes arquivos leva ~5s
+ * só para subir o motor de consulta do Prisma dentro do Jest no Windows —
+ * ou seja, oscila EXATAMENTE em cima do teto padrão de 5s do Jest. O
+ * resultado era uma suíte que passava numa execução e falhava na seguinte
+ * sem nenhuma mudança de código, com uma mensagem ("Exceeded timeout ... for
+ * a hook") que aponta para o teste em vez de para a causa. O padrão de 5s
+ * nunca foi uma afirmação sobre estes testes; é só o default de um teste de
+ * unidade.
+ */
+jest.setTimeout(30_000);
+
+
+/**
  * Fase 1, Bloco F1.10 (estabilidade para beta) — TODA a suíte de
  * `Prisma*Repository.test.ts` deste projeto usa um `PrismaClient` FALSO
  * (mock manual de `whatsAppConversation.*`), nunca um Postgres real — ver
