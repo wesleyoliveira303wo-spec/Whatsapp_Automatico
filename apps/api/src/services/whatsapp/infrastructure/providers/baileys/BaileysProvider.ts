@@ -805,10 +805,11 @@ export class BaileysProvider implements WhatsAppProvider {
 
   /**
    * Implementa `WhatsAppProvider.getProfilePictureUrl` (Milestone 6, Bloco
-   * M6H-2b) sobre `sock.profilePictureUrl(jid, 'image')` do Baileys — API
-   * ao vivo do socket conectado, não um dado persistido. `'image'` (em vez
-   * de `'preview'`) pede a resolução alta; a Dashboard já redimensiona por
-   * CSS, então não há ganho em pedir a miniatura.
+   * M6H-2b) sobre `sock.profilePictureUrl(jid, 'preview')` do Baileys — API
+   * ao vivo do socket conectado, não um dado persistido. `'preview'`
+   * (miniatura) desde 2026-09-05: a Dashboard mostra o avatar num círculo de
+   * 44px, então pedir alta resolução era desperdício — ver o comentário no
+   * corpo do método para o segundo motivo (diagnóstico do bloqueio).
    *
    * Nunca lança: sem socket vivo, OU qualquer erro do Baileys (contato sem
    * foto, privacidade bloqueando, erro de rede — o Baileys não distingue
@@ -871,7 +872,21 @@ export class BaileysProvider implements WhatsAppProvider {
       // ninguém mais está esperando por ela, o resultado tardio é
       // descartado sem efeito (a Dashboard já recebeu `undefined` e caiu no
       // fallback de iniciais).
-      const liveQuery = this.socket.profilePictureUrl(jid, 'image');
+      // `'preview'` (miniatura), não `'image'` (alta resolução) — mudado em
+      // 2026-09-05 por DOIS motivos independentes:
+      //
+      // 1. Desperdício: a Dashboard mostra o avatar num círculo de 44px e
+      //    redimensiona por CSS. Baixar a foto em alta para exibir em 44px
+      //    sempre foi gastar banda à toa.
+      // 2. Última hipótese testável do bloqueio: as duas resoluções são
+      //    recursos DIFERENTES do lado do WhatsApp. Medido nesta data — 8
+      //    fotos vieram numa janela de 4 minutos e, depois disso, TODA
+      //    consulta em `'image'` deu timeout, inclusive uma a cada vários
+      //    minutos e inclusive após reconectar a sessão três vezes. Se a
+      //    miniatura vier por um caminho menos restrito, resolve; se não
+      //    vier, fica provado que o bloqueio é do número e não da forma de
+      //    pedir, e não há mais o que tentar deste lado.
+      const liveQuery = this.socket.profilePictureUrl(jid, 'preview');
       liveQuery.catch(() => {});
       const url = await Promise.race([
         liveQuery,
