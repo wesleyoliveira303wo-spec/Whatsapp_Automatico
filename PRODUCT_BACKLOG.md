@@ -107,3 +107,74 @@ aparecer conversas chaveadas por um JID `@lid` em vez do número real (sintoma: 
 nome/foto e mensagens que não entregam), o primeiro lugar a olhar não é mais `senderPn` (já
 corrigido) — é conferir se o Baileys renomeou `remoteJidAlt` de novo, e revisitar o teste de
 regressão do Bloco F1.10 (`BaileysProvider.test.ts`, caso "LID sem remoteJidAlt").
+
+---
+
+## 3. Disparos programados em GRUPOS de WhatsApp
+
+**Registrado em:** 2026-09-05, pedido do fundador durante o desenho do painel
+`/admin`. Anotado como oportunidade separada — **não** faz parte daquela spec.
+
+### A ideia
+
+Em Campanhas, listar os grupos de WhatsApp da sessão e permitir programar
+disparos recorrentes neles: texto, imagem, arquivo ou áudio, uma ou mais vezes
+por dia, em horários escolhidos, durante uma quantidade limitada de dias (para
+a campanha não rodar para sempre). Serve para divulgação — postar criativos,
+serviços e avisos em grupos de forma padronizada e automática.
+
+Deixado explícito pelo fundador: **a IA não conversa nos grupos.** O grupo é
+destino de publicação, não canal de atendimento.
+
+### Por que NÃO é uma extensão pequena do motor de campanhas atual
+
+Três descasamentos com o que existe hoje. Nenhum é impeditivo, mas juntos
+significam desenho próprio, não um campo a mais:
+
+1. **Grupos são filtrados na origem, de propósito.** `isIgnoredChatJid`
+   (`BaileysProvider`) descarta todo `@g.us` desde a Milestone 3 — mensagem de
+   grupo nunca vira `Conversation`, nunca chega na IA. Isso deve CONTINUAR
+   valendo: o pedido é só de ENVIO. Ou seja, grupos precisam de um caminho de
+   saída sem caminho de entrada — coisa que o produto nunca teve.
+
+2. **O destinatário não é uma pessoa.** `CampaignRecipient` é chaveado por
+   contato/telefone e carrega opt-out, supressão por conversa ativa e por
+   recontato recente (Fase L, Blocos L2/L3). Nada disso existe para grupo: um
+   grupo não dá opt-out, não tem conversa ativa com atendente, não tem
+   identidade de pessoa. Forçar grupo dentro de `CampaignRecipient` sujaria as
+   três regras de supressão que hoje protegem o disparo 1:1.
+
+3. **A cadência é outra.** O motor atual envia UMA vez para cada destinatário e
+   encerra (`computeSendDelayMs` espaça os N destinatários de uma campanha).
+   Aqui é a MESMA mensagem para o MESMO grupo, repetida N vezes por dia
+   durante D dias — mais perto de um agendamento recorrente do que de uma
+   campanha. Provavelmente pede uma entidade própria e um job recorrente, não
+   `Campaign`/`CampaignRecipient`.
+
+### O risco, dito na cara
+
+Disparo automático em grupo é o uso que o WhatsApp mais associa a spam — mais
+sensível que o disparo 1:1 que a Fase L já assumiu (§7: Baileys é biblioteca
+não-oficial, o número pode ser banido sem apelação). Publicar o mesmo criativo
+em vários grupos, várias vezes ao dia, todos os dias, é exatamente o padrão que
+dispara denúncia de membro e banimento.
+
+Se for adiante, o desenho precisa incluir, no mínimo: teto de grupos por
+disparo, intervalo mínimo entre publicações no MESMO grupo, e um disjuntor que
+pare tudo ao primeiro sinal de bloqueio — os mesmos instintos que o motor 1:1
+já tem, calibrados mais conservadoramente.
+
+### O que já existe e seria reaproveitado
+
+- Envio de mídia (`SessionManager.sendMediaMessage`, Fase 1/F1.3) — texto,
+  imagem, áudio, documento já funcionam.
+- Ritmo com jitter, janela de horário e disjuntor (`computeSendDelayMs`,
+  `shouldTripCircuitBreaker`, Fase L/L4) — a lógica serve, a calibragem não.
+- Listagem de grupos: **não existe**. Precisa de uma consulta nova ao Baileys
+  (`groupFetchAllParticipating`), que é IQ query no mesmo socket das mensagens
+  — vale o mesmo cuidado de timeout da ADR #78.
+
+### Estado
+
+**Não iniciado. Não especificado.** Próximo passo, quando o fundador quiser
+puxar: uma spec própria, seguindo o mesmo caminho de brainstorm → spec → plano.
