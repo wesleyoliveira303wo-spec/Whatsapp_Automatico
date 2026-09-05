@@ -1208,6 +1208,90 @@ O balão único e a genericidade eram **sintoma**, não causa: derrubada logo no
 **Decisão:** `modal={false}` no `DropdownMenu` (commit `2301449`). Um menu de ações pequeno não precisa de modalidade própria; quem prende o foco é o diálogo que ele abre. A suíte de `CampaignsPanel` voltou a rodar em 2s.
 **Achado colateral (commit `3a185f6`):** os 10 testes de integração falhavam de forma intermitente — passavam numa rodada, falhavam na seguinte, sem mudança de código. Medido: o `beforeAll` leva ~5s só para subir o motor do Prisma dentro do Jest no Windows, oscilando exatamente em cima do teto padrão de 5s do Jest, que nunca foi uma afirmação sobre esses testes. Teto próprio de 30s, com o motivo registrado no código.
 
+
+### Painel `/admin`, Fase 1 — Fundação de segurança (login próprio, bounded context `platform`, trilha)
+
+**Data:** 2026-09-05
+**Contexto:** primeira fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§15), iniciada
+logo após o fundador confirmar a última decisão em aberto ("suspender é coluna
+própria `Tenant.status`, e pode começar a implementar"). O `/admin` é a
+superfície mais sensível do sistema — é o único lugar que atravessa tenants —,
+então a fase entrega SÓ a fronteira: dá para entrar, a sessão é conferida no
+servidor a cada requisição, e todo login (inclusive o que falha) vira trilha.
+Nenhum dado de cliente é lido ainda.
+**Decisão — `PlatformUser` é tabela PRÓPRIA, nunca um `User` com cargo novo:**
+todo `User` pertence obrigatoriamente a um tenant e os cinco cargos são
+escopados a um tenant; o isolamento entre clientes se apoia em "toda consulta
+filtra por `tenantId`". Um admin que atravessa tenants é a EXCEÇÃO a essa
+regra, e exceção não pode morar na mesma tabela que a regra — assim um bug de
+RBAC no produto não tem como promover um cliente a dono da plataforma. Migration
+`20260905200000_add_platform_user_and_audit` (`platform_users` +
+`platform_audit_logs`, aditiva). `PlatformAuditLog` é append-only e SEM FK para
+tenant, de propósito: a prova do que o dono fez precisa sobreviver à exclusão do
+tenant que ela auditou — mesmo padrão de `AuditLog`/`ContactConsentEvent`.
+**Decisão — dois porteiros que nunca se cruzam (§3.2), e a separação é
+ESTRUTURAL, não um `if`:** cookie próprio (`wa_admin_session`), token CSRF
+próprio (`wa_admin_csrf`), prefixo de rota próprio (`/api/platform`, sem
+`:tenantId` no caminho — não há "tenant do path" para um atacante trocar), e
+crachá próprio. `Hs256PlatformSessionTokenService` é uma classe SEPARADA de
+`Hs256AccessTokenService` (mesma técnica, payload incompatível, segredo
+distinto): um crachá de tenant não passa no porteiro da plataforma nem o
+contrário, e há teste travando isso inclusive no pior cenário (mesmo segredo).
+O `index.ts` recusa subir se `PLATFORM_SESSION_SECRET === ACCESS_TOKEN_SECRET`.
+Três segredos ao todo, cada um com um propósito só: `PLATFORM_SESSION_SECRET`
+(assina o crachá na API) e `PLATFORM_DASHBOARD_SESSION_SECRET` (cifra o cookie
+no BFF) — mesma separação que já existe entre `ACCESS_TOKEN_SECRET` e
+`DASHBOARD_SESSION_SECRET`. Sem os segredos, o painel simplesmente não sobe:
+degradação igual à do resto e a mais segura possível aqui (nunca existe um modo
+"sem senha").
+**Decisão — o porteiro RELÊ o banco a cada requisição**, diferente do porteiro
+de tenant, que confia na assinatura até o crachá vencer. É isso que faz um admin
+suspenso perder o acesso na hora (§4: "expiração verificada no servidor a cada
+requisição"); o custo é uma consulta por requisição, irrelevante num painel de
+um usuário só. Pelo mesmo motivo o BFF NÃO renova nada em silêncio: a sessão é
+de 8h e expira de vez.
+**Reaproveitado sem reescrever** (é o `/admin`, não é lugar para uma segunda
+implementação de autenticação envelhecendo em paralelo): `ScryptPasswordHasher`,
+a trava de conta e o `RateLimitStore` do Bloco B1 — este com escopos PRÓPRIOS
+(`platform-login:ip`/`platform-login:identity`), senão um ataque a uma conta de
+cliente poderia trancar a porta do fundador. E-mail inexistente TAMBÉM gasta uma
+tentativa da trava: sem isso a própria trava viraria o oráculo de "este e-mail é
+admin" que a resposta genérica evita.
+**Arquitetura:** tudo em `services/platform` (§3.3) — inclusive o
+`requirePlatformUser`, que NÃO foi para `shared/presentation` como o
+`requireUser`, justamente para "que código pode atravessar tenants?" continuar
+respondível com um `grep` no diretório. `PublicPlatformUser` +
+`toPublicPlatformUser` tornam o vazamento de `passwordHash` um erro de
+compilação, não uma questão de disciplina.
+**UI:** `/admin/login` (austera de propósito — sem "criar conta", sem "esqueci a
+senha", sem marketing: o único admin nasce pelo script
+`createPlatformUser.ts`, e menos superfície é o ponto já que o painel fica
+publicamente alcançável, risco aceito em §4) e `/admin` com os cinco destinos de
+§3.5 já visíveis, os quatro das próximas fases desabilitados e explicados em vez
+de linkados. Ambas escuras de forma fixa: a diferença visual em relação ao
+produto é intencional, para nunca haver dúvida sobre em qual superfície se está.
+A tela de Início diz que os indicadores ainda não existem em vez de mostrar
+cartões zerados — "0 tenants em atenção" e "ainda não medimos isso" parecem
+iguais na tela e significam coisas opostas (mesma disciplina anti-invenção da
+Fase L).
+**Impacto:** requer a migration + `npx prisma generate` e duas variáveis novas
+no `.env`. Zero mudança em qualquer contrato existente do produto — nada de
+`services/*` pré-existente foi tocado além do mount em `index.ts`. Testes novos:
+`PlatformAuthService` (15), `Hs256PlatformSessionTokenService` (8, incluindo a
+trava dos dois porteiros), `platformRouter` (11, incluindo "admin suspenso
+depois do login perde o acesso na requisição seguinte"), `platformSession` do
+BFF (13), rotas `/api/platform/*` (13), `AdminShell` (5, jsdom). Suíte do
+monorepo: **307/307 suítes, 3139/3139 testes verdes**; `tsc`/`eslint`/
+`next build` limpos nos dois pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real): admin criado
+pelo script, login/`/me`/logout pela API por `curl`, e o fluxo completo pelo
+navegador (entrar → casca → sair → `/admin` volta a redirecionar para o login).
+As três ações apareceram em `platform_audit_logs`, e as linhas SOBREVIVERAM à
+exclusão do admin de teste — a garantia de append-only sem FK conferida no
+banco, não só no código.
+**Próximo passo:** Fase 2 (§15) — observabilidade de tenants: lista, detalhe,
+indicadores (§6.4) e sinais de atenção (§6.3).
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

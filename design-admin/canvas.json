@@ -1,0 +1,17 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",      "x": 0,    "y": 0,    "w": 1440, "h": 900, "title": "Início" },
+    { "file": "Tenants.dc.html",   "x": 1560, "y": 0,    "w": 1440, "h": 900, "title": "Tenants", "is_interactive": true },
+    { "file": "Suporte.dc.html",   "x": 0,    "y": 1020, "w": 1440, "h": 900, "title": "Suporte" },
+    { "file": "Saude.dc.html",     "x": 1560, "y": 1020, "w": 1440, "h": 900, "title": "Saúde" },
+    { "file": "Auditoria.dc.html", "x": 780,  "y": 2040, "w": 1440, "h": 900, "title": "Auditoria" }
+  ],
+  "annotations": [
+    { "id": "marcador", "x": -420, "y": 0, "w": 340, "text": "MARCADOR DE PLATAFORMA\n\nRail e cabeçalho escuros + o selo \"PLATAFORMA\".\n\nO dashboard do cliente tem rail claro. Você nunca confunde em qual dos dois mundos está — e o sinal é redundante de propósito (cor E palavra)." },
+    { "id": "dado-real", "x": -420, "y": 300, "w": 340, "text": "DADOS REAIS DO SEU BANCO\n\nOs números vêm da consulta de 05/09: 7 clientes, 1.522 mensagens, 462 interações de IA com 37% de falha, 1 de 2 WhatsApps no ar.\n\nAo preencher com dado de verdade, o painel já revelou algo: NENHUM cliente está saudável hoje." },
+    { "id": "interativo", "x": 3120, "y": 0, "w": 320, "text": "CLIQUE NAS LINHAS\n\nA tabela de Tenants é funcional: selecionar uma linha atualiza o painel de detalhe à direita, com diagnóstico próprio de cada cliente." },
+    { "id": "achado", "x": 3120, "y": 300, "w": 320, "text": "ACHADO AO DESENHAR\n\nO sinal \"Desconectado\" que eu havia especificado marcaria os 6 clientes que NUNCA conectaram — o que é enganoso.\n\nSeparei: \"Desconectado\" = tinha conexão e caiu. \"Nunca começou\" = jamais conectou." },
+    { "id": "suporte-nota", "x": -420, "y": 1020, "w": 340, "text": "ESTADOS DE EXEMPLO\n\nO fluxo de suporte ainda não existe no produto, então esta tela usa estados ilustrativos (um acesso ativo, um pendente, um histórico) para você avaliar o desenho." }
+  ],
+  "launch": { "view": "canvas" }
+}

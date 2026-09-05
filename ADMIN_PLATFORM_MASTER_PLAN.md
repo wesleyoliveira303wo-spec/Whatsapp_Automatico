@@ -342,7 +342,10 @@ migration aditiva com default `active`. `plan` responde "o que ele pode
 fazer"; `status` responde "ele pode entrar". São perguntas diferentes e não
 devem dividir um campo.
 
-**Confirmar antes da Fase 4.** Não bloqueia as Fases 1–3.
+**✅ CONFIRMADO pelo fundador em 2026-09-05:** suspensão é coluna própria
+`Tenant.status`. A migration entra na **Fase 4**, junto com o primeiro código
+que a lê — coluna sem leitor é o "código sem uso" que as auditorias deste
+projeto já sinalizaram.
 
 ---
 
@@ -551,7 +554,12 @@ mensagens.
 
 Ordem: **segurança → observabilidade → controle → suporte → UX**.
 
-### Fase 1 — Fundação de segurança
+### Fase 1 — Fundação de segurança ✅ CONCLUÍDA (2026-09-05)
+
+**Estado:** entregue e validada ponta a ponta na máquina do fundador —
+login pelo navegador em `/admin`, casca vazia, logout, e as três entradas
+(`platform.login`, `platform.login_failed`, `platform.logout`) conferidas no
+Postgres real. Ver `CLAUDE.md` §18 para o registro completo das decisões.
 
 **Objetivo:** existir a fronteira, antes de qualquer dado atravessá-la.
 **Entrega:** `PlatformUser`, login `/admin`, cookie e `requirePlatformSession`,

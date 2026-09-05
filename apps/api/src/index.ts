@@ -205,6 +205,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createContactsComposition },
       { createCampaignsComposition, wireCampaignSendEngine },
       { createAuthComposition },
+      { createPlatformComposition },
       { createAuthenticate },
       { requirePermission },
       { HmacSha256ApiKeyHasher },
@@ -232,6 +233,9 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       // envio ligado só no ramo completo, ver `wireCampaignSendEngine` abaixo).
       import('./services/campaigns/compositionRoot'),
       import('./services/auth/compositionRoot'),
+      // Painel /admin, Fase 1 — mesmo racional dos CRUDs acima: só HTTP +
+      // Postgres, então sobe nos dois ramos (degradado e completo).
+      import('./services/platform/compositionRoot'),
       import('./shared/presentation/authenticate'),
       import('./shared/presentation/requirePermission'),
       import('./shared/security/infrastructure/HmacSha256ApiKeyHasher'),
@@ -311,6 +315,41 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     } else {
       console.warn(
         'ACCESS_TOKEN_SECRET ausente: rotas de auth (login/refresh/logout/me) nao montadas (ver .env.example).',
+      );
+    }
+
+    // Painel /admin, Fase 1 (`ADMIN_PLATFORM_MASTER_PLAN.md` §15) — o único
+    // lugar do sistema que atravessa tenants vive em `services/platform`, e é
+    // montado num prefixo estruturalmente diferente do produto
+    // (`/api/platform`, sem `:tenantId` no caminho, §3.2).
+    //
+    // Segredo PRÓPRIO, nunca o `ACCESS_TOKEN_SECRET`: é ele que garante que um
+    // crachá de cliente jamais seja aceito como crachá de plataforma. Ausente,
+    // o painel simplesmente não sobe — degradação igual à do resto, e a mais
+    // segura possível para esta superfície (nunca há um modo "sem senha").
+    const { PLATFORM_SESSION_SECRET } = process.env;
+    if (PLATFORM_SESSION_SECRET) {
+      if (PLATFORM_SESSION_SECRET === ACCESS_TOKEN_SECRET) {
+        throw new Error(
+          'PLATFORM_SESSION_SECRET não pode ser igual a ACCESS_TOKEN_SECRET: os dois crachás precisam de segredos distintos.',
+        );
+      }
+      const platform = createPlatformComposition(
+        prisma,
+        {
+          sessionSecret: PLATFORM_SESSION_SECRET,
+          ...(process.env.PLATFORM_SESSION_TTL_SECONDS
+            ? { sessionTtlSeconds: Number(process.env.PLATFORM_SESSION_TTL_SECONDS) }
+            : {}),
+        },
+        logger,
+        rateLimitStore,
+      );
+      app.use('/api/platform', platform.platformRouter);
+      app.use('/api/platform', platform.platformErrorHandler);
+    } else {
+      console.warn(
+        'PLATFORM_SESSION_SECRET ausente: painel /admin nao montado (ver .env.example).',
       );
     }
 
