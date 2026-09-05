@@ -158,9 +158,15 @@ urgência, com link direto para resolver:
 | Item | Origem |
 |---|---|
 | Pedidos de suporte aguardando resposta | `TenantAccessRequest` pendentes |
-| WhatsApps desconectados | sessões sem status `connected` |
+| WhatsApps que CAÍRAM | sessão registrada, nenhuma `connected` (ver §6.3.1 — diferente de "nunca conectou") |
+| Clientes que nunca começaram | nenhuma sessão registrada |
 | Tenants em atenção | sinais 🔴 (§6.3) |
 | Campanhas pausadas por disjuntor | `campaigns.status = PAUSED` com `pausedReason` |
+
+As duas primeiras linhas são itens **distintos de propósito**: "caiu" pede
+investigação, "nunca começou" pede acompanhamento comercial. Juntá-las numa
+só faria o fundador tratar seis clientes que precisam de ajuda para começar
+como se fossem seis incidentes técnicos.
 
 Vazia é sucesso: significa que nada precisa de você.
 
@@ -240,9 +246,9 @@ partida declarado, calibrável com uso real, mesmo caminho do rate limit de IA
 
 | Sinal | Condição inicial | Leitura |
 |---|---|---|
-| 🔴 Desconectado | nenhuma sessão com status `connected` | está sem funcionar e talvez nem saiba |
-| 🔴 Sumiu | última atividade > 7 dias | cadastrou e abandonou |
-| 🟠 Nunca começou | tem sessão conectada e < 20 mensagens desde o cadastro | não passou da instalação |
+| 🔴 Desconectado | tem sessão REGISTRADA e nenhuma com status `connected` | **tinha** conexão e caiu — está sem funcionar e talvez nem saiba |
+| 🔴 Sumiu | tem atividade registrada e a última foi há > 7 dias | usou e abandonou |
+| 🟠 Nunca começou | **nenhuma sessão registrada**, ou sessão conectada com < 20 mensagens | não passou da instalação |
 | 🟠 IA travando | escalonamento > 30% no período | a IA não dá conta, ou o Cérebro está vazio |
 | 🟠 IA falhando | `PROVIDER_ERROR` > 20% das interações | cota estourada ou provider instável |
 | 🟠 Custo alto | custo de IA no período > 20% do preço do plano | come a margem daquele plano |
@@ -251,6 +257,34 @@ partida declarado, calibrável com uso real, mesmo caminho do rate limit de IA
 **Precedência:** vale o mais grave (🔴 antes de 🟠); entre vermelhos,
 `Desconectado` antes de `Sumiu` — quem está desconectado provavelmente sumiu
 *por causa* disso.
+
+### 6.3.1 Correção de 2026-09-05 — "nunca conectou" ≠ "caiu"
+
+A primeira redação definia `Desconectado` como "nenhuma sessão com status
+`connected`" e `Nunca começou` como "tem sessão conectada e poucas mensagens".
+Ao preencher o mockup com os dados reais do banco, as duas se mostraram
+erradas nos dois extremos:
+
+- Os **seis tenants que nunca conectaram um WhatsApp** cairiam em
+  `Desconectado` 🔴 — e "desconectado" sugere que algo quebrou, quando na
+  verdade nunca chegou a existir conexão. A ação certa para esse cliente é
+  *ajudar a começar*, não *investigar a queda*.
+- E `Nunca começou`, exigindo sessão conectada, **nunca alcançaria** esses
+  seis — o sinal que existe justamente para descrevê-los.
+
+A distinção correta é sobre HISTÓRIA, não sobre estado atual: existe sessão
+registrada? Então houve conexão um dia, e a ausência dela agora é uma queda.
+Não existe? Então o cliente nunca saiu da largada.
+
+`Sumiu` ganhou a mesma guarda: um tenant sem nenhuma atividade registrada não
+"sumiu" — ele nunca apareceu, e já é coberto por `Nunca começou`.
+
+**Lição de processo, registrada de propósito:** o erro não apareceu na
+revisão do texto — apareceu no primeiro contato com dado real. É o mesmo
+padrão que este projeto já pagou caro três vezes (ADR #88, o caso do balão
+único, o caso das fotos de perfil): regra escrita parece certa até encontrar
+os dados. Vale para o resto deste plano — **todo limiar do §6.3 deve ser
+conferido contra a base real antes de virar código**, não depois.
 
 ### 6.4 Fontes por indicador
 
