@@ -121,10 +121,22 @@ export class ContactAvatarService {
 
   private async refresh(tenantId: string, sessionName: string, contactJid: string): Promise<void> {
     try {
-      const avatarUrl = await this.source.fetchAvatarUrl(tenantId, sessionName, contactJid);
+      const lookup = await this.source.lookup(tenantId, sessionName, contactJid);
+      if (!lookup.checked) {
+        // Não houve pergunta ao WhatsApp (a sessão não está de pé agora).
+        // NÃO gravar é o ponto: um registro negativo aqui esconderia a foto
+        // de todo mundo por horas logo depois de qualquer reinício. Sem
+        // gravar, o próximo pedido tenta de novo.
+        this.logger.debug('Foto de perfil não pôde ser consultada agora', {
+          tenantId,
+          sessionName,
+          reason: lookup.reason,
+        });
+        return;
+      }
       // Grava TAMBÉM quando não há foto: é o registro negativo que impede
       // este contato de ser reconsultado a cada abertura de tela.
-      await this.cache.upsert(tenantId, sessionName, contactJid, avatarUrl, this.now());
+      await this.cache.upsert(tenantId, sessionName, contactJid, lookup.avatarUrl, this.now());
     } catch (error) {
       // Cache auxiliar nunca derruba nada, e uma falha aqui não vira
       // registro negativo de propósito: sem gravar, o próximo pedido tenta

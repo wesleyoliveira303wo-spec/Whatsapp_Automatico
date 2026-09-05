@@ -94,7 +94,9 @@ function buildAppWithEventRepo(): { app: Express; eventRepo: FakeWhatsAppSession
       /* sem efeito neste teste */
     },
   };
-  const avatarSource: ContactAvatarSource = { fetchAvatarUrl: async () => undefined };
+  const avatarSource: ContactAvatarSource = {
+    lookup: async () => ({ checked: true as const, avatarUrl: undefined }),
+  };
   const contactAvatarService = new ContactAvatarService(
     avatarCache,
     avatarSource,

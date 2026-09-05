@@ -6,7 +6,10 @@ import {
   ContactAvatarCacheRecord,
   ContactAvatarCacheRepository,
 } from '../../../../src/services/whatsapp/domain/repositories/ContactAvatarCacheRepository';
-import { ContactAvatarSource } from '../../../../src/services/whatsapp/domain/providers/ContactAvatarSource';
+import {
+  ContactAvatarLookup,
+  ContactAvatarSource,
+} from '../../../../src/services/whatsapp/domain/providers/ContactAvatarSource';
 import { Logger } from '../../../../src/shared/domain/Logger';
 
 const TENANT = 'tenant-1';
@@ -58,18 +61,18 @@ class ControllableSource implements ContactAvatarSource {
   private active = 0;
   private readonly resolvers: Array<(url: string | undefined) => void> = [];
 
-  async fetchAvatarUrl(
+  async lookup(
     _tenantId: string,
     _sessionName: string,
     contactJid: string,
-  ): Promise<string | undefined> {
+  ): Promise<ContactAvatarLookup> {
     this.calls.push(contactJid);
     this.active += 1;
     this.concurrentPeak = Math.max(this.concurrentPeak, this.active);
-    return new Promise<string | undefined>((resolve) => {
+    return new Promise<ContactAvatarLookup>((resolve) => {
       this.resolvers.push((url) => {
         this.active -= 1;
-        resolve(url);
+        resolve({ checked: true, avatarUrl: url });
       });
     });
   }
@@ -199,7 +202,7 @@ describe('ContactAvatarService', () => {
   it('falha ao consultar NÃO vira registro negativo (senão fingiria "sem foto" por horas)', async () => {
     const cache = new FakeCache();
     const source: ContactAvatarSource = {
-      fetchAvatarUrl: jest.fn().mockRejectedValue(new Error('socket caiu')),
+      lookup: jest.fn().mockRejectedValue(new Error('socket caiu')),
     };
     const logger = fakeLogger();
     const service = new ContactAvatarService(cache, source, logger);
@@ -209,6 +212,23 @@ describe('ContactAvatarService', () => {
 
     expect(cache.upserts).toEqual([]);
     expect(logger.debug).toHaveBeenCalled();
+  });
+
+  it('sessão fora do ar NÃO vira "sem foto" (senão sumiria a foto de todos por horas)', async () => {
+    const cache = new FakeCache();
+    // O caso real: logo depois de um reinício o registry está vazio, então
+    // nenhuma pergunta chega ao WhatsApp. Gravar isso como registro negativo
+    // esconderia TODA foto pelas 6h de validade do "sem foto".
+    const source: ContactAvatarSource = {
+      lookup: jest.fn().mockResolvedValue({ checked: false, reason: 'session_not_live' }),
+    };
+    const service = new ContactAvatarService(cache, source, fakeLogger());
+
+    await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
+    await flush();
+
+    expect(source.lookup).toHaveBeenCalled();
+    expect(cache.upserts).toEqual([]);
   });
 
   it('deduplica JIDs repetidos no mesmo pedido', async () => {
