@@ -39,8 +39,13 @@ const MAX_JIDS_PER_REQUEST = 300;
  * Uma foto ENCONTRADA não é reconsultada nesta aba (mudam raramente); um
  * "sem foto" tem validade curta, porque o servidor pode tê-lo preenchido em
  * segundo plano logo depois — assim a foto aparece sozinha, sem F5.
+ *
+ * Alinhado ao `RETRY_TICK_MS`: um valor maior que o do ticker faria o ticker
+ * bater e não fazer nada, que é como este TTL passou despercebido até a
+ * medição de 2026-09-05. Repetir o pedido é barato — quem já tem resposta no
+ * servidor sai do cache, sem tocar o WhatsApp.
  */
-const NO_AVATAR_RETRY_MS = 60_000;
+const NO_AVATAR_RETRY_MS = 20_000;
 
 type Listener = (avatarUrl: string | undefined) => void;
 
@@ -48,7 +53,41 @@ const resolved = new Map<string, string | undefined>();
 const resolvedAt = new Map<string, number>();
 const pending = new Map<string, Set<string>>();
 const listeners = new Map<string, Set<Listener>>();
+/** Quem está na tela agora, para o ticker saber o que repedir. */
+const subscribed = new Map<string, { sessionName: string; contactJid: string }>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * De quanto em quanto tempo os avatares AINDA sem foto são pedidos de novo
+ * enquanto a tela está aberta.
+ *
+ * Sem isto, `NO_AVATAR_RETRY_MS` era letra morta: o pedido só acontecia ao
+ * MONTAR o componente, então deixar a tela aberta não trazia foto nenhuma —
+ * só um F5 trazia. Medido em 2026-09-05: 4 minutos de tela aberta geraram
+ * UMA consulta. Como o servidor preenche o cache em segundo plano, é
+ * justamente repetindo o pedido que a foto aparece sozinha.
+ *
+ * Um único ticker para a tela inteira (não um por avatar), e cada rodada
+ * vira UMA requisição só, pelo agrupamento que já existe.
+ */
+const RETRY_TICK_MS = 20_000;
+
+function startRetryTicker(): void {
+  if (retryTimer !== undefined) return;
+  retryTimer = setInterval(() => {
+    if (subscribed.size === 0) {
+      clearInterval(retryTimer);
+      retryTimer = undefined;
+      return;
+    }
+    for (const { sessionName, contactJid } of subscribed.values()) {
+      // `requestAvatar` ignora quem já tem resultado fresco — na prática só
+      // os que ainda não têm foto entram na próxima leva.
+      requestAvatar(sessionName, contactJid);
+    }
+  }, RETRY_TICK_MS);
+}
 
 function cacheKey(sessionName: string, contactJid: string): string {
   return `${sessionName}::${contactJid}`;
@@ -126,6 +165,11 @@ export function __resetContactAvatarCacheForTests(): void {
   resolvedAt.clear();
   pending.clear();
   listeners.clear();
+  subscribed.clear();
+  if (retryTimer !== undefined) {
+    clearInterval(retryTimer);
+    retryTimer = undefined;
+  }
   if (flushTimer !== undefined) {
     clearTimeout(flushTimer);
     flushTimer = undefined;
@@ -162,13 +206,25 @@ export function useContactAvatar(
     const subscribers = listeners.get(key) ?? new Set<Listener>();
     subscribers.add(listener);
     listeners.set(key, subscribers);
+    subscribed.set(key, { sessionName, contactJid });
 
     requestAvatar(sessionName, contactJid);
+    startRetryTicker();
 
     return () => {
       cancelled = true;
       subscribers.delete(listener);
-      if (subscribers.size === 0) listeners.delete(key);
+      if (subscribers.size === 0) {
+        listeners.delete(key);
+        subscribed.delete(key);
+        // Encerra o ticker na hora em que a última tela sai — esperar o
+        // próximo tique deixaria um timer vivo à toa (e um handle aberto nos
+        // testes).
+        if (subscribed.size === 0 && retryTimer !== undefined) {
+          clearInterval(retryTimer);
+          retryTimer = undefined;
+        }
+      }
     };
   }, [sessionName, contactJid]);
 
