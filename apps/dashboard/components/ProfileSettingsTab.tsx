@@ -3,7 +3,14 @@ import { motion } from 'framer-motion';
 import { Loader2, LogOut, Pencil } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { useMe } from '@/hooks/useMe';
-import { fetchTenant, updateMyProfile, updateTenantName, logout, ClientApiError } from '@/lib/clientApi';
+import {
+  fetchTenant,
+  updateMyProfile,
+  updateTenantName,
+  logout,
+  ClientApiError,
+  type TenantPlan,
+} from '@/lib/clientApi';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,6 +23,18 @@ import {
 } from '@/components/BusinessOverviewSections';
 import { fadeInUp, staggerContainer } from '@/lib/motion';
 import { formatShortDate, formatDateTime } from '@/lib/formatters';
+
+/**
+ * Indicador de plano (2026-09-05). Rótulo e tom por plano — `free` sai em
+ * tom neutro (é um estado válido, não um alerta) e os pagos em tom de marca.
+ * `null` (não carregou / leitura falhou) não vira "Grátis" por engano: quem
+ * decide o que está liberado é sempre a API, nunca esta tela.
+ */
+const PLAN_BADGE: Record<TenantPlan, { label: string; className: string }> = {
+  free: { label: 'Grátis', className: 'bg-muted text-muted-foreground' },
+  pro: { label: 'Pro', className: 'bg-primary/10 text-primary' },
+  enterprise: { label: 'Enterprise', className: 'bg-success/10 text-success' },
+};
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Dono',
@@ -85,6 +104,9 @@ export default function ProfileSettingsTab({
   const router = useRouter();
   const { user } = useMe();
   const [companyName, setCompanyName] = useState<string | null>(null);
+  // Indicador de plano (pedido do fundador, 2026-09-05): vem do MESMO
+  // `GET /api/tenant` que já traz o nome — nenhuma requisição nova.
+  const [plan, setPlan] = useState<TenantPlan | null>(null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   /**
@@ -121,6 +143,7 @@ export default function ProfileSettingsTab({
       .then(({ tenant }) => {
         setCompanyName(tenant.name);
         setCompanyNameDraft(tenant.name);
+        setPlan(tenant.plan ?? null);
       })
       .catch(() => setCompanyName(null));
   }, []);
@@ -374,7 +397,17 @@ export default function ProfileSettingsTab({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm text-muted-foreground">Nome comercial</p>
-              <p className="truncate font-medium text-foreground">{companyName ?? '—'}</p>
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="truncate font-medium text-foreground">{companyName ?? '—'}</p>
+                {plan && (
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${PLAN_BADGE[plan].className}`}
+                    title={`Esta empresa está no plano ${PLAN_BADGE[plan].label}`}
+                  >
+                    {PLAN_BADGE[plan].label}
+                  </span>
+                )}
+              </div>
             </div>
             {canManageCompany && (
               <Button

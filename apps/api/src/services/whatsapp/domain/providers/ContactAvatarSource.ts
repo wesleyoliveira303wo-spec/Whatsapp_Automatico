@@ -12,7 +12,7 @@
  */
 export type ContactAvatarLookup =
   | { checked: true; avatarUrl?: string }
-  | { checked: false; reason: 'session_not_live' };
+  | { checked: false; reason: 'session_not_live' | 'timeout' };
 
 /**
  * Porta ESTREITA (um método) para consultar a foto de perfil ao vivo —

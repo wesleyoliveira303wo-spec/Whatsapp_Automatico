@@ -20,7 +20,10 @@ import { CredentialsStore } from '../../../../../shared/security/domain/Credenti
 import { Cipher } from '../../../../../shared/security/domain/Cipher';
 import { WhatsAppSession } from '../../../domain/entities/WhatsAppSession';
 import { WhatsAppDisconnectReason } from '../../../domain/entities/WhatsAppDisconnectReason';
-import { WhatsAppProvider } from '../../../domain/providers/WhatsAppProvider';
+import {
+  WhatsAppProvider,
+  ProfilePictureLookup,
+} from '../../../domain/providers/WhatsAppProvider';
 import {
   WhatsAppProviderEvent,
   WhatsAppMessageContentTypeEvent,
@@ -829,6 +832,16 @@ export class BaileysProvider implements WhatsAppProvider {
    * mais cedo (cai no fallback de iniciais).
    */
   async getProfilePictureUrl(jid: string): Promise<string | undefined> {
+    const lookup = await this.lookupProfilePicture(jid);
+    return lookup.outcome === 'found' ? lookup.url : undefined;
+  }
+
+  /**
+   * Versão INSTRUMENTADA (2026-09-05) — mesma consulta, dizendo o desfecho.
+   * `getProfilePictureUrl` acima é um invólucro fino sobre ela, então existe
+   * uma única implementação da consulta, não duas que podem divergir.
+   */
+  async lookupProfilePicture(jid: string): Promise<ProfilePictureLookup> {
     if (!this.socket || this.currentStatus !== 'connected') {
       // CORREÇÃO 2026-07-30 (bug real: foto de perfil nunca aparece, mesmo
       // em contatos com foto pública confirmada): este retorno antecipado
@@ -845,7 +858,7 @@ export class BaileysProvider implements WhatsAppProvider {
         jid,
         currentStatus: this.currentStatus,
       });
-      return undefined;
+      return { outcome: 'unavailable', reason: 'session_not_live' };
     }
     try {
       // A Promise original do Baileys NÃO é cancelável — mesmo perdendo a
@@ -866,7 +879,7 @@ export class BaileysProvider implements WhatsAppProvider {
           ),
         ),
       ]);
-      return url ?? undefined;
+      return url ? { outcome: 'found', url } : { outcome: 'absent' };
     } catch (error) {
       // CORREÇÃO 2026-07-30: diferenciar TIMEOUT (log `warn` — pode indicar
       // um problema real de performance/carga do socket, vale investigar
@@ -885,7 +898,15 @@ export class BaileysProvider implements WhatsAppProvider {
         timeout: isTimeout,
         error,
       });
-      return undefined;
+      // Timeout NÃO é resposta: o WhatsApp simplesmente não respondeu a
+      // tempo, o que não diz nada sobre o contato ter foto ou não.
+      // Qualquer outro erro do Baileys é tratado como "não tem foto" porque
+      // é assim que a lib sinaliza ausência/privacidade (ela não distingue
+      // por tipo de exceção) — separado em `reason: 'error'` no log para a
+      // frequência dos dois casos ficar visível.
+      return isTimeout
+        ? { outcome: 'unavailable', reason: 'timeout' }
+        : { outcome: 'absent' };
     }
   }
 

@@ -237,20 +237,11 @@ export default function MessageBubble({
       {/*
         A bolha e o marcador de lacuna ficam lado a lado: o marcador é um
         botão pequeno, cinza, FORA da bolha — dentro dela competiria com o
-        texto do cliente e com o horário.
+        texto do cliente e com o horário. Renderizado DEPOIS da bolha, então
+        numa mensagem recebida (que é onde a lacuna aparece) ele fica à
+        DIREITA — pedido do fundador, 2026-09-05.
       */}
       <div className={cn('flex items-center gap-1.5', outbound && 'flex-row-reverse')}>
-        {unanswered && (
-          <button
-            type="button"
-            onClick={onTeachAnswer}
-            aria-label="A IA não soube responder esta mensagem — cadastrar resposta"
-            title="A IA não soube responder esta mensagem. Clique para cadastrar a resposta."
-            className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
-          >
-            !
-          </button>
-        )}
       {isMedia ? (
         <MessageMediaContent message={message} outbound={outbound} />
       ) : (
@@ -280,6 +271,17 @@ export default function MessageBubble({
           />
         </div>
       )}
+        {unanswered && (
+          <button
+            type="button"
+            onClick={onTeachAnswer}
+            aria-label="A IA não soube responder esta mensagem — cadastrar resposta"
+            title="A IA não soube responder esta mensagem. Clique para cadastrar a resposta."
+            className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
+          >
+            !
+          </button>
+        )}
       </div>
 
       {isMedia && message.content && (

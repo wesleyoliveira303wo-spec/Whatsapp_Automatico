@@ -231,6 +231,38 @@ describe('ContactAvatarService', () => {
     expect(cache.upserts).toEqual([]);
   });
 
+  it('timeout NÃO vira "sem foto" — não grava, e o próximo pedido tenta de novo', async () => {
+    const cache = new FakeCache();
+    const source: ContactAvatarSource = {
+      lookup: jest.fn().mockResolvedValue({ checked: false, reason: 'timeout' }),
+    };
+    const service = new ContactAvatarService(cache, source, fakeLogger());
+
+    await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
+    await flush();
+
+    // O WhatsApp não respondeu a tempo: isso não diz nada sobre o contato
+    // ter foto. Gravar aqui esconderia a foto dele pelas 6h de validade.
+    expect(cache.upserts).toEqual([]);
+  });
+
+  it('publica o resumo por desfecho quando a fila esvazia (a instrumentação)', async () => {
+    const cache = new FakeCache();
+    const source = new ControllableSource();
+    const logger = fakeLogger();
+    const service = new ContactAvatarService(cache, source, logger);
+
+    await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net', 'b@s.whatsapp.net']);
+    source.resolveNext('https://cdn/a.jpg');
+    source.resolveNext(undefined);
+    await flush();
+
+    expect(logger.info).toHaveBeenCalledWith(
+      'Atualização de fotos de perfil concluída',
+      expect.objectContaining({ total: 2, comFoto: 1, semFoto: 1 }),
+    );
+  });
+
   it('deduplica JIDs repetidos no mesmo pedido', async () => {
     const cache = new FakeCache();
     const source = new ControllableSource();

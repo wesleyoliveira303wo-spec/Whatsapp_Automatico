@@ -1,3 +1,15 @@
+/**
+ * Desfecho de uma consulta de foto de perfil (2026-09-05).
+ *
+ * `absent` é uma resposta: perguntamos e não há foto (ou a privacidade do
+ * contato bloqueia). `unavailable` NÃO é resposta: não houve pergunta, ou
+ * ela não voltou — e por isso nunca deve ser confundida com a primeira.
+ */
+export type ProfilePictureLookup =
+  | { outcome: 'found'; url: string }
+  | { outcome: 'absent' }
+  | { outcome: 'unavailable'; reason: 'session_not_live' | 'timeout' | 'error' };
+
 import { WhatsAppSession } from '../entities/WhatsAppSession';
 import { WhatsAppProviderEvent } from './WhatsAppProviderEvent';
 
@@ -83,6 +95,22 @@ export interface WhatsAppProvider {
    * Implementações devem logar a falha em nível `debug`/`warn`, não `error`.
    */
   getProfilePictureUrl(jid: string): Promise<string | undefined>;
+
+  /**
+   * Mesma consulta de `getProfilePictureUrl`, mas dizendo O QUE ACONTECEU —
+   * instrumentação pedida pelo fundador em 2026-09-05.
+   *
+   * Existe porque `undefined` colapsava três situações muito diferentes:
+   * "perguntamos e esta pessoa não tem foto", "não deu para perguntar
+   * (sessão fora do ar)" e "perguntamos e o WhatsApp não respondeu a tempo".
+   * A primeira é informação e merece ser guardada; as outras duas são
+   * ausência de resposta, e guardá-las como se fossem "sem foto" esconde a
+   * foto de todo mundo por horas (foi exatamente o que aconteceu).
+   *
+   * `getProfilePictureUrl` continua existindo e é implementado SOBRE este
+   * método — nenhuma consulta duplicada.
+   */
+  lookupProfilePicture(jid: string): Promise<ProfilePictureLookup>;
 
   /**
    * Baixa e descriptografa o binário de uma mídia de mensagem (Fase 1,

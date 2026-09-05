@@ -28,9 +28,14 @@ export class RegistryContactAvatarSource implements ContactAvatarSource {
     // aqui marcaria TODO contato como sem foto por horas logo após qualquer
     // reinício do processo, que é justamente quando o registry está vazio.
     if (!sessionManager) return { checked: false, reason: 'session_not_live' };
-    // `getProfilePictureUrl` já tem timeout próprio de 6s e nunca lança
-    // (ADR #78) — nenhum tratamento extra é necessário aqui.
-    const avatarUrl = await sessionManager.getProfilePictureUrl(contactJid);
-    return { checked: true, avatarUrl };
+
+    // Consulta INSTRUMENTADA (2026-09-05): distingue "não tem foto" de
+    // "não voltou resposta". O timeout de 6s do provider continua valendo
+    // (ADR #78) — a diferença é que agora ele não é mais confundido com
+    // ausência de foto.
+    const lookup = await sessionManager.lookupProfilePicture(contactJid);
+    if (lookup.outcome === 'found') return { checked: true, avatarUrl: lookup.url };
+    if (lookup.outcome === 'absent') return { checked: true, avatarUrl: undefined };
+    return { checked: false, reason: lookup.reason === 'timeout' ? 'timeout' : 'session_not_live' };
   }
 }

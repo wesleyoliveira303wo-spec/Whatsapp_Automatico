@@ -1,5 +1,8 @@
 import { Logger } from '../../../shared/domain/Logger';
-import { WhatsAppProvider } from '../domain/providers/WhatsAppProvider';
+import {
+  WhatsAppProvider,
+  ProfilePictureLookup,
+} from '../domain/providers/WhatsAppProvider';
 import { WhatsAppProviderEvent } from '../domain/providers/WhatsAppProviderEvent';
 import { WhatsAppSessionRepository } from '../domain/repositories/WhatsAppSessionRepository';
 import { WhatsAppSessionEventRepository } from '../domain/repositories/WhatsAppSessionEventRepository';
@@ -277,6 +280,15 @@ export class SessionManager {
    */
   async getProfilePictureUrl(jid: string): Promise<string | undefined> {
     return this.provider.getProfilePictureUrl(jid);
+  }
+
+  /**
+   * Passthrough da consulta INSTRUMENTADA (2026-09-05) — diz se a foto foi
+   * encontrada, se não existe, ou se não deu para perguntar. Ver
+   * `WhatsAppProvider.lookupProfilePicture`.
+   */
+  async lookupProfilePicture(jid: string): Promise<ProfilePictureLookup> {
+    return this.provider.lookupProfilePicture(jid);
   }
 
   /**

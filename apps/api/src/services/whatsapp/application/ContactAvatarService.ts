@@ -43,6 +43,14 @@ export class ContactAvatarService {
   private readonly queue: Array<{ tenantId: string; sessionName: string; contactJid: string }> = [];
   private readonly queued = new Set<string>();
   private active = 0;
+  /**
+   * Contagem por desfecho desde o último resumo (instrumentação pedida pelo
+   * fundador, 2026-09-05). Existe para responder com NÚMERO, e não com
+   * hipótese, à pergunta "por que só algumas fotos aparecem?": quantas
+   * realmente não têm foto, quantas não voltaram a tempo, quantas nem foram
+   * perguntadas. Zerada a cada resumo.
+   */
+  private outcomes = { found: 0, absent: 0, timeout: 0, sessionNotLive: 0, failed: 0 };
 
   constructor(
     private readonly cache: ContactAvatarCacheRepository,
@@ -114,15 +122,46 @@ export class ContactAvatarService {
       void this.refresh(job.tenantId, job.sessionName, job.contactJid).finally(() => {
         this.queued.delete(`${job.tenantId}::${job.sessionName}::${job.contactJid}`);
         this.active -= 1;
+        // A fila esvaziou: é o momento de publicar o resumo — um log por
+        // lote, não um por contato (52 linhas de log não são diagnóstico,
+        // são ruído).
+        if (this.active === 0 && this.queue.length === 0) this.reportOutcomes();
         this.drain();
       });
     }
+  }
+
+  /**
+   * Publica (e zera) a contagem por desfecho. É este log que responde "por
+   * que só X fotos apareceram" com número em vez de suposição.
+   */
+  private reportOutcomes(): void {
+    const { found, absent, timeout, sessionNotLive, failed } = this.outcomes;
+    const total = found + absent + timeout + sessionNotLive + failed;
+    if (total === 0) return;
+    this.outcomes = { found: 0, absent: 0, timeout: 0, sessionNotLive: 0, failed: 0 };
+    this.logger.info('Atualização de fotos de perfil concluída', {
+      total,
+      // Encontrou a foto e guardou.
+      comFoto: found,
+      // Perguntou e o contato não tem foto (ou a privacidade bloqueia).
+      semFoto: absent,
+      // O WhatsApp não respondeu a tempo: NÃO é "sem foto", e por isso nada
+      // foi guardado — o próximo pedido tenta de novo.
+      semRespostaNoTempo: timeout,
+      // Nem foi possível perguntar (sessão fora do ar neste instante).
+      sessaoIndisponivel: sessionNotLive,
+      // Erro inesperado ao guardar/consultar.
+      falhas: failed,
+    });
   }
 
   private async refresh(tenantId: string, sessionName: string, contactJid: string): Promise<void> {
     try {
       const lookup = await this.source.lookup(tenantId, sessionName, contactJid);
       if (!lookup.checked) {
+        if (lookup.reason === 'timeout') this.outcomes.timeout += 1;
+        else this.outcomes.sessionNotLive += 1;
         // Não houve pergunta ao WhatsApp (a sessão não está de pé agora).
         // NÃO gravar é o ponto: um registro negativo aqui esconderia a foto
         // de todo mundo por horas logo depois de qualquer reinício. Sem
@@ -134,10 +173,13 @@ export class ContactAvatarService {
         });
         return;
       }
+      if (lookup.avatarUrl) this.outcomes.found += 1;
+      else this.outcomes.absent += 1;
       // Grava TAMBÉM quando não há foto: é o registro negativo que impede
       // este contato de ser reconsultado a cada abertura de tela.
       await this.cache.upsert(tenantId, sessionName, contactJid, lookup.avatarUrl, this.now());
     } catch (error) {
+      this.outcomes.failed += 1;
       // Cache auxiliar nunca derruba nada, e uma falha aqui não vira
       // registro negativo de propósito: sem gravar, o próximo pedido tenta
       // de novo, em vez de fingir por horas que o contato não tem foto.
