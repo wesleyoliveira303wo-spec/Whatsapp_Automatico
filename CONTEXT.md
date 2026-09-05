@@ -48,6 +48,36 @@ no WhatsApp, o fundador marca o `plan` do tenant no banco e o pagamento é
 combinado por fora (Pix).
 _Avoid_: assinatura self-service, checkout.
 
+## Fase de testes controlados (decidido em 2026-09-05)
+
+**Ativação manual**:
+O fundador ativa e desativa o plano de cada tenant PESSOALMENTE, no banco.
+Não há gateway de pagamento e **não haverá por ora** — o pagamento é
+combinado no WhatsApp e pago por Pix. Decisão consciente, não pendência:
+o produto está em fase de testes com pessoas de confiança, escolhidas pelo
+fundador, e automatizar cobrança antes de saber se o produto se sustenta
+resolveria um problema que ainda não existe.
+_Avoid_: self-service, checkout, assinatura automática.
+
+**Período de teste grátis**: **zero**. Não existe trial com prazo — o Plano
+Grátis (demonstração permanente) já cumpre o papel de deixar a pessoa
+conhecer o produto.
+_Avoid_: trial de 7/14/30 dias.
+
+**Tolerância de atraso**: **zero**. Sem cobrança automática não há
+inadimplência a tolerar: se o pagamento não vem, o fundador desativa o plano
+à mão.
+_Avoid_: grace period, período de carência.
+
+**Painel de controle do fundador** (NÃO EXISTE — necessidade registrada em
+2026-09-05):
+Hoje não há nenhuma tela em que o fundador acompanhe, por tenant, se o
+cliente está tirando bom ou mau proveito do produto. Sem isso, decidir
+manter/ativar/desativar um plano é decisão no escuro. É a peça que substitui
+o "self-signup com billing" no lugar de prioridade — ver issue #16.
+_Avoid_: super-admin, back-office (o escopo aqui é observação, não
+administração).
+
 ## Lançamento
 
 **Lançamento suave** (soft launch):
