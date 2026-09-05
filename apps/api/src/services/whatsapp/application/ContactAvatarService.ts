@@ -63,6 +63,14 @@ export interface ContactAvatarResult {
  * É essa separação que permite devolver `fetchLive` às listas: antes, uma
  * lista com 50 linhas virava 50 consultas ao vivo no socket de envio (ADR
  * #78 e a correção de 2026-08-18); agora vira uma consulta ao Postgres.
+ *
+ * MUDANÇA DE GATILHO (2026-09-05, decisão do fundador): `listAvatars` virou
+ * LEITURA PURA — não enfileira mais nada. Quem enfileira é
+ * `ensureAvatarQueued`, chamado quando o contato MANDA MENSAGEM. Motivo
+ * medido: abrir a tela pedia a foto de dezenas de contatos de uma vez, e o
+ * WhatsApp atende só as primeiras consultas depois de conectar — a rajada
+ * queimava a cota e quase tudo virava timeout. No ritmo das mensagens reais,
+ * as consultas se espalham ao longo do dia.
  */
 export class ContactAvatarService {
   private readonly queue: Array<{ tenantId: string; sessionName: string; contactJid: string }> = [];
@@ -105,18 +113,30 @@ export class ContactAvatarService {
 
     const records = await this.cache.findManyByContactJids(tenantId, sessionName, unique);
     const byJid = new Map(records.map((record) => [record.contactJid, record]));
-    const now = this.now();
-
-    for (const contactJid of unique) {
-      if (isContactAvatarStale(byJid.get(contactJid), now)) {
-        this.enqueueRefresh(tenantId, sessionName, contactJid);
-      }
-    }
 
     return unique.map((contactJid) => ({
       contactJid,
       avatarUrl: byJid.get(contactJid)?.avatarUrl,
     }));
+  }
+
+  /**
+   * Põe UM contato na fila de busca, se a foto dele estiver ausente ou
+   * vencida. É o novo gatilho: chamado quando o contato MANDA MENSAGEM (ver
+   * `ContactAvatarRefresher`), não quando alguém abre uma tela.
+   *
+   * Nunca lança e nunca espera pela consulta — só empurra para a fila, que
+   * já goteja (uma por vez, com intervalo) e recua sozinha quando o WhatsApp
+   * para de responder.
+   */
+  async ensureAvatarQueued(
+    tenantId: string,
+    sessionName: string,
+    contactJid: string,
+  ): Promise<void> {
+    const [record] = await this.cache.findManyByContactJids(tenantId, sessionName, [contactJid]);
+    if (!isContactAvatarStale(record, this.now())) return;
+    this.enqueueRefresh(tenantId, sessionName, contactJid);
   }
 
   /** Só para teste: quantos contatos ainda esperam atualização. */

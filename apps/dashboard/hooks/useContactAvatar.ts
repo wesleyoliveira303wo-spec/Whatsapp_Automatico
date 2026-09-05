@@ -37,15 +37,14 @@ const MAX_JIDS_PER_REQUEST = 300;
 
 /**
  * Uma foto ENCONTRADA não é reconsultada nesta aba (mudam raramente); um
- * "sem foto" tem validade curta, porque o servidor pode tê-lo preenchido em
- * segundo plano logo depois — assim a foto aparece sozinha, sem F5.
+ * "sem foto" tem validade curta, para a tela perceber quando o servidor
+ * preencheu o cache (o que acontece quando aquele contato manda mensagem).
  *
  * Alinhado ao `RETRY_TICK_MS`: um valor maior que o do ticker faria o ticker
  * bater e não fazer nada, que é como este TTL passou despercebido até a
- * medição de 2026-09-05. Repetir o pedido é barato — quem já tem resposta no
- * servidor sai do cache, sem tocar o WhatsApp.
+ * medição de 2026-09-05.
  */
-const NO_AVATAR_RETRY_MS = 20_000;
+const NO_AVATAR_RETRY_MS = 60_000;
 
 type Listener = (avatarUrl: string | undefined) => void;
 
@@ -59,19 +58,21 @@ let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 
 /**
- * De quanto em quanto tempo os avatares AINDA sem foto são pedidos de novo
- * enquanto a tela está aberta.
+ * De quanto em quanto tempo a tela relê o cache do servidor à procura de
+ * fotos que chegaram desde a última leitura.
  *
- * Sem isto, `NO_AVATAR_RETRY_MS` era letra morta: o pedido só acontecia ao
- * MONTAR o componente, então deixar a tela aberta não trazia foto nenhuma —
- * só um F5 trazia. Medido em 2026-09-05: 4 minutos de tela aberta geraram
- * UMA consulta. Como o servidor preenche o cache em segundo plano, é
- * justamente repetindo o pedido que a foto aparece sozinha.
+ * MUDANÇA DE GATILHO (2026-09-05, decisão do fundador): esta releitura NÃO
+ * dispara mais nenhuma consulta ao WhatsApp. O endpoint em lote virou
+ * leitura pura do cache; quem manda buscar a foto é a chegada de uma
+ * MENSAGEM daquele contato, no servidor. Aqui só se relê o que já foi
+ * preenchido.
  *
- * Um único ticker para a tela inteira (não um por avatar), e cada rodada
- * vira UMA requisição só, pelo agrupamento que já existe.
+ * Por isso o intervalo pôde afrouxar de 20s para 60s: antes ele era o
+ * motor da busca (e precisava insistir), agora é só um "veio foto nova?"
+ * contra o Postgres. Um único ticker para a tela inteira, e cada rodada vira
+ * UMA requisição, pelo agrupamento que já existe.
  */
-const RETRY_TICK_MS = 20_000;
+const RETRY_TICK_MS = 60_000;
 
 function startRetryTicker(): void {
   if (retryTimer !== undefined) return;
@@ -83,7 +84,8 @@ function startRetryTicker(): void {
     }
     for (const { sessionName, contactJid } of subscribed.values()) {
       // `requestAvatar` ignora quem já tem resultado fresco — na prática só
-      // os que ainda não têm foto entram na próxima leva.
+      // os que ainda não têm foto entram na próxima leva. Como o endpoint é
+      // leitura de cache, esta leva não toca o WhatsApp.
       requestAvatar(sessionName, contactJid);
     }
   }, RETRY_TICK_MS);

@@ -9,6 +9,7 @@ import {
   FakeContactResolver,
   FakeOptOutDetector,
   FakeCampaignReplyTracker,
+  FakeContactAvatarRefresher,
 } from './testDoubles';
 import { FakeTenantPlanRepository } from './FakeTenantPlanRepository';
 
@@ -23,6 +24,7 @@ function buildSut(): {
   optOutDetector: FakeOptOutDetector;
   tenantPlanRepository: FakeTenantPlanRepository;
   campaignReplyTracker: FakeCampaignReplyTracker;
+  contactAvatarRefresher: FakeContactAvatarRefresher;
 } {
   const conversationRepository = new FakeConversationRepository();
   const messageRepository = new FakeMessageRepository();
@@ -35,6 +37,7 @@ function buildSut(): {
   // `FakeTenantPlanRepository`.
   const tenantPlanRepository = new FakeTenantPlanRepository();
   const campaignReplyTracker = new FakeCampaignReplyTracker();
+  const contactAvatarRefresher = new FakeContactAvatarRefresher();
   const sut = new MessageIngestionService(
     conversationRepository,
     messageRepository,
@@ -47,6 +50,7 @@ function buildSut(): {
     undefined,
     campaignReplyTracker,
   );
+  sut.setContactAvatarRefresher(contactAvatarRefresher);
   return {
     sut,
     conversationRepository,
@@ -58,6 +62,7 @@ function buildSut(): {
     optOutDetector,
     tenantPlanRepository,
     campaignReplyTracker,
+    contactAvatarRefresher,
   };
 }
 
@@ -702,6 +707,30 @@ describe('MessageIngestionService', () => {
       expect(campaignReplyTracker.calls).toEqual([
         { tenantId: 'tenant-1', conversationId: conversation.id },
       ]);
+    });
+
+    // Foto de perfil (2026-09-05, decisão do fundador) — o gatilho passou a
+    // ser a MENSAGEM, não a abertura de tela.
+    it('mensagem INBOUND enfileira a foto de perfil do contato', async () => {
+      const { sut, contactAvatarRefresher } = buildSut();
+
+      await sut.handle(buildInboundMessage());
+
+      expect(contactAvatarRefresher.calls).toEqual([
+        {
+          tenantId: 'tenant-1',
+          sessionName: 'default',
+          contactJid: '5511999999999@s.whatsapp.net',
+        },
+      ]);
+    });
+
+    it('mensagem OUTBOUND NÃO enfileira foto (o operador escrevendo não diz nada sobre a foto do cliente)', async () => {
+      const { sut, contactAvatarRefresher } = buildSut();
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
+
+      expect(contactAvatarRefresher.calls).toEqual([]);
     });
 
     it('NÃO aciona o tracker para mensagem outbound (operador de outro dispositivo)', async () => {

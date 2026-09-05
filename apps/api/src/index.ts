@@ -565,6 +565,15 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     conversationsService.setMediaDownloader(mediaDownloader);
     // Fase 1, Bloco F1.3 — mesmo motivo/mesmo lugar de `setMediaDownloader`.
     conversationsService.setMediaSender(mediaSender);
+    // Foto de perfil (2026-09-05) — mesmo motivo/mesmo lugar: o gatilho da
+    // busca de foto passou a ser a MENSAGEM que chega, e o serviço que
+    // enfileira só existe depois desta composição.
+    const { ContactAvatarRefresherImpl } = await import(
+      './services/whatsapp/infrastructure/ContactAvatarRefresherImpl'
+    );
+    messageIngestionService.setContactAvatarRefresher(
+      new ContactAvatarRefresherImpl(contactAvatarService, logger),
+    );
     // Guarda o serviço para a restauração automática de sessões no boot (ver
     // `restoreConnectedSessions()`). Só neste ramo — no degradado, sem
     // pipeline de conversas, reconectar seria enganoso.
