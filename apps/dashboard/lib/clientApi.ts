@@ -730,6 +730,8 @@ export interface Contact {
    * `name` salvo — ver `formatPersonLabel`.
    */
   lastConversationContactName?: string;
+  /** Bloco B2 (issue #13) — JID com que a foto de perfil está no cache do servidor. */
+  lastConversationContactJid?: string;
 }
 
 /** Contagens da base do tenant — cards do topo da tela de Contatos. */
@@ -1220,6 +1222,34 @@ export function fetchContactAvatar(
   return request(
     `/api/sessions/${encodeURIComponent(sessionName)}/contacts/${encodeURIComponent(contactJid)}/avatar`,
   );
+}
+
+/**
+ * Bloco B2 (issue #13) — fotos de perfil de VÁRIOS contatos numa requisição
+ * só, servidas do cache do servidor.
+ *
+ * Substitui, nas listas, o padrão de uma consulta ao vivo por linha, que
+ * bombardeava o mesmo socket Baileys usado para enviar mensagens (ADR #78 e
+ * a correção de 2026-08-18). O backend responde com o que tem em cache na
+ * hora e atualiza o que venceu em segundo plano, com teto de concorrência —
+ * então esta chamada nunca espera pelo WhatsApp.
+ *
+ * Um JID sem foto simplesmente vem com `avatarUrl` ausente: é resposta
+ * válida, não erro.
+ */
+export interface ContactAvatarEntry {
+  contactJid: string;
+  avatarUrl?: string;
+}
+
+export function fetchContactAvatars(
+  sessionName: string,
+  contactJids: string[],
+): Promise<{ avatars: ContactAvatarEntry[] }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/contact-avatars`, {
+    method: 'POST',
+    body: JSON.stringify({ contactJids }),
+  });
 }
 
 // --- Milestone 3, Bloco 6 (D22): DTOs e funcoes de `conversations`/`ai-interactions` ---

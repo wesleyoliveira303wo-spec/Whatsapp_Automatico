@@ -141,7 +141,6 @@ function PipelineCardImpl(
           // CORREÇÃO 2026-08-18: mesmo motivo de `ConversationListItem` — o
           // board pode ter muitos cards simultâneos, cada um buscando foto ao
           // vivo martelava o socket do Baileys sem parar.
-          fetchLive={false}
         />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
           <DisplayNameParts

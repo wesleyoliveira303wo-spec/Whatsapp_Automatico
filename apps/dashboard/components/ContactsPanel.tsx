@@ -37,6 +37,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import ContactAvatar from '@/components/ContactAvatar';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
@@ -69,29 +70,12 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: 'Manual',
 };
 
-/** Paleta puramente decorativa para diferenciar avatares — nunca carrega significado de estado (ver tokens semânticos em `Badge`). */
-const AVATAR_PALETTE = [
-  'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-  'bg-violet-500/15 text-violet-600 dark:text-violet-400',
-  'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-  'bg-rose-500/15 text-rose-600 dark:text-rose-400',
-  'bg-teal-500/15 text-teal-600 dark:text-teal-400',
-];
 
 /** `count/total` como inteiro percentual, 0 se `total` for 0 (nunca divide por zero). */
 function percentOf(count: number, total: number): number {
   return total > 0 ? Math.round((count / total) * 100) : 0;
 }
 
-function hashString(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
 
 /**
  * Padronização de exibição de contato (2026-08-20) — nome salvo sozinho
@@ -116,34 +100,6 @@ function labelPartsFor(contact: Contact): ReturnType<typeof formatPersonLabelPar
     savedName: contact.name,
     nickname: contact.lastConversationContactName,
   });
-}
-
-function initialsFor(label: string): string {
-  const parts = label.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
-function ContactAvatar({ contact }: { contact: Contact }): JSX.Element {
-  // Iniciais a partir da fonte de nome (nunca do rótulo combinado "telefone ·
-  // apelido" — dividir esse texto por espaço geraria iniciais sem sentido a
-  // partir do "+55"/DDD). Mesma prioridade de `labelFor`: nome salvo > apelido
-  // do WhatsApp > telefone.
-  const initialsSource =
-    contact.name ?? contact.lastConversationContactName ?? formatPhoneNumber(contact.phoneE164);
-  const palette = AVATAR_PALETTE[hashString(contact.id) % AVATAR_PALETTE.length];
-  return (
-    <div
-      className={cn(
-        'grid h-9 w-9 shrink-0 place-items-center rounded-full text-[12px] font-semibold',
-        palette,
-      )}
-      aria-hidden="true"
-    >
-      {initialsFor(initialsSource)}
-    </div>
-  );
 }
 
 function errorMessageFor(error: unknown): string {
@@ -712,7 +668,23 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                   />
                 )}
 
-                <ContactAvatar contact={contact} />
+                {/*
+                  Bloco B2 (issue #13): o avatar local (que nunca mostrava
+                  foto nenhuma) deu lugar ao `ContactAvatar` compartilhado.
+                  `sessionName`/`contactJid` só existem quando a pessoa já
+                  conversou — sem eles o componente vai direto ao fallback de
+                  iniciais, sem pedir nada ao servidor.
+                */}
+                <ContactAvatar
+                  sessionName={contact.lastConversationSessionName}
+                  contactJid={
+                    contact.lastConversationContactJid ??
+                    `${contact.phoneE164.replace(/\D/g, '')}@s.whatsapp.net`
+                  }
+                  contactName={contact.lastConversationContactName}
+                  savedContactName={contact.name}
+                  className="h-9 w-9"
+                />
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-foreground">

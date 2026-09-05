@@ -104,7 +104,6 @@ function ConversationListItemImpl(
           // parar (achado real de produção, contribuiu para falhas de envio).
           // Só iniciais aqui; a foto de verdade continua no cabeçalho da
           // conversa aberta (`ConversationContextPanel`), onde é só 1 contato.
-          fetchLive={false}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">

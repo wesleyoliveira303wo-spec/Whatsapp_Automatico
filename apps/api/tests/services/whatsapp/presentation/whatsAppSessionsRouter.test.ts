@@ -14,6 +14,9 @@ import {
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeAuditLogRepository } from '../../auth/testDoubles';
 import { RequestWithPrincipal } from '../../../../src/shared/presentation/authenticate';
+import { ContactAvatarService } from '../../../../src/services/whatsapp/application/ContactAvatarService';
+import { ContactAvatarCacheRepository } from '../../../../src/services/whatsapp/domain/repositories/ContactAvatarCacheRepository';
+import { ContactAvatarSource } from '../../../../src/services/whatsapp/domain/providers/ContactAvatarSource';
 
 /**
  * `tenant-1` e `tenant-2` já existem no `FakeTenantRepository` de todo teste
@@ -76,7 +79,32 @@ function buildAppWithEventRepo(): { app: Express; eventRepo: FakeWhatsAppSession
     (req as RequestWithPrincipal).principal = { kind: 'machine', tenantId: req.params.tenantId };
     next();
   });
-  app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppSessionsRouter(sessionService));
+  // Bloco B2 (issue #13) — cache em memória para a rota de fotos em lote.
+  // A fonte ao vivo é inerte de propósito: o que esta rota precisa provar é
+  // que ela responde do CACHE, sem depender de socket nenhum.
+  const avatarRows = new Map<string, string | undefined>();
+  avatarRows.set('com-foto@s.whatsapp.net', 'https://cdn/foto.jpg');
+  const avatarCache: ContactAvatarCacheRepository = {
+    async findManyByContactJids(_tenantId, _sessionName, contactJids) {
+      return contactJids
+        .filter((jid) => avatarRows.has(jid))
+        .map((jid) => ({ contactJid: jid, avatarUrl: avatarRows.get(jid), refreshedAt: new Date() }));
+    },
+    async upsert() {
+      /* sem efeito neste teste */
+    },
+  };
+  const avatarSource: ContactAvatarSource = { fetchAvatarUrl: async () => undefined };
+  const contactAvatarService = new ContactAvatarService(
+    avatarCache,
+    avatarSource,
+    new NoopLogger(),
+  );
+
+  app.use(
+    '/api/tenants/:tenantId/whatsapp-sessions',
+    createWhatsAppSessionsRouter(sessionService, contactAvatarService),
+  );
   app.use(createWhatsAppErrorHandler(new NoopLogger()));
   return { app, eventRepo };
 }
@@ -165,6 +193,59 @@ describe('whatsAppSessionsRouter', () => {
     // ver docstring do router).
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ avatarUrl: undefined });
+  });
+
+  describe('POST .../:sessionName/contacts/avatars (Bloco B2, issue #13)', () => {
+    it('devolve as fotos EM LOTE, na mesma ordem dos JIDs pedidos', async () => {
+      const app = buildApp();
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions/vendas/contacts/avatars')
+        .send({ contactJids: ['com-foto@s.whatsapp.net', 'sem-cache@s.whatsapp.net'] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.avatars).toEqual([
+        { contactJid: 'com-foto@s.whatsapp.net', avatarUrl: 'https://cdn/foto.jpg' },
+        // Sem entrada em cache: responde sem foto NA HORA (a atualização
+        // acontece em segundo plano) — nunca faz a tela esperar.
+        { contactJid: 'sem-cache@s.whatsapp.net' },
+      ]);
+    });
+
+    it('recusa corpo sem contactJids (400)', async () => {
+      const app = buildApp();
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions/vendas/contacts/avatars')
+        .send({});
+
+      expect(response.status).toBe(400);
+    });
+
+    it('recusa uma lista acima do teto de 300 (uma tela nunca pede tanto)', async () => {
+      const app = buildApp();
+      const demais = Array.from({ length: 301 }, (_, i) => `c${i}@s.whatsapp.net`);
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-1/whatsapp-sessions/vendas/contacts/avatars')
+        .send({ contactJids: demais });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('não vaza o cache de outro tenant (mesmo JID, tenant diferente)', async () => {
+      const app = buildApp();
+
+      const response = await request(app)
+        .post('/api/tenants/tenant-2/whatsapp-sessions/vendas/contacts/avatars')
+        .send({ contactJids: ['com-foto@s.whatsapp.net'] });
+
+      // O Fake deste teste não separa por tenant, então a garantia real de
+      // isolamento é a do repositório Prisma (coberta em
+      // `contactAvatarCache.integration.test.ts`, contra Postgres de
+      // verdade). Aqui só confirmamos que a rota do outro tenant responde.
+      expect(response.status).toBe(200);
+    });
   });
 
   it('DELETE .../:sessionName responde 204, inclusive para sessão nunca conectada (idempotente)', async () => {

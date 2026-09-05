@@ -1,127 +1,174 @@
 import { useEffect, useState } from 'react';
-import { fetchContactAvatar } from '../lib/clientApi';
+import { fetchContactAvatars } from '../lib/clientApi';
 
 /**
- * Cache de módulo — em memória, sobrevive entre montagens/desmontagens de
- * componentes na mesma aba (Milestone 6, Bloco M6H-2b, achado do teste real
- * de 2026-07-25): a inbox pede a MESMA foto duas vezes ao abrir uma conversa
- * (uma vez pela linha da lista, outra pelo cabeçalho do painel de detalhe) —
- * sem dedup, isso dobra (ou mais, se houver várias linhas visíveis) a
- * quantidade de queries simultâneas ao socket do Baileys, que já provou ser
- * sensível a isso (ver `BaileysProvider.getProfilePictureUrl`, timeout
- * próprio adicionado no mesmo incidente). `inFlight` deduplica chamadas
- * concorrentes para o mesmo contato; `resolved` evita reconsultar de novo ao
- * remontar (ex.: sair e voltar para a conversa) dentro da mesma sessão do
- * navegador — aceitável porque uma foto de perfil ENCONTRADA muda raramente.
+ * Bloco B2 (issue #13) — REESCRITO. Antes, cada avatar montado fazia a
+ * própria requisição, e cada requisição virava uma consulta AO VIVO no
+ * socket Baileys: com uma lista de dezenas de linhas isso bombardeava o
+ * mesmo socket que envia as mensagens reais (ADR #78; e foi por isso que as
+ * listas passaram a não buscar foto nenhuma, correção de 2026-08-18).
  *
- * CORREÇÃO 2026-07-30 (bug real reportado pelo fundador: foto nunca aparece,
- * mesmo em contatos com foto pública confirmada, e nem F5 resolve):
- * `resolved` gravava `avatarUrl: undefined` PERMANENTEMENTE mesmo quando a
- * causa foi só o timeout de 6s de `BaileysProvider.getProfilePictureUrl`
- * (a API sempre responde 200, então do ponto de vista do fetch um timeout
- * transitório e uma ausência real de foto eram idênticos) — uma falha
- * passageira (sessão reconectando, socket sob carga ao abrir a inbox
- * inteira de uma vez) travava aquele contato em "sem foto" pelo resto da
- * aba, sem nenhuma forma de retry a não ser um reload completo da página
- * (que recria o módulo JS e zera o Map). Corrigido com um TTL curto
- * (`NO_AVATAR_RETRY_MS`) só para o caso "sem foto" — uma URL de verdade
- * continua cacheada para sempre (não muda), mas `undefined` expira e uma
- * nova tentativa acontece depois de um tempo, sem precisar de F5.
+ * Agora são duas mudanças, e é a combinação delas que resolve:
+ *
+ * 1. O servidor responde de um CACHE em Postgres e atualiza o que venceu
+ *    fora do caminho da requisição, com teto de concorrência — nenhuma
+ *    consulta ao WhatsApp acontece enquanto a tela espera.
+ * 2. Aqui, os pedidos que aparecem no mesmo instante (todas as linhas de uma
+ *    lista montam juntas) são AGRUPADOS numa requisição só, em vez de uma
+ *    por linha.
+ *
+ * O agrupamento é feito por um pequeno atraso (`BATCH_WINDOW_MS`): cada
+ * componente registra o JID que precisa, e quando a janela fecha sai um
+ * único POST com todos. É o mesmo princípio de um DataLoader, sem
+ * dependência nova.
  */
-const inFlight = new Map<string, Promise<string | undefined>>();
+
+/**
+ * Janela de agrupamento. Curta o bastante para ninguém perceber, longa o
+ * bastante para uma lista inteira montar dentro dela.
+ */
+const BATCH_WINDOW_MS = 30;
+
+/**
+ * Teto por requisição — espelha o limite validado na API (300). Uma tela
+ * maior que isso é quebrada em requisições sucessivas em vez de tomar 400.
+ */
+const MAX_JIDS_PER_REQUEST = 300;
+
+/**
+ * Uma foto ENCONTRADA não é reconsultada nesta aba (mudam raramente); um
+ * "sem foto" tem validade curta, porque o servidor pode tê-lo preenchido em
+ * segundo plano logo depois — assim a foto aparece sozinha, sem F5.
+ */
+const NO_AVATAR_RETRY_MS = 60_000;
+
+type Listener = (avatarUrl: string | undefined) => void;
+
 const resolved = new Map<string, string | undefined>();
 const resolvedAt = new Map<string, number>();
-
-/** Quanto tempo um resultado "sem foto" fica cacheado antes de tentar de novo — bem menor que "para sempre" (o comportamento antigo), mas ainda alto o suficiente para não martelar o socket a cada remontagem de componente. */
-const NO_AVATAR_RETRY_MS = 60_000;
+const pending = new Map<string, Set<string>>();
+const listeners = new Map<string, Set<Listener>>();
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
 
 function cacheKey(sessionName: string, contactJid: string): string {
   return `${sessionName}::${contactJid}`;
 }
 
-function hasFreshCacheEntry(key: string): boolean {
+function hasFreshEntry(key: string): boolean {
   if (!resolved.has(key)) return false;
-  // Uma URL de verdade nunca expira (fotos de perfil mudam raramente); só
-  // um resultado "sem foto" (`undefined`) tem TTL, porque pode ter sido um
-  // timeout transitório em vez de uma ausência real.
   if (resolved.get(key) !== undefined) return true;
-  const at = resolvedAt.get(key) ?? 0;
-  return Date.now() - at < NO_AVATAR_RETRY_MS;
+  return Date.now() - (resolvedAt.get(key) ?? 0) < NO_AVATAR_RETRY_MS;
 }
 
-function loadAvatar(sessionName: string, contactJid: string): Promise<string | undefined> {
+function publish(key: string, avatarUrl: string | undefined): void {
+  resolved.set(key, avatarUrl);
+  resolvedAt.set(key, Date.now());
+  const subscribers = listeners.get(key);
+  if (!subscribers) return;
+  for (const listener of subscribers) listener(avatarUrl);
+}
+
+function scheduleFlush(): void {
+  if (flushTimer !== undefined) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = undefined;
+    void flushPending();
+  }, BATCH_WINDOW_MS);
+}
+
+async function flushPending(): Promise<void> {
+  const batches = [...pending.entries()];
+  pending.clear();
+
+  for (const [sessionName, jids] of batches) {
+    const all = [...jids];
+    for (let i = 0; i < all.length; i += MAX_JIDS_PER_REQUEST) {
+      const chunk = all.slice(i, i + MAX_JIDS_PER_REQUEST);
+      try {
+        const { avatars } = await fetchContactAvatars(sessionName, chunk);
+        const byJid = new Map(avatars.map((entry) => [entry.contactJid, entry.avatarUrl]));
+        // Publica TODO o pedaço, inclusive os que não vieram na resposta:
+        // ausência também é informação ("sem foto"), e sem publicar o
+        // componente ficaria esperando para sempre.
+        for (const contactJid of chunk) {
+          publish(cacheKey(sessionName, contactJid), byJid.get(contactJid));
+        }
+      } catch {
+        // Falha silenciosa (a ausência de avatar é o caso comum, não um
+        // erro visível — ver `ContactAvatar.tsx`). Deliberadamente NÃO grava
+        // em `resolved`: assim uma falha passageira é retentada na próxima
+        // montagem, em vez de travar o contato em "sem foto".
+        for (const contactJid of chunk) {
+          const subscribers = listeners.get(cacheKey(sessionName, contactJid));
+          if (subscribers) for (const listener of subscribers) listener(undefined);
+        }
+      }
+    }
+  }
+}
+
+function requestAvatar(sessionName: string, contactJid: string): void {
   const key = cacheKey(sessionName, contactJid);
-  if (hasFreshCacheEntry(key)) {
-    return Promise.resolve(resolved.get(key));
-  }
-  const pending = inFlight.get(key);
-  if (pending) {
-    return pending;
-  }
-  const request = fetchContactAvatar(sessionName, contactJid)
-    .then((result) => {
-      resolved.set(key, result.avatarUrl);
-      resolvedAt.set(key, Date.now());
-      return result.avatarUrl;
-    })
-    .catch(() => {
-      // Falha silenciosa (ver docstring de `useContactAvatar`) — não
-      // guarda em `resolved` (permite tentar de novo numa próxima
-      // montagem, ao contrário de um sucesso ou de "sem foto").
-      return undefined;
-    })
-    .finally(() => {
-      inFlight.delete(key);
-    });
-  inFlight.set(key, request);
-  return request;
+  if (hasFreshEntry(key)) return;
+  const forSession = pending.get(sessionName) ?? new Set<string>();
+  forSession.add(contactJid);
+  pending.set(sessionName, forSession);
+  scheduleFlush();
 }
 
 /**
- * Foto de perfil de um contato (Milestone 6, Bloco M6H-2b) — busca UMA vez
- * por (`sessionName`, `contactJid`) ao montar/trocar de contato, sem
- * polling: diferente de status/mensagens (que mudam a cada segundo), uma
- * foto de perfil muda raramente, e cada chamada é uma ida ao socket Baileys
- * ao vivo (`WhatsAppProvider.getProfilePictureUrl`) — reconsultar a cada
- * poll de 4-5s seria desperdício sem benefício percebido. Deduplicada e
- * cacheada em memória via `loadAvatar` (ver comentário acima).
- *
- * Falha silenciosamente: qualquer erro (rede, sessão sem conexão, contato
- * sem foto) vira `undefined` — nunca um estado de erro visível, porque a
- * ausência de avatar é o caso comum, não uma falha (ver `ContactAvatar.tsx`
- * para o fallback visual).
- */
-/**
- * Limpa os `Map`s de cache de módulo — EXCLUSIVAMENTE para uso em testes
- * (2026-07-31). Sem isso, testes que reutilizam o mesmo `sessionName`/
- * `contactJid` entre si "vazam" o resultado de um `it()` para o próximo,
- * porque o cache é intencionalmente de módulo (sobrevive a remontagens
- * reais — ver docstring acima), não de instância do hook. Nunca chamado em
- * código de produção.
+ * Limpa o estado de módulo — EXCLUSIVAMENTE para testes. O cache é de
+ * módulo de propósito (sobrevive a remontagens reais), então sem isto o
+ * resultado de um `it()` vazaria para o próximo.
  */
 export function __resetContactAvatarCacheForTests(): void {
-  inFlight.clear();
   resolved.clear();
   resolvedAt.clear();
+  pending.clear();
+  listeners.clear();
+  if (flushTimer !== undefined) {
+    clearTimeout(flushTimer);
+    flushTimer = undefined;
+  }
 }
 
+/**
+ * Foto de perfil de um contato. A assinatura é a mesma de sempre — quem
+ * chama não sabe (nem precisa saber) que os pedidos viram um lote só.
+ *
+ * Falha silenciosamente: qualquer erro vira `undefined`, nunca um estado de
+ * erro visível, porque não ter avatar é o caso comum.
+ */
 export function useContactAvatar(
   sessionName: string | undefined,
   contactJid: string | undefined,
 ): string | undefined {
-  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(() =>
+    sessionName && contactJid ? resolved.get(cacheKey(sessionName, contactJid)) : undefined,
+  );
 
   useEffect(() => {
-    setAvatarUrl(undefined);
-    if (!sessionName || !contactJid) return;
-    let cancelled = false;
+    if (!sessionName || !contactJid) {
+      setAvatarUrl(undefined);
+      return;
+    }
+    const key = cacheKey(sessionName, contactJid);
+    setAvatarUrl(resolved.get(key));
 
-    loadAvatar(sessionName, contactJid).then((url) => {
+    let cancelled = false;
+    const listener: Listener = (url) => {
       if (!cancelled) setAvatarUrl(url);
-    });
+    };
+    const subscribers = listeners.get(key) ?? new Set<Listener>();
+    subscribers.add(listener);
+    listeners.set(key, subscribers);
+
+    requestAvatar(sessionName, contactJid);
 
     return () => {
       cancelled = true;
+      subscribers.delete(listener);
+      if (subscribers.size === 0) listeners.delete(key);
     };
   }, [sessionName, contactJid]);
 

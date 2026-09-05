@@ -4,7 +4,13 @@ import { useContactAvatar } from '@/hooks/useContactAvatar';
 import { avatarPaletteFor } from '@/lib/avatarPalette';
 
 interface ContactAvatarProps {
-  sessionName: string;
+  /**
+   * Bloco B2 (issue #13) — OPCIONAL: sem sessão não há foto a pedir (é o
+   * caso de um contato salvo que ainda não conversou com nenhum WhatsApp).
+   * O avatar continua renderizando normalmente, direto no fallback de
+   * iniciais.
+   */
+  sessionName?: string;
   contactJid: string;
   contactName?: string;
   /**
@@ -24,21 +30,6 @@ interface ContactAvatarProps {
   waitingForHuman?: boolean;
   /** Tamanho do círculo (classes Tailwind `h-*`/`w-*`) — default 44px, mesmo tamanho já usado na linha de inbox. */
   className?: string;
-  /**
-   * CORREÇÃO 2026-08-18 (pedido do fundador — achado real de produção): a
-   * lista de Conversas tem uma linha por conversa, e cada linha buscava a
-   * foto ao vivo (`useContactAvatar` → IQ query no socket do Baileys, timeout
-   * de 6s quando falha). Com muitos contatos sem foto — o caso comum, aqui
-   * TODOS — isso vira um bombardeio contínuo (uma tentativa a cada ~6s, sem
-   * parar) no MESMO socket que também precisa mandar mensagens reais,
-   * contribuindo para falhas de envio observadas em produção. `false` pula
-   * `useContactAvatar` inteiramente — nunca toca a rede/o socket, sempre cai
-   * no fallback de iniciais. Default `true` (comportamento de sempre, usado
-   * no cabeçalho da conversa aberta/painel de contexto — ali é só 1 contato
-   * por vez, custo baixo, valor real). Solução provisória: uma versão melhor
-   * (cache no servidor, por exemplo) fica para uma rodada futura.
-   */
-  fetchLive?: boolean;
 }
 
 /**
@@ -64,15 +55,14 @@ export default function ContactAvatar({
   savedContactName,
   waitingForHuman = false,
   className,
-  fetchLive = true,
 }: ContactAvatarProps): JSX.Element {
-  // `useContactAvatar` já trata sessionName/contactJid ausentes como "não
-  // busca nada" — reaproveita essa mesma checagem em vez de pular o hook
-  // condicionalmente (que violaria as Regras dos Hooks do React).
-  const avatarUrl = useContactAvatar(
-    fetchLive ? sessionName : undefined,
-    fetchLive ? contactJid : undefined,
-  );
+  // Bloco B2 (issue #13): a prop `fetchLive` foi REMOVIDA. Ela existia
+  // porque cada avatar de lista virava uma consulta ao vivo no socket
+  // Baileys (ADR #78); agora `useContactAvatar` agrupa os pedidos da tela
+  // numa requisição só, servida de um cache no servidor que nunca toca o
+  // socket no caminho da requisição — então não há mais nada de que as
+  // listas precisem se proteger.
+  const avatarUrl = useContactAvatar(sessionName, contactJid);
   const palette = avatarPaletteFor(contactJid);
 
   return (

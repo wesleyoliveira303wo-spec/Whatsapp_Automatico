@@ -373,7 +373,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           'mas sem MessageIngestionService wired — mensagens recebidas serão ignoradas). Ver .env.example.',
       );
 
-      const { sessionService } = createWhatsAppSessionsComposition(
+      const { sessionService, contactAvatarService } = createWhatsAppSessionsComposition(
         prisma,
         WHATSAPP_CREDENTIALS_MASTER_KEY,
         API_KEY_PEPPER,
@@ -383,7 +383,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       app.use(
         '/api/tenants/:tenantId/whatsapp-sessions',
         authenticate,
-        createWhatsAppSessionsRouter(sessionService),
+        createWhatsAppSessionsRouter(sessionService, contactAvatarService),
       );
       app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
 
@@ -551,7 +551,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       aiReplyQueue,
     } = createConversationsComposition(prisma, aiReplyProducerConnection, logger);
 
-    const { sessionService, registry, mediaDownloader, mediaSender } =
+    const { sessionService, registry, mediaDownloader, mediaSender, contactAvatarService } =
       createWhatsAppSessionsComposition(
         prisma,
         WHATSAPP_CREDENTIALS_MASTER_KEY,
@@ -608,7 +608,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use(
       '/api/tenants/:tenantId/whatsapp-sessions',
       authenticate,
-      createWhatsAppSessionsRouter(sessionService),
+      createWhatsAppSessionsRouter(sessionService, contactAvatarService),
     );
     app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
 

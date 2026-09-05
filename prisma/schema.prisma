@@ -1370,3 +1370,37 @@ model AuditLog {
   @@index([tenantId, action, occurredAt])
   @@map("audit_logs")
 }
+
+/// Bloco B2 (issue #13) — cache SERVIDOR da foto de perfil de um contato.
+///
+/// Existe por causa de um incidente real: buscar a foto ao vivo é uma IQ
+/// query no MESMO socket Baileys que envia as mensagens (ADR #78 — uma
+/// consulta sem timeout travou o socket inteiro), e uma lista com dezenas de
+/// linhas buscando ao vivo virou um bombardeio que contribuiu para falhas de
+/// envio. Por isso as listas passaram a NÃO buscar foto nenhuma. Esta tabela
+/// devolve a foto às listas sem nunca tocar o socket no caminho da
+/// requisição: a leitura serve o que está aqui; o que falta ou venceu é
+/// atualizado fora do caminho, com teto de concorrência.
+///
+/// `avatarUrl` NULO com a linha PRESENTE é um registro negativo com
+/// significado próprio ("checamos e este contato não tem foto / bloqueou por
+/// privacidade") — distinto de linha ausente ("nunca checamos"). Sem essa
+/// distinção, todo contato sem foto — o caso mais comum — seria reconsultado
+/// a cada abertura de tela, que é exatamente o bombardeio que se quer evitar.
+/// O TTL de cada caso é decidido em Domain (`contactAvatarFreshness.ts`),
+/// nunca no banco.
+///
+/// Sem FK para `WhatsAppSession`/`WhatsAppConversation`: é cache derivado,
+/// chaveado por (tenant, sessão, JID) como texto — mesmo padrão de
+/// `WhatsAppSessionEvent` (ADR #49). A URL do WhatsApp é pública e
+/// temporária, então nada aqui é sigiloso (ver ADR #77).
+model WhatsAppContactAvatar {
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  contactJid  String   @map("contact_jid")
+  avatarUrl   String?  @map("avatar_url") @db.Text
+  refreshedAt DateTime @map("refreshed_at")
+
+  @@id([tenantId, sessionName, contactJid])
+  @@map("whatsapp_contact_avatars")
+}
