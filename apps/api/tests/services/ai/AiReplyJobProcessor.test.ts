@@ -305,7 +305,10 @@ describe('AiReplyJobProcessor', () => {
       await processor.process(buildJobData({ messageId: 'message-inbound-xyz' }));
 
       const [recorded] = aiInteractionRepository.getAll();
-      expect(recorded.messageId).toBe('message-inbound-xyz');
+      // A PERGUNTA vai para a coluna própria — `messageId` pertence à
+      // RESPOSTA enviada depois (`linkMessage`), e confundir as duas fazia a
+      // tela de lacunas mostrar o que a IA respondeu (bug de 2026-09-05).
+      expect(recorded.inboundMessageId).toBe('message-inbound-xyz');
       expect(recorded.escalationReason).toBeUndefined();
     });
   });
@@ -415,7 +418,7 @@ describe('AiReplyJobProcessor', () => {
 
       const [recorded] = aiInteractionRepository.getAll();
       expect(recorded.escalationReason).toBe('requested_human');
-      expect(recorded.messageId).toBe('message-pediu-1');
+      expect(recorded.inboundMessageId).toBe('message-pediu-1');
     });
 
     it('uma SEGUNDA escalada na mesma conversa reescreve escalatedAt (sustenta um novo alerta na Dashboard)', async () => {

@@ -342,7 +342,7 @@ describe('ConversationAiService', () => {
         tokensOutput: 8,
         status: 'success',
       });
-      expect(recorded.messageId).toBeUndefined();
+      expect(recorded.inboundMessageId).toBeUndefined();
       expect(typeof recorded.costUsd).toBe('string');
       expect(typeof recorded.latencyMs).toBe('number');
       // Bloco 4: o id devolvido no resultado é o MESMO id gerado por
@@ -375,7 +375,7 @@ describe('ConversationAiService', () => {
       );
 
       const recorded = aiInteractionRepository.getAll()[0];
-      expect(recorded.messageId).toBe('m1');
+      expect(recorded.inboundMessageId).toBe('m1');
     });
 
     it('Fase 1, Bloco F1.4: grava escalationReason no AiInteraction quando a IA escala por não saber responder', async () => {
@@ -398,7 +398,7 @@ describe('ConversationAiService', () => {
 
       const recorded = aiInteractionRepository.getAll()[0];
       expect(recorded.escalationReason).toBe('unknown_answer');
-      expect(recorded.messageId).toBe('m1');
+      expect(recorded.inboundMessageId).toBe('m1');
     });
 
     it('grava um AiInteraction com status "validation_rejected" e o motivo da rejeição em errorMessage', async () => {

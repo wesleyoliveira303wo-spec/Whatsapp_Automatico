@@ -62,6 +62,7 @@ interface AiInteractionRow {
   tenantId: string;
   conversationId: string;
   messageId: string | null;
+  inboundMessageId: string | null;
   provider: string;
   model: string | null;
   promptVersion: string;
@@ -97,6 +98,7 @@ function toDomain(row: AiInteractionRow): AiInteraction {
     tenantId: row.tenantId,
     conversationId: row.conversationId,
     messageId: row.messageId ?? undefined,
+    inboundMessageId: row.inboundMessageId ?? undefined,
     provider: PRISMA_TO_PROVIDER[row.provider],
     model: row.model ?? undefined,
     promptVersion: row.promptVersion,
@@ -143,6 +145,7 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
         tenantId: interaction.tenantId,
         conversationId: interaction.conversationId,
         messageId: interaction.messageId,
+        inboundMessageId: interaction.inboundMessageId,
         provider: PROVIDER_TO_PRISMA[interaction.provider],
         model: interaction.model,
         promptVersion: interaction.promptVersion,
@@ -237,7 +240,7 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
         "ai"."created_at"      AS "occurredAt"
       FROM "ai_interactions" AS "ai"
       INNER JOIN "whatsapp_conversations" AS "conv" ON "conv"."id" = "ai"."conversation_id"
-      LEFT JOIN "whatsapp_messages" AS "msg" ON "msg"."id" = "ai"."message_id"
+      LEFT JOIN "whatsapp_messages" AS "msg" ON "msg"."id" = "ai"."inbound_message_id"
       LEFT JOIN "whatsapp_contacts" AS "contact" ON "contact"."id" = "conv"."contact_id"
       WHERE "ai"."tenant_id" = ${tenantId}
         AND "conv"."session_name" = ${sessionName}

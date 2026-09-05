@@ -201,7 +201,7 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
         savedContactName: 'Dona Ana',
       });
       await aiInteractionRepository.record(
-        buildInteraction({ escalationReason: 'unknown_answer', messageId: 'message-1' }),
+        buildInteraction({ escalationReason: 'unknown_answer', inboundMessageId: 'message-1' }),
       );
 
       const response = await request(app)

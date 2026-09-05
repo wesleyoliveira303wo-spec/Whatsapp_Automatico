@@ -644,7 +644,7 @@ export class ConversationAiService {
     return this.aiInteractionRepository.record({
       tenantId: params.tenantId,
       conversationId: params.conversationId,
-      messageId: params.messageId,
+      inboundMessageId: params.messageId,
       provider: this.providerName,
       model: params.model,
       promptVersion: params.promptVersionId,

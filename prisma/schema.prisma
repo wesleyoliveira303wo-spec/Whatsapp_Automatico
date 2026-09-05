@@ -967,7 +967,15 @@ model AiInteraction {
   id             String               @id @default(uuid())
   tenantId       String               @map("tenant_id")
   conversationId String               @map("conversation_id")
+  /// A mensagem OUTBOUND enviada como resposta (preenchida por `linkMessage()`
+  /// depois do envio). NÃO é a pergunta do cliente — ver `inboundMessageId`.
   messageId      String?              @map("message_id")
+  /// A mensagem INBOUND que originou esta tentativa: a pergunta do cliente.
+  /// Coluna PRÓPRIA desde 2026-09-05 — antes a Fase 1/F1.4 gravava isso em
+  /// `messageId`, que o `OutboundCommandConsumer` sobrescrevia com a resposta
+  /// logo em seguida, fazendo a tela de lacunas mostrar o que a IA respondeu
+  /// em vez do que o cliente perguntou.
+  inboundMessageId String?            @map("inbound_message_id")
   provider       AiProviderType
   model          String?
   promptVersion  String               @map("prompt_version")

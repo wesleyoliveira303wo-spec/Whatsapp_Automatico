@@ -104,7 +104,7 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
           interactionId: interaction.id,
           conversationId: interaction.conversationId,
           sessionName: context.sessionName,
-          questionText: interaction.messageId ? context.questionText : undefined,
+          questionText: interaction.inboundMessageId ? context.questionText : undefined,
           contactJid: context.contactJid ?? '5511999999999@s.whatsapp.net',
           contactName: context.contactName,
           savedContactName: context.savedContactName,

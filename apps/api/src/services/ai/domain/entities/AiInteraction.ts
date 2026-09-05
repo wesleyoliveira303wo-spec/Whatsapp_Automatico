@@ -46,7 +46,18 @@ export interface AiInteraction {
   id: string;
   tenantId: string;
   conversationId: string;
+  /** A mensagem OUTBOUND enviada como resposta (`linkMessage()`, depois do envio). */
   messageId?: string;
+  /**
+   * A mensagem INBOUND que originou a tentativa: a PERGUNTA do cliente.
+   *
+   * Coluna própria desde 2026-09-05, por causa de um bug real: o F1.4 gravava
+   * a pergunta em `messageId`, e o `OutboundCommandConsumer` sobrescrevia essa
+   * mesma coluna com a resposta logo depois do envio — então a tela de
+   * "perguntas que a IA não soube responder" mostrava o que a IA RESPONDEU.
+   * Dois fatos distintos exigem duas colunas.
+   */
+  inboundMessageId?: string;
   provider: AiProviderName;
   model?: string;
   promptVersion: string;
