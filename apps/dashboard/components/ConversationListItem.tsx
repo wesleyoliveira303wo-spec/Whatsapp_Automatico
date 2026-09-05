@@ -74,6 +74,11 @@ function ConversationListItemImpl(
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
+      // Bloco B4 (issue #15): o navegador pula layout/pintura desta linha
+      // enquanto ela está fora da tela. O elemento CONTINUA no DOM — leitor
+      // de tela, Ctrl+F e foco por teclado seguem alcançando. Ver a
+      // decisão registrada em `styles/globals.css`.
+      className="list-row-lazy"
     >
       <Link
         href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}

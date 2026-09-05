@@ -50,6 +50,17 @@ describe('ConversationListItem (Milestone 6, Bloco M6H-2)', () => {
     expect(screen.queryByText('Aguardando atendente')).not.toBeInTheDocument();
   });
 
+  it('a linha continua NO DOM quando fora da tela (virtualização por CSS, bloco B4)', () => {
+    const { container } = render(<ConversationListItem conversation={buildConversation()} />);
+
+    // Trava de regressão: a otimização de lista grande é `content-visibility`
+    // via classe CSS, não desmontar itens. Trocar por uma janela virtual que
+    // remove elementos do DOM quebraria leitor de tela, Ctrl+F e — no
+    // Pipeline — os alvos de arrastar-e-soltar. Ver `styles/globals.css`.
+    expect(container.firstElementChild).toHaveClass('list-row-lazy');
+    expect(screen.getByRole('link')).toBeInTheDocument();
+  });
+
   it('leva ao detalhe dentro da sessão', () => {
     render(<ConversationListItem conversation={buildConversation()} />);
     expect(screen.getByRole('link')).toHaveAttribute('href', '/sessions/vendas/conversations/c1');

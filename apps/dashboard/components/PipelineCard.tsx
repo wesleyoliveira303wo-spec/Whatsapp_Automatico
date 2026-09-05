@@ -127,6 +127,10 @@ function PipelineCardImpl(
         // `group`: sustenta o `group-hover`/`group-focus-within` do seletor
         // "Mover…" na última linha (Onda 1 do redesign).
         'group cursor-grab rounded-lg border border-border bg-card px-3 py-[11px] transition-colors active:cursor-grabbing',
+        // Bloco B4 (issue #15): pula layout/pintura do card fora da tela SEM
+        // tirá-lo do DOM — é isso que preserva o arrastar-e-soltar (um card
+        // desmontado não seria alvo de soltura). Decisão em `globals.css`.
+        'pipeline-card-lazy',
         'hover:border-foreground/20',
         dragging && 'opacity-40',
       )}
