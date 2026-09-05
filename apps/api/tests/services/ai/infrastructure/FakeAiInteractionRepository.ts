@@ -87,6 +87,7 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
     tenantId: string,
     sessionName: string,
     limit: number,
+    conversationId?: string,
   ): Promise<UnansweredQuestion[]> {
     return this.interactions
       .filter(
@@ -94,7 +95,8 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
           i.tenantId === tenantId &&
           i.status === 'success' &&
           i.escalationReason === 'unknown_answer' &&
-          this.contextFor(i.conversationId).sessionName === sessionName,
+          this.contextFor(i.conversationId).sessionName === sessionName &&
+          (conversationId === undefined || i.conversationId === conversationId),
       )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, limit)
@@ -103,6 +105,7 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
         return {
           interactionId: interaction.id,
           conversationId: interaction.conversationId,
+          messageId: interaction.inboundMessageId,
           sessionName: context.sessionName,
           questionText: interaction.inboundMessageId ? context.questionText : undefined,
           contactJid: context.contactJid ?? '5511999999999@s.whatsapp.net',

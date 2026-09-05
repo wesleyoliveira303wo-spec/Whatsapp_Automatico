@@ -59,11 +59,14 @@ export function useConversationsList(
   sessionName?: string,
   needsHumanAttention?: boolean,
   archived?: boolean,
+  /** Filtro "Aguardando" da inbox (2026-09-05) — fila humana inteira (esperando OU já em atendimento). */
+  awaitingOrInHumanCare?: boolean,
 ): UseConversationsListResult {
   const query = new URLSearchParams();
   if (status) query.set('status', status);
   if (sessionName) query.set('sessionName', sessionName);
   if (needsHumanAttention) query.set('needsHumanAttention', 'true');
+  if (awaitingOrInHumanCare) query.set('awaitingOrInHumanCare', 'true');
   if (archived !== undefined) query.set('archived', String(archived));
   const queryString = query.toString();
   const streamUrl = `/api/conversations/stream${queryString ? `?${queryString}` : ''}`;
@@ -88,7 +91,7 @@ export function useConversationsList(
     setLoadedCursor(undefined);
     setLoadMoreError(null);
     setLocalOverrides({});
-  }, [status, sessionName, needsHumanAttention, archived]);
+  }, [status, sessionName, needsHumanAttention, awaitingOrInHumanCare, archived]);
 
   const applyLocalUpdate = useCallback((conversation: ConversationSummary) => {
     setLocalOverrides((overrides) => ({ ...overrides, [conversation.id]: conversation }));
@@ -133,6 +136,7 @@ export function useConversationsList(
       status,
       sessionName,
       needsHumanAttention,
+      awaitingOrInHumanCare,
       archived,
       cursor: effectiveCursor,
     })
@@ -146,7 +150,15 @@ export function useConversationsList(
       .finally(() => {
         setLoadingMore(false);
       });
-  }, [effectiveCursor, loadingMore, status, sessionName, needsHumanAttention, archived]);
+  }, [
+    effectiveCursor,
+    loadingMore,
+    status,
+    sessionName,
+    needsHumanAttention,
+    awaitingOrInHumanCare,
+    archived,
+  ]);
 
   const merged = useMemo(
     () => mergeConversationPages(livePage, loadedPages),

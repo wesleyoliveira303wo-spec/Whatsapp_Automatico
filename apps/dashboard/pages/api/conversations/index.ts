@@ -28,12 +28,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Reforma do escalonamento (2026-07-25) — repassa `needsHumanAttention` tal como recebido.
   const needsHumanAttention =
     typeof req.query.needsHumanAttention === 'string' ? req.query.needsHumanAttention : undefined;
+  // Filtro "Aguardando" da inbox (2026-09-05) — repassado tal como recebido,
+  // igual aos demais: quem decide o significado é a API.
+  const awaitingOrInHumanCare =
+    typeof req.query.awaitingOrInHumanCare === 'string'
+      ? req.query.awaitingOrInHumanCare
+      : undefined;
   // ADR #94 (2026-08-01) — repassa `excludedFromPipeline` tal como recebido.
   const excludedFromPipeline =
     typeof req.query.excludedFromPipeline === 'string' ? req.query.excludedFromPipeline : undefined;
 
   const { status: httpStatus, body } = await callConversationsApi(session, '', {
-    query: { status, limit, cursor, sessionName, needsHumanAttention, excludedFromPipeline },
+    query: { status, limit, cursor, sessionName, needsHumanAttention, awaitingOrInHumanCare, excludedFromPipeline },
   });
   res.status(httpStatus).json(body);
 }

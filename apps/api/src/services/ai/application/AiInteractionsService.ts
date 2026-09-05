@@ -70,6 +70,7 @@ export class AiInteractionsService {
     tenantId: string,
     sessionName: string,
     limit?: number,
+    conversationId?: string,
   ): Promise<UnansweredQuestion[]> {
     await this.assertTenantExists(tenantId);
     const resolvedLimit = Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT);
@@ -77,6 +78,7 @@ export class AiInteractionsService {
       tenantId,
       sessionName,
       resolvedLimit,
+      conversationId,
     );
   }
 

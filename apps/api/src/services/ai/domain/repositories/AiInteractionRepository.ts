@@ -105,5 +105,11 @@ export interface AiInteractionRepository {
     tenantId: string,
     sessionName: string,
     limit: number,
+    /**
+     * Restringe a UMA conversa — usado pela timeline, que precisa saber quais
+     * bolhas daquela conversa carregam uma lacuna. Ausente lista a sessão
+     * inteira (a tela de FAQ).
+     */
+    conversationId?: string,
   ): Promise<UnansweredQuestion[]>;
 }

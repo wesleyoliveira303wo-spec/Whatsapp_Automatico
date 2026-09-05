@@ -84,6 +84,7 @@ interface AiInteractionRow {
 interface UnansweredQuestionRow {
   interactionId: string;
   conversationId: string;
+  messageId: string | null;
   sessionName: string;
   questionText: string | null;
   contactJid: string;
@@ -227,11 +228,13 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
     tenantId: string,
     sessionName: string,
     limit: number,
+    conversationId?: string,
   ): Promise<UnansweredQuestion[]> {
     const rows = await this.prisma.$queryRaw<UnansweredQuestionRow[]>`
       SELECT
         "ai"."id"            AS "interactionId",
         "ai"."conversation_id" AS "conversationId",
+        "ai"."inbound_message_id" AS "messageId",
         "conv"."session_name"  AS "sessionName",
         "msg"."content"        AS "questionText",
         "conv"."contact_jid"   AS "contactJid",
@@ -246,6 +249,11 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
         AND "conv"."session_name" = ${sessionName}
         AND "ai"."status" = 'SUCCESS'
         AND "ai"."escalation_reason" = 'UNKNOWN_ANSWER'
+        -- Filtro opcional por conversa: nulo (ausente) deixa passar tudo.
+        -- Parametrizado como qualquer outro valor, nunca concatenado.
+        -- ATENCAO: nada de crase neste bloco -- ele vive dentro de um
+        -- template literal, e uma crase aqui fecharia a consulta no meio.
+        AND (${conversationId ?? null}::text IS NULL OR "ai"."conversation_id" = ${conversationId ?? null})
       ORDER BY "ai"."created_at" DESC
       LIMIT ${limit}
     `;
@@ -253,6 +261,7 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
     return rows.map((row) => ({
       interactionId: row.interactionId,
       conversationId: row.conversationId,
+      messageId: row.messageId ?? undefined,
       sessionName: row.sessionName,
       questionText: row.questionText ?? undefined,
       contactJid: row.contactJid,

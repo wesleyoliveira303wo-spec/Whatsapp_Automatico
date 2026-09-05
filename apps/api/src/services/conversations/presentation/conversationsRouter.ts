@@ -73,6 +73,16 @@ const listConversationsQuerySchema = z.object({
     .optional()
     .transform((value) => (value === 'true' ? true : undefined)),
   /**
+   * Filtro "Aguardando" da inbox (2026-09-05) — a fila humana inteira: quem
+   * espera atendente OU quem já está com um. Mesmo padrão `z.literal('true')`
+   * de `needsHumanAttention` (e pelo mesmo motivo: `z.coerce.boolean()`
+   * trataria `"false"` como `true`).
+   */
+  awaitingOrInHumanCare: z
+    .literal('true')
+    .optional()
+    .transform((value) => (value === 'true' ? true : undefined)),
+  /**
    * ADR #94 (2026-08-01) — `?excludedFromPipeline=true` lista só as
    * conversas marcadas como fora do funil; `?excludedFromPipeline=false`
    * lista só as que estão dentro do funil (usado pelo board Kanban, que

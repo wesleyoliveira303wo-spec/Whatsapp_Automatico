@@ -1450,6 +1450,8 @@ export interface FetchConversationsOptions {
   sessionName?: string;
   /** Reforma do escalonamento (2026-07-25) — filtra só conversas com `escalatedAt` definido ("aguardando atendente"). */
   needsHumanAttention?: boolean;
+  /** Filtro "Aguardando" da inbox (2026-09-05) — esperando atendente OU já em atendimento. */
+  awaitingOrInHumanCare?: boolean;
   /** ADR #94 (2026-08-01) — `true`/`false` filtra dentro/fora do funil comercial; ausente = sem filtro. */
   excludedFromPipeline?: boolean;
   /**
@@ -1468,6 +1470,7 @@ export function fetchConversations(
   if (options.cursor) params.set('cursor', options.cursor);
   if (options.sessionName) params.set('sessionName', options.sessionName);
   if (options.needsHumanAttention) params.set('needsHumanAttention', 'true');
+  if (options.awaitingOrInHumanCare) params.set('awaitingOrInHumanCare', 'true');
   if (options.excludedFromPipeline !== undefined)
     params.set('excludedFromPipeline', String(options.excludedFromPipeline));
   if (options.archived !== undefined) params.set('archived', String(options.archived));
@@ -1683,6 +1686,8 @@ export function fetchAiInteractions(
 export interface UnansweredQuestionSummary {
   interactionId: string;
   conversationId: string;
+  /** `id` da mensagem que a IA não soube responder — é o que a timeline marca. */
+  messageId?: string;
   sessionName: string;
   questionText?: string;
   contactJid: string;
@@ -1700,9 +1705,12 @@ export interface UnansweredQuestionSummary {
 export function fetchUnansweredQuestions(
   sessionName: string,
   limit?: number,
+  /** Restringe a UMA conversa — usado pela timeline para marcar as bolhas. */
+  conversationId?: string,
 ): Promise<{ questions: UnansweredQuestionSummary[] }> {
   const params = new URLSearchParams({ sessionName });
   if (limit) params.set('limit', String(limit));
+  if (conversationId) params.set('conversationId', conversationId);
   return request(`/api/ai-interactions/unanswered?${params.toString()}`);
 }
 

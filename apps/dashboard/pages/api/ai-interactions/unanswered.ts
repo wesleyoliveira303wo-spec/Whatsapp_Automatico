@@ -25,9 +25,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const sessionName = typeof req.query.sessionName === 'string' ? req.query.sessionName : undefined;
   const limit = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+  const conversationId =
+    typeof req.query.conversationId === 'string' ? req.query.conversationId : undefined;
 
   const { status, body } = await callAiInteractionsApi(session, '/unanswered', {
-    query: { sessionName, limit },
+    query: { sessionName, limit, conversationId },
   });
   res.status(status).json(body);
 }

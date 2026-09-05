@@ -27,6 +27,11 @@ const listInteractionsQuerySchema = z.object({
 const listUnansweredQuestionsQuerySchema = z.object({
   sessionName: z.string().trim().min(1, 'sessionName é obrigatório'),
   limit: z.coerce.number().int().positive().optional(),
+  /**
+   * Restringe a UMA conversa — a timeline usa isto para saber quais bolhas
+   * daquela conversa carregam uma lacuna. Ausente lista a sessão inteira.
+   */
+  conversationId: z.string().trim().min(1).optional(),
 });
 
 /**
@@ -63,6 +68,7 @@ export function createAiInteractionsRouter(aiInteractionsService: AiInteractions
         params.tenantId,
         query.sessionName,
         query.limit,
+        query.conversationId,
       );
       res.status(200).json({ questions });
     }),

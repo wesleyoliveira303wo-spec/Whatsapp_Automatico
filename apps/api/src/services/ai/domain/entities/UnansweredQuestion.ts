@@ -20,6 +20,12 @@ export interface UnansweredQuestion {
   /** `AiInteraction.id` — a tentativa de geração em que a IA sinalizou a lacuna. */
   interactionId: string;
   conversationId: string;
+  /**
+   * `id` da mensagem inbound que a IA não soube responder. É o que permite a
+   * timeline da conversa marcar EXATAMENTE aquela bolha com o sinal de
+   * lacuna, em vez de só listar as perguntas fora de contexto.
+   */
+  messageId?: string;
   /** Sempre presente: vem do JOIN obrigatório com a conversa. */
   sessionName: string;
   /**

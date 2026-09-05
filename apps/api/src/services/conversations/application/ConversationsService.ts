@@ -56,6 +56,8 @@ export interface ListConversationsOptions {
   sessionName?: string;
   /** Reforma do escalonamento (2026-07-25) — filtra só conversas com `escalatedAt` definido (ver `ConversationRepository.FindAllByTenantOptions`). */
   needsHumanAttention?: boolean;
+  /** Filtro "Aguardando" da inbox (2026-09-05) — ver o port. */
+  awaitingOrInHumanCare?: boolean;
   /** ADR #94 (2026-08-01) — filtra por dentro/fora do funil comercial (ver `ConversationRepository.FindAllByTenantOptions`). Ausente = sem filtro. */
   excludedFromPipeline?: boolean;
   /**
@@ -462,6 +464,7 @@ export class ConversationsService {
       cursor: options.cursor,
       sessionName: options.sessionName,
       needsHumanAttention: options.needsHumanAttention,
+      awaitingOrInHumanCare: options.awaitingOrInHumanCare,
       excludedFromPipeline: options.excludedFromPipeline,
       archived: options.archived ?? false,
     });
