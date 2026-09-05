@@ -499,7 +499,11 @@ export class FakeAiRateLimiter implements AiRateLimiter {
   private blocked = false;
   readonly calls: Array<{ tenantId: string; sessionName: string; conversationId: string }> = [];
 
-  consume(tenantId: string, sessionName: string, conversationId: string): boolean {
+  async consume(
+    tenantId: string,
+    sessionName: string,
+    conversationId: string,
+  ): Promise<boolean> {
     this.calls.push({ tenantId, sessionName, conversationId });
     return !this.blocked;
   }

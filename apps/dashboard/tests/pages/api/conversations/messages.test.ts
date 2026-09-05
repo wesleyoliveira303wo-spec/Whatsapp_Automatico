@@ -1,6 +1,6 @@
 import handler from '../../../../pages/api/conversations/[conversationId]/messages';
 import { setSessionCookie, SESSION_COOKIE_NAME } from '../../../../lib/dashboardSession';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, sessionCookieValue } from '../../../testDoubles';
 
 /**
  * Testes do proxy de mensagens de uma conversa (feature N2): GET (histórico) e
@@ -40,10 +40,7 @@ describe('proxy /api/conversations/[id]/messages', () => {
       refreshToken: 'ref-1',
       user: { id: 'op-1', email: 'op@empresa.com', role: 'operator', mustChangePassword: false },
     });
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   function mockApi(status: number, body: unknown): void {

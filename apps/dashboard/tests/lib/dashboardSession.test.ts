@@ -17,6 +17,32 @@ function extractCookieValue(setCookieHeader: string): string {
   return match[1];
 }
 
+/**
+ * Desde o bloco B1 a resposta grava DOIS cookies (sessão cifrada + token CSRF
+ * legível), então `Set-Cookie` passou a ser um array.
+ */
+function setCookieHeaders(res: { _headers: Record<string, unknown> }): string[] {
+  const raw = res._headers['Set-Cookie'];
+  if (raw === undefined) return [];
+  return Array.isArray(raw) ? (raw as string[]) : [raw as string];
+}
+
+/** O cabeçalho `Set-Cookie` do cookie de SESSÃO (ignora o do token CSRF). */
+function sessionCookieHeader(res: { _headers: Record<string, unknown> }): string {
+  const found = setCookieHeaders(res).find((cookie) =>
+    cookie.startsWith(`${SESSION_COOKIE_NAME}=`),
+  );
+  if (!found) throw new Error('Set-Cookie não contém o cookie de sessão');
+  return found;
+}
+
+/** O cabeçalho `Set-Cookie` do cookie legível de token CSRF. */
+function csrfCookieHeader(res: { _headers: Record<string, unknown> }): string {
+  const found = setCookieHeaders(res).find((cookie) => cookie.startsWith('wa_csrf_token='));
+  if (!found) throw new Error('Set-Cookie não contém o cookie de CSRF');
+  return found;
+}
+
 describe('dashboardSession', () => {
   const originalSecret = process.env.DASHBOARD_SESSION_SECRET;
   const originalNodeEnv = process.env.NODE_ENV;
@@ -36,13 +62,15 @@ describe('dashboardSession', () => {
       const res = createFakeRes();
       setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave-secreta' });
 
-      const setCookieHeader = res._headers['Set-Cookie'] as string;
+      const setCookieHeader = sessionCookieHeader(res);
       const cookieValue = extractCookieValue(setCookieHeader);
       const req = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookieValue } });
 
       expect(readSessionFromRequest(req)).toEqual({
         tenantId: 'tenant-1',
         apiKey: 'chave-secreta',
+        // Bloco B1 — `setSessionCookie` embute um token CSRF no payload.
+        csrfToken: expect.any(String),
       });
     });
 
@@ -50,10 +78,34 @@ describe('dashboardSession', () => {
       const res = createFakeRes();
       setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave' });
 
-      const setCookieHeader = res._headers['Set-Cookie'] as string;
+      const setCookieHeader = sessionCookieHeader(res);
       expect(setCookieHeader).toMatch(/HttpOnly/);
       expect(setCookieHeader).toMatch(/SameSite=Lax/);
       expect(setCookieHeader).toMatch(/Max-Age=43200/); // 12h em segundos
+    });
+
+    it('o cookie de CSRF é LEGÍVEL pelo JS (sem HttpOnly) e carrega o mesmo token da sessão', () => {
+      const res = createFakeRes();
+      setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave' });
+
+      const csrfHeader = csrfCookieHeader(res);
+      // É JUSTAMENTE a ausência de HttpOnly que faz a proteção funcionar: o
+      // Dashboard prova não ser um site atacante por conseguir LER este
+      // cookie e ecoá-lo no cabeçalho. Um site de terceiros faz o navegador
+      // ENVIAR cookies numa requisição forjada, mas não consegue lê-los.
+      expect(csrfHeader).not.toMatch(/HttpOnly/);
+      expect(csrfHeader).toMatch(/SameSite=Lax/);
+
+      // E o token do cookie legível tem que ser o MESMO que ficou guardado
+      // dentro da sessão cifrada — é a comparação entre os dois que o BFF faz.
+      // `extractCookieValue` é fixo no cookie de sessão; aqui o nome é outro.
+      const cookieToken = csrfHeader.slice('wa_csrf_token='.length).split(';')[0];
+      const session = readSessionFromRequest(
+        createFakeReq({
+          cookies: { [SESSION_COOKIE_NAME]: extractCookieValue(sessionCookieHeader(res)) },
+        }),
+      );
+      expect(session?.csrfToken).toBe(cookieToken);
     });
 
     it('NÃO inclui Secure fora de produção (permite localhost sem HTTPS em dev)', () => {
@@ -61,7 +113,7 @@ describe('dashboardSession', () => {
       const res = createFakeRes();
       setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave' });
 
-      expect(res._headers['Set-Cookie']).not.toMatch(/Secure/);
+      expect(sessionCookieHeader(res)).not.toMatch(/Secure/);
     });
 
     it('inclui Secure em produção', () => {
@@ -69,7 +121,7 @@ describe('dashboardSession', () => {
       const res = createFakeRes();
       setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave' });
 
-      expect(res._headers['Set-Cookie']).toMatch(/Secure/);
+      expect(sessionCookieHeader(res)).toMatch(/Secure/);
     });
 
     /**
@@ -96,7 +148,7 @@ describe('dashboardSession', () => {
         },
       });
 
-      const cookieValue = extractCookieValue(res._headers['Set-Cookie'] as string);
+      const cookieValue = extractCookieValue(sessionCookieHeader(res));
       // Cabe com folga no limite prático de ~4 KB do navegador.
       expect(cookieValue.length).toBeLessThan(3800);
 
@@ -126,7 +178,7 @@ describe('dashboardSession', () => {
     it('devolve null quando o cookie foi cifrado com uma chave diferente da atual', () => {
       const res = createFakeRes();
       setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave' });
-      const cookieValue = extractCookieValue(res._headers['Set-Cookie'] as string);
+      const cookieValue = extractCookieValue(sessionCookieHeader(res));
 
       process.env.DASHBOARD_SESSION_SECRET = Buffer.alloc(32, 99).toString('base64'); // outra chave
       const req = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookieValue } });
@@ -140,7 +192,7 @@ describe('dashboardSession', () => {
       const res = createFakeRes();
       clearSessionCookie(res);
 
-      expect(res._headers['Set-Cookie']).toMatch(/Max-Age=0/);
+      expect(sessionCookieHeader(res)).toMatch(/Max-Age=0/);
     });
   });
 
@@ -148,14 +200,19 @@ describe('dashboardSession', () => {
     it('devolve a sessão sem tocar a resposta quando o cookie é válido', async () => {
       const res = createFakeRes();
       setSessionCookie(res, { tenantId: 'tenant-1', apiKey: 'chave' });
-      const cookieValue = extractCookieValue(res._headers['Set-Cookie'] as string);
+      const cookieValue = extractCookieValue(sessionCookieHeader(res));
 
       const req = createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: cookieValue } });
       const res2 = createFakeRes();
 
       const session = await requireSession(req, res2);
 
-      expect(session).toEqual({ tenantId: 'tenant-1', apiKey: 'chave' });
+      expect(session).toEqual({
+        tenantId: 'tenant-1',
+        apiKey: 'chave',
+        // Bloco B1 — `setSessionCookie` passou a embutir o token CSRF no payload.
+        csrfToken: expect.any(String),
+      });
       expect(res2.status).not.toHaveBeenCalled();
     });
 
@@ -186,12 +243,17 @@ describe('dashboardSession', () => {
     tenantId: string;
     accessToken: string;
     refreshToken: string;
+    csrfToken: string;
     user: { id: string; email: string; role: string; mustChangePassword: boolean };
   } {
     return {
       tenantId: 'tenant-1',
       accessToken: fakeAccessToken(expEpochSeconds),
       refreshToken: 'refresh-1',
+      // Bloco B1 — fixo aqui para o round-trip continuar sendo comparação
+      // exata: sem ele, `setSessionCookie` geraria um token aleatório e
+      // `toEqual(session)` acusaria a diferença.
+      csrfToken: 'csrf-de-teste',
       user: {
         id: 'user-1',
         email: 'maria@empresa.com',
@@ -204,7 +266,7 @@ describe('dashboardSession', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    return extractCookieValue(res._headers['Set-Cookie'] as string);
+    return extractCookieValue(sessionCookieHeader(res));
   }
 
   describe('sessao de PESSOA (M5F-1)', () => {
@@ -275,7 +337,7 @@ describe('dashboardSession', () => {
       );
       expect(result).toEqual({ ...session, accessToken: newToken, refreshToken: 'refresh-2' });
       // Cookie regravado com a sessao renovada (rotacao persistida).
-      const rewritten = extractCookieValue(res._headers['Set-Cookie'] as string);
+      const rewritten = extractCookieValue(sessionCookieHeader(res));
       const reread = readSessionFromRequest(
         createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: rewritten } }),
       );
@@ -342,7 +404,7 @@ describe('dashboardSession', () => {
 
       expect(result).toBeNull();
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(res._headers['Set-Cookie']).toMatch(/Max-Age=0/);
+      expect(sessionCookieHeader(res)).toMatch(/Max-Age=0/);
     });
 
     it('API fora do ar durante a renovacao: tambem derruba a sessao (401), nunca lanca', async () => {

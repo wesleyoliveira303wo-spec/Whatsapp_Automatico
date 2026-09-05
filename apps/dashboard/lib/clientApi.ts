@@ -60,11 +60,48 @@ export class ClientApiError extends Error {
   }
 }
 
+/** Nome do cookie legível que espelha o token CSRF da sessão — ver `lib/dashboardSession.ts`. */
+const CSRF_COOKIE_NAME = 'wa_csrf_token';
+
+/**
+ * Lê o token CSRF do cookie legível (bloco B1).
+ *
+ * Este é o ÚNICO ponto do módulo que toca `document.cookie` — e de propósito:
+ * é justamente por conseguir ler este cookie que o Dashboard prova não ser um
+ * site atacante. Um site de terceiros consegue fazer o navegador ENVIAR os
+ * cookies do Francis numa requisição forjada, mas não consegue LÊ-LOS, então
+ * não tem como montar este cabeçalho.
+ *
+ * Devolve `undefined` fora do navegador (SSR) ou antes de existir sessão —
+ * nesses casos não há requisição mutante a proteger.
+ */
+function readCsrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE_NAME}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+/** Métodos que o BFF verifica quanto a CSRF (espelha `MUTATING_METHODS` do servidor). */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Cabeçalho CSRF pronto para espalhar num `headers` — para os uploads que
+ * fazem `fetch` cru (CSV, mídia) e portanto não passam por `request()`.
+ * Objeto vazio quando não há token, para nunca enviar um cabeçalho falso.
+ */
+function csrfHeader(): Record<string, string> {
+  const token = readCsrfToken();
+  return token ? { 'x-csrf-token': token } : {};
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const csrfToken = MUTATING_METHODS.has(method) ? readCsrfToken() : undefined;
   const response = await fetch(path, {
     ...init,
     headers: {
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
       ...init.headers,
     },
   });
@@ -767,7 +804,9 @@ export interface ContactImportReport {
 export async function importContacts(csvText: string): Promise<ContactImportReport> {
   const response = await fetch('/api/contacts/import', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/csv' },
+    // Upload cru (não passa por `request()`), então o cabeçalho CSRF do
+    // bloco B1 precisa ser adicionado explicitamente aqui.
+    headers: { 'Content-Type': 'text/csv', ...csrfHeader() },
     body: csvText,
   });
   const text = await response.text();
@@ -905,7 +944,9 @@ export interface ParseRecipientsCsvResult {
 export async function parseRecipientsCsv(csvText: string): Promise<ParseRecipientsCsvResult> {
   const response = await fetch('/api/campaigns/parse-recipients-csv', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/csv' },
+    // Upload cru (não passa por `request()`), então o cabeçalho CSRF do
+    // bloco B1 precisa ser adicionado explicitamente aqui.
+    headers: { 'Content-Type': 'text/csv', ...csrfHeader() },
     body: csvText,
   });
   const text = await response.text();
@@ -1103,6 +1144,8 @@ export async function attachCampaignMedia(
     'content-type': file.type || 'application/octet-stream',
     'x-media-content-type': contentType,
     'x-media-filename': file.name,
+    // Upload cru (não passa por `request()`) — cabeçalho CSRF explícito.
+    ...csrfHeader(),
   };
   const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/media`, {
     method: 'POST',
@@ -1469,6 +1512,8 @@ export async function sendConversationMedia(
     'content-type': file.type || 'application/octet-stream',
     'x-media-content-type': options.contentType,
     'x-media-filename': file.name,
+    // Upload cru (não passa por `request()`) — cabeçalho CSRF explícito.
+    ...csrfHeader(),
   };
   if (options.caption?.trim()) {
     headers['x-media-caption'] = options.caption.trim();
@@ -1596,6 +1641,7 @@ export function fetchAiInteractions(
   const query = params.toString();
   return request(`/api/ai-interactions${query ? `?${query}` : ''}`);
 }
+
 
 // --- Milestone 4, Bloco M4D: DTOs e funcoes de `analytics` (read-only, D51) ---
 // Tipos espelham os DTOs de `services/analytics/domain/AnalyticsMetrics.ts`

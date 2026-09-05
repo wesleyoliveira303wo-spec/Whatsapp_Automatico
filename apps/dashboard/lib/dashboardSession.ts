@@ -1,7 +1,33 @@
+import { randomUUID, timingSafeEqual } from 'crypto';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { encryptCookiePayload, decryptCookiePayload } from './cookieCipher';
 
 export const SESSION_COOKIE_NAME = 'wa_dashboard_session';
+
+/**
+ * Cookie LEGÍVEL por JS que espelha o token CSRF guardado dentro do payload
+ * cifrado da sessão (bloco B1).
+ *
+ * Como a defesa funciona: o token de verdade vive no cookie de sessão
+ * cifrado (`csrfToken`), que o JS não consegue ler. Este segundo cookie
+ * carrega o MESMO valor só para o Dashboard conseguir devolvê-lo no
+ * cabeçalho `x-csrf-token`. O servidor compara cabeçalho × payload cifrado.
+ *
+ * Por que isso barra CSRF: um site atacante consegue FAZER o navegador
+ * enviar os cookies do Francis numa requisição forjada, mas a política de
+ * mesma origem o impede de LER qualquer um deles — logo não tem como montar
+ * o cabeçalho. Requisição sem o cabeçalho correto é recusada.
+ *
+ * Mais forte que o "double-submit cookie" clássico (comparar dois cookies
+ * entre si): aqui o lado autoritativo é o payload CIFRADO e assinado, que o
+ * cliente não pode forjar — num double-submit puro, quem consegue gravar um
+ * cookie no domínio (ex.: subdomínio comprometido) consegue fabricar os dois
+ * lados da comparação.
+ */
+export const CSRF_COOKIE_NAME = 'wa_csrf_token';
+
+/** Cabeçalho onde o Dashboard devolve o token lido de `CSRF_COOKIE_NAME`. */
+export const CSRF_HEADER_NAME = 'x-csrf-token';
 
 /** 12 horas — prazo arbitrário, mas razoável para uma sessão de operador do Dashboard; fácil de ajustar depois (uma constante, sem migração). */
 const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
@@ -45,6 +71,14 @@ export interface DashboardSession {
   accessToken?: string;
   refreshToken?: string;
   user?: DashboardSessionUser;
+  /**
+   * Token CSRF desta sessão (bloco B1). Vive aqui, DENTRO do payload
+   * cifrado — é o lado autoritativo da comparação; o cookie legível
+   * (`CSRF_COOKIE_NAME`) é só o espelho que o JS consegue ler. Opcional
+   * porque sessões criadas antes deste bloco não o têm: `requireSession`
+   * emite um na primeira requisição delas, sem forçar re-login.
+   */
+  csrfToken?: string;
 }
 
 /** A sessao e do plano PESSOA (tokens)? Type guard usado por `requireSession`/`apiClient`. */
@@ -73,14 +107,16 @@ function getSessionSecret(): string {
  * sempre; `Secure` só em produção (permite `npm run dev` em `http://localhost`
  * sem HTTPS local).
  */
-function serializeCookie(value: string, maxAgeSeconds: number): string {
-  const parts = [
-    `${SESSION_COOKIE_NAME}=${value}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    `Max-Age=${maxAgeSeconds}`,
-  ];
+function serializeCookie(
+  name: string,
+  value: string,
+  maxAgeSeconds: number,
+  { httpOnly }: { httpOnly: boolean },
+): string {
+  const parts = [`${name}=${value}`, 'Path=/', 'SameSite=Lax', `Max-Age=${maxAgeSeconds}`];
+  if (httpOnly) {
+    parts.splice(2, 0, 'HttpOnly');
+  }
   if (process.env.NODE_ENV === 'production') {
     parts.push('Secure');
   }
@@ -114,11 +150,20 @@ function toCookieSafeSession(session: DashboardSession): DashboardSession {
   return { ...session, user };
 }
 
-/** Grava o cookie de sessão cifrado na resposta — chamado por `pages/api/auth/{login,register,me,change-password}.ts`. */
+/**
+ * Grava o cookie de sessão cifrado na resposta — chamado por
+ * `pages/api/auth/{login,register,me,change-password}.ts`.
+ *
+ * Bloco B1 — grava TAMBÉM o cookie legível do token CSRF, com o mesmo valor
+ * que vai dentro do payload cifrado. Ver `CSRF_COOKIE_NAME` para o desenho.
+ */
 export function setSessionCookie(res: NextApiResponse, session: DashboardSession): void {
+  const withCsrf: DashboardSession = session.csrfToken
+    ? session
+    : { ...session, csrfToken: randomUUID() };
   const encrypted = encryptCookiePayload(
     getSessionSecret(),
-    JSON.stringify(toCookieSafeSession(session)),
+    JSON.stringify(toCookieSafeSession(withCsrf)),
   );
   if (encrypted.length > MAX_SAFE_COOKIE_VALUE_BYTES) {
     // Não lança (não quebrar o login) — mas registra: um cookie desse tamanho
@@ -127,12 +172,24 @@ export function setSessionCookie(res: NextApiResponse, session: DashboardSession
       `[dashboardSession] cookie de sessão com ${encrypted.length} bytes ultrapassa o teto seguro de ${MAX_SAFE_COOKIE_VALUE_BYTES}; o navegador pode descartá-lo. Verifique o que está sendo colocado no payload.`,
     );
   }
-  res.setHeader('Set-Cookie', serializeCookie(encrypted, SESSION_MAX_AGE_SECONDS));
+  res.setHeader('Set-Cookie', [
+    serializeCookie(SESSION_COOKIE_NAME, encrypted, SESSION_MAX_AGE_SECONDS, { httpOnly: true }),
+    // NÃO httpOnly de propósito: o JS do Dashboard precisa LER este valor
+    // para devolvê-lo no cabeçalho. É seguro — o token não dá acesso a nada
+    // sozinho; ele só prova que quem montou a requisição consegue ler
+    // cookies deste domínio, o que um site atacante não consegue.
+    serializeCookie(CSRF_COOKIE_NAME, withCsrf.csrfToken ?? '', SESSION_MAX_AGE_SECONDS, {
+      httpOnly: false,
+    }),
+  ]);
 }
 
-/** Expira o cookie imediatamente (`Max-Age=0`) — chamado só por `pages/api/auth/logout.ts`. */
+/** Expira os cookies imediatamente (`Max-Age=0`) — chamado só por `pages/api/auth/logout.ts`. */
 export function clearSessionCookie(res: NextApiResponse): void {
-  res.setHeader('Set-Cookie', serializeCookie('', 0));
+  res.setHeader('Set-Cookie', [
+    serializeCookie(SESSION_COOKIE_NAME, '', 0, { httpOnly: true }),
+    serializeCookie(CSRF_COOKIE_NAME, '', 0, { httpOnly: false }),
+  ]);
 }
 
 /**
@@ -175,9 +232,15 @@ export function readSessionFromRequest(
     if (typeof parsed.tenantId !== 'string') {
       return null;
     }
+    // Bloco B1 — o token CSRF atravessa os dois formatos de sessão. Esta
+    // função reconstrói o objeto campo a campo (whitelist deliberada, para
+    // um payload adulterado não injetar chaves inesperadas), então um campo
+    // novo só existe do outro lado se for lido explicitamente aqui.
+    const csrfToken = typeof parsed.csrfToken === 'string' ? parsed.csrfToken : undefined;
+
     // Plano MAQUINA (formato original, M2): tenantId + apiKey.
     if (typeof parsed.apiKey === 'string') {
-      return { tenantId: parsed.tenantId, apiKey: parsed.apiKey };
+      return { tenantId: parsed.tenantId, apiKey: parsed.apiKey, csrfToken };
     }
     // Plano PESSOA (M5F-1): tenantId + tokens + user.
     if (
@@ -192,6 +255,7 @@ export function readSessionFromRequest(
         tenantId: parsed.tenantId,
         accessToken: parsed.accessToken,
         refreshToken: parsed.refreshToken,
+        csrfToken,
         user: {
           id: parsed.user.id,
           email: parsed.user.email,
@@ -390,6 +454,42 @@ function failsOriginCheck(req: NextApiRequest): boolean {
   }
 }
 
+/** Compara em tempo constante — evita descobrir o token byte a byte pelo tempo de resposta. */
+function tokensMatch(expected: string, presented: string): boolean {
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(presented, 'utf8');
+  // `timingSafeEqual` exige o mesmo comprimento; comparar antes já vaza o
+  // tamanho, o que é inofensivo (o token tem tamanho fixo conhecido).
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Verificação do token CSRF, só em métodos MUTANTES (bloco B1).
+ *
+ * Substitui `failsOriginCheck` como defesa principal — aquela continua
+ * ativa como camada adicional, mas tinha um buraco por desenho: permitia
+ * requisições SEM `Origin`/`Referer`, então bastava ao atacante montar um
+ * pedido que não enviasse o cabeçalho para contorná-la.
+ */
+function failsCsrfCheck(req: NextApiRequest, session: DashboardSession): boolean {
+  if (!MUTATING_METHODS.has(req.method ?? '')) {
+    return false;
+  }
+  if (!session.csrfToken) {
+    // Sessão anterior ao bloco B1: não há token com que comparar. Deixa
+    // passar UMA vez — `requireSession` emite um token logo em seguida, e a
+    // próxima requisição desta sessão já é verificada. Alternativa seria
+    // recusar, o que deslogaria todo mundo no deploy.
+    return false;
+  }
+  const presented = req.headers[CSRF_HEADER_NAME];
+  const token = Array.isArray(presented) ? presented[0] : presented;
+  if (!token) {
+    return true;
+  }
+  return !tokensMatch(session.csrfToken, token);
+}
+
 export async function requireSession(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -404,14 +504,30 @@ export async function requireSession(
     res.status(401).json({ error: 'not_authenticated' });
     return null;
   }
-  if (!isUserSession(session)) {
-    return session;
-  }
-  if (!needsRefresh(session, Date.now())) {
-    return session;
+
+  if (failsCsrfCheck(req, session)) {
+    res.status(403).json({ error: 'invalid_csrf_token' });
+    return null;
   }
 
-  const refreshed = await refreshUserSession(session);
+  // Migração silenciosa das sessões criadas antes do bloco B1: emite o token
+  // agora para que, a partir da próxima requisição, a verificação acima passe
+  // a valer de fato. Sem retorno antecipado — a renovação do access token
+  // abaixo continua acontecendo nesta mesma requisição.
+  let current = session;
+  if (!current.csrfToken) {
+    current = { ...current, csrfToken: randomUUID() };
+    setSessionCookie(res, current);
+  }
+
+  if (!isUserSession(current)) {
+    return current;
+  }
+  if (!needsRefresh(current, Date.now())) {
+    return current;
+  }
+
+  const refreshed = await refreshUserSession(current);
   if (!refreshed) {
     clearSessionCookie(res);
     res.status(401).json({ error: 'not_authenticated' });

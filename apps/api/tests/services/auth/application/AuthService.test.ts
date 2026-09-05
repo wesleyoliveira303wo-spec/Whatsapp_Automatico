@@ -4,6 +4,9 @@ import { Sha256RefreshTokenCodec } from '../../../../src/services/auth/infrastru
 import { Hs256AccessTokenService } from '../../../../src/services/auth/infrastructure/Hs256AccessTokenService';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { User } from '../../../../src/services/auth/domain/entities/User';
+import { AccountLockout } from '../../../../src/services/auth/domain/AccountLockout';
+import { RateLimitStoreAccountLockout } from '../../../../src/services/auth/infrastructure/RateLimitStoreAccountLockout';
+import { InMemoryRateLimitStore } from '../../../../src/shared/infrastructure/rateLimit/InMemoryRateLimitStore';
 import {
   FakeUserRepository,
   FakeRefreshTokenRepository,
@@ -28,7 +31,7 @@ function buildUser(overrides: Partial<User> = {}): User {
   };
 }
 
-function build(): {
+function build(accountLockout?: AccountLockout): {
   service: AuthService;
   users: FakeUserRepository;
   refreshRepo: FakeRefreshTokenRepository;
@@ -51,6 +54,8 @@ function build(): {
     refresh,
     audit,
     new NoopLogger(),
+    undefined,
+    accountLockout,
   );
   return { service, users, refreshRepo, audit, access };
 }
@@ -257,6 +262,125 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
       const { service, users } = build();
       users.seed(buildUser({ status: 'suspended' }));
       expect(await service.loginByEmail('joao@empresa.com', 'senha123')).toEqual({ ok: false });
+    });
+  });
+
+  describe('lockout de conta (B1)', () => {
+    /** 3 falhas / 60s — números pequenos para o teste ser legível. */
+    function buildLockout(): AccountLockout {
+      return new RateLimitStoreAccountLockout(new InMemoryRateLimitStore(), 3, 60_000);
+    }
+
+    it('bloqueia depois de N falhas e responde account_locked com o tempo restante', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+
+      const blocked = await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) {
+        expect(blocked.reason).toBe('account_locked');
+        expect(blocked.retryAfterMs).toBeGreaterThan(0);
+      }
+    });
+
+    it('conta bloqueada recusa até a senha CORRETA (o bloqueio vale mesmo para quem sabe a senha)', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      for (let i = 0; i < 3; i += 1) {
+        await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      }
+
+      const result = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('account_locked');
+    });
+
+    it('login bem-sucedido zera o histórico de falhas', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
+
+      // Zerado: dá para errar 3 vezes de novo antes de bloquear.
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      const stillOpen = await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      expect(stillOpen.ok).toBe(false);
+      if (!stillOpen.ok) expect(stillOpen.reason).toBeUndefined();
+    });
+
+    it('bloqueio é registrado na trilha de auditoria', async () => {
+      const lockout = buildLockout();
+      const { service, users, audit } = build(lockout);
+      users.seed(buildUser());
+
+      for (let i = 0; i < 4; i += 1) {
+        await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      }
+
+      expect(audit.all().some((entry) => entry.action === 'auth.login.locked')).toBe(true);
+    });
+
+    it('ANTI-ENUMERAÇÃO: e-mail INEXISTENTE também é bloqueado (a resposta não prova existência)', async () => {
+      const lockout = buildLockout();
+      const { service } = build(lockout);
+      // Nenhum usuário semeado — o e-mail não existe.
+
+      for (let i = 0; i < 3; i += 1) {
+        await service.loginByEmail('fantasma@empresa.com', 'qualquer');
+      }
+
+      const blocked = await service.loginByEmail('fantasma@empresa.com', 'qualquer');
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.reason).toBe('account_locked');
+    });
+
+    it('loginByEmail respeita o bloqueio antes de tocar o repositório', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      for (let i = 0; i < 3; i += 1) {
+        await service.loginByEmail('joao@empresa.com', 'errada');
+      }
+
+      const result = await service.loginByEmail('joao@empresa.com', 'senha123');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('account_locked');
+    });
+
+    it('uma falha registra só UMA vez, mesmo passando por loginByEmail -> login', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      // Se cada tentativa contasse duas vezes, 2 tentativas já bloqueariam.
+      await service.loginByEmail('joao@empresa.com', 'errada');
+      await service.loginByEmail('joao@empresa.com', 'errada');
+
+      expect((await lockout.status('joao@empresa.com')).locked).toBe(false);
+    });
+
+    it('sem lockout injetado, o comportamento é exatamente o de antes do bloco', async () => {
+      const { service, users } = build();
+      users.seed(buildUser());
+
+      for (let i = 0; i < 10; i += 1) {
+        await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      }
+
+      // Nunca bloqueia, e a senha certa ainda entra.
+      expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
     });
   });
 });

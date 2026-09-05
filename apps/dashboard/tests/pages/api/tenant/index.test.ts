@@ -1,6 +1,6 @@
 import handler from '../../../../pages/api/tenant';
 import { setSessionCookie, SESSION_COOKIE_NAME } from '../../../../lib/dashboardSession';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, sessionCookieValue } from '../../../testDoubles';
 
 /** Mesmo truque de `me.test.ts`: token decodificável para `requireSession` não disparar refresh proativo. */
 function fakeAccessToken(expiresInSeconds = 900): string {
@@ -29,10 +29,7 @@ describe('/api/tenant', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   const USER = {

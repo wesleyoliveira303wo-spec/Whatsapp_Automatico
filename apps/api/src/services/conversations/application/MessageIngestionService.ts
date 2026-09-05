@@ -269,7 +269,7 @@ export class MessageIngestionService implements MessageReceivedHandler {
         // A janela é deslizante: a PRÓXIMA mensagem, depois que a rajada
         // esfriar, volta a ser respondida normalmente — nenhuma ação manual
         // necessária para "destravar".
-        const withinRateLimit = this.aiRateLimiter.consume(
+        const withinRateLimit = await this.aiRateLimiter.consume(
           message.tenantId,
           message.sessionName,
           conversation.id,

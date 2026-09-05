@@ -1,5 +1,5 @@
 import handler from '../../../../pages/api/auth/login';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, setCookieHeaders } from '../../../testDoubles';
 
 describe('POST /api/auth/login', () => {
   const originalApiBaseUrl = process.env.API_BASE_URL;
@@ -53,7 +53,7 @@ describe('POST /api/auth/login', () => {
       new URL('/api/tenants/tenant-1/whatsapp-sessions', 'http://api-de-teste:4000'),
       { headers: { 'X-API-Key': 'chave-valida' } },
     );
-    expect(res._headers['Set-Cookie']).toMatch(/wa_dashboard_session=/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/wa_dashboard_session=/);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ tenantId: 'tenant-1' });
     // A API key NUNCA é devolvida no corpo da resposta.
@@ -72,7 +72,7 @@ describe('POST /api/auth/login', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: 'invalid_credentials' });
-    expect(res._headers['Set-Cookie']).toBeUndefined();
+    expect(setCookieHeaders(res)).toEqual([]);
   });
 
   it('responde 502 api_unreachable quando fetch lança (API fora do ar)', async () => {
@@ -123,7 +123,7 @@ describe('POST /api/auth/login', () => {
         new URL('/api/auth/login', 'http://api-de-teste:4000'),
         expect.objectContaining({ method: 'POST' }),
       );
-      expect(res._headers['Set-Cookie']).toMatch(/wa_dashboard_session=/);
+      expect(setCookieHeaders(res).join('; ')).toMatch(/wa_dashboard_session=/);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ tenantId: 'tenant-1', user: SESSION_USER });
       // Tokens NUNCA saem no corpo — so dentro do cookie cifrado.
@@ -144,7 +144,7 @@ describe('POST /api/auth/login', () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith({ error: 'invalid_credentials' });
-      expect(res._headers['Set-Cookie']).toBeUndefined();
+      expect(setCookieHeaders(res)).toEqual([]);
     });
 
     it('email sem password: 400 sem chamar a API', async () => {

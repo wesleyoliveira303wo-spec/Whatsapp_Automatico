@@ -4,7 +4,7 @@ import {
   readSessionFromRequest,
   SESSION_COOKIE_NAME,
 } from '../../../../lib/dashboardSession';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, setCookieHeaders, sessionCookieValue } from '../../../testDoubles';
 
 /**
  * Testes da rota BFF de troca de senha (Milestone 5, Bloco M5F-2): repasse
@@ -40,10 +40,7 @@ describe('POST /api/auth/change-password', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   function userCookie(): string {
@@ -126,9 +123,7 @@ describe('POST /api/auth/change-password', () => {
     });
 
     // Cookie regravado: refresh novo e post-it de senha provisoria removido.
-    const rewritten = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    )![1];
+    const rewritten = sessionCookieValue(res);
     const session = readSessionFromRequest(
       createFakeReq({ cookies: { [SESSION_COOKIE_NAME]: rewritten } }),
     );
@@ -150,7 +145,7 @@ describe('POST /api/auth/change-password', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: 'invalid_current_password' });
-    expect(res._headers['Set-Cookie']).toBeUndefined();
+    expect(setCookieHeaders(res)).toEqual([]);
   });
 
   it('senha nova fraca: API 422 -> 422 weak_password', async () => {
@@ -181,7 +176,7 @@ describe('POST /api/auth/change-password', () => {
 
     await handler(req, res);
 
-    expect(res._headers['Set-Cookie']).toMatch(/Max-Age=0/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/Max-Age=0/);
     expect(res.status).toHaveBeenCalledWith(204);
   });
 });

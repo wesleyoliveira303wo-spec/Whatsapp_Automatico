@@ -6,6 +6,7 @@ import { AccessTokenService } from '../domain/AccessTokenService';
 import { RefreshTokenService } from './RefreshTokenService';
 import { PublicUser, toPublicUser } from '../domain/entities/User';
 import { MIN_PASSWORD_LENGTH } from '../domain/passwordPolicy';
+import { AccountLockout } from '../domain/AccountLockout';
 
 /** Metadados de origem da requisicao (so diagnostico/auditoria). */
 export interface AuthRequestMeta {
@@ -13,9 +14,20 @@ export interface AuthRequestMeta {
   ip?: string;
 }
 
-/** Resultado do login — uniao discriminada. No caminho de FALHA, deliberadamente generico (sem dizer se foi email ou senha) para nao permitir enumeracao de usuarios. */
+/**
+ * Resultado do login — uniao discriminada. No caminho de FALHA,
+ * deliberadamente generico (sem dizer se foi email ou senha) para nao
+ * permitir enumeracao de usuarios.
+ *
+ * Bloco B1 — `reason: 'account_locked'` e a UNICA excecao a essa
+ * genericidade, e nao vaza existencia: o lockout conta o e-mail TENTADO,
+ * exista ele ou nao (ver `AccountLockout`), entao receber "bloqueada" nao
+ * prova que a conta existe. `reason` e OPCIONAL de proposito — todo
+ * `return { ok: false }` ja escrito continua valido.
+ */
 export type LoginResult =
-  { ok: true; accessToken: string; refreshToken: string; user: PublicUser } | { ok: false };
+  | { ok: true; accessToken: string; refreshToken: string; user: PublicUser }
+  | { ok: false; reason?: 'account_locked'; retryAfterMs?: number };
 
 /** Resultado do refresh — uniao discriminada. */
 export type RefreshResult = { ok: true; accessToken: string; refreshToken: string } | { ok: false };
@@ -54,6 +66,12 @@ export class AuthService {
     private readonly auditLogRepository: AuditLogRepository,
     private readonly logger: Logger,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * Bloco B1 — OPCIONAL (mesmo padrao das demais dependencias auxiliares
+     * deste projeto): ausente, o comportamento e exatamente o de antes do
+     * bloco, sem lockout nenhum. Presente, conta falhas por e-mail tentado.
+     */
+    private readonly accountLockout?: AccountLockout,
   ) {}
 
   async login(
@@ -62,6 +80,14 @@ export class AuthService {
     password: string,
     meta: AuthRequestMeta = {},
   ): Promise<LoginResult> {
+    // Antes de qualquer trabalho: conta bloqueada nao gasta scrypt nem
+    // consulta ao banco. `peek` nao conta como tentativa.
+    const lockout = await this.accountLockout?.status(email);
+    if (lockout?.locked) {
+      await this.audit(tenantId, null, 'auth.login.locked', { email }, meta);
+      return { ok: false, reason: 'account_locked', retryAfterMs: lockout.retryAfterMs };
+    }
+
     const user = await this.userRepository.findByTenantAndEmail(tenantId, email);
 
     // Timing: verifica sempre (contra o hash real, ou contra a isca) para que
@@ -72,9 +98,14 @@ export class AuthService {
     );
 
     if (!user || user.status !== 'active' || !passwordOk) {
+      await this.accountLockout?.recordFailure(email);
       await this.audit(tenantId, null, 'auth.login.failure', { email }, meta);
       return { ok: false };
     }
+
+    // Login certo apaga o historico de falhas — quem errou a senha 4 vezes e
+    // acertou na quinta nao pode ficar a uma falha do bloqueio.
+    await this.accountLockout?.clear(email);
 
     const updated = await this.userRepository.update(user.id, { lastLoginAt: this.now() });
     const accessToken = this.accessTokenService.issue({
@@ -103,11 +134,23 @@ export class AuthService {
     password: string,
     meta: AuthRequestMeta = {},
   ): Promise<LoginResult> {
+    const lockout = await this.accountLockout?.status(email);
+    if (lockout?.locked) {
+      // Sem tenant resolvido ainda — o bloqueio e por e-mail, nao por conta,
+      // justamente para nao depender de o usuario existir.
+      return { ok: false, reason: 'account_locked', retryAfterMs: lockout.retryAfterMs };
+    }
+
     const user = await this.userRepository.findByEmail(email);
     if (!user) {
       // Sem tenant real para auditar (AuditLog tem FK para Tenant) — so a
       // defesa de timing roda aqui; a falha em si nao gera log.
       await this.passwordHasher.verify(password, DUMMY_PASSWORD_HASH);
+      // Conta a falha MESMO sem usuario: e isto que impede a resposta de
+      // bloqueio de virar um oraculo de "este e-mail existe" (ver
+      // `AccountLockout`). `login` nunca e alcancado neste ramo, entao o
+      // registro precisa acontecer aqui.
+      await this.accountLockout?.recordFailure(email);
       return { ok: false };
     }
     return this.login(user.tenantId, email, password, meta);

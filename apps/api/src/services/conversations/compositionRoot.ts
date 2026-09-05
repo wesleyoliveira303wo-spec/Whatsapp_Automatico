@@ -13,7 +13,10 @@ import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './infrastructure/queues/AiR
 import { BullMqAiReplyScheduler } from './infrastructure/schedulers/BullMqAiReplyScheduler';
 import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
 import { TenantPlanFromTenantRepository } from './infrastructure/repositories/TenantPlanFromTenantRepository';
-import { InMemorySlidingWindowAiRateLimiter } from './infrastructure/repositories/InMemorySlidingWindowAiRateLimiter';
+import { RateLimitStoreAiRateLimiter } from './infrastructure/repositories/RateLimitStoreAiRateLimiter';
+import { FallbackRateLimitStore } from '../../shared/infrastructure/rateLimit/FallbackRateLimitStore';
+import { InMemoryRateLimitStore } from '../../shared/infrastructure/rateLimit/InMemoryRateLimitStore';
+import { RedisRateLimitStore } from '../../shared/infrastructure/rateLimit/RedisRateLimitStore';
 import { MessageIngestionService } from './application/MessageIngestionService';
 import { PrismaContactRepository } from '../contacts/infrastructure/repositories/PrismaContactRepository';
 import { WhatsAppJidContactResolver } from '../contacts/infrastructure/WhatsAppJidContactResolver';
@@ -156,10 +159,18 @@ export function createConversationsComposition(
   // de não importar `AiBusinessProfileRepository` diretamente.
   const aiAvailabilityRepository = new PrismaAiAvailabilityRepository(prisma);
 
-  // Fase 1, Bloco F1.10 — instância única por processo: a janela deslizante
-  // vive em memória (ver docstring da classe), então precisa ser a MESMA
-  // instância a cada mensagem, nunca recriada por request.
-  const aiRateLimiter = new InMemorySlidingWindowAiRateLimiter();
+  // Fase 1, Bloco F1.10 — contenção de rajada antes de virar custo de IA.
+  // Bloco B1: a contagem migrou de um `Map` por processo para o Redis já
+  // presente aqui (o mesmo do BullMQ), então o limite vale para o sistema e
+  // sobrevive a um restart. `FallbackRateLimitStore` garante que uma queda
+  // do Redis degrada para memória em vez de barrar a ingestão de mensagens.
+  const aiRateLimiter = new RateLimitStoreAiRateLimiter(
+    new FallbackRateLimitStore(
+      new RedisRateLimitStore(redisConnection),
+      new InMemoryRateLimitStore(),
+      logger,
+    ),
+  );
 
   // Fase L, Bloco L1 — identidade durável de contato. O adaptador vive em
   // `services/contacts` (contexto dono da identidade) e implementa a porta

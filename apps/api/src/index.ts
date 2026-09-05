@@ -244,6 +244,38 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     const logger = new ConsoleLogger({ module: 'api' });
     const prisma = new PrismaClient();
 
+    // Bloco B1 — store compartilhado das contagens de abuso (rate limit de
+    // login/refresh e lockout de conta). Montado AQUI, antes da ramificacao
+    // do Redis, porque as rotas de auth sobem nos dois modos: com
+    // `REDIS_URL`, a contagem passa a valer entre instancias e a sobreviver a
+    // um restart (essencial para o lockout — um bloqueio que evapora num
+    // deploy nao bloqueia nada); sem ela, cai para memoria e o comportamento
+    // e o de antes do bloco, em vez de as rotas de auth simplesmente nao
+    // subirem. Conexao dedicada: as do BullMQ usam `maxRetriesPerRequest:
+    // null`, que faria um comando de rate limit ficar pendurado para sempre
+    // durante uma queda do Redis em vez de falhar rapido e degradar.
+    const [{ InMemoryRateLimitStore }, { RedisRateLimitStore }, { FallbackRateLimitStore }] =
+      await Promise.all([
+        import('./shared/infrastructure/rateLimit/InMemoryRateLimitStore'),
+        import('./shared/infrastructure/rateLimit/RedisRateLimitStore'),
+        import('./shared/infrastructure/rateLimit/FallbackRateLimitStore'),
+      ]);
+    let rateLimitStore: import('./shared/domain/RateLimitStore').RateLimitStore =
+      new InMemoryRateLimitStore();
+    if (REDIS_URL) {
+      const { default: IORedisForRateLimit } = await import('ioredis');
+      const rateLimitConnection = new IORedisForRateLimit(REDIS_URL);
+      rateLimitStore = new FallbackRateLimitStore(
+        new RedisRateLimitStore(rateLimitConnection),
+        new InMemoryRateLimitStore(),
+        logger,
+      );
+    } else {
+      logger.warn(
+        'REDIS_URL ausente: rate limit e lockout de conta contam por processo (modo degradado)',
+      );
+    }
+
     // Milestone 5, Bloco M5C — rotas de autenticacao (login/refresh/logout/me).
     // Montadas ANTES da ramificacao do Redis porque auth NAO depende de Redis
     // (so HTTP + Postgres) — disponivel tanto no modo degradado quanto no
@@ -266,6 +298,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           refreshTokenTtlMs: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7) * 24 * 60 * 60 * 1000,
         },
         logger,
+        rateLimitStore,
       );
       accessTokenService = authComposition.accessTokenService;
       app.use('/api/tenants/:tenantId/auth', authComposition.authRouter);

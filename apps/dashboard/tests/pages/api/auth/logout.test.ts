@@ -1,6 +1,6 @@
 import handler from '../../../../pages/api/auth/logout';
 import { setSessionCookie, SESSION_COOKIE_NAME } from '../../../../lib/dashboardSession';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, setCookieHeaders, sessionCookieValue } from '../../../testDoubles';
 
 describe('POST /api/auth/logout', () => {
   const originalSecret = process.env.DASHBOARD_SESSION_SECRET;
@@ -22,10 +22,7 @@ describe('POST /api/auth/logout', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   it('responde 405 para métodos diferentes de POST', async () => {
@@ -43,7 +40,7 @@ describe('POST /api/auth/logout', () => {
 
     await handler(req, res);
 
-    expect(res._headers['Set-Cookie']).toMatch(/Max-Age=0/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/Max-Age=0/);
     expect(res.status).toHaveBeenCalledWith(204);
   });
 
@@ -93,7 +90,7 @@ describe('POST /api/auth/logout', () => {
         body: JSON.stringify({ refreshToken: 'ref-1' }),
       }),
     );
-    expect(res._headers['Set-Cookie']).toMatch(/Max-Age=0/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/Max-Age=0/);
     expect(res.status).toHaveBeenCalledWith(204);
   });
 
@@ -115,7 +112,7 @@ describe('POST /api/auth/logout', () => {
 
     await handler(req, res);
 
-    expect(res._headers['Set-Cookie']).toMatch(/Max-Age=0/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/Max-Age=0/);
     expect(res.status).toHaveBeenCalledWith(204);
   });
 });

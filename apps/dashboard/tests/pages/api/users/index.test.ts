@@ -2,7 +2,7 @@ import handler from '../../../../pages/api/users/index';
 import roleHandler from '../../../../pages/api/users/[userId]/role';
 import resetHandler from '../../../../pages/api/users/[userId]/reset-password';
 import { setSessionCookie, SESSION_COOKIE_NAME } from '../../../../lib/dashboardSession';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, sessionCookieValue } from '../../../testDoubles';
 
 /**
  * Testes dos proxies do RH (Milestone 5, Bloco M5F-3): encaminhamento de
@@ -47,10 +47,7 @@ describe('proxies /api/users/* (Milestone 5, Bloco M5F-3)', () => {
         mustChangePassword: false,
       },
     });
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   function mockApi(status: number, body: unknown): void {

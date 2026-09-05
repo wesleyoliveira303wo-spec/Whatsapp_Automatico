@@ -1,6 +1,6 @@
 import handler from '../../../../pages/api/auth/me';
 import { setSessionCookie, SESSION_COOKIE_NAME } from '../../../../lib/dashboardSession';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, setCookieHeaders, sessionCookieValue } from '../../../testDoubles';
 
 describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
   const originalSecret = process.env.DASHBOARD_SESSION_SECRET;
@@ -20,10 +20,7 @@ describe('GET /api/auth/me (Milestone 5, Bloco M5F-2)', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   it('405 para metodos diferentes de GET', () => {
@@ -145,10 +142,7 @@ describe('PATCH /api/auth/me', () => {
   function cookieFor(session: Parameters<typeof setSessionCookie>[1]): string {
     const res = createFakeRes();
     setSessionCookie(res, session);
-    const match = (res._headers['Set-Cookie'] as string).match(
-      new RegExp(`^${SESSION_COOKIE_NAME}=([^;]*)`),
-    );
-    return match![1];
+    return sessionCookieValue(res);
   }
 
   const USER = {
@@ -225,7 +219,7 @@ describe('PATCH /api/auth/me', () => {
         headers: expect.objectContaining({ Authorization: `Bearer ${accessToken}` }),
       }),
     );
-    expect(res._headers['Set-Cookie']).toMatch(/wa_dashboard_session=/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/wa_dashboard_session=/);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       tenantId: 'tenant-1',
