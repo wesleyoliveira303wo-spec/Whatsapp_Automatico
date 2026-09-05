@@ -1164,8 +1164,73 @@ O balão único e a genericidade eram **sintoma**, não causa: derrubada logo no
 - **Densidade da área rolável (Task 7):** margem lateral generosa no desktop (`lg:px-[7%]`, `sm:px-6`) e enxuta no mobile (`px-3 py-2`); o papel de parede fica no contêiner pai que não rola, só a lista de mensagens rola por cima.
 **Impacto:** zero mudança em `apps/api`, zero dependência nova, estética plana (sem gradiente/glass/animação nova). Suíte do monorepo: `dashboard-jsdom` 77/78 suítes 568/570 (as 2 falhas em `AiProfilePanel.test.tsx` são pré-existentes, ADR #105/#106), `dashboard` 48/48 suítes 377/377, `api` 153/154 suítes 1907/1909 (as 2 falhas em `ConversationAiService.test.ts` são pré-existentes, ADR #105/#106). `tsc`/`lint`/`build` do dashboard limpos (1 warning pré-existente em `settingsPage.test.tsx`). **Pendente:** validação visual item a item da checklist do brief (Step 5) na máquina do fundador — ferramentas de IA não fazem login; abrir `/sessions/<sessao>/conversations/<id>` após `docker compose restart dashboard`.
 
+### Épico "Endurecimento e escala" (issue #11) — Blocos B1–B4
+
+**Data:** 2026-09-05
+**Contexto:** com o produto no ar (deploy T9, Oracle + Caddy), o fundador listou sete itens de endurecimento. Um deles (alternativa de teclado no Pipeline) foi verificado como **já existente** — o backlog é que estava desatualizado, corrigido em `.claude/rules/skills-guide.md`. Os demais viraram os blocos abaixo. O B5 (self-signup com billing) segue bloqueado por cinco decisões de negócio — gateway, modelo de cobrança, teste grátis, tolerância de atraso e nota fiscal —, registradas na issue #16 sem nenhuma linha de código escrita.
+
+**B1 — Token CSRF, trava de conta e rate limit distribuído (issue #12, commit `50aeed3`).** Três proteções que a Milestone 5 deixou apenas MITIGADAS passaram a ser resolvidas. (1) CSRF: `setSessionCookie` grava DOIS cookies — a sessão cifrada (HttpOnly) e um token legível pelo JS; `requireSession` compara o cabeçalho `x-csrf-token` com o token guardado DENTRO do payload cifrado (synchronizer token, mais forte que double-submit puro) em todo método mutante, respondendo 403. Sessões antigas ganham o token em silêncio, sem deslogar ninguém. (2) Trava por conta: novo port `AccountLockout`, 5 falhas em 15 min → 423 com `Retry-After`; a contagem é pelo e-mail TENTADO, exista ele ou não — do contrário a diferença de resposta viraria um oráculo de quais e-mails estão cadastrados. (3) Rate limit: novo port `RateLimitStore` com três adapters — `RedisRateLimitStore` (janela deslizante em script Lua atômico), `InMemoryRateLimitStore` e `FallbackRateLimitStore`, que cai para a memória quando o Redis falha e nunca deixa infraestrutura auxiliar derrubar o login. A API segue subindo sem `REDIS_URL` (D8). `InMemorySlidingWindowAiRateLimiter` foi REMOVIDO: com o limitador de IA usando o mesmo port, virou duplicação.
+
+**B3 — Perguntas que a IA não soube responder (issue #14, commits `44f5c5a`, `f3caa17`, `0d54406`).** O F1.4 (ADR #95) já gravava a lacuna; nada no produto mostrava. `listUnansweredQuestions` deixou de devolver `AiInteraction` cru e passou a devolver o read model `UnansweredQuestion` — uma consulta só que junta interação + mensagem inbound + conversa, mesmo padrão de leitura de relatório de `PrismaAnalyticsRepository`. `sessionName` obrigatório (o Cérebro da IA é 1:1 por sessão, ADR #82). A lista vive DENTRO da aba FAQ, porque a ação que resolve uma lacuna é justamente cadastrar a resposta ali. Depois, a pedido do fundador, a bolha da mensagem na CONVERSA ganhou um marcador "!" (à direita) que abre o cadastro sem sair da tela, gravando pelo mesmo `createAiFaqEntry` — nenhuma rota paralela.
+
+**BUG CRÍTICO achado no meio do B3 — uma coluna servindo a dois donos.** A tela mostrava a RESPOSTA da IA no lugar da PERGUNTA. Causa medida por consulta direta ao banco (todas as linhas `UNKNOWN_ANSWER` apontavam para mensagens `direction = OUTBOUND`): o F1.4 gravava a pergunta em `ai_interactions.message_id`, e o `OutboundCommandConsumer`, logo depois do envio, chama `linkMessage()` e SOBRESCREVE a mesma coluna com a resposta. Corrigido com coluna própria `inbound_message_id` (migration `20260905160000`), incluindo backfill best-effort das linhas existentes (a última mensagem INBOUND antes da interação — o que `shouldGenerateReply` já garante). Sem essa correção, o marcador do B3 apontaria para a bolha errada.
+
+**B2 — Foto de perfil via cache no servidor (issue #13).** Ver a entrada dedicada abaixo: foram seis rodadas e o desfecho merece registro próprio.
+
+**B4 — Listas grandes (issue #15, commit `96bf922`).** DECISÃO: virtualização por CSS nativo (`content-visibility: auto` + `contain-intrinsic-size: auto`), NÃO uma janela virtual (biblioteca ou própria). O motivo não é preferência por solução nativa — é que desmontar itens fora da tela quebraria duas coisas que o produto já tem: (1) o arrastar-e-soltar do Pipeline (um card só é alvo de soltura se estiver no DOM), que o próprio critério da issue exige preservar; (2) as animações de `AnimatePresence`, que disparariam `initial`/`exit` a cada rolagem. `content-visibility` ataca o custo real apontado na auditoria de 2026-08-22 (layout e pintura) sem tocar no DOM: leitor de tela, Ctrl+F, foco por teclado e alvos de arrastar seguem funcionando. LIMITE REGISTRADO: elimina o custo de renderização, não o de reconciliação do React — é o gargalo certo para dezenas/centenas de itens com avatar e selos; para milhares, aí sim vale uma janela virtual, e o Pipeline precisará de solução própria para o DnD. Travas de regressão em `ConversationListItem`/`PipelineCard`.
+
+**Ajustes de UX na mesma rodada (commit `0d54406`):** filtros da inbox reduzidos de 5 para 3 (Todas/Aguardando/Arquivadas) — as 5 pílulas não cabiam nos 344px da coluna mesmo depois de duas rodadas de aperto de padding/fonte. "Aguardando" virou a fila humana INTEIRA (esperando atendente OU já em atendimento), resolvida no SERVIDOR (`awaitingOrInHumanCare`) com um OU de verdade: somar `status` com `needsHumanAttention` daria E e devolveria só a interseção. "Não lidas" saiu por ser o único filtro resolvido no cliente — e portanto o único que mentia sobre o resultado com a lista paginada. Indicador de plano (Grátis/Pro/Enterprise) no Perfil, lido do mesmo `GET /api/tenant` que já trazia o nome; plano não carregado NÃO vira "Grátis" por engano.
+
+**Impacto:** migrations `20260905120000_add_contact_avatar_cache` e `20260905160000_add_ai_interaction_inbound_message`. Suítes ao fim da rodada: `api` 167 suítes / 2.063 testes; `dashboard`+`jsdom` 134 suítes / 1.007 testes; `tsc`/`lint`/`next build` limpos.
+
+### O caso das fotos de perfil — três diagnósticos errados antes do certo
+
+**Data:** 2026-09-05
+**Contexto:** o B2 (issue #13, commits `918ed30`, `baa2b14`, `d5aaf1e`, `9206c83`, `8c3908a`, `63231db`) devolveu a foto de perfil às listas trocando a consulta ao vivo por um cache no Postgres (`WhatsAppContactAvatar`), com atualização fora do caminho da requisição e teto de concorrência — a garantia que a ADR #78 exige. A arquitetura funcionou como projetada. Mas as fotos continuavam não aparecendo, e a investigação virou o registro mais instrutivo desta rodada.
+
+**Erro nº 1 — cachear uma falha como se fosse informação.** `RegistryContactAvatarSource` usa `registry.peek`, que devolve nada quando a sessão não está instanciada em memória. Esse "nada" era indistinguível de "perguntamos e a pessoa não tem foto", e virava registro negativo com 6h de validade. Como o registry nasce vazio a cada reinício, a primeira abertura de tela depois de subir a API marcava TODOS os contatos como sem foto pelas 6 horas seguintes. Mesma classe do bug de 2026-07-30, agora do lado do servidor. Corrigido com `ContactAvatarLookup`, que separa "checamos" de "não deu para checar".
+
+**Erro nº 2 — afirmar sem medir.** Com 3 fotos em 52 contatos, foi afirmado ao fundador que "a maioria dos seus contatos não tem foto pública". Ele discordou com base no uso real do WhatsApp dele, e estava certo. A instrumentação (contagem por desfecho, um resumo por lote) mostrou: **72 de 81 consultas (89%) morriam por TIMEOUT; apenas 1 contato realmente não tinha foto.** A conclusão anterior era falsa e teria encerrado a investigação no lugar errado.
+
+**Erro nº 3 — corrigir sem verificar se o caminho era exercitado.** O teto subiu de 6s para 25s na atualização de fundo (seguro, porque ninguém espera por ela; a proteção real é o teto de concorrência). A medição seguinte deu UMA consulta em 4 minutos: o cliente pedia as fotos só ao MONTAR o componente. O TTL de "sem foto" existia desde o B2, mas nada o disparava — deixar a tela aberta não trazia nada, só um F5 trazia. Corrigido com um ticker único por tela (20s) que repete o pedido dos que faltam numa requisição só.
+
+**A causa real, medida na terceira instrumentação:** mesmo com uma consulta por vez e 3s de intervalo, o WhatsApp deu 5 timeouts seguidos e o disjuntor pausou a fila — e o próprio Baileys registra `"timed out waiting for message"`. Não é ausência de foto (1 contato), não é o teto de tempo (25s não ajudaram), não é o formato do endereço (2 dos 8 sucessos eram `@lid`). **O WhatsApp atende as primeiras consultas de foto depois de conectar e então para de responder.** É limitação dele para consulta em lote, fora do alcance deste projeto.
+
+**Estado final, deliberadamente aceito:** as fotos que o WhatsApp entrega aparecem; as listas nunca mais bombardeiam o socket de mensagens; timeout nunca mais é confundido com ausência; e o gotejamento (1 consulta a cada 3s, pausa de 10 min após 5 timeouts seguidos) impede o sistema de se debater à toa. As iniciais coloridas seguem cumprindo o papel de identificar o contato. Se a limitação do WhatsApp mudar, o sistema aproveita sozinho, sem alteração.
+
+**Lição de processo — a terceira vez que este projeto paga por ela.** A ADR #88 (Pipeline travado) e o incidente do balão único já haviam registrado "não acumular hipóteses sem medir". Aqui a regra foi seguida só em parte: cada rodada mediu ALGO, mas duas delas mediram a coisa errada — o desfecho da consulta, antes de verificar se a consulta estava sequer acontecendo. Refinamento da regra, para a próxima vez: **antes de corrigir um caminho, confirme que ele está sendo exercitado.** Uma correção num caminho que ninguém percorre é indistinguível de nenhuma correção — e custa uma rodada inteira de confiança do fundador.
+
+### Travamento da suíte `dashboard-jsdom` — menu modal do Radix contra o diálogo de confirmação
+
+**Data:** 2026-09-05
+**Contexto:** a suíte `dashboard-jsdom` não terminava. Não era lentidão: um worker girava com 2.500s de CPU e, como o travamento acontecia perto do fim, NENHUM resultado do pacote aparecia — inclusive falhas reais que existiam ali.
+**Causa medida** (sonda temporária, descartada depois de cumprir o papel): `fireEvent.click` num item do menu "⋮" da tabela de Campanhas nunca retornava. O menu era modal (padrão do Radix) e três de seus itens abrem um `Dialog` de confirmação; menu e diálogo montavam a própria camada de modalidade (trava de rolagem + `aria-hidden` + escopo de foco) no MESMO tique e entravam em laço infinito. Uma primeira hipótese (`onCloseAutoFocus` prevenido) foi testada, não resolveu e foi REVERTIDA antes da segunda — em vez de ficar no código "por precaução".
+**Decisão:** `modal={false}` no `DropdownMenu` (commit `2301449`). Um menu de ações pequeno não precisa de modalidade própria; quem prende o foco é o diálogo que ele abre. A suíte de `CampaignsPanel` voltou a rodar em 2s.
+**Achado colateral (commit `3a185f6`):** os 10 testes de integração falhavam de forma intermitente — passavam numa rodada, falhavam na seguinte, sem mudança de código. Medido: o `beforeAll` leva ~5s só para subir o motor do Prisma dentro do Jest no Windows, oscilando exatamente em cima do teto padrão de 5s do Jest, que nunca foi uma afirmação sobre esses testes. Teto próprio de 30s, com o motivo registrado no código.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
+
+---
+
+## Agent skills
+
+> Configuração consumida pelas skills de engenharia instaladas via
+> `npx skills add mattpocock/skills` / plugin `mattpocock-skills`. Só aponta
+> onde as coisas ficam neste repositório — não altera código nem processo.
+> Editável direto nos arquivos `docs/agents/*.md`.
+
+### Issue tracker
+
+As tarefas/issues deste repositório ficam no **GitHub Issues**
+(`wesleyoliveira303wo-spec/Whatsapp_Automatico`), operadas pelo CLI `gh`.
+Ver `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Layout **single-context**: um `CONTEXT.md` na raiz + `docs/adr/` (criados sob
+demanda). Hoje esse papel é cumprido por `CLAUDE.md §18` e `DECISIONS.md`.
+Ver `docs/agents/domain.md`.
 
 ---
