@@ -109,7 +109,7 @@ describe('ContactAvatarService', () => {
       refreshedAt: new Date(),
     });
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     const result = await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
 
@@ -121,7 +121,7 @@ describe('ContactAvatarService', () => {
   it('contato desconhecido devolve sem foto NA HORA e agenda a busca em segundo plano', async () => {
     const cache = new FakeCache();
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     const result = await service.listAvatars(TENANT, SESSION, ['novo@s.whatsapp.net']);
 
@@ -139,7 +139,7 @@ describe('ContactAvatarService', () => {
   it('NUNCA passa do teto de consultas simultâneas (a garantia da ADR #78)', async () => {
     const cache = new FakeCache();
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     const muitos = Array.from({ length: 30 }, (_, i) => `c${i}@s.whatsapp.net`);
     await service.listAvatars(TENANT, SESSION, muitos);
@@ -152,12 +152,15 @@ describe('ContactAvatarService', () => {
     await flush();
     expect(source.concurrentPeak).toBe(MAX_CONCURRENT_AVATAR_REFRESHES);
     expect(source.calls).toHaveLength(MAX_CONCURRENT_AVATAR_REFRESHES + 1);
+    // Medido em 2026-09-05: o WhatsApp para de responder quando as fotos são
+    // pedidas em rajada, então o teto é UMA por vez, não duas.
+    expect(MAX_CONCURRENT_AVATAR_REFRESHES).toBe(1);
   });
 
   it('grava "sem foto" como registro negativo (é o que impede o bombardeio)', async () => {
     const cache = new FakeCache();
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     await service.listAvatars(TENANT, SESSION, ['sem-foto@s.whatsapp.net']);
     source.resolveAll(undefined);
@@ -173,7 +176,7 @@ describe('ContactAvatarService', () => {
   it('não enfileira o mesmo contato duas vezes (tela que recarrega em polling)', async () => {
     const cache = new FakeCache();
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
     await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
@@ -191,7 +194,7 @@ describe('ContactAvatarService', () => {
       refreshedAt: antiga,
     });
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     const result = await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
 
@@ -205,7 +208,7 @@ describe('ContactAvatarService', () => {
       lookup: jest.fn().mockRejectedValue(new Error('socket caiu')),
     };
     const logger = fakeLogger();
-    const service = new ContactAvatarService(cache, source, logger);
+    const service = new ContactAvatarService(cache, source, logger, 1, () => new Date(), 0);
 
     await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
     await flush();
@@ -222,7 +225,7 @@ describe('ContactAvatarService', () => {
     const source: ContactAvatarSource = {
       lookup: jest.fn().mockResolvedValue({ checked: false, reason: 'session_not_live' }),
     };
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
     await flush();
@@ -236,7 +239,7 @@ describe('ContactAvatarService', () => {
     const source: ContactAvatarSource = {
       lookup: jest.fn().mockResolvedValue({ checked: false, reason: 'timeout' }),
     };
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
     await flush();
@@ -250,10 +253,11 @@ describe('ContactAvatarService', () => {
     const cache = new FakeCache();
     const source = new ControllableSource();
     const logger = fakeLogger();
-    const service = new ContactAvatarService(cache, source, logger);
+    const service = new ContactAvatarService(cache, source, logger, 1, () => new Date(), 0);
 
     await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net', 'b@s.whatsapp.net']);
     source.resolveNext('https://cdn/a.jpg');
+    await flush();
     source.resolveNext(undefined);
     await flush();
 
@@ -266,7 +270,7 @@ describe('ContactAvatarService', () => {
   it('deduplica JIDs repetidos no mesmo pedido', async () => {
     const cache = new FakeCache();
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     const result = await service.listAvatars(TENANT, SESSION, [
       'a@s.whatsapp.net',
@@ -277,11 +281,45 @@ describe('ContactAvatarService', () => {
     expect(source.calls).toEqual(['a@s.whatsapp.net']);
   });
 
+  it('pausa a fila depois de vários timeouts seguidos (o WhatsApp calou)', async () => {
+    const cache = new FakeCache();
+    const source: ContactAvatarSource = {
+      lookup: jest.fn().mockResolvedValue({ checked: false, reason: 'timeout' }),
+    };
+    const logger = fakeLogger();
+    const service = new ContactAvatarService(cache, source, logger, 1, () => new Date(), 0);
+
+    const muitos = Array.from({ length: 20 }, (_, i) => `c${i}@s.whatsapp.net`);
+    await service.listAvatars(TENANT, SESSION, muitos);
+    await flush();
+
+    // Insistir depois que o WhatsApp para de responder só ocupa o socket sem
+    // trazer foto nenhuma — a fila recua em vez de queimar as 20 consultas.
+    expect((source.lookup as jest.Mock).mock.calls.length).toBeLessThan(muitos.length);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'WhatsApp parou de responder consultas de foto — pausando a fila',
+      expect.objectContaining({ sessionName: SESSION }),
+    );
+  });
+
+  it('uma resposta boa reinicia a régua de "está calando"', async () => {
+    const cache = new FakeCache();
+    const source = new ControllableSource();
+    const logger = fakeLogger();
+    const service = new ContactAvatarService(cache, source, logger, 1, () => new Date(), 0);
+
+    await service.listAvatars(TENANT, SESSION, ['a@s.whatsapp.net']);
+    source.resolveNext('https://cdn/a.jpg');
+    await flush();
+
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
   it('lista vazia não vai ao banco nem à fila', async () => {
     const cache = new FakeCache();
     const findSpy = jest.spyOn(cache, 'findManyByContactJids');
     const source = new ControllableSource();
-    const service = new ContactAvatarService(cache, source, fakeLogger());
+    const service = new ContactAvatarService(cache, source, fakeLogger(), 1, () => new Date(), 0);
 
     expect(await service.listAvatars(TENANT, SESSION, [])).toEqual([]);
     expect(findSpy).not.toHaveBeenCalled();

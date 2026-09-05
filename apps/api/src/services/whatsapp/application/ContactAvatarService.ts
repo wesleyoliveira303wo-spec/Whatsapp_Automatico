@@ -10,7 +10,32 @@ import { isContactAvatarStale } from '../domain/policies/contactAvatarFreshness'
  * mesmo por onde as mensagens reais passam. Duas de cada vez mantém a fila
  * andando sem nunca fazer o socket de refém.
  */
-export const MAX_CONCURRENT_AVATAR_REFRESHES = 2;
+export const MAX_CONCURRENT_AVATAR_REFRESHES = 1;
+
+/**
+ * Espera MÍNIMA entre duas consultas de foto — o gotejamento.
+ *
+ * Medido em 2026-09-05: o WhatsApp atende as primeiras consultas depois de
+ * conectar e então PARA de responder (o próprio Baileys registra "timed out
+ * waiting for message"); 20 consultas seguidas deram 20 timeouts. Não é
+ * ausência de foto nem falta de paciência — é limitação do WhatsApp para
+ * consulta de foto em lote. Esperar mais por cada uma não ajuda; pedir mais
+ * devagar, sim.
+ */
+export const MIN_INTERVAL_BETWEEN_LOOKUPS_MS = 3_000;
+
+/**
+ * Timeouts seguidos que fazem a fila PAUSAR. Quando o WhatsApp começa a
+ * calar, insistir só queima consultas e mantém o socket ocupado à toa —
+ * melhor recuar e voltar depois.
+ */
+export const CONSECUTIVE_TIMEOUTS_TO_PAUSE = 5;
+
+/** Quanto tempo a fila descansa depois de apanhar. */
+export const PAUSE_AFTER_TIMEOUTS_MS = 10 * 60_000;
+
+/** De quantas em quantas consultas o resumo de diagnóstico é publicado. */
+const REPORT_EVERY_LOOKUPS = 10;
 
 /**
  * Teto da fila de espera. Estourou, os pedidos excedentes são DESCARTADOS em
@@ -51,6 +76,9 @@ export class ContactAvatarService {
    * perguntadas. Zerada a cada resumo.
    */
   private outcomes = { found: 0, absent: 0, timeout: 0, sessionNotLive: 0, failed: 0 };
+  private consecutiveTimeouts = 0;
+  private pausedUntil = 0;
+  private lastLookupAt = 0;
 
   constructor(
     private readonly cache: ContactAvatarCacheRepository,
@@ -58,6 +86,8 @@ export class ContactAvatarService {
     private readonly logger: Logger,
     private readonly maxConcurrent: number = MAX_CONCURRENT_AVATAR_REFRESHES,
     private readonly now: () => Date = () => new Date(),
+    /** Injetável só para teste — em produção é o gotejamento medido. */
+    private readonly minIntervalMs: number = MIN_INTERVAL_BETWEEN_LOOKUPS_MS,
   ) {}
 
   /**
@@ -111,34 +141,58 @@ export class ContactAvatarService {
     this.drain();
   }
 
+  /**
+   * Puxa trabalho da fila respeitando três limites, todos vindos de medição
+   * e não de estimativa (2026-09-05):
+   *
+   * - UMA consulta por vez (o socket é o mesmo das mensagens reais, ADR #78);
+   * - um intervalo mínimo entre consultas — o WhatsApp para de responder
+   *   quando as fotos são pedidas em rajada;
+   * - uma pausa longa depois de vários timeouts seguidos: quando ele começa a
+   *   calar, insistir só queima consultas.
+   */
   private drain(): void {
-    while (this.active < this.maxConcurrent && this.queue.length > 0) {
-      const job = this.queue.shift();
-      if (!job) return;
-      this.active += 1;
-      // Deliberadamente NÃO aguardado: este método é chamado de dentro de
-      // `listAvatars`, e o ponto do bloco inteiro é a requisição não esperar
-      // por nenhuma consulta ao WhatsApp.
-      void this.refresh(job.tenantId, job.sessionName, job.contactJid).finally(() => {
-        this.queued.delete(`${job.tenantId}::${job.sessionName}::${job.contactJid}`);
-        this.active -= 1;
-        // A fila esvaziou: é o momento de publicar o resumo — um log por
-        // lote, não um por contato (52 linhas de log não são diagnóstico,
-        // são ruído).
-        if (this.active === 0 && this.queue.length === 0) this.reportOutcomes();
-        this.drain();
-      });
+    if (this.active >= this.maxConcurrent || this.queue.length === 0) return;
+
+    const nowMs = this.now().getTime();
+    if (nowMs < this.pausedUntil) return;
+
+    const sinceLast = nowMs - this.lastLookupAt;
+    if (sinceLast < this.minIntervalMs) {
+      // Ainda cedo: reagenda em vez de descartar. Sem `unref` o processo
+      // ficaria vivo por causa de um cache auxiliar — este timer nunca deve
+      // segurar o encerramento da API.
+      const timer = setTimeout(() => this.drain(), this.minIntervalMs - sinceLast);
+      if (typeof timer.unref === 'function') timer.unref();
+      return;
     }
+
+    const job = this.queue.shift();
+    if (!job) return;
+    this.active += 1;
+    this.lastLookupAt = nowMs;
+    // Deliberadamente NÃO aguardado: este método é chamado de dentro de
+    // `listAvatars`, e o ponto do bloco inteiro é a requisição não esperar
+    // por nenhuma consulta ao WhatsApp.
+    void this.refresh(job.tenantId, job.sessionName, job.contactJid).finally(() => {
+      this.queued.delete(`${job.tenantId}::${job.sessionName}::${job.contactJid}`);
+      this.active -= 1;
+      this.drain();
+    });
   }
 
   /**
    * Publica (e zera) a contagem por desfecho. É este log que responde "por
    * que só X fotos apareceram" com número em vez de suposição.
    */
-  private reportOutcomes(): void {
+  private maybeReportOutcomes(): void {
     const { found, absent, timeout, sessionNotLive, failed } = this.outcomes;
     const total = found + absent + timeout + sessionNotLive + failed;
     if (total === 0) return;
+    // Um resumo a cada N consultas, não a cada fila vazia: com o gotejamento
+    // (uma por vez, com intervalo) a fila quase nunca esvazia, e o resumo
+    // anterior — que só saía nesse momento — praticamente nunca aparecia.
+    if (total < REPORT_EVERY_LOOKUPS && this.queue.length > 0) return;
     this.outcomes = { found: 0, absent: 0, timeout: 0, sessionNotLive: 0, failed: 0 };
     this.logger.info('Atualização de fotos de perfil concluída', {
       total,
@@ -160,8 +214,23 @@ export class ContactAvatarService {
     try {
       const lookup = await this.source.lookup(tenantId, sessionName, contactJid);
       if (!lookup.checked) {
-        if (lookup.reason === 'timeout') this.outcomes.timeout += 1;
-        else this.outcomes.sessionNotLive += 1;
+        if (lookup.reason === 'timeout') {
+          this.outcomes.timeout += 1;
+          this.consecutiveTimeouts += 1;
+          if (this.consecutiveTimeouts >= CONSECUTIVE_TIMEOUTS_TO_PAUSE) {
+            // O WhatsApp parou de responder: recuar. Insistir agora só
+            // ocuparia o socket sem trazer foto nenhuma.
+            this.consecutiveTimeouts = 0;
+            this.pausedUntil = this.now().getTime() + PAUSE_AFTER_TIMEOUTS_MS;
+            this.logger.warn(
+              'WhatsApp parou de responder consultas de foto — pausando a fila',
+              { tenantId, sessionName, pausaMinutos: PAUSE_AFTER_TIMEOUTS_MS / 60_000 },
+            );
+          }
+        } else {
+          this.outcomes.sessionNotLive += 1;
+        }
+        this.maybeReportOutcomes();
         // Não houve pergunta ao WhatsApp (a sessão não está de pé agora).
         // NÃO gravar é o ponto: um registro negativo aqui esconderia a foto
         // de todo mundo por horas logo depois de qualquer reinício. Sem
@@ -173,13 +242,17 @@ export class ContactAvatarService {
         });
         return;
       }
+      // Respondeu: a régua de "está calando" reinicia.
+      this.consecutiveTimeouts = 0;
       if (lookup.avatarUrl) this.outcomes.found += 1;
       else this.outcomes.absent += 1;
+      this.maybeReportOutcomes();
       // Grava TAMBÉM quando não há foto: é o registro negativo que impede
       // este contato de ser reconsultado a cada abertura de tela.
       await this.cache.upsert(tenantId, sessionName, contactJid, lookup.avatarUrl, this.now());
     } catch (error) {
       this.outcomes.failed += 1;
+      this.maybeReportOutcomes();
       // Cache auxiliar nunca derruba nada, e uma falha aqui não vira
       // registro negativo de propósito: sem gravar, o próximo pedido tenta
       // de novo, em vez de fingir por horas que o contato não tem foto.
