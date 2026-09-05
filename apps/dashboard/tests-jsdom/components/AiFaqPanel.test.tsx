@@ -15,6 +15,10 @@ jest.mock('../../lib/clientApi', () => ({
   createAiFaqEntry: jest.fn(),
   updateAiFaqEntry: jest.fn(),
   deleteAiFaqEntry: jest.fn(),
+  // Bloco B3: o painel passou a renderizar `UnansweredQuestionsSection`, que
+  // busca as lacunas da IA. Mockado aqui para o teste da FAQ não depender de
+  // rede nem virar assíncrono por causa de uma seção auxiliar.
+  fetchUnansweredQuestions: jest.fn(),
 }));
 
 function faqEntry(over: Partial<clientApi.AiFaqEntry> = {}): clientApi.AiFaqEntry {
@@ -35,6 +39,9 @@ function faqEntry(over: Partial<clientApi.AiFaqEntry> = {}): clientApi.AiFaqEntr
 describe('AiFaqPanel (Cérebro da IA v3, Fase 2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Sem lacuna nenhuma por padrão: a seção do B3 não renderiza nada, e os
+    // testes desta suíte seguem falando só da FAQ.
+    (clientApi.fetchUnansweredQuestions as jest.Mock).mockResolvedValue({ questions: [] });
   });
 
   it('carrega e lista as FAQs ao montar', async () => {

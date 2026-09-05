@@ -130,7 +130,7 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
     it('sem X-API-Key, a rota não é alcançada (401)', async () => {
       const { app } = buildApp();
 
-      const response = await request(app).get('/api/tenants/tenant-1/ai-interactions/unanswered');
+      const response = await request(app).get('/api/tenants/tenant-1/ai-interactions/unanswered?sessionName=sessao-de-teste');
 
       expect(response.status).toBe(401);
     });
@@ -147,19 +147,78 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
       await aiInteractionRepository.record(buildInteraction());
 
       const response = await request(app)
-        .get('/api/tenants/tenant-1/ai-interactions/unanswered')
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered?sessionName=sessao-de-teste')
         .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(200);
-      expect(response.body.interactions).toHaveLength(1);
-      expect(response.body.interactions[0].escalationReason).toBe('unknown_answer');
+      expect(response.body.questions).toHaveLength(1);
+      // Bloco B3: a resposta é o read model `UnansweredQuestion` (pergunta +
+      // contato + sessão), não mais o `AiInteraction` cru — daí não haver
+      // `escalationReason` aqui: o filtro por ele acontece na consulta.
+      expect(response.body.questions[0]).toMatchObject({
+        conversationId: 'conversation-1',
+        sessionName: 'sessao-de-teste',
+      });
+      expect(response.body.questions[0].interactionId).toBeDefined();
+    });
+
+    it('sem sessionName: 400 (não lista o tenant inteiro por engano)', async () => {
+      const { app, aiInteractionRepository } = buildApp();
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer' }),
+      );
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(400);
+    });
+
+    it('não lista as lacunas de OUTRA sessão do mesmo tenant', async () => {
+      const { app, aiInteractionRepository } = buildApp();
+      aiInteractionRepository.seedConversationContext('conversation-1', {
+        sessionName: 'outro-whatsapp',
+      });
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer' }),
+      );
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered?sessionName=sessao-de-teste')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.status).toBe(200);
+      expect(response.body.questions).toHaveLength(0);
+    });
+
+    it('devolve o texto da pergunta e o nome do contato quando existem', async () => {
+      const { app, aiInteractionRepository } = buildApp();
+      aiInteractionRepository.seedConversationContext('conversation-1', {
+        sessionName: 'sessao-de-teste',
+        questionText: 'Vocês parcelam em quantas vezes?',
+        contactJid: '5521988887777@s.whatsapp.net',
+        savedContactName: 'Dona Ana',
+      });
+      await aiInteractionRepository.record(
+        buildInteraction({ escalationReason: 'unknown_answer', messageId: 'message-1' }),
+      );
+
+      const response = await request(app)
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered?sessionName=sessao-de-teste')
+        .set('x-api-key', 'chave-tenant-1');
+
+      expect(response.body.questions[0]).toMatchObject({
+        questionText: 'Vocês parcelam em quantas vezes?',
+        savedContactName: 'Dona Ana',
+      });
     });
 
     it('[fecha o IDOR] API key do tenant-1 não lista as perguntas não respondidas do tenant-2 (403)', async () => {
       const { app } = buildApp();
 
       const response = await request(app)
-        .get('/api/tenants/tenant-2/ai-interactions/unanswered')
+        .get('/api/tenants/tenant-2/ai-interactions/unanswered?sessionName=sessao-de-teste')
         .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(403);
@@ -175,11 +234,11 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
       );
 
       const response = await request(app)
-        .get('/api/tenants/tenant-1/ai-interactions/unanswered?limit=1')
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered?sessionName=sessao-de-teste&limit=1')
         .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(200);
-      expect(response.body.interactions).toHaveLength(1);
+      expect(response.body.questions).toHaveLength(1);
     });
 
     it('"unanswered" não é interpretado como conversationId pela rota "/" (ordem de montagem correta)', async () => {
@@ -189,11 +248,11 @@ describe('Integração requireApiKey + aiInteractionsRouter (Milestone 3, Bloco 
       );
 
       const response = await request(app)
-        .get('/api/tenants/tenant-1/ai-interactions/unanswered')
+        .get('/api/tenants/tenant-1/ai-interactions/unanswered?sessionName=sessao-de-teste')
         .set('x-api-key', 'chave-tenant-1');
 
       expect(response.status).toBe(200);
-      expect(response.body.interactions[0].conversationId).toBe('conversation-1');
+      expect(response.body.questions[0].conversationId).toBe('conversation-1');
     });
   });
 });

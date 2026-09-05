@@ -1,4 +1,5 @@
 import { AiInteraction } from '../../../../src/services/ai/domain/entities/AiInteraction';
+import { UnansweredQuestion } from '../../../../src/services/ai/domain/entities/UnansweredQuestion';
 import { AiInteractionRepository } from '../../../../src/services/ai/domain/repositories/AiInteractionRepository';
 
 /**
@@ -63,16 +64,67 @@ export class FakeAiInteractionRepository implements AiInteractionRepository {
       .slice(0, limit);
   }
 
-  /** Fase 1, Bloco F1.4 (2026-08-01 — aditivo). Espelha `PrismaAiInteractionRepository.listUnansweredQuestions()`. */
-  async listUnansweredQuestions(tenantId: string, limit: number): Promise<AiInteraction[]> {
+  /**
+   * Contexto de conversa/mensagem que a implementação real resolve por JOIN
+   * (Bloco B3). Um Fake em memória não tem as outras duas tabelas, então o
+   * teste declara aqui o que aquele `conversationId` representa. Conversa
+   * sem contexto declarado cai num default — assim os testes que não se
+   * importam com sessão/pergunta seguem funcionando sem preâmbulo.
+   */
+  private readonly conversationContext = new Map<string, UnansweredQuestionContext>();
+
+  /** Helper de teste, não faz parte da interface de produção. */
+  seedConversationContext(conversationId: string, context: UnansweredQuestionContext): void {
+    this.conversationContext.set(conversationId, context);
+  }
+
+  /**
+   * Fase 1, Bloco F1.4 (2026-08-01 — aditivo); Bloco B3 (issue #14) passou a
+   * devolver o read model `UnansweredQuestion`, filtrado por sessão.
+   * Espelha `PrismaAiInteractionRepository.listUnansweredQuestions()`.
+   */
+  async listUnansweredQuestions(
+    tenantId: string,
+    sessionName: string,
+    limit: number,
+  ): Promise<UnansweredQuestion[]> {
     return this.interactions
       .filter(
         (i) =>
           i.tenantId === tenantId &&
           i.status === 'success' &&
-          i.escalationReason === 'unknown_answer',
+          i.escalationReason === 'unknown_answer' &&
+          this.contextFor(i.conversationId).sessionName === sessionName,
       )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((interaction) => {
+        const context = this.contextFor(interaction.conversationId);
+        return {
+          interactionId: interaction.id,
+          conversationId: interaction.conversationId,
+          sessionName: context.sessionName,
+          questionText: interaction.messageId ? context.questionText : undefined,
+          contactJid: context.contactJid ?? '5511999999999@s.whatsapp.net',
+          contactName: context.contactName,
+          savedContactName: context.savedContactName,
+          occurredAt: interaction.createdAt,
+        };
+      });
   }
+
+  private contextFor(conversationId: string): UnansweredQuestionContext {
+    return this.conversationContext.get(conversationId) ?? { sessionName: DEFAULT_SESSION_NAME };
+  }
+}
+
+/** Sessão assumida para conversas sem contexto declarado por `seedConversationContext`. */
+export const DEFAULT_SESSION_NAME = 'sessao-de-teste';
+
+export interface UnansweredQuestionContext {
+  sessionName: string;
+  questionText?: string;
+  contactJid?: string;
+  contactName?: string;
+  savedContactName?: string;
 }

@@ -1643,6 +1643,39 @@ export function fetchAiInteractions(
 }
 
 
+/**
+ * Bloco B3 (issue #14) — uma pergunta que a IA marcou como "não soube
+ * responder". Espelha o read model `UnansweredQuestion` de
+ * `apps/api/src/services/ai/domain/entities/UnansweredQuestion.ts`;
+ * `occurredAt` chega como string ISO (mesma convenção de todo DTO deste
+ * arquivo — a conversão para `Date` acontece só onde a data é formatada).
+ */
+export interface UnansweredQuestionSummary {
+  interactionId: string;
+  conversationId: string;
+  sessionName: string;
+  questionText?: string;
+  contactJid: string;
+  contactName?: string;
+  savedContactName?: string;
+  occurredAt: string;
+}
+
+/**
+ * Lista as lacunas de conhecimento da IA naquele WhatsApp, da mais recente
+ * para a mais antiga. `sessionName` é obrigatório de propósito: o Cérebro
+ * da IA é 1:1 por sessão (M6H-3), então uma lacuna só significa alguma
+ * coisa contra o Cérebro daquele número.
+ */
+export function fetchUnansweredQuestions(
+  sessionName: string,
+  limit?: number,
+): Promise<{ questions: UnansweredQuestionSummary[] }> {
+  const params = new URLSearchParams({ sessionName });
+  if (limit) params.set('limit', String(limit));
+  return request(`/api/ai-interactions/unanswered?${params.toString()}`);
+}
+
 // --- Milestone 4, Bloco M4D: DTOs e funcoes de `analytics` (read-only, D51) ---
 // Tipos espelham os DTOs de `services/analytics/domain/AnalyticsMetrics.ts`
 // (apps/api). `costUsd` permanece STRING decimal exata (D46) — conversao para
