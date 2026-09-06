@@ -289,3 +289,31 @@ export async function enterTenantAccount(supportAccessId: string): Promise<{ ten
     body: JSON.stringify({ supportAccessId }),
   });
 }
+
+// --- Fase 6 — Busca global (`ADMIN_PLATFORM_MASTER_PLAN.md` §7) ---
+
+export type PlatformSearchKind = 'tenant' | 'user' | 'contact' | 'session' | 'campaign';
+
+export interface PlatformSearchHit {
+  kind: PlatformSearchKind;
+  id: string;
+  label: string;
+  sublabel: string;
+  tenantId: string;
+  href: string;
+}
+
+export interface PlatformSearchGroup {
+  kind: PlatformSearchKind;
+  hits: PlatformSearchHit[];
+  hasMore: boolean;
+}
+
+export interface PlatformSearchResults {
+  query: string;
+  groups: PlatformSearchGroup[];
+}
+
+export async function searchPlatform(q: string): Promise<PlatformSearchResults> {
+  return request<PlatformSearchResults>(`/api/platform/search?q=${encodeURIComponent(q)}`);
+}

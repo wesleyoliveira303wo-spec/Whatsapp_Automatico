@@ -312,3 +312,41 @@ export class FakeSupportAccessTokenService implements SupportAccessTokenService 
     return { supportAccessId: parts[1], tenantId: parts[2], platformUserId: parts[3] };
   }
 }
+
+// --- Fase 6 — busca global ---
+
+import {
+  PlatformSearchRepository,
+  RawSearchHit,
+  RawSearchHits,
+} from '../../../src/services/platform/domain/repositories/PlatformSearchRepository';
+
+export class FakePlatformSearchRepository implements PlatformSearchRepository {
+  lastCall: { term: string; digits: string; limit: number } | null = null;
+  private store: RawSearchHits = { tenant: [], user: [], contact: [], session: [], campaign: [] };
+
+  seed(hits: Partial<RawSearchHits>): void {
+    this.store = { ...this.store, ...hits };
+  }
+
+  async search(term: string, digits: string, limit: number): Promise<RawSearchHits> {
+    this.lastCall = { term, digits, limit };
+    // Devolve tudo que foi semeado, respeitando o `limit` por tipo (o service
+    // pede `teto + 1` e fatia).
+    const out = {} as RawSearchHits;
+    for (const kind of Object.keys(this.store) as Array<RawSearchHit['kind']>) {
+      out[kind] = this.store[kind].slice(0, limit);
+    }
+    return out;
+  }
+}
+
+export function rawHit(patch: Partial<RawSearchHit> & { kind: RawSearchHit['kind'] }): RawSearchHit {
+  return {
+    id: randomUUID(),
+    primary: 'algo',
+    tenantId: 'tenant-1',
+    tenantName: 'Cliente Um',
+    ...patch,
+  };
+}

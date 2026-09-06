@@ -1666,6 +1666,76 @@ escuro. Risco 🟢.
 
 ---
 
+### Painel `/admin`, Fase 6 — Busca global + refino de acessibilidade
+
+**Data:** 2026-09-06
+**Contexto:** sexta e última fase do `ADMIN_PLATFORM_MASTER_PLAN.md`
+(§7/§15, risco 🟢). Fecha o painel: achar qualquer tenant/usuário/contato/
+sessão/campanha por um campo só, sem navegar de tela em tela.
+**Decisão — a busca vive inteira em `services/platform` (§3.3), só leitura,
+zero migration.** `PlatformSearchService` (Application) normaliza a query
+(mín. 2 chars, `digits = q.replace(/\D/g, '')` para casar telefone), chama o
+repositório com teto de `5 + 1` por tipo e monta os grupos na ordem fixa
+`tenant → user → contact → session → campaign`, com `hasMore` quando veio a
+6ª linha. `PrismaPlatformSearchRepository` é a ÚNICA camada que vê SQL — 5
+`$queryRaw` parametrizados em paralelo (`Prisma.sql`, nunca concat), `ILIKE`
+sobre colunas já indexadas + `id::text ILIKE` para casar id parcial;
+contato também por `regexp_replace(phone_e164, '\D', '', 'g') ILIKE` quando a
+query tem ≥ 4 dígitos (acha o número sem o `+` nem espaços). Lê as tabelas
+físicas direto (D47), sem importar entidade/porta de `whatsapp`/`campaigns`.
+**Decisão — privacidade por CONSTRUÇÃO (§7):** o `SELECT` de cada consulta
+só traz colunas de IDENTIDADE (nome, e-mail, telefone, id, nome do tenant) —
+nenhuma toca `whatsapp_messages`/conteúdo de conversa. O hit serializado tem
+EXATAMENTE as chaves `kind`/`id`/`label`/`sublabel`/`tenantId`/`href` (teste
+`PlatformSearchService` trava o conjunto), e `href` é SEMPRE
+`/admin/tenants/<id>` — a busca leva ao caminho até a entidade, nunca abre a
+coisa em si.
+**Rota:** `GET /api/platform/search?q=` no `platformSearchRouter` (separado,
+mesmo prefixo, mesmo `requirePlatformUser`), `q` opcional com `default('')` —
+query curta devolve `{ groups: [] }` sem tocar o repositório. NÃO auditada
+(observar/buscar não é agir, mesmo critério das leituras das Fases 2/3).
+BFF `pages/api/platform/search.ts` (GET, `requirePlatformSession`, 401 limpa
+o cookie).
+**UI:** `components/admin/AdminSearch.tsx` no cabeçalho do `AdminShell` —
+combobox acessível (`role="combobox"` + `aria-expanded`/`aria-controls`,
+listbox com `role="option"`, navegação ↓/↑/Enter/Esc, clique-fora fecha),
+debounce de 250ms, resultados agrupados com rótulo por tipo e "e mais…"
+quando `hasMore`. **Pass do `web-design-guidelines`:** os resultados
+passaram de `<button onClick>` para `<Link href>` (afordância de "abrir em
+nova aba" / ver o destino; `onClick` com `preventDefault` mantém a navegação
+client-side e o fechamento do dropdown) e ganharam anel de foco visível
+(`focus-visible:ring-2 focus-visible:ring-ring`). Refino visual / modo
+escuro: o `/admin` é escuro FIXO desde a Fase 1 (marcador visual permanente,
+§13.1) — não há um segundo tema a validar; varredura dos componentes das
+Fases 5/6 não achou dívida de contraste. Item "Buscar" não existe no menu —
+o campo fica sempre visível no topo.
+**Impacto:** zero migration, zero mudança em qualquer contrato do produto —
+nada de `services/*` pré-existente tocado além do mount em `index.ts` e do
+`AdminShell`. Testes novos: `PlatformSearchService` (6 — query curta não
+consulta, ordem dos grupos, teto + `hasMore`, extração de dígitos,
+privacidade = chaves exatas), `platformSearchRouter` (3 — 401 sem crachá,
+200 agrupado, `q` vazio não toca o repo), `platformSearch.integration` (4
+contra Postgres REAL — acha tenant por nome/ILIKE, usuário/sessão/campanha
+cada um com `href` do tenant, contato pelos DÍGITOS do telefone, tenant por
+id exato), BFF `search` (3), jsdom `AdminSearch` (4). Suíte do monorepo:
+**api 191/191 suítes 2240/2240; dashboard+jsdom 145/145 suítes 1083/1083** —
+todos verdes; `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real, admin de
+teste criado e removido ao final — inclusive a linha de auditoria do login
+do probe): `GET /api/platform/search?q=whats` acha o tenant pelo nome;
+`?q=gmail` acha usuários por e-mail (5, capado); `?q=5521` acha contatos
+pelos dígitos do telefone (`hasMore`); TODO `href` aponta para
+`/admin/tenants/<id>`, nenhum conteúdo de conversa no payload.
+**Concluída quando** (§15): o fundador acha um tenant por telefone de
+contato num campo só. ✅
+**Painel `/admin` completo** — §15 não tem fases após a 6.
+**Desvio registrado (§16):** a `/code-review ultra` formal (billing/gatilho
+do fundador) segue pendente para as Fases 4 e 5 antes do merge; a Fase 6 é
+risco 🟢 (só leitura, privacidade travada por teste) — revisão manual
+suficiente.
+
+---
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---

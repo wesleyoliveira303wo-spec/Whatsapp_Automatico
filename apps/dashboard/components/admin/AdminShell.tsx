@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { Activity, Building2, Home, LifeBuoy, LogOut, ScrollText } from 'lucide-react';
 
 import FrancisLogo from '@/components/brand/FrancisLogo';
+import AdminSearch from '@/components/admin/AdminSearch';
 import { Button } from '@/components/ui/button';
 import { platformLogout, type PlatformAdmin } from '@/lib/platformClientApi';
 import { cn } from '@/lib/utils';
@@ -114,10 +115,14 @@ export default function AdminShell({ admin, children }: AdminShellProps): JSX.El
         </nav>
 
         <div className="min-w-0 flex-1">
-          <header className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+          <header className="mb-6 flex flex-wrap items-center gap-3 border-b border-border pb-4">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{admin.name}</p>
               <p className="truncate text-xs text-muted-foreground">{admin.email}</p>
+            </div>
+            {/* Busca global — Fase 6 (§7). */}
+            <div className="order-last w-full sm:order-none sm:ml-auto sm:w-auto">
+              <AdminSearch />
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout} disabled={leaving}>
               <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />

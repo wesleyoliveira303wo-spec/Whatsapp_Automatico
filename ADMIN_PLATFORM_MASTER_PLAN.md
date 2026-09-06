@@ -693,7 +693,30 @@ delimita e descreve a janela. Fidelidade fina fica como evolução.
 do fundador) não foi executada — feita uma revisão de segurança manual do
 terceiro plano de auth; a formal fica pendente antes do merge.
 
-### Fase 6 — Busca e refino
+### Fase 6 — Busca e refino ✅ CONCLUÍDA (2026-09-06)
+
+**Estado:** entregue — busca global em `services/platform`
+(`PlatformSearchService` + `PrismaPlatformSearchRepository`): um campo,
+resultados agrupados por tipo (tenant, usuário, contato, sessão, campanha),
+5 consultas `ILIKE` paralelas sobre colunas indexadas + `regexp_replace` para
+casar telefone por dígitos (sem `+`/espaços), teto de 5 por tipo com
+`hasMore`. **Privacidade (§7):** cada resultado devolve só a entidade
+(rótulo + sublabel de identidade) e o caminho até ela — `href` é SEMPRE
+`/admin/tenants/<id>`; nenhum campo de conversa/mensagem é selecionado
+(teste trava as chaves exatas do hit). `GET /api/platform/search` atrás de
+`requirePlatformUser`; BFF `pages/api/platform/search.ts`;
+`components/admin/AdminSearch.tsx` no cabeçalho do `/admin` (combobox
+acessível: `role="combobox"`/`listbox"`/`option"`, navegação por seta/Enter/
+Esc, debounce 250ms, mín. 2 chars, resultados como `<Link>` com foco visível
+— pass do `web-design-guidelines`). Refino visual/modo escuro: o `/admin` já
+é escuro fixo por decisão da Fase 1; nenhuma dívida de contraste encontrada
+nos componentes das Fases 5/6. Suíte: `PlatformSearchService` 6,
+`platformSearchRouter` 3, `platformSearch.integration` 4 (Postgres real),
+BFF 3, jsdom `AdminSearch` 4; api 191/191 suítes 2240/2240, dashboard+jsdom
+145/145 suítes 1083/1083; `tsc`/`eslint`/`next build` limpos. Validação ao
+vivo (containers reconstruídos, admin de teste criado e removido): busca por
+nome de tenant, e-mail de usuário e dígitos de telefone — todos os `href`
+para o detalhe do tenant, nenhum conteúdo de conversa. Ver `CLAUDE.md` §18.
 
 **Objetivo:** achar qualquer coisa sem navegar.
 **Entrega:** busca global (§7), polimento visual, acessibilidade, modo escuro.

@@ -1029,6 +1029,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       app.use('/api/platform', platform.platformTenantsRouter); // Fase 2
       app.use('/api/platform', platform.platformOverviewRouter); // Fase 3
       app.use('/api/platform', platform.platformSupportRouter); // Fase 5 (lado admin)
+      app.use('/api/platform', platform.platformSearchRouter); // Fase 6 (busca global)
       app.use('/api/platform', platform.platformErrorHandler); // por último
     }
 

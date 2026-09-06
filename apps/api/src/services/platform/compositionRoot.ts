@@ -33,6 +33,9 @@ import { SupportAccessTokenService } from './domain/SupportAccessTokenService';
 import { SupportAccessVerifier } from './domain/providers/SupportAccessVerifier';
 import { createPlatformSupportRouter } from './presentation/platformSupportRouter';
 import { createTenantSupportAccessRouter } from './presentation/tenantSupportAccessRouter';
+import { PrismaPlatformSearchRepository } from './infrastructure/repositories/PrismaPlatformSearchRepository';
+import { PlatformSearchService } from './application/PlatformSearchService';
+import { createPlatformSearchRouter } from './presentation/platformSearchRouter';
 import { createSupportAccessAuditMiddleware } from './presentation/supportAccessAuditMiddleware';
 import { createSupportAccessErrorHandler } from './presentation/supportAccessErrorHandler';
 
@@ -74,6 +77,8 @@ export interface PlatformComposition {
   tenantControlService: TenantControlService;
   /** Suporte assistido — Fase 5. Lado ADMIN (`/api/platform/support/*`). */
   platformSupportRouter: Router;
+  /** Busca global — Fase 6 (`GET /api/platform/search`). */
+  platformSearchRouter: Router;
   /** Suporte assistido — Fase 5. Lado TENANT (`/api/tenants/:tenantId/support-access/*`). */
   tenantSupportAccessRouter: Router;
   /** Fase 5 — grava as ações de suporte no `AuditLog` do tenant. Montado após `authenticate`. */
@@ -195,6 +200,12 @@ export function createPlatformComposition(
     logger,
   );
 
+  // Fase 6 — Busca global. Leitura cross-tenant, sem migration, sem motor de
+  // busca novo (`ILIKE` + `LIMIT`, §7).
+  const platformSearchService = new PlatformSearchService(
+    new PrismaPlatformSearchRepository(prisma),
+  );
+
   const byIp = createRateLimiter({
     store: rateLimitStore,
     scope: 'platform-login:ip',
@@ -228,6 +239,7 @@ export function createPlatformComposition(
       requirePlatformUser,
     ),
     platformSupportRouter: createPlatformSupportRouter(supportAccessService, requirePlatformUser),
+    platformSearchRouter: createPlatformSearchRouter(platformSearchService, requirePlatformUser),
     tenantSupportAccessRouter: createTenantSupportAccessRouter(supportAccessService),
     supportAccessAuditMiddleware: createSupportAccessAuditMiddleware(
       tenantAuditLogRepository,
