@@ -128,4 +128,37 @@ describe('Integração real — Centro de Tenants (Fase 2)', () => {
 
     await expect(repository.getTenantDetail('id-que-nao-existe', range)).resolves.toBeNull();
   });
+
+  it('platformTotals soma a plataforma inteira no formato certo (Fase 3, §5.2)', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real da Fase 3.');
+      return;
+    }
+
+    const totals = await repository.platformTotals(range);
+
+    // Números, não BigInt.
+    expect(typeof totals.tenants.total).toBe('number');
+    expect(typeof totals.users).toBe('number');
+    expect(typeof totals.sessions.total).toBe('number');
+    // Custo é STRING decimal exata (D46).
+    expect(typeof totals.ai30d.costUsd).toBe('string');
+    // O tenant/usuário/sessão de teste criados no beforeAll estão contados.
+    expect(totals.tenants.total).toBeGreaterThanOrEqual(1);
+    expect(totals.tenants.byPlan.free).toBeGreaterThanOrEqual(1);
+    expect(totals.users).toBeGreaterThanOrEqual(1);
+    expect(totals.sessions.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it('listAllSessions devolve (tenantId, sessionName, status) de todos os tenants', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real da Fase 3.');
+      return;
+    }
+
+    const sessions = await repository.listAllSessions();
+    const mine = sessions.find((s) => s.tenantId === tenantId);
+
+    expect(mine).toMatchObject({ sessionName: 'Sessão Teste', status: 'DISCONNECTED' });
+  });
 });

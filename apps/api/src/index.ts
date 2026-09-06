@@ -328,13 +328,20 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // o painel simplesmente não sobe — degradação igual à do resto, e a mais
     // segura possível para esta superfície (nunca há um modo "sem senha").
     const { PLATFORM_SESSION_SECRET } = process.env;
+    // Construído aqui, mas as rotas são montadas mais abaixo (junto com a
+    // Fase 3), depois que `registry`/`aiReplyQueue` existem — a Fase 3 injeta
+    // o status ao vivo (ADR #80) e o probe de infra nele. `let` de escopo
+    // externo porque a montagem precisa alcançá-lo.
+    let platform:
+      | import('./services/platform/compositionRoot').PlatformComposition
+      | undefined;
     if (PLATFORM_SESSION_SECRET) {
       if (PLATFORM_SESSION_SECRET === ACCESS_TOKEN_SECRET) {
         throw new Error(
           'PLATFORM_SESSION_SECRET não pode ser igual a ACCESS_TOKEN_SECRET: os dois crachás precisam de segredos distintos.',
         );
       }
-      const platform = createPlatformComposition(
+      platform = createPlatformComposition(
         prisma,
         {
           sessionSecret: PLATFORM_SESSION_SECRET,
@@ -345,11 +352,6 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         logger,
         rateLimitStore,
       );
-      app.use('/api/platform', platform.platformRouter);
-      // Fase 2 — Centro de Tenants (leitura cross-tenant), mesmo prefixo e
-      // mesmo porteiro (`requirePlatformUser`, aplicado dentro do router).
-      app.use('/api/platform', platform.platformTenantsRouter);
-      app.use('/api/platform', platform.platformErrorHandler);
     } else {
       console.warn(
         'PLATFORM_SESSION_SECRET ausente: painel /admin nao montado (ver .env.example).',
@@ -921,6 +923,73 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     );
     app.use('/api/tenants/:tenantId/conversations', createConversationSummaryErrorHandler(logger));
 
+    // --- Painel /admin — montagem das rotas (Fases 1, 2 e 3) ---
+    //
+    // Montado AQUI, e não junto da construção da composition, porque a Fase 3
+    // precisa de `registry` (status ao vivo, ADR #80) e das filas, que só
+    // existem neste ponto. As outras duas filas (`whatsapp-outbound`,
+    // `campaign-send`) não são expostas por suas composições, então montamos
+    // objetos `Queue` SÓ-LEITURA sobre uma conexão já existente — ler
+    // contagem não precisa de `Worker`.
+    let platformOutboundReadQueue: import('bullmq').Queue | undefined;
+    let platformCampaignSendReadQueue: import('bullmq').Queue | undefined;
+    if (platform) {
+      const { Queue: BullQueue } = await import('bullmq');
+      const { WHATSAPP_OUTBOUND_QUEUE_NAME } = await import(
+        './services/whatsapp/infrastructure/queues/WhatsAppOutboundQueue'
+      );
+      const { CAMPAIGN_SEND_QUEUE_NAME } = await import(
+        './services/campaigns/infrastructure/queues/CampaignSendQueue'
+      );
+      const { RegistryPlatformLiveSessionStatusResolver } = await import(
+        './services/whatsapp/infrastructure/RegistryPlatformLiveSessionStatusResolver'
+      );
+      const { BullMqPlatformHealthProbe } = await import(
+        './services/platform/infrastructure/BullMqPlatformHealthProbe'
+      );
+
+      platformOutboundReadQueue = new BullQueue(WHATSAPP_OUTBOUND_QUEUE_NAME, {
+        connection: aiReplyProducerConnection,
+      });
+      platformCampaignSendReadQueue = new BullQueue(CAMPAIGN_SEND_QUEUE_NAME, {
+        connection: aiReplyProducerConnection,
+      });
+
+      platform.tenantObservabilityService.setLiveSessionStatusResolver(
+        new RegistryPlatformLiveSessionStatusResolver(
+          registry,
+          logger.child({ module: 'platform-live-status' }),
+        ),
+      );
+      platform.platformHealthService.setHealthProbe(
+        new BullMqPlatformHealthProbe(
+          { ping: () => prisma.$queryRaw`SELECT 1` },
+          [
+            {
+              name: 'ai-reply',
+              getJobCounts: () =>
+                aiReplyQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+            },
+            {
+              name: 'whatsapp-outbound',
+              getJobCounts: () =>
+                platformOutboundReadQueue!.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+            },
+            {
+              name: 'campaign-send',
+              getJobCounts: () =>
+                platformCampaignSendReadQueue!.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+            },
+          ],
+        ),
+      );
+
+      app.use('/api/platform', platform.platformRouter);
+      app.use('/api/platform', platform.platformTenantsRouter); // Fase 2
+      app.use('/api/platform', platform.platformOverviewRouter); // Fase 3
+      app.use('/api/platform', platform.platformErrorHandler); // por último
+    }
+
     // Fase 1, Bloco F1.10 (observabilidade mínima para o beta) — `/health`
     // (topo deste arquivo) é uma checagem de LIVENESS deliberadamente burra
     // (sempre 200, sem tocar dependência nenhuma — correto para um probe de
@@ -945,11 +1014,15 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // dois lados (aplicado também ao Postgres, por simetria e defesa contra
     // um cenário futuro de rede degradada, não só desconexão total).
     const HEALTH_CHECK_TIMEOUT_MS = 3000;
+    type QueueCounts = { waiting: number; active: number; failed: number; delayed: number };
     app.get('/health/ready', async (_req: Request, res: Response) => {
       const checks: {
         database: 'ok' | 'down';
         redis: 'ok' | 'down';
-        aiQueue?: { waiting: number; active: number; failed: number; delayed: number };
+        aiQueue?: QueueCounts;
+        // Fase 3 do /admin — as outras duas filas passam a ser reportadas
+        // aqui também (a ampliação que o plano mestre §5.2 previa).
+        queues?: Record<string, QueueCounts>;
       } = { database: 'down', redis: 'down' };
 
       try {
@@ -979,12 +1052,41 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           ),
         ]);
         checks.redis = 'ok';
-        checks.aiQueue = {
+        const aiCounts: QueueCounts = {
           waiting: counts.waiting ?? 0,
           active: counts.active ?? 0,
           failed: counts.failed ?? 0,
           delayed: counts.delayed ?? 0,
         };
+        checks.aiQueue = aiCounts;
+        checks.queues = { 'ai-reply': aiCounts };
+
+        // As outras duas filas (só existem no ramo completo). Cada uma no seu
+        // próprio try — uma travada não some com o número da outra.
+        for (const [name, q] of [
+          ['whatsapp-outbound', platformOutboundReadQueue],
+          ['campaign-send', platformCampaignSendReadQueue],
+        ] as const) {
+          if (!q) continue;
+          try {
+            const c = q.getJobCounts('waiting', 'active', 'failed', 'delayed');
+            c.catch(() => {});
+            const qc = await Promise.race([
+              c,
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout')), HEALTH_CHECK_TIMEOUT_MS),
+              ),
+            ]);
+            checks.queues[name] = {
+              waiting: qc.waiting ?? 0,
+              active: qc.active ?? 0,
+              failed: qc.failed ?? 0,
+              delayed: qc.delayed ?? 0,
+            };
+          } catch {
+            // omite esta fila do relatório; não derruba a resposta.
+          }
+        }
       } catch {
         // fica 'down'/`aiQueue` ausente — Redis inacessível, comando parado
         // na fila de retentativas, ou timeout; não deixa a checagem inteira

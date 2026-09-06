@@ -13,6 +13,7 @@ import {
   ObservabilityRange,
   TenantObservabilityRepository,
 } from '../../domain/repositories/TenantObservabilityRepository';
+import { PlatformTotals } from '../../domain/entities/PlatformTotals';
 
 const PLAN_TO_DOMAIN: Record<string, TenantPlan> = {
   FREE: 'free',
@@ -296,6 +297,97 @@ export class PrismaTenantObservabilityRepository implements TenantObservabilityR
       campaigns,
       contactCount: contactRows[0]?.count ?? 0,
       recentSessionEvents,
+    };
+  }
+
+  async listAllSessions(): Promise<
+    Array<{ tenantId: string; sessionName: string; status: string }>
+  > {
+    return this.prisma.$queryRaw<
+      Array<{ tenantId: string; sessionName: string; status: string }>
+    >(Prisma.sql`
+      SELECT "tenant_id" AS "tenantId", "session_name" AS "sessionName", "status"::text AS "status"
+      FROM "whatsapp_sessions"
+    `);
+  }
+
+  async platformTotals(range: ObservabilityRange): Promise<PlatformTotals> {
+    const [plans, users, sessions, messages, ai, campaigns] = await Promise.all([
+      this.prisma.$queryRaw<{ plan: string; count: number }[]>(Prisma.sql`
+        SELECT "plan"::text AS "plan", COUNT(*)::int AS "count" FROM "tenants" GROUP BY "plan"
+      `),
+      this.prisma.$queryRaw<{ count: number }[]>(Prisma.sql`
+        SELECT COUNT(*)::int AS "count" FROM "users"
+      `),
+      this.prisma.$queryRaw<{ total: number; connected: number }[]>(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS "total",
+          COUNT(*) FILTER (WHERE "status" = 'CONNECTED')::int AS "connected"
+        FROM "whatsapp_sessions"
+      `),
+      this.prisma.$queryRaw<{ inbound: number; outbound: number }[]>(Prisma.sql`
+        SELECT
+          COUNT(*) FILTER (WHERE "direction" = 'INBOUND')::int AS "inbound",
+          COUNT(*) FILTER (WHERE "direction" = 'OUTBOUND')::int AS "outbound"
+        FROM "whatsapp_messages"
+        WHERE "occurred_at" >= ${range.from} AND "occurred_at" <= ${range.to}
+      `),
+      this.prisma.$queryRaw<
+        { total: number; success: number; providerError: number; validationRejected: number; costUsd: string }[]
+      >(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS "total",
+          COUNT(*) FILTER (WHERE "status" = 'SUCCESS')::int AS "success",
+          COUNT(*) FILTER (WHERE "status" = 'PROVIDER_ERROR')::int AS "providerError",
+          COUNT(*) FILTER (WHERE "status" = 'VALIDATION_REJECTED')::int AS "validationRejected",
+          COALESCE(SUM("cost_usd"), 0)::text AS "costUsd"
+        FROM "ai_interactions"
+        WHERE "created_at" >= ${range.from} AND "created_at" <= ${range.to}
+      `),
+      this.prisma.$queryRaw<{ running: number; pausedByBreaker: number }[]>(Prisma.sql`
+        SELECT
+          COUNT(*) FILTER (WHERE "status" = 'RUNNING')::int AS "running",
+          COUNT(*) FILTER (WHERE "status" = 'PAUSED' AND "paused_reason" IS NOT NULL)::int
+            AS "pausedByBreaker"
+        FROM "campaigns"
+      `),
+    ]);
+
+    const byPlan: Record<TenantPlan, number> = { free: 0, pro: 0, enterprise: 0 };
+    let tenantTotal = 0;
+    for (const row of plans) {
+      const plan = PLAN_TO_DOMAIN[row.plan] ?? 'free';
+      byPlan[plan] += row.count;
+      tenantTotal += row.count;
+    }
+
+    const aiRow = ai[0] ?? {
+      total: 0,
+      success: 0,
+      providerError: 0,
+      validationRejected: 0,
+      costUsd: '0',
+    };
+
+    return {
+      tenants: { total: tenantTotal, byPlan },
+      users: users[0]?.count ?? 0,
+      sessions: { total: sessions[0]?.total ?? 0, connected: sessions[0]?.connected ?? 0 },
+      messages30d: {
+        inbound: messages[0]?.inbound ?? 0,
+        outbound: messages[0]?.outbound ?? 0,
+      },
+      ai30d: {
+        total: aiRow.total,
+        success: aiRow.success,
+        providerError: aiRow.providerError,
+        validationRejected: aiRow.validationRejected,
+        costUsd: aiRow.costUsd,
+      },
+      campaigns: {
+        running: campaigns[0]?.running ?? 0,
+        pausedByBreaker: campaigns[0]?.pausedByBreaker ?? 0,
+      },
     };
   }
 }

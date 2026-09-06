@@ -6,12 +6,26 @@ import {
   evaluateTenantSignals,
   worstSignal,
 } from '../domain/tenantSignals';
+import {
+  LiveSessionStatus,
+  PlatformLiveSessionStatusResolver,
+} from '../domain/providers/PlatformLiveSessionStatusResolver';
+import { RawSession, applyLiveSessionOverlay } from '../domain/liveSessionOverlay';
 
 /** Janela padrão dos agregados do Centro de Tenants (§6). */
 export const OBSERVABILITY_WINDOW_DAYS = 30;
 
 /** Ordem em que os sinais mais graves sobem na lista. */
 const SEVERITY_RANK: Record<TenantSignal['severity'], number> = { red: 0, amber: 1, green: 2 };
+
+const DB_STATUS_TO_LIVE: Record<string, LiveSessionStatus> = {
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  DISCONNECTED: 'disconnected',
+  connecting: 'connecting',
+  connected: 'connected',
+  disconnected: 'disconnected',
+};
 
 export interface TenantListRow {
   tenant: TenantOverview;
@@ -25,25 +39,37 @@ export interface TenantDetailRow {
 }
 
 /**
- * Application Service do Centro de Tenants — Fase 2.
+ * Application Service do Centro de Tenants — Fase 2, estendido na Fase 3.
  *
  * Fino de propósito (mesmo padrão de `AnalyticsService`/`AuditLogService`):
  * resolve a janela de 30 dias, chama o repositório e ANEXA os sinais via a
- * função pura de Domain. Nenhuma regra de sinal vive aqui — só a ordenação da
- * LISTA (por urgência), que é decisão de apresentação, não de domínio.
+ * função pura de Domain.
+ *
+ * Fase 3 (ADR #80): quando um `PlatformLiveSessionStatusResolver` é injetado,
+ * `listTenants()` reconcilia `connectedSessionCount` com o registry ao vivo
+ * ANTES de calcular os sinais — sem isso, "WhatsApp caiu" na Fila de ação
+ * dispararia com dado velho depois de um reinício da API. Sem o resolvedor
+ * (teste, modo degradado), o comportamento é o da Fase 2, intocado.
  */
 export class TenantObservabilityService {
+  private liveSessionStatusResolver?: PlatformLiveSessionStatusResolver;
+
   constructor(
     private readonly repository: TenantObservabilityRepository,
     /** Injetável só para teste determinístico da janela e do sinal "Sumiu". */
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  /** Injeção tardia (D15) — o registry só existe depois desta composition. */
+  setLiveSessionStatusResolver(resolver: PlatformLiveSessionStatusResolver): void {
+    this.liveSessionStatusResolver = resolver;
+  }
+
   async listTenants(): Promise<TenantListRow[]> {
     const now = this.now();
     const range = { from: windowStart(now), to: now };
 
-    const overviews = await this.repository.listTenantOverviews(range);
+    const overviews = await this.overlayLive(await this.repository.listTenantOverviews(range));
 
     const rows: TenantListRow[] = overviews.map((tenant) => ({
       tenant,
@@ -83,8 +109,42 @@ export class TenantObservabilityService {
 
     return { tenant: detail, signals: evaluateTenantSignals(detail, now) };
   }
+
+  /**
+   * Aplica a sobreposição do status ao vivo, se houver resolvedor. Compartilhado
+   * com `PlatformOverviewService` via a lista já reconciliada — mas exposto aqui
+   * porque `listTenants()` é seu principal consumidor.
+   */
+  private async overlayLive(overviews: TenantOverview[]): Promise<TenantOverview[]> {
+    if (!this.liveSessionStatusResolver) return overviews;
+
+    let rawSessions: RawSession[];
+    try {
+      const rows = await this.repository.listAllSessions();
+      rawSessions = rows.map((r) => ({
+        tenantId: r.tenantId,
+        sessionName: r.sessionName,
+        status: DB_STATUS_TO_LIVE[r.status] ?? 'disconnected',
+      }));
+    } catch {
+      // Falha ao listar sessões não pode derrubar o painel — cai para o
+      // valor do banco (comportamento da Fase 2).
+      return overviews;
+    }
+
+    let liveStatuses: Map<string, LiveSessionStatus>;
+    try {
+      liveStatuses = await this.liveSessionStatusResolver.resolveLiveStatuses(
+        rawSessions.map((s) => ({ tenantId: s.tenantId, sessionName: s.sessionName })),
+      );
+    } catch {
+      return applyLiveSessionOverlay(overviews, rawSessions, new Map());
+    }
+
+    return applyLiveSessionOverlay(overviews, rawSessions, liveStatuses);
+  }
 }
 
-function windowStart(now: Date): Date {
+export function windowStart(now: Date): Date {
   return new Date(now.getTime() - OBSERVABILITY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 }

@@ -135,3 +135,61 @@ export async function fetchPlatformTenantDetail(
   );
   return body.tenant;
 }
+
+// --- Fase 3 — Início e Saúde ---
+
+export interface ActionQueueItem {
+  key: 'sessions_down' | 'tenants_at_risk' | 'campaigns_breaker' | 'never_started';
+  severity: 'red' | 'amber';
+  count: number;
+  label: string;
+  href: string;
+}
+
+export interface PlatformOverview {
+  actionQueue: ActionQueueItem[];
+  kpis: {
+    tenants: { total: number; byPlan: Record<TenantPlan, number> };
+    users: number;
+    sessions: { total: number; connected: number };
+    messages30d: { inbound: number; outbound: number };
+    ai30d: {
+      total: number;
+      success: number;
+      providerError: number;
+      validationRejected: number;
+      costUsd: string;
+    };
+    campaigns: { running: number; pausedByBreaker: number };
+    tenantsHealthy: number;
+    tenantsNeedingAttention: number;
+    sessionsConnectedLive: number;
+  };
+}
+
+export interface QueueDepth {
+  name: string;
+  reachable: boolean;
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+}
+
+export interface PlatformHealth {
+  infra: {
+    database: 'ok' | 'down';
+    redis: 'ok' | 'down';
+    queues: QueueDepth[];
+  } | null;
+  aiFailures30d: { total: number; providerError: number; rate: number | null };
+  tenantsWithSessionsDown: number;
+}
+
+export async function fetchPlatformOverview(): Promise<PlatformOverview> {
+  return request<PlatformOverview>('/api/platform/overview');
+}
+
+export async function fetchPlatformHealth(): Promise<PlatformHealth> {
+  return request<PlatformHealth>('/api/platform/health');
+}

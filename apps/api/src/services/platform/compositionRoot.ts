@@ -14,10 +14,13 @@ import { PrismaPlatformAuditLogRepository } from './infrastructure/repositories/
 import { Hs256PlatformSessionTokenService } from './infrastructure/Hs256PlatformSessionTokenService';
 import { createPlatformRouter } from './presentation/platformRouter';
 import { createPlatformTenantsRouter } from './presentation/platformTenantsRouter';
+import { createPlatformOverviewRouter } from './presentation/platformOverviewRouter';
 import { createPlatformErrorHandler } from './presentation/platformErrorHandler';
 import { createRequirePlatformUser } from './presentation/requirePlatformUser';
 import { PrismaTenantObservabilityRepository } from './infrastructure/repositories/PrismaTenantObservabilityRepository';
 import { TenantObservabilityService } from './application/TenantObservabilityService';
+import { PlatformOverviewService } from './application/PlatformOverviewService';
+import { PlatformHealthService } from './application/PlatformHealthService';
 
 /** Sessão do `/admin`: 8 horas (§4 do plano mestre). */
 export const DEFAULT_PLATFORM_SESSION_TTL_SECONDS = 8 * 60 * 60;
@@ -40,11 +43,15 @@ export interface PlatformComposition {
    * consumidores da Fase 1 não mudam.
    */
   platformTenantsRouter: Router;
+  /** Início + Saúde — Fase 3. Mesmo prefixo, mesmo porteiro. Campo aditivo. */
+  platformOverviewRouter: Router;
   platformErrorHandler: ErrorRequestHandler;
   platformAuthService: PlatformAuthService;
   platformUserRepository: PlatformUserRepository;
-  /** Fase 2 — exposto para teste e para as fases seguintes. */
+  /** Fase 2 — exposto para teste e para as fases seguintes. Fase 3 injeta o resolvedor ao vivo aqui. */
   tenantObservabilityService: TenantObservabilityService;
+  /** Fase 3 — exposto para o `index.ts` injetar o `PlatformHealthProbe`. */
+  platformHealthService: PlatformHealthService;
   /**
    * Exposto para as fases seguintes montarem rotas de plataforma reusando o
    * MESMO porteiro — nunca um segundo verificador.
@@ -98,8 +105,20 @@ export function createPlatformComposition(
   // Fase 2 — Centro de Tenants. Leitura cross-tenant, sem Redis, sem migration
   // (§ Fase 2, risco 🟢). O `TenantObservabilityService` recebe o relógio real;
   // testes injetam um fixo.
-  const tenantObservabilityService = new TenantObservabilityService(
-    new PrismaTenantObservabilityRepository(prisma),
+  const observabilityRepository = new PrismaTenantObservabilityRepository(prisma);
+  const tenantObservabilityService = new TenantObservabilityService(observabilityRepository);
+
+  // Fase 3 — Início e Saúde. Reusam a mesma lista de tenants (com sinais e
+  // status reconciliado); só somam os KPIs globais e a Fila de ação. O
+  // resolvedor ao vivo (ADR #80) e o probe de infra são injetados por
+  // `index.ts` (D15 — dependem de coisas que só existem lá).
+  const platformOverviewService = new PlatformOverviewService(
+    tenantObservabilityService,
+    observabilityRepository,
+  );
+  const platformHealthService = new PlatformHealthService(
+    tenantObservabilityService,
+    observabilityRepository,
   );
 
   const byIp = createRateLimiter({
@@ -128,10 +147,16 @@ export function createPlatformComposition(
       tenantObservabilityService,
       requirePlatformUser,
     ),
+    platformOverviewRouter: createPlatformOverviewRouter(
+      platformOverviewService,
+      platformHealthService,
+      requirePlatformUser,
+    ),
     platformErrorHandler: createPlatformErrorHandler(logger),
     platformAuthService,
     platformUserRepository,
     tenantObservabilityService,
+    platformHealthService,
     requirePlatformUser,
   };
 }

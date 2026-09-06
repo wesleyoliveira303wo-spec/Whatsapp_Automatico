@@ -109,3 +109,76 @@ export function fakeLogger(): Logger {
   };
   return logger;
 }
+
+// --- Fase 2/3 — observabilidade ---
+
+import { TenantOverview } from '../../../src/services/platform/domain/entities/TenantOverview';
+import { TenantDetail } from '../../../src/services/platform/domain/entities/TenantDetail';
+import { PlatformTotals } from '../../../src/services/platform/domain/entities/PlatformTotals';
+import {
+  ObservabilityRange,
+  TenantObservabilityRepository,
+} from '../../../src/services/platform/domain/repositories/TenantObservabilityRepository';
+
+export function tenantOverview(patch: Partial<TenantOverview> = {}): TenantOverview {
+  return {
+    id: 't',
+    name: 'Cliente',
+    plan: 'free',
+    createdAt: new Date('2026-08-01T00:00:00Z'),
+    sessionCount: 1,
+    connectedSessionCount: 1,
+    userCount: 1,
+    lastActivityAt: new Date('2026-09-06T10:00:00Z'),
+    messages30d: { inbound: 100, outbound: 100 },
+    ai30d: { total: 10, success: 10, providerError: 0, validationRejected: 0, costUsd: '0' },
+    conversations30d: { total: 10, escalated: 0 },
+    aiProfileConfigured: true,
+    ...patch,
+  };
+}
+
+export function emptyPlatformTotals(patch: Partial<PlatformTotals> = {}): PlatformTotals {
+  return {
+    tenants: { total: 0, byPlan: { free: 0, pro: 0, enterprise: 0 } },
+    users: 0,
+    sessions: { total: 0, connected: 0 },
+    messages30d: { inbound: 0, outbound: 0 },
+    ai30d: { total: 0, success: 0, providerError: 0, validationRejected: 0, costUsd: '0' },
+    campaigns: { running: 0, pausedByBreaker: 0 },
+    ...patch,
+  };
+}
+
+/** Fake do repositório de observabilidade — cobre Fase 2 e Fase 3. */
+export class FakeTenantObservabilityRepository implements TenantObservabilityRepository {
+  lastRange: ObservabilityRange | null = null;
+  allSessions: Array<{ tenantId: string; sessionName: string; status: string }> = [];
+  totals: PlatformTotals = emptyPlatformTotals();
+
+  constructor(
+    public overviews: TenantOverview[] = [],
+    private readonly detail: TenantDetail | null = null,
+  ) {}
+
+  async listTenantOverviews(range: ObservabilityRange): Promise<TenantOverview[]> {
+    this.lastRange = range;
+    return this.overviews.map((o) => ({ ...o }));
+  }
+
+  async getTenantDetail(tenantId: string, range: ObservabilityRange): Promise<TenantDetail | null> {
+    this.lastRange = range;
+    return this.detail && this.detail.id === tenantId ? this.detail : null;
+  }
+
+  async platformTotals(range: ObservabilityRange): Promise<PlatformTotals> {
+    this.lastRange = range;
+    return this.totals;
+  }
+
+  async listAllSessions(): Promise<
+    Array<{ tenantId: string; sessionName: string; status: string }>
+  > {
+    return this.allSessions;
+  }
+}

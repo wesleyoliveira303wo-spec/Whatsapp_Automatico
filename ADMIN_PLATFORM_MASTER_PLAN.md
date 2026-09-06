@@ -598,7 +598,14 @@ tier do Gemini o custo é US$ 0, então hoje o sinal nunca dispara; ele passa a
 valer quando um provider pago estiver ativo. Mover o preço para o schema é
 candidato à Fase 4 (junto da migration `Tenant.status`).
 
-### Fase 3 — Observabilidade: plataforma
+### Fase 3 — Observabilidade: plataforma ✅ CONCLUÍDA (2026-09-06)
+
+**Estado:** entregue e validada ao vivo — Início com número herói (21
+clientes), Fila de ação e KPIs globais; tela Saúde com Postgres, Redis, as
+TRÊS filas, taxa de falha de IA (24,9%) e WhatsApps caídos. `/health/ready`
+ampliado para as três filas (campo `queues`, o `aiQueue` mantido por
+compatibilidade). Status de sessão reconciliado pelo registry ao vivo
+(ADR #80) via `PlatformLiveSessionStatusResolver`. Ver `CLAUDE.md` §18.
 
 **Objetivo:** *"o que eu preciso fazer agora?"*.
 **Entrega:** Início com KPIs globais e Fila de ação; Saúde (3 filas, Postgres,
@@ -609,6 +616,11 @@ filas.
 **Testes:** Fila de ação vazia quando nada precisa de atenção; status de sessão
 sobreposto pelo registry ao vivo (ADR #80).
 **Concluída quando:** responde 10 das 13 perguntas.
+
+**Desvio registrado:** "Pedidos de suporte aguardando resposta" (§5.1, primeira
+linha da Fila de ação) NÃO entrou — depende de `TenantAccessRequest`, que só
+nasce na Fase 5. `buildActionQueue` tem o comentário e o lugar reservado para
+somar esse item quando a tabela existir.
 
 ### Fase 4 — Controle
 

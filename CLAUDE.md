@@ -1387,6 +1387,98 @@ de conexão e o aviso do ADR #80.
 KPIs globais e Fila de ação; Saúde (3 filas, Postgres, Redis); ampliar
 `/health/ready` para as três filas.
 
+
+### Painel `/admin`, Fase 3 — Observabilidade da plataforma (Início + Saúde)
+
+**Data:** 2026-09-06
+**Contexto:** terceira fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§5/§15),
+imediatamente após a Fase 2. Responde *"o que eu preciso fazer agora?"* e dá a
+visão global. Só leitura, sem migration (risco 🟢). Nenhum número inventado —
+cada KPI tem fonte real (§5.2), e o único registro de erro persistido no
+sistema (`ai_interactions.status = PROVIDER_ERROR`) é o que alimenta a "taxa
+de falha de IA".
+**Decisão — Fila de ação como FUNÇÃO PURA (`domain/platformActionQueue.ts`):**
+recebe a lista de tenants (com sinais da Fase 2, já reconciliados) + a
+contagem de campanhas pausadas pelo disjuntor e devolve os itens ordenados
+por urgência: WhatsApp fora do ar → tenant em atenção (outro vermelho, hoje
+"Sumiu") → campanhas pausadas pelo disjuntor → nunca começou. Cada item é uma
+agregação ("20 clientes que não passaram da instalação"), ícone + rótulo, com
+link. Lista vazia = sucesso. **Desvio:** "Pedidos de suporte aguardando
+resposta" (§5.1, 1ª linha) NÃO entrou — depende de `TenantAccessRequest`, da
+Fase 5; o lugar está reservado e comentado.
+**Decisão — sobreposição do status ao vivo (ADR #80), como a Fase 2 previa mas
+adiou.** Nova porta `PlatformLiveSessionStatusResolver`
+(`services/platform/domain`), implementada em
+`RegistryPlatformLiveSessionStatusResolver` (`services/whatsapp/infrastructure`
+— é lá que o `WhatsAppConnectionRegistry` mora, mesmo padrão de
+`RegistryContactAvatarSource`), usando `registry.peek()` (leitura pura, nunca
+instancia socket). Injetada de forma OPCIONAL e TARDIA (D15) no
+`TenantObservabilityService` — quando presente, `listTenants()` reconcilia
+`connectedSessionCount` com o status ao vivo ANTES de calcular os sinais (a
+função pura `applyLiveSessionOverlay`). Sem o resolvedor (teste, modo
+degradado), o comportamento é o da Fase 2, intocado. Isso conserta o
+"WhatsApp caiu" na Fila de ação disparando com dado velho depois de um
+reinício da API — o mesmo bug que a `listSessions()` do produto já corrige há
+tempos.
+**Decisão — probe de infra (`PlatformHealthProbe`) implementado em `index.ts`.**
+`BullMqPlatformHealthProbe` (`services/platform/infrastructure`) checa
+Postgres (`SELECT 1`) e as TRÊS filas (`ai-reply`/`whatsapp-outbound`/
+`campaign-send`), cada leitura com teto de tempo curto (`Promise.race`): a
+conexão de fila usa `maxRetriesPerRequest: null`, então um comando ioredis
+nunca rejeita sozinho enquanto o Redis está fora — mesma armadilha (e mesma
+correção) do `/health/ready`. As outras duas filas não são expostas por suas
+composições, então `index.ts` monta objetos `Queue` SÓ-LEITURA sobre uma
+conexão já existente — ler contagem não precisa de `Worker`. Injetado de
+forma tardia/opcional; sem ele (modo degradado, sem `REDIS_URL`) a tela Saúde
+diz "não verificável" em vez de fingir zeros.
+**Decisão — `/health/ready` ampliado para as três filas (o plano mestre §5.2
+pedia isso nesta fase).** Campo `queues` novo (`{ 'ai-reply', 'whatsapp-outbound',
+'campaign-send' }`, cada uma waiting/active/delayed/failed); `aiQueue`
+mantido intacto para não quebrar nada que já leia o formato antigo. Cada fila
+extra no seu próprio try — uma travada não some com o número da outra.
+**Arquitetura:** `PlatformOverviewService` e `PlatformHealthService`
+(`services/platform/application`) NÃO repetem a lógica de sinal nem de
+sobreposição — reaproveitam `TenantObservabilityService.listTenants()`, que
+já devolve a lista reconciliada com sinais. O overview soma os KPIs globais
+(`platformTotals` — um punhado de agregações que somam TODAS as linhas: um
+método novo no repositório da Fase 2) e monta a Fila de ação; a saúde junta o
+snapshot de infra + a taxa de falha de IA + a contagem de WhatsApps caídos.
+Rotas `GET /api/platform/overview` e `GET /api/platform/health` no
+`platformOverviewRouter` (separado, mesmo prefixo, mesmo porteiro, não
+auditadas — observar não é agir). O mount de TODAS as rotas de plataforma
+(Fases 1, 2, 3) desceu no `index.ts` para depois de o `registry`/filas
+existirem — o error handler continua por último.
+**UI:** `/admin` (Início) reconstruído — Fila de ação em cima (lista com
+ícone + rótulo + link, "nada precisa de atenção" quando vazia), número herói
+(21 clientes) + linha de stat tiles (precisam de atenção, saudáveis,
+usuários, WhatsApps conectados ao vivo, mensagens 30d, IA 30d + % de erro,
+custo de IA, campanhas). Nova tela `/admin/health` — Postgres/Redis com
+ícone + "respondendo"/"sem resposta", as 3 filas com profundidade, taxa de
+falha de IA e clientes com WhatsApp fora do ar. Item "Saúde" do `AdminShell`
+deixou de ser `comingSoon`. Custo de IA formatado só na fronteira de
+renderização (`parseFloat`, D46) — string exata no payload.
+**Impacto:** zero migration, zero mudança em qualquer contrato do produto além
+do campo aditivo `queues` em `/health/ready`. Testes novos:
+`platformActionQueue` (7), `liveSessionOverlay` (5),
+`PlatformOverviewService` (6), `PlatformHealthService` (6),
+`BullMqPlatformHealthProbe` (4 — inclui "Postgres pendurado não trava o
+probe" e "Redis todo fora → filas vazias"), `platformOverviewRouter` (7 — 401
+sem crachá, D46), `TenantObservabilityService` (+3 — overlay corrige banco
+velho, resolvedor que lança não derruba, sem resolvedor não consulta
+sessões), `tenantObservability.integration` (+2 — `platformTotals` e
+`listAllSessions` contra Postgres REAL), BFF `overviewHealthRoutes` (5),
+`AdminShell` (ajustado). Suíte do monorepo: **320/320 suítes, 3213/3213
+testes verdes**; `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real, admin de teste
+criado e removido): `/health/ready` mostrando as 3 filas; Início com a Fila de
+ação ("20 clientes que não passaram da instalação"), número herói 21 e os
+KPIs; Saúde com Postgres/Redis respondendo, as 3 filas (14/12/0 falhas —
+histórico da cota do Gemini), taxa de falha de IA 24,9%, 0 WhatsApps caídos.
+`sessionsConnectedLive` calculado pelo registry ao vivo.
+**Próximo passo:** Fase 4 (§15) — Controle: alterar plano, suspender/reativar
+(migration `Tenant.status`), primeira ESCRITA cross-tenant, com
+`security-review` (risco 🟠).
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
