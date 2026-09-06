@@ -10,6 +10,7 @@ jest.mock('next/router', () => ({ useRouter: () => useRouter() }));
 const fetchActive = jest.fn();
 const respond = jest.fn();
 const revoke = jest.fn();
+const leave = jest.fn();
 jest.mock('@/lib/clientApi', () => {
   const actual = jest.requireActual('@/lib/clientApi');
   return {
@@ -17,6 +18,7 @@ jest.mock('@/lib/clientApi', () => {
     fetchActiveSupportAccess: (...a: unknown[]) => fetchActive(...a),
     respondSupportAccess: (...a: unknown[]) => respond(...a),
     revokeSupportAccess: (...a: unknown[]) => revoke(...a),
+    leaveSupportSession: (...a: unknown[]) => leave(...a),
   };
 });
 
@@ -45,14 +47,14 @@ beforeEach(() => {
 describe('SupportAccessBanner', () => {
   it('não renderiza nada em /admin', () => {
     useRouter.mockReturnValue({ pathname: '/admin/tenants', push: jest.fn() });
-    fetchActive.mockResolvedValue({ open: open({ status: 'pending' }), canRespond: true });
+    fetchActive.mockResolvedValue({ open: open({ status: 'pending' }), canRespond: true, viewerIsSupport: false });
     const { container } = render(<SupportAccessBanner />);
     expect(container).toBeEmptyDOMElement();
     expect(fetchActive).not.toHaveBeenCalled();
   });
 
   it('pending + canRespond → Autorizar/Recusar; autorizar chama respond("accept")', async () => {
-    fetchActive.mockResolvedValue({ open: open({ status: 'pending' }), canRespond: true });
+    fetchActive.mockResolvedValue({ open: open({ status: 'pending' }), canRespond: true, viewerIsSupport: false });
     respond.mockResolvedValue({ request: open({ status: 'accepted' }) });
     render(<SupportAccessBanner />);
 
@@ -63,7 +65,7 @@ describe('SupportAccessBanner', () => {
   });
 
   it('pending sem permissão → mostra aviso, sem botões de ação', async () => {
-    fetchActive.mockResolvedValue({ open: open({ status: 'pending' }), canRespond: false });
+    fetchActive.mockResolvedValue({ open: open({ status: 'pending' }), canRespond: false, viewerIsSupport: false });
     render(<SupportAccessBanner />);
 
     await screen.findByText(/Só o dono ou um administrador pode responder/i);
@@ -74,6 +76,7 @@ describe('SupportAccessBanner', () => {
     fetchActive.mockResolvedValue({
       open: open({ status: 'accepted', respondedAt: '2026-09-06T12:05:00Z' }),
       canRespond: true,
+      viewerIsSupport: false,
     });
     revoke.mockResolvedValue({ request: open({ status: 'revoked' }) });
     render(<SupportAccessBanner />);
@@ -83,6 +86,26 @@ describe('SupportAccessBanner', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Encerrar acesso' }));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith('sa-1'));
+  });
+
+  it('viewerIsSupport → barra "Sessão de suporte" com "Sair do suporte" (não o aviso do cliente)', async () => {
+    fetchActive.mockResolvedValue({
+      open: open({ status: 'accepted' }),
+      canRespond: true,
+      viewerIsSupport: true,
+    });
+    leave.mockResolvedValue({ ok: true });
+    Object.defineProperty(window, 'location', {
+      value: { assign: jest.fn() },
+      writable: true,
+    });
+    render(<SupportAccessBanner />);
+
+    await screen.findByText(/Sessão de suporte/i);
+    expect(screen.queryByRole('button', { name: 'Encerrar acesso' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sair do suporte' }));
+    await waitFor(() => expect(leave).toHaveBeenCalled());
   });
 
   it('401 na chamada /active → não renderiza nada (deslogado)', async () => {

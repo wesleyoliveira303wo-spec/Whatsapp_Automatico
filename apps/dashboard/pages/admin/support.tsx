@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { requirePlatformPageSession } from '@/lib/platformAuth';
 import {
+  PlatformApiError,
   endSupportAccess,
   enterTenantAccount,
   fetchSupportRequests,
@@ -81,10 +82,15 @@ export default function AdminSupportPage({ admin }: Props): JSX.Element {
     setBusyId(id);
     try {
       await endSupportAccess(id);
-      await load();
-    } finally {
-      setBusyId(null);
+    } catch (err) {
+      // 409 = já foi encerrado/revogado por outro caminho: não é erro, só
+      // recarrega a lista para refletir o estado real.
+      if (!(err instanceof PlatformApiError && err.status === 409)) {
+        setError(true);
+      }
     }
+    await load();
+    setBusyId(null);
   }
 
   const pending = requests?.filter((r) => r.status === 'pending') ?? [];

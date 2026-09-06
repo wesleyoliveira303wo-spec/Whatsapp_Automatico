@@ -14,6 +14,8 @@ const POLL_MS = 10_000;
 export interface SupportAccessState {
   open: ActiveSupportAccess | null;
   canRespond: boolean;
+  /** `true` quando quem vê é a própria sessão de suporte (o admin no tenant). */
+  viewerIsSupport: boolean;
   /** `true` só até a primeira resposta chegar — evita piscar o banner. */
   loading: boolean;
   /** A chamada `/active` voltou 401 (deslogado) — o consumidor não deve renderizar nada. */
@@ -32,6 +34,7 @@ export interface SupportAccessState {
 export function useSupportAccess(enabled: boolean): SupportAccessState {
   const [open, setOpen] = useState<ActiveSupportAccess | null>(null);
   const [canRespond, setCanRespond] = useState(false);
+  const [viewerIsSupport, setViewerIsSupport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [unauthenticated, setUnauthenticated] = useState(false);
   const cancelled = useRef(false);
@@ -39,10 +42,15 @@ export function useSupportAccess(enabled: boolean): SupportAccessState {
   const load = useCallback(async () => {
     if (!enabled) return;
     try {
-      const { open: current, canRespond: allowed } = await fetchActiveSupportAccess();
+      const {
+        open: current,
+        canRespond: allowed,
+        viewerIsSupport: isSupport,
+      } = await fetchActiveSupportAccess();
       if (cancelled.current) return;
       setOpen(current);
       setCanRespond(allowed);
+      setViewerIsSupport(isSupport);
       setUnauthenticated(false);
     } catch (err) {
       if (cancelled.current) return;
@@ -85,6 +93,7 @@ export function useSupportAccess(enabled: boolean): SupportAccessState {
   return {
     open,
     canRespond,
+    viewerIsSupport,
     loading,
     unauthenticated,
     respond,

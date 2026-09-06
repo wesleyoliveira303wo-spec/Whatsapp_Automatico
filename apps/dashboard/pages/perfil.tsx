@@ -46,7 +46,8 @@ export const getServerSideProps: GetServerSideProps<PerfilPageProps> = async (co
   if (guard.kind === 'redirect') {
     return { redirect: guard.redirect };
   }
-  if (!guard.session.user) {
+  // Sessão de API key OU de suporte (Fase 5): não há perfil de pessoa.
+  if (!guard.session.user || guard.session.user.isSupport) {
     return { redirect: { destination: '/app', permanent: false } };
   }
   return { props: { canManageCompany: guard.session.user.role === 'owner' } };

@@ -1,5 +1,5 @@
 import type { GetServerSidePropsContext } from 'next';
-import { readSessionFromRequest, type DashboardSession } from './dashboardSession';
+import { readSessionFromRequest, withSupportUser, type DashboardSession } from './dashboardSession';
 
 /**
  * Lê a sessão do Dashboard a partir de `getServerSideProps` (M2, Fase 4 —
@@ -20,7 +20,10 @@ import { readSessionFromRequest, type DashboardSession } from './dashboardSessio
  * nenhuma mudança de comportamento em runtime.
  */
 export function requirePageSession(context: GetServerSidePropsContext): DashboardSession | null {
-  return readSessionFromRequest(context.req);
+  const session = readSessionFromRequest(context.req);
+  // Fase 5 — sessão de suporte ganha um `user` sintético (owner) para os
+  // gates de EXIBIÇÃO não esconderem telas do admin operando o tenant.
+  return session ? withSupportUser(session) : null;
 }
 
 /** Redirect de página protegida — união discriminada para o TS narrowear a sessão no caminho feliz. */

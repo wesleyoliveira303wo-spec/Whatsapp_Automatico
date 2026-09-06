@@ -50,6 +50,14 @@ export interface DashboardSessionUser {
    */
   createdAt?: string;
   lastLoginAt?: string;
+  /**
+   * Painel `/admin`, Fase 5 — `true` quando este `user` é SINTÉTICO, montado
+   * para uma sessão de SUPORTE (o admin operando o tenant). Não é uma pessoa
+   * real do tenant: existe só para o RBAC de EXIBIÇÃO da UI (rail, gates de
+   * página) tratar o suporte como acesso total, sem esconder telas. Quem
+   * autoriza de verdade continua sendo a API (plano `support` = acesso total).
+   */
+  isSupport?: boolean;
 }
 
 /**
@@ -93,6 +101,31 @@ export interface DashboardSession {
    * emite um na primeira requisição delas, sem forçar re-login.
    */
   csrfToken?: string;
+}
+
+/**
+ * Painel `/admin`, Fase 5 — para uma sessão de SUPORTE (o admin operando o
+ * tenant), devolve a sessão com um `user` SINTÉTICO de cargo `owner`, para
+ * que os gates de EXIBIÇÃO da UI (rail lateral, `getServerSideProps` que
+ * checam `session.user?.role`) não escondam telas do suporte. NÃO adiciona
+ * `accessToken` — `isUserSession` continua `false` e o `apiClient` segue
+ * mandando `X-Support-Token`. Sessões normais passam intactas.
+ */
+export function withSupportUser(session: DashboardSession): DashboardSession {
+  if (!session.support || session.user) {
+    return session;
+  }
+  return {
+    ...session,
+    user: {
+      id: `support:${session.support.platformUserId}`,
+      email: session.support.adminEmail,
+      role: 'owner',
+      mustChangePassword: false,
+      name: 'Sessão de suporte',
+      isSupport: true,
+    },
+  };
 }
 
 /** A sessao e do plano PESSOA (tokens)? Type guard usado por `requireSession`/`apiClient`. */

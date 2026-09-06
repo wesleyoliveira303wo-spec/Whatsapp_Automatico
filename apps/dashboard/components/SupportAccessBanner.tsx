@@ -4,6 +4,7 @@ import { ShieldAlert, ShieldQuestion } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useSupportAccess } from '@/hooks/useSupportAccess';
+import { leaveSupportSession } from '@/lib/clientApi';
 
 /**
  * Aviso de ACESSO ASSISTIDO no topo do produto — Painel `/admin`, Fase 5
@@ -27,14 +28,10 @@ export default function SupportAccessBanner(): JSX.Element | null {
       path,
     );
 
-  const { open, canRespond, loading, unauthenticated, respond, revoke } =
+  const { open, canRespond, viewerIsSupport, loading, unauthenticated, respond, revoke } =
     useSupportAccess(isProductScreen);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!isProductScreen || unauthenticated || loading || !open) {
-    return null;
-  }
 
   async function run(action: () => Promise<void>): Promise<void> {
     setBusy(true);
@@ -46,6 +43,47 @@ export default function SupportAccessBanner(): JSX.Element | null {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!isProductScreen || unauthenticated) {
+    return null;
+  }
+
+  // O ADMIN operando o tenant (sessão de suporte) — barra própria com a saída.
+  if (viewerIsSupport) {
+    return (
+      <div className="w-full border-b border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground">
+        <div className="mx-auto flex max-w-5xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+            <p>
+              <span className="font-medium">Sessão de suporte.</span> Você está operando a conta
+              deste cliente. Toda ação fica registrada na auditoria dele.
+            </p>
+          </div>
+          {error ? <p className="text-destructive">{error}</p> : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            className="shrink-0"
+            onClick={() =>
+              void run(async () => {
+                await leaveSupportSession();
+                window.location.assign('/admin/support');
+              })
+            }
+          >
+            Sair do suporte
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !open) {
+    return null;
   }
 
   if (open.status === 'pending') {

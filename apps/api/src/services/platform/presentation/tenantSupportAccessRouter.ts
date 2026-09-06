@@ -42,6 +42,9 @@ export function createTenantSupportAccessRouter(service: SupportAccessService): 
           (principal.kind === 'user' && hasPermission(principal.role, 'support:respond')));
       res.status(200).json({
         canRespond,
+        // O próprio admin operando o tenant (plano `support`) recebe isto para
+        // o banner mostrar "Sair do suporte" em vez do aviso do cliente.
+        viewerIsSupport: principal?.kind === 'support',
         open: open
           ? {
               ...serialize(open.request),

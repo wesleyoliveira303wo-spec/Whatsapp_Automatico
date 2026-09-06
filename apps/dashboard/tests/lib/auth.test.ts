@@ -2,7 +2,12 @@ import type { GetServerSidePropsContext } from 'next';
 import { requirePageSession, requireProtectedPageSession } from '../../lib/auth';
 import { readSessionFromRequest } from '../../lib/dashboardSession';
 
-jest.mock('../../lib/dashboardSession');
+// Só `readSessionFromRequest` é mockado — `withSupportUser` (Fase 5) fica real
+// (identidade para sessões sem `.support`, que é o caso destes testes).
+jest.mock('../../lib/dashboardSession', () => {
+  const actual = jest.requireActual('../../lib/dashboardSession');
+  return { ...actual, readSessionFromRequest: jest.fn() };
+});
 
 function fakeContext(): GetServerSidePropsContext {
   return { req: { cookies: {} } } as unknown as GetServerSidePropsContext;

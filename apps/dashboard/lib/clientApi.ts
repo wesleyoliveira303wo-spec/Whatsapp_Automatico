@@ -163,6 +163,8 @@ export interface SessionUserInfo {
    */
   createdAt?: string;
   lastLoginAt?: string;
+  /** Painel `/admin`, Fase 5 — `user` sintético de uma sessão de SUPORTE (não é uma pessoa real do tenant). */
+  isSupport?: boolean;
 }
 
 /**
@@ -1865,8 +1867,15 @@ export interface ActiveSupportAccess extends SupportAccessRequest {
 export function fetchActiveSupportAccess(): Promise<{
   open: ActiveSupportAccess | null;
   canRespond: boolean;
+  /** `true` quando quem chama É a sessão de suporte (o admin operando o tenant). */
+  viewerIsSupport: boolean;
 }> {
   return request('/api/support-access/active');
+}
+
+/** "Sair do suporte" — encerra o acesso e descarta a sessão de suporte do cookie. */
+export function leaveSupportSession(): Promise<{ ok: boolean }> {
+  return request('/api/admin/support/leave', { method: 'POST' });
 }
 
 export function respondSupportAccess(
