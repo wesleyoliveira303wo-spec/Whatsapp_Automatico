@@ -1,3 +1,5 @@
+import { randomBytes } from 'crypto';
+
 import type { PrismaClient } from '@prisma/client';
 import type { Router, ErrorRequestHandler, RequestHandler } from 'express';
 
@@ -23,9 +25,22 @@ import { PlatformOverviewService } from './application/PlatformOverviewService';
 import { PlatformHealthService } from './application/PlatformHealthService';
 import { PrismaTenantRepository } from '../../shared/tenant/infrastructure/PrismaTenantRepository';
 import { TenantControlService } from './application/TenantControlService';
+import { PrismaAuditLogRepository } from '../auth/infrastructure/repositories/PrismaAuditLogRepository';
+import { PrismaSupportAccessRepository } from './infrastructure/repositories/PrismaSupportAccessRepository';
+import { Hs256SupportAccessTokenService } from './infrastructure/Hs256SupportAccessTokenService';
+import { SupportAccessService } from './application/SupportAccessService';
+import { SupportAccessTokenService } from './domain/SupportAccessTokenService';
+import { SupportAccessVerifier } from './domain/providers/SupportAccessVerifier';
+import { createPlatformSupportRouter } from './presentation/platformSupportRouter';
+import { createTenantSupportAccessRouter } from './presentation/tenantSupportAccessRouter';
+import { createSupportAccessAuditMiddleware } from './presentation/supportAccessAuditMiddleware';
+import { createSupportAccessErrorHandler } from './presentation/supportAccessErrorHandler';
 
 /** Sessão do `/admin`: 8 horas (§4 do plano mestre). */
 export const DEFAULT_PLATFORM_SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+/** Janela de acesso assistido: 2 horas (§9.1 passo 3). */
+export const DEFAULT_SUPPORT_ACCESS_TTL_SECONDS = 2 * 60 * 60;
 
 export interface PlatformConfig {
   /**
@@ -35,6 +50,14 @@ export interface PlatformConfig {
    */
   sessionSecret: string;
   sessionTtlSeconds?: number;
+  /**
+   * Fase 5 — segredo do crachá de ACESSO ASSISTIDO. DEVE ser distinto de
+   * `sessionSecret` e do `accessTokenSecret` do tenant (o `index.ts` recusa
+   * subir se colidir). Ausente → o plano `support` do `authenticate` fica
+   * desligado e o admin não consegue "entrar" em conta nenhuma.
+   */
+  supportAccessTokenSecret?: string;
+  supportAccessTokenTtlSeconds?: number;
 }
 
 export interface PlatformComposition {
@@ -49,6 +72,20 @@ export interface PlatformComposition {
   platformOverviewRouter: Router;
   /** Controle do tenant — Fase 4. Exposto para teste. Campo aditivo. */
   tenantControlService: TenantControlService;
+  /** Suporte assistido — Fase 5. Lado ADMIN (`/api/platform/support/*`). */
+  platformSupportRouter: Router;
+  /** Suporte assistido — Fase 5. Lado TENANT (`/api/tenants/:tenantId/support-access/*`). */
+  tenantSupportAccessRouter: Router;
+  /** Fase 5 — grava as ações de suporte no `AuditLog` do tenant. Montado após `authenticate`. */
+  supportAccessAuditMiddleware: RequestHandler;
+  /** Fase 5 — error handler das rotas tenant-scoped de suporte. */
+  supportAccessErrorHandler: ErrorRequestHandler;
+  /** Fase 5 — consumido pelo `authenticate` para revalidar o acesso no banco. */
+  supportAccessVerifier: SupportAccessVerifier;
+  /** Fase 5 — consumido pelo `authenticate` para verificar o crachá de suporte. */
+  supportAccessTokenService: SupportAccessTokenService;
+  /** Fase 5 — exposto para teste. */
+  supportAccessService: SupportAccessService;
   platformErrorHandler: ErrorRequestHandler;
   platformAuthService: PlatformAuthService;
   platformUserRepository: PlatformUserRepository;
@@ -134,6 +171,30 @@ export function createPlatformComposition(
     logger,
   );
 
+  // Fase 5 — Suporte assistido. O `SupportAccessRepository` também implementa
+  // o `SupportAccessVerifier` (uma leitura só do `TenantAccessRequest`). A
+  // trilha do TENANT (`PrismaAuditLogRepository`) entra aqui além da de
+  // plataforma — o cliente vê as ações de suporte na Auditoria dele.
+  const supportAccessRepository = new PrismaSupportAccessRepository(prisma);
+  const tenantAuditLogRepository = new PrismaAuditLogRepository(prisma);
+  // Sem `SUPPORT_ACCESS_TOKEN_SECRET` configurado: um segredo EFÊMERO por
+  // processo. O ciclo 5a (pedir/autorizar/revogar) funciona; o `index.ts` só
+  // liga o plano `support` do `authenticate` quando o segredo vem do ambiente,
+  // então um crachá assinado com este segredo efêmero nunca é aceito — "Entrar
+  // na conta" falha limpo com `support_access_unavailable`.
+  const supportAccessTokenService = new Hs256SupportAccessTokenService(
+    config.supportAccessTokenSecret ?? randomBytes(32).toString('base64'),
+    config.supportAccessTokenTtlSeconds ?? DEFAULT_SUPPORT_ACCESS_TTL_SECONDS,
+  );
+  const supportAccessService = new SupportAccessService(
+    supportAccessRepository,
+    auditLogRepository,
+    tenantAuditLogRepository,
+    supportAccessTokenService,
+    platformUserRepository,
+    logger,
+  );
+
   const byIp = createRateLimiter({
     store: rateLimitStore,
     scope: 'platform-login:ip',
@@ -166,6 +227,16 @@ export function createPlatformComposition(
       platformHealthService,
       requirePlatformUser,
     ),
+    platformSupportRouter: createPlatformSupportRouter(supportAccessService, requirePlatformUser),
+    tenantSupportAccessRouter: createTenantSupportAccessRouter(supportAccessService),
+    supportAccessAuditMiddleware: createSupportAccessAuditMiddleware(
+      tenantAuditLogRepository,
+      logger,
+    ),
+    supportAccessErrorHandler: createSupportAccessErrorHandler(logger),
+    supportAccessVerifier: supportAccessRepository,
+    supportAccessTokenService,
+    supportAccessService,
     platformErrorHandler: createPlatformErrorHandler(logger),
     platformAuthService,
     platformUserRepository,

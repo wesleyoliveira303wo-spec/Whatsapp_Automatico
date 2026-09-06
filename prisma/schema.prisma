@@ -1478,3 +1478,42 @@ model PlatformAuditLog {
   @@index([platformUserId, occurredAt])
   @@map("platform_audit_logs")
 }
+
+/// Ciclo de vida de um pedido de ACESSO ASSISTIDO do dono da plataforma a um
+/// tenant (Painel /admin, Fase 5 — ADMIN_PLATFORM_MASTER_PLAN.md §9). O
+/// fundador pede acesso escrevendo um motivo; o cliente (dono/administrador)
+/// autoriza ou recusa; autorizado, o acesso vale por 2 horas e pode ser
+/// revogado pelo cliente a qualquer instante.
+enum SupportAccessStatus {
+  PENDING
+  ACCEPTED
+  DENIED
+  EXPIRED
+  REVOKED
+  ENDED
+
+  @@map("support_access_status")
+}
+
+/// Um pedido de acesso assistido — mantido PARA SEMPRE (recusas também são
+/// informação, §9.2). Sem FK para `tenants`/`users`: mesma justificativa de
+/// `PlatformAuditLog` — o registro sobrevive à exclusão do que ele descreve, e
+/// preserva o id de quem pediu/respondeu.
+model TenantAccessRequest {
+  id                String              @id @default(uuid())
+  tenantId          String              @map("tenant_id")
+  platformUserId    String              @map("platform_user_id")
+  /// O que o cliente lê antes de decidir, e o que fica gravado.
+  reason            String
+  status            SupportAccessStatus @default(PENDING)
+  requestedAt       DateTime            @default(now()) @map("requested_at")
+  respondedAt       DateTime?           @map("responded_at")
+  /// `User` do tenant que autorizou/recusou/revogou.
+  respondedByUserId String?             @map("responded_by_user_id")
+  /// Preenchido só ao autorizar: `respondedAt + 2h`.
+  expiresAt         DateTime?           @map("expires_at")
+
+  @@index([tenantId, status, requestedAt])
+  @@index([status, expiresAt])
+  @@map("tenant_access_requests")
+}

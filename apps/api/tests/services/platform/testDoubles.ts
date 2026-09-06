@@ -182,3 +182,133 @@ export class FakeTenantObservabilityRepository implements TenantObservabilityRep
     return this.allSessions;
   }
 }
+
+// --- Fase 5 — acesso assistido ---
+
+import {
+  SupportAccessStatus,
+  TenantAccessRequest,
+} from '../../../src/services/platform/domain/entities/TenantAccessRequest';
+import {
+  SupportAccessPage,
+  SupportAccessRepository,
+} from '../../../src/services/platform/domain/repositories/SupportAccessRepository';
+import {
+  SupportAccessVerification,
+  SupportAccessVerifier,
+} from '../../../src/services/platform/domain/providers/SupportAccessVerifier';
+import {
+  SupportAccessClaims,
+  SupportAccessTokenService,
+} from '../../../src/services/platform/domain/SupportAccessTokenService';
+
+export class FakeSupportAccessRepository
+  implements SupportAccessRepository, SupportAccessVerifier
+{
+  readonly rows: TenantAccessRequest[] = [];
+
+  seed(overrides: Partial<TenantAccessRequest> = {}): TenantAccessRequest {
+    const row: TenantAccessRequest = {
+      id: randomUUID(),
+      tenantId: 't-1',
+      platformUserId: 'admin-1',
+      reason: 'verificar a IA',
+      status: 'pending',
+      requestedAt: new Date('2026-09-06T12:00:00Z'),
+      respondedAt: null,
+      respondedByUserId: null,
+      expiresAt: null,
+      ...overrides,
+    };
+    this.rows.push(row);
+    return row;
+  }
+
+  async create(input: {
+    tenantId: string;
+    platformUserId: string;
+    reason: string;
+  }): Promise<TenantAccessRequest> {
+    return this.seed({ ...input, status: 'pending' });
+  }
+
+  async findById(id: string): Promise<TenantAccessRequest | null> {
+    return this.rows.find((r) => r.id === id) ?? null;
+  }
+
+  async findActiveOrPendingByTenant(tenantId: string): Promise<TenantAccessRequest | null> {
+    const now = Date.now();
+    return (
+      this.rows.find(
+        (r) =>
+          r.tenantId === tenantId &&
+          (r.status === 'pending' ||
+            (r.status === 'accepted' && r.expiresAt !== null && r.expiresAt.getTime() > now)),
+      ) ?? null
+    );
+  }
+
+  async listByTenant(tenantId: string, limit: number): Promise<TenantAccessRequest[]> {
+    return this.rows
+      .filter((r) => r.tenantId === tenantId)
+      .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime())
+      .slice(0, limit);
+  }
+
+  async listRecent(limit: number): Promise<SupportAccessPage> {
+    const sorted = [...this.rows].sort(
+      (a, b) => b.requestedAt.getTime() - a.requestedAt.getTime(),
+    );
+    return { requests: sorted.slice(0, limit) };
+  }
+
+  async updateStatus(
+    id: string,
+    status: SupportAccessStatus,
+    fields?: { respondedAt?: Date; respondedByUserId?: string; expiresAt?: Date },
+  ): Promise<TenantAccessRequest | null> {
+    const row = this.rows.find((r) => r.id === id);
+    if (!row) return null;
+    row.status = status;
+    if (fields?.respondedAt) row.respondedAt = fields.respondedAt;
+    if (fields?.respondedByUserId) row.respondedByUserId = fields.respondedByUserId;
+    if (fields?.expiresAt) row.expiresAt = fields.expiresAt;
+    return { ...row };
+  }
+
+  async markExpiredStale(now: Date): Promise<number> {
+    let count = 0;
+    for (const row of this.rows) {
+      if (row.status === 'accepted' && row.expiresAt !== null && row.expiresAt.getTime() <= now.getTime()) {
+        row.status = 'expired';
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async verify(supportAccessId: string): Promise<SupportAccessVerification> {
+    const row = this.rows.find((r) => r.id === supportAccessId);
+    if (!row) return { ok: false, reason: 'not_found' };
+    if (row.status !== 'accepted') {
+      return { ok: false, reason: row.status === 'pending' ? 'not_yet_accepted' : 'ended' };
+    }
+    if (row.expiresAt === null || row.expiresAt.getTime() <= Date.now()) {
+      return { ok: false, reason: 'expired' };
+    }
+    return { ok: true, tenantId: row.tenantId, platformUserId: row.platformUserId };
+  }
+}
+
+/** Token de mentira: `support:<supportAccessId>:<tenantId>:<platformUserId>`. */
+export class FakeSupportAccessTokenService implements SupportAccessTokenService {
+  issue(claims: SupportAccessClaims): string {
+    return `support:${claims.supportAccessId}:${claims.tenantId}:${claims.platformUserId}`;
+  }
+
+  verify(token: string): SupportAccessClaims | null {
+    const parts = token.split(':');
+    if (parts.length !== 4 || parts[0] !== 'support') return null;
+    return { supportAccessId: parts[1], tenantId: parts[2], platformUserId: parts[3] };
+  }
+}

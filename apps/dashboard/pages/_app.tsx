@@ -6,6 +6,7 @@ import { MotionConfig } from 'framer-motion';
 import { BRAND, pageTitle } from '@/lib/brand';
 import { Toaster } from '@/components/ui/toaster';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
+import SupportAccessBanner from '@/components/SupportAccessBanner';
 
 /**
  * Reskin 2026-08-06 — Design System §3 (processo externo "Claude Design")
@@ -58,6 +59,12 @@ export default function MyApp({ Component, pageProps }: AppProps): JSX.Element {
       */}
       <MotionConfig reducedMotion="user">
         <AppErrorBoundary>
+          {/*
+            Painel /admin, Fase 5 — aviso de acesso assistido. Montado aqui
+            (único ponto que cobre TODAS as telas do produto); ele mesmo
+            decide não renderizar nada em `/admin` e nas telas de pré-login.
+          */}
+          <SupportAccessBanner />
           <Component {...pageProps} />
         </AppErrorBoundary>
       </MotionConfig>

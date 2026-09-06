@@ -31,10 +31,10 @@ export interface AdminNavItem {
 
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin', label: 'Início', icon: Home },
-  // Tenants: Fase 2. Início (KPIs + Fila de ação) e Saúde: Fase 3. Suporte e
-  // Auditoria seguem nas próximas fases (§15).
+  // Tenants: Fase 2. Início (KPIs + Fila de ação) e Saúde: Fase 3. Suporte:
+  // Fase 5. Auditoria segue na próxima fase (§15).
   { href: '/admin/tenants', label: 'Tenants', icon: Building2 },
-  { href: '/admin/support', label: 'Suporte', icon: LifeBuoy, comingSoon: true },
+  { href: '/admin/support', label: 'Suporte', icon: LifeBuoy },
   { href: '/admin/health', label: 'Saúde', icon: Activity },
   { href: '/admin/audit', label: 'Auditoria', icon: ScrollText, comingSoon: true },
 ];

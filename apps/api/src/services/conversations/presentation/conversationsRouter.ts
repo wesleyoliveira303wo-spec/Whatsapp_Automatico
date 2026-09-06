@@ -20,7 +20,9 @@ import { MessageContentType } from '../domain/entities/Message';
  */
 function toActor(req: Request): ConversationActor {
   const principal = (req as RequestWithPrincipal).principal;
-  if (!principal || principal.kind === 'machine') {
+  // `machine` e `support` (Fase 5 do /admin) são planos confiáveis de acesso
+  // total — sem `userId`, "retomar qualquer" liberado.
+  if (!principal || principal.kind !== 'user') {
     return { userId: undefined, canResumeAny: true };
   }
   return {

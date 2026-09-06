@@ -72,6 +72,20 @@ export interface DashboardSession {
   refreshToken?: string;
   user?: DashboardSessionUser;
   /**
+   * SESSÃO DE SUPORTE (Painel `/admin`, Fase 5) — um `PlatformUser` operando
+   * este tenant dentro de uma janela de acesso assistido. Não tem `apiKey`
+   * nem `accessToken`; o `apiClient` manda o `supportToken` no header
+   * `X-Support-Token` e a API revalida o acesso no banco a cada requisição.
+   * Sem renovação: quando o acesso encerra/expira, a API responde 403 e o BFF
+   * limpa o cookie.
+   */
+  supportToken?: string;
+  support?: {
+    supportAccessId: string;
+    platformUserId: string;
+    adminEmail: string;
+  };
+  /**
    * Token CSRF desta sessão (bloco B1). Vive aqui, DENTRO do payload
    * cifrado — é o lado autoritativo da comparação; o cookie legível
    * (`CSRF_COOKIE_NAME`) é só o espelho que o JS consegue ler. Opcional
@@ -237,6 +251,26 @@ export function readSessionFromRequest(
     // um payload adulterado não injetar chaves inesperadas), então um campo
     // novo só existe do outro lado se for lido explicitamente aqui.
     const csrfToken = typeof parsed.csrfToken === 'string' ? parsed.csrfToken : undefined;
+
+    // Sessão de SUPORTE (Fase 5): tenantId + supportToken + support{...}.
+    if (
+      typeof parsed.supportToken === 'string' &&
+      parsed.support &&
+      typeof parsed.support.supportAccessId === 'string' &&
+      typeof parsed.support.platformUserId === 'string'
+    ) {
+      return {
+        tenantId: parsed.tenantId,
+        supportToken: parsed.supportToken,
+        csrfToken,
+        support: {
+          supportAccessId: parsed.support.supportAccessId,
+          platformUserId: parsed.support.platformUserId,
+          adminEmail:
+            typeof parsed.support.adminEmail === 'string' ? parsed.support.adminEmail : '',
+        },
+      };
+    }
 
     // Plano MAQUINA (formato original, M2): tenantId + apiKey.
     if (typeof parsed.apiKey === 'string') {

@@ -7,11 +7,14 @@ import { resolveTenantFromApiKey } from '../tenant/application/resolveTenantFrom
 import { sanitizeHeaders } from '../infrastructure/logging/sanitizeHeaders';
 import { AccessTokenService } from '../../services/auth/domain/AccessTokenService';
 import { UserRole } from '../../services/auth/domain/entities/User';
+import { SupportAccessTokenService } from '../../services/platform/domain/SupportAccessTokenService';
+import { SupportAccessVerifier } from '../../services/platform/domain/providers/SupportAccessVerifier';
 import { RequestWithAuthUser } from './requireUser';
 import { RequestWithTenant } from './requireApiKey';
 
 const AUTHORIZATION_HEADER = 'authorization';
 const API_KEY_HEADER = 'x-api-key';
+const SUPPORT_TOKEN_HEADER = 'x-support-token';
 const BEARER_PREFIX = 'Bearer ';
 
 /**
@@ -22,7 +25,15 @@ const BEARER_PREFIX = 'Bearer ';
  */
 export type Principal =
   | { kind: 'user'; userId: string; tenantId: string; role: UserRole }
-  | { kind: 'machine'; tenantId: string };
+  | { kind: 'machine'; tenantId: string }
+  /**
+   * Plano SUPORTE (Painel `/admin`, Fase 5) — um `PlatformUser` operando o
+   * tenant dentro de uma janela de acesso assistido. Resolvido só depois de
+   * `SupportAccessVerifier` reconfirmar no banco que o `TenantAccessRequest`
+   * está `accepted` e dentro do prazo (Regra inviolável 1). Tem acesso total,
+   * como o plano `machine` (decisão #5).
+   */
+  | { kind: 'support'; tenantId: string; platformUserId: string; supportAccessId: string };
 
 /** `Request` enriquecida com o ator resolvido — lido por `requirePermission` e pelas rotas. */
 export interface RequestWithPrincipal extends Request {
@@ -51,8 +62,69 @@ export function createAuthenticate(
   apiKeyHasher: ApiKeyHasher,
   tenantRepository: TenantRepository,
   logger: Logger,
+  /**
+   * Fase 5 do `/admin` — OPCIONAIS: sem os dois, o plano `support` fica
+   * desligado (comportamento pré-Fase 5). Presentes, uma requisição com
+   * `X-Support-Token` é resolvida como `principal.kind === 'support'` DEPOIS
+   * de o verifier reconfirmar o acesso no banco.
+   */
+  supportAccessTokenService?: SupportAccessTokenService,
+  supportAccessVerifier?: SupportAccessVerifier,
 ): RequestHandler {
   return function authenticate(req: Request, res: Response, next: NextFunction): void {
+    // --- Plano SUPORTE (crachá de acesso assistido, Fase 5) ---
+    const supportToken = req.header(SUPPORT_TOKEN_HEADER);
+    if (supportToken) {
+      if (!supportAccessTokenService || !supportAccessVerifier) {
+        res.status(401).json({
+          error: 'support_access_unavailable',
+          message: 'Acesso assistido não está configurado nesta instância.',
+        });
+        return;
+      }
+      const claims = supportAccessTokenService.verify(supportToken);
+      if (!claims) {
+        res.status(401).json({
+          error: 'invalid_support_token',
+          message: 'Crachá de suporte inválido ou expirado.',
+        });
+        return;
+      }
+      if (!tenantMatches(req, claims.tenantId)) {
+        res.status(403).json({
+          error: 'tenant_mismatch',
+          message: 'O crachá de suporte não autoriza acesso a este tenant.',
+        });
+        return;
+      }
+      void (async () => {
+        try {
+          // REGRA INVIOLÁVEL 1 (§9.3): a validade é reconferida no BANCO a
+          // cada requisição, contra `TenantAccessRequest.status`/`expiresAt` —
+          // nunca só pela validade do token. Uma revogação do cliente derruba
+          // o acesso na requisição seguinte.
+          const verification = await supportAccessVerifier.verify(claims.supportAccessId);
+          if (!verification.ok || verification.tenantId !== claims.tenantId) {
+            res.status(403).json({
+              error: 'support_access_ended',
+              message: 'O acesso de suporte não está mais ativo.',
+            });
+            return;
+          }
+          (req as RequestWithPrincipal).principal = {
+            kind: 'support',
+            tenantId: claims.tenantId,
+            platformUserId: claims.platformUserId,
+            supportAccessId: claims.supportAccessId,
+          };
+          next();
+        } catch (error) {
+          next(error);
+        }
+      })();
+      return;
+    }
+
     const authHeader = req.headers[AUTHORIZATION_HEADER];
 
     // --- Plano PESSOA (crachá) ---

@@ -41,17 +41,19 @@ describe('AdminShell', () => {
     );
 
     expect(screen.getByRole('link', { name: 'Início' })).toHaveAttribute('href', '/admin');
-    // Tenants (Fase 2) e Saúde (Fase 3) são links de verdade.
+    // Tenants (Fase 2), Saúde (Fase 3) e Suporte (Fase 5) são links de verdade.
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute(
       'href',
       '/admin/tenants',
     );
     expect(screen.getByRole('link', { name: 'Saúde' })).toHaveAttribute('href', '/admin/health');
-    // Os destinos das próximas fases aparecem, mas não são links quebrados.
-    for (const label of ['Suporte', 'Auditoria']) {
-      expect(screen.queryByRole('link', { name: label })).toBeNull();
-      expect(screen.getByText(label)).toHaveAttribute('aria-disabled', 'true');
-    }
+    expect(screen.getByRole('link', { name: 'Suporte' })).toHaveAttribute(
+      'href',
+      '/admin/support',
+    );
+    // Auditoria (Fase 6) ainda aparece, mas não é link quebrado.
+    expect(screen.queryByRole('link', { name: 'Auditoria' })).toBeNull();
+    expect(screen.getByText('Auditoria')).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('marca a página atual para o leitor de tela', () => {

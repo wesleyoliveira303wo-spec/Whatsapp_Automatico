@@ -656,7 +656,18 @@ fundador) não foi executada nesta rodada — feita uma revisão de segurança
 manual do primeiro caminho de escrita cross-tenant; a formal fica pendente
 antes do merge.
 
-### Fase 5 — Suporte assistido
+### Fase 5 — Suporte assistido ✅ CONCLUÍDA (2026-09-06)
+
+**Estado:** entregue — migration aditiva `20260906130000_add_tenant_access_request`;
+`SupportAccessService` (`services/platform`) com o ciclo completo
+(pedir/autorizar/recusar/revogar/encerrar) auditado nas duas trilhas;
+**terceiro plano de auth** (`support`) no `authenticate`, com validade
+reconferida no banco a cada requisição (Regra 1), header `X-Support-Token`,
+segredo próprio `SUPPORT_ACCESS_TOKEN_SECRET`; `SupportAccessBanner` no topo
+de todo o produto (aviso não-fechável no acesso ativo, Regra 4); seção
+`/admin/support`; "Entrar na conta" grava uma sessão de suporte no cookie do
+produto. Suíte: api 188/188 suítes 2228/2228, dashboard+jsdom 143/143 suítes
+1075/1075; `tsc`/`eslint`/`next build` limpos. Ver `CLAUDE.md` §18.
 
 **Objetivo:** resolver problema dentro da conta, com consentimento.
 **Entrega:** `TenantAccessRequest`, aviso de pedido, aceite, sessão marcada,
@@ -665,9 +676,22 @@ aviso fixo, revogação, expiração, seção Suporte (§9.5).
 **Risco:** 🔴 alto — consentimento, privacidade de terceiros, acesso total.
 **Testes:** as quatro regras invioláveis, cada uma com teste próprio; as três
 brechas do §9.4; ação durante suporte carrega `supportAccessId` no
-`AuditLog` do tenant.
+`AuditLog` do tenant. — cobertos (`authenticateSupportPlane.test`,
+`supportRouters.test`, `SupportAccessBanner.test`, `supportAccessAuditMiddleware.test`,
+`supportAccess.integration` contra Postgres real).
 **Concluída quando:** um acesso completo acontece — pedido, aceite, operação,
 revogação — e o histórico conta a história inteira.
+
+**Desvio registrado (§11):** o rastro das ações durante o suporte é um
+middleware que grava UMA linha `support.action` por requisição MUTANTE (nível
+HTTP, não por ação de domínio) — threading `supportAccessId` por cada serviço
+seria ~30 edições no caminho de auditoria de um produto no ar. Combinado com
+os eventos de fronteira `support.access_granted`/`support.access_ended`,
+delimita e descreve a janela. Fidelidade fina fica como evolução.
+
+**Desvio registrado (§16):** a `/code-review ultra` formal (billing/gatilho
+do fundador) não foi executada — feita uma revisão de segurança manual do
+terceiro plano de auth; a formal fica pendente antes do merge.
 
 ### Fase 6 — Busca e refino
 

@@ -237,3 +237,55 @@ export async function fetchPlatformOverview(): Promise<PlatformOverview> {
 export async function fetchPlatformHealth(): Promise<PlatformHealth> {
   return request<PlatformHealth>('/api/platform/health');
 }
+
+// --- Fase 5 — Acesso assistido (lado ADMIN, seção Suporte §9.5) ---
+
+export type SupportAccessStatus =
+  | 'pending'
+  | 'accepted'
+  | 'denied'
+  | 'expired'
+  | 'revoked'
+  | 'ended';
+
+export interface PlatformSupportRequest {
+  id: string;
+  tenantId: string;
+  platformUserId: string;
+  reason: string;
+  status: SupportAccessStatus;
+  requestedAt: string;
+  respondedAt: string | null;
+  respondedByUserId: string | null;
+  expiresAt: string | null;
+}
+
+export async function fetchSupportRequests(cursor?: string): Promise<{
+  requests: PlatformSupportRequest[];
+  nextCursor: string | null;
+}> {
+  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  return request(`/api/platform/support${qs}`);
+}
+
+export async function requestSupportAccess(
+  tenantId: string,
+  reason: string,
+): Promise<{ request: PlatformSupportRequest }> {
+  return request('/api/platform/support', {
+    method: 'POST',
+    body: JSON.stringify({ tenantId, reason }),
+  });
+}
+
+export async function endSupportAccess(id: string): Promise<{ request: PlatformSupportRequest }> {
+  return request(`/api/platform/support/${encodeURIComponent(id)}/end`, { method: 'POST' });
+}
+
+/** "Entrar na conta" — o BFF grava a sessão de suporte e o cliente navega para `/app`. */
+export async function enterTenantAccount(supportAccessId: string): Promise<{ tenantId: string }> {
+  return request('/api/admin/support/enter', {
+    method: 'POST',
+    body: JSON.stringify({ supportAccessId }),
+  });
+}

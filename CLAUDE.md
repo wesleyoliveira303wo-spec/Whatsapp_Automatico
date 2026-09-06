@@ -1556,6 +1556,97 @@ banco.
 **Próximo passo:** Fase 5 (§15) — Suporte assistido (`TenantAccessRequest`,
 consentimento do cliente, sessão de suporte marcada). Risco 🔴.
 
+### Painel `/admin`, Fase 5 — Suporte assistido ao tenant (acesso com consentimento)
+
+**Data:** 2026-09-06
+**Contexto:** quinta e mais sensível fase do `ADMIN_PLATFORM_MASTER_PLAN.md`
+(§9/§11/§15, risco 🔴 — consentimento, privacidade de terceiros, acesso
+total). Entrega o ciclo completo: o fundador pede acesso a um tenant com um
+motivo escrito → o cliente (dono/administrador) vê um aviso no topo do
+produto e **Autoriza** ou **Recusa** → autorizado, o fundador opera aquele
+tenant **nas telas reais do produto** por **2 horas**, com aviso fixo
+não-fechável e botão **Encerrar** para o cliente → tudo auditado nas duas
+trilhas. A spec (`docs/superpowers/specs/2026-09-05-painel-admin-design.md`)
+já estava aprovada (ciclo, tabela, as 4 regras invioláveis §9.3, a decisão #5
+= acesso TOTAL). Este bloco foi PLANEJADO antes de codificar (`EnterPlanMode`,
+`.claude/plans/…`) por causa do risco — a integração no porteiro de auth do
+produto não estava na spec.
+**Decisão central — o "terceiro plano de auth".** O `authenticate` do produto
+resolvia `req.principal` em dois planos: `user` (Bearer, RBAC por cargo) e
+`machine` (X-API-Key, acesso total). Nenhum serve para um `PlatformUser` que
+não pertence a tenant nenhum. Criado um **plano `support`**: header dedicado
+`X-Support-Token` (crachá HS256 com segredo próprio `SUPPORT_ACCESS_TOKEN_SECRET`,
+distinto de `ACCESS_TOKEN_SECRET`/`PLATFORM_SESSION_SECRET` — `index.ts` recusa
+colidir), claims `{ supportAccessId, tenantId, platformUserId }`, TTL fixo 2h.
+Descartado reusar API key (tenants não têm chave emitida; emitir vaza para
+além da janela) e "impersonar o `User` dono" (a auditoria diria que o dono
+agiu; um access token de 15 min sobreviveria a uma revogação). No ramo
+`support` do `authenticate`, **a validade é reconferida no BANCO a cada
+requisição** (`SupportAccessVerifier.verify` lê `TenantAccessRequest`, exige
+`status='accepted'` E `expiresAt > now` E o tenant do row === o do path) —
+**é a Regra inviolável 1**. `requirePermission` trata `support` como
+`machine` (libera tudo — decisão #5).
+**Decisão — como o admin "entra".** BFF `POST /api/admin/support/enter`:
+valida a sessão de plataforma, chama `POST /api/platform/support/:id/token`
+(a API revalida o row), e grava um `wa_dashboard_session` com um FORMATO NOVO
+(`{ tenantId, supportToken, support: {...} }` — sem `apiKey`/`accessToken`).
+O `apiClient` manda `X-Support-Token`; `requireSession` não renova nada
+(num 403 da API limpa o cookie — Regra 3); `requireProtectedPageSession`
+deixa passar pelo portão de senha (sessão de suporte não tem `user`). Os dois
+cookies coexistem (`wa_admin_session` + `wa_dashboard_session`).
+**Decisão — trilha durante o suporte (desvio do §11 registrado).** Threading
+`supportAccessId` por ~7 helpers de router + ~5 serviços seria ~30 edições no
+caminho de auditoria de um produto no ar. Escolhido um **middleware**
+(`supportAccessAuditMiddleware`), montado após `authenticate` no pipeline
+`/api/tenants/:tenantId`: para ator `support` + método MUTANTE, grava UMA
+linha em `AuditLog` do tenant (`action: 'support.action'`, `metadata:
+{ supportAccessId, platformUserId, method, path }`). Com os eventos de
+fronteira `support.access_granted`/`support.access_ended` (nas duas trilhas),
+"o que foi feito naquele acesso" é uma consulta direta. Trade-off: a linha
+descreve a REQUISIÇÃO HTTP, não a ação de domínio; a fidelidade fina fica
+como evolução. Cobre a brecha 2 do §9.4 (campanha disparada no fim do prazo
+continua, mas o `POST .../campaigns` já ficou logado).
+**Schema:** migration aditiva `20260906130000_add_tenant_access_request`
+(`tenant_access_requests` + enum `support_access_status`, sem FK — mantido
+para sempre, §9.2). Permissão nova `support:respond` (owner/administrator).
+**Arquitetura:** tudo em `services/platform` (dono do conceito) —
+`SupportAccessService` (request/respond/revoke/end/mintToken/getOpenForTenant,
+com sweep preguiçoso de `accepted` vencido → `expired`), `PrismaSupportAccessRepository`
+(também implementa `SupportAccessVerifier`), `Hs256SupportAccessTokenService`,
+`platformSupportRouter` (`/api/platform/support/*`, lado admin) e
+`tenantSupportAccessRouter` (`/api/tenants/:tenantId/support-access/*`, lado
+cliente, atrás de `authenticate` + `support:respond`, todas as consultas
+`where: { tenantId: req.params.tenantId }` — tenant-scoped por construção).
+UI: `SupportAccessBanner` montado em `_app.tsx` (único ponto que cobre TODAS
+as telas do produto; não renderiza em `/admin` nem pré-login; polling ~10s;
+`pending` → Autorizar/Recusar, `accepted` → faixa fixa SEM fechar +
+"Encerrar" = revoke, Regra 4); seção `/admin/support` (§9.5); botão "Pedir
+acesso" no detalhe do tenant (motivo obrigatório).
+**Impacto:** requer a migration + `npx prisma generate` + a variável
+`SUPPORT_ACCESS_TOKEN_SECRET` no `.env`. Nenhuma mudança de contrato
+pré-existente — o plano `support` é aditivo, sem token só existem os dois
+planos de antes. Testes novos: `Hs256SupportAccessTokenService` (7),
+`SupportAccessService` (15 — ciclo, 409 de "um por vez", 403 IDOR/admin
+errado, sweep), `authenticateSupportPlane` (6 — accepted+prazo → ok,
+revoked/expired/tenant-errado → 403, token inválido → 401, plano desligado →
+401), `requirePermission` (+1 support), `supportAccessAuditMiddleware` (4),
+`supportRouters` (13 — RBAC/IDOR/human_required), `supportAccess.integration`
+(3 contra Postgres REAL — ciclo, `markExpiredStale`, id inexistente), BFF
+`support-access/routes` (6), jsdom `SupportAccessBanner` (5), `AdminShell`
+(ajustado — Suporte não é mais `comingSoon`). Suíte: **api 188/188 suítes
+2228/2228; dashboard+jsdom 143/143 suítes 1075/1075** — todos verdes;
+`tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**security-review:** revisão manual do terceiro plano de auth (revalidação no
+banco a cada requisição, IDOR no token, anti-enumeração não se aplica —
+`GET /active` só expõe nome do admin + motivo, dados do próprio pedido;
+segredo distinto travado no boot; middleware de trilha não bloqueia a
+requisição). A `/code-review ultra` formal (§16) é gatilho/billing do
+fundador — pendente antes do merge.
+**Concluída quando:** um acesso completo acontece — pedido, aceite, operação,
+revogação — e o histórico conta a história inteira.
+**Próximo passo:** Fase 6 (§15) — busca global + polimento visual + modo
+escuro. Risco 🟢.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

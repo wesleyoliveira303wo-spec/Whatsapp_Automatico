@@ -12,7 +12,8 @@ import { ContactAvatarService } from '../application/ContactAvatarService';
 /** Milestone 5, Bloco M5D-3 — traduz o `principal` no ator para auditoria. Plano máquina/sem principal = sem `userId`. */
 function toActor(req: Request): WhatsAppSessionActor {
   const principal = (req as RequestWithPrincipal).principal;
-  if (!principal || principal.kind === 'machine') {
+  // `machine` e `support` (Fase 5 do /admin) = planos confiáveis, sem `userId`.
+  if (!principal || principal.kind !== 'user') {
     return {};
   }
   return { userId: principal.userId };

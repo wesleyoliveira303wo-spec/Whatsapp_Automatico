@@ -5,6 +5,7 @@ import { InvalidPlatformCredentialsError } from '../domain/errors/InvalidPlatfor
 import { PlatformAccountLockedError } from '../domain/errors/PlatformAccountLockedError';
 import { TenantControlNoOpError } from '../domain/errors/TenantControlNoOpError';
 import { TenantNotFoundError } from '../domain/errors/TenantNotFoundError';
+import { mapSupportAccessError } from './supportAccessErrorMapper';
 
 /**
  * Error handler das rotas `/api/platform` — montado ESCOPADO ao path (D17),
@@ -30,6 +31,11 @@ export function createPlatformErrorHandler(logger: Logger): ErrorRequestHandler 
         message: 'Muitas tentativas de acesso. Tente novamente em instantes.',
         retryAfterSeconds,
       });
+      return;
+    }
+
+    // Fase 5 — acesso assistido.
+    if (mapSupportAccessError(error, res)) {
       return;
     }
 

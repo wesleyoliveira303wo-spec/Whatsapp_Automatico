@@ -78,11 +78,14 @@ export function createApiClient(resource: string): ApiClient {
     // M5F-1: o header de credencial acompanha o PLANO da sessao — cracha de
     // pessoa (`Authorization: Bearer`) quando ha accessToken; chave da empresa
     // (`X-API-Key`) no formato original. O `authenticate` da API aceita ambos.
-    const credentialHeader: Record<string, string> = session.accessToken
-      ? { Authorization: `Bearer ${session.accessToken}` }
-      : session.apiKey
-        ? { 'X-API-Key': session.apiKey }
-        : {};
+    const credentialHeader: Record<string, string> = session.supportToken
+      ? // Fase 5 do /admin — sessão de suporte: crachá de acesso assistido.
+        { 'X-Support-Token': session.supportToken }
+      : session.accessToken
+        ? { Authorization: `Bearer ${session.accessToken}` }
+        : session.apiKey
+          ? { 'X-API-Key': session.apiKey }
+          : {};
 
     const response = await fetch(url, {
       method: init.method ?? 'GET',
@@ -240,3 +243,13 @@ export const callCampaignsApi = createApiClient('campaigns');
  * autenticado do tenant; PATCH exige `tenant:manage` (a API responde 403).
  */
 export const callTenantApi = createApiClient('');
+
+/**
+ * Cliente do recurso `support-access` (Painel `/admin`, Fase 5 — lado TENANT
+ * do acesso assistido), consumido por `pages/api/support-access/*`. A API
+ * expõe `GET /active` (sem RBAC — o banner aparece para qualquer usuário) e
+ * `POST /:id/respond` / `POST /:id/revoke` (`support:respond`, só
+ * owner/administrator). Alcançado apenas por sessão de PESSOA (o banner e os
+ * botões vivem no produto).
+ */
+export const callSupportAccessApi = createApiClient('support-access');

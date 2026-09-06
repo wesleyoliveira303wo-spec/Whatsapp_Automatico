@@ -327,7 +327,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // crachá de cliente jamais seja aceito como crachá de plataforma. Ausente,
     // o painel simplesmente não sobe — degradação igual à do resto, e a mais
     // segura possível para esta superfície (nunca há um modo "sem senha").
-    const { PLATFORM_SESSION_SECRET } = process.env;
+    const { PLATFORM_SESSION_SECRET, SUPPORT_ACCESS_TOKEN_SECRET } = process.env;
     // Construído aqui, mas as rotas são montadas mais abaixo (junto com a
     // Fase 3), depois que `registry`/`aiReplyQueue` existem — a Fase 3 injeta
     // o status ao vivo (ADR #80) e o probe de infra nele. `let` de escopo
@@ -341,6 +341,18 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           'PLATFORM_SESSION_SECRET não pode ser igual a ACCESS_TOKEN_SECRET: os dois crachás precisam de segredos distintos.',
         );
       }
+      // Fase 5 — o crachá de ACESSO ASSISTIDO tem segredo próprio; se
+      // configurado, não pode colidir com os outros dois (um crachá de um
+      // plano nunca vale no outro).
+      if (
+        SUPPORT_ACCESS_TOKEN_SECRET &&
+        (SUPPORT_ACCESS_TOKEN_SECRET === ACCESS_TOKEN_SECRET ||
+          SUPPORT_ACCESS_TOKEN_SECRET === PLATFORM_SESSION_SECRET)
+      ) {
+        throw new Error(
+          'SUPPORT_ACCESS_TOKEN_SECRET não pode ser igual a ACCESS_TOKEN_SECRET nem a PLATFORM_SESSION_SECRET.',
+        );
+      }
       platform = createPlatformComposition(
         prisma,
         {
@@ -348,10 +360,18 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           ...(process.env.PLATFORM_SESSION_TTL_SECONDS
             ? { sessionTtlSeconds: Number(process.env.PLATFORM_SESSION_TTL_SECONDS) }
             : {}),
+          ...(SUPPORT_ACCESS_TOKEN_SECRET
+            ? { supportAccessTokenSecret: SUPPORT_ACCESS_TOKEN_SECRET }
+            : {}),
         },
         logger,
         rateLimitStore,
       );
+      if (!SUPPORT_ACCESS_TOKEN_SECRET) {
+        console.warn(
+          'SUPPORT_ACCESS_TOKEN_SECRET ausente: acesso assistido do /admin sem operação (5b) — pedir/autorizar/revogar funciona, "entrar na conta" não.',
+        );
+      }
     } else {
       console.warn(
         'PLATFORM_SESSION_SECRET ausente: painel /admin nao montado (ver .env.example).',
@@ -371,6 +391,11 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       new HmacSha256ApiKeyHasher(API_KEY_PEPPER),
       tenantRepository,
       logger,
+      // Fase 5 — plano `support`: só ligado quando o segredo próprio veio do
+      // ambiente (senão o `platform` usa um segredo efêmero e nenhum crachá de
+      // suporte seria aceito de qualquer forma).
+      SUPPORT_ACCESS_TOKEN_SECRET ? platform?.supportAccessTokenService : undefined,
+      SUPPORT_ACCESS_TOKEN_SECRET ? platform?.supportAccessVerifier : undefined,
     );
 
     // Milestone 5, Bloco M5E — rotas de GESTAO DE USUARIOS (o "RH"). Atras do
@@ -397,6 +422,22 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         authenticate,
         createTenantRouter(tenantRepository),
       );
+    }
+
+    // Painel `/admin`, Fase 5 — Acesso assistido, LADO TENANT. Montado ANTES
+    // dos routers de domínio (conversas, campanhas, ...) para que o
+    // `supportAccessAuditMiddleware` registre no `AuditLog` do tenant toda
+    // requisição MUTANTE feita por um ator do plano `support` (§9.4 brecha 2).
+    // O `authenticate` roda uma vez a mais nas rotas de tenant por causa deste
+    // mount antecipado — custo irrelevante, e só há um admin.
+    if (platform) {
+      app.use('/api/tenants/:tenantId', authenticate, platform.supportAccessAuditMiddleware);
+      app.use(
+        '/api/tenants/:tenantId/support-access',
+        authenticate,
+        platform.tenantSupportAccessRouter,
+      );
+      app.use('/api/tenants/:tenantId/support-access', platform.supportAccessErrorHandler);
     }
 
     // D17 (levantamento arquitetural do Bloco 5) — cada error handler é
@@ -987,6 +1028,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       app.use('/api/platform', platform.platformRouter);
       app.use('/api/platform', platform.platformTenantsRouter); // Fase 2
       app.use('/api/platform', platform.platformOverviewRouter); // Fase 3
+      app.use('/api/platform', platform.platformSupportRouter); // Fase 5 (lado admin)
       app.use('/api/platform', platform.platformErrorHandler); // por último
     }
 

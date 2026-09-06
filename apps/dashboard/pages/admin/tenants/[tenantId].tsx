@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import AdminShell from '@/components/admin/AdminShell';
 import { TenantSignalBadge } from '@/components/admin/TenantSignalBadge';
 import TenantControlPanel from '@/components/admin/TenantControlPanel';
+import RequestAccessButton from '@/components/admin/RequestAccessButton';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { requirePlatformPageSession } from '@/lib/platformAuth';
@@ -103,10 +104,13 @@ export default function AdminTenantDetailPage({ admin, tenantId }: Props): JSX.E
             <p className="mt-1 text-xs text-muted-foreground">
               {tenant.id} · {PLAN_LABEL[tenant.plan]} · criado em {formatDateTime(tenant.createdAt)}
             </p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
               {tenant.signals.map((s) => (
                 <TenantSignalBadge key={s.key} signal={s} />
               ))}
+              <span className="ml-auto">
+                <RequestAccessButton tenantId={tenant.id} tenantName={tenant.name} />
+              </span>
             </div>
           </header>
 

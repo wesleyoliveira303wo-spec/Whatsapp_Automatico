@@ -1833,3 +1833,52 @@ export function fetchEscalationRateAnalytics(
     `/api/sessions/${encodeURIComponent(sessionName)}/analytics/escalation-rate${analyticsQuery(range)}`,
   );
 }
+
+// --- Painel /admin, Fase 5 — acesso assistido (lado do TENANT/cliente) ---
+
+export type SupportAccessStatus =
+  | 'pending'
+  | 'accepted'
+  | 'denied'
+  | 'expired'
+  | 'revoked'
+  | 'ended';
+
+export interface SupportAccessRequest {
+  id: string;
+  tenantId: string;
+  platformUserId: string;
+  reason: string;
+  status: SupportAccessStatus;
+  requestedAt: string;
+  respondedAt: string | null;
+  respondedByUserId: string | null;
+  expiresAt: string | null;
+}
+
+/** `GET /active` — o pedido pendente/ativo agora, com o nome de quem pediu resolvido. */
+export interface ActiveSupportAccess extends SupportAccessRequest {
+  adminName: string;
+  adminEmail: string;
+}
+
+export function fetchActiveSupportAccess(): Promise<{
+  open: ActiveSupportAccess | null;
+  canRespond: boolean;
+}> {
+  return request('/api/support-access/active');
+}
+
+export function respondSupportAccess(
+  id: string,
+  decision: 'accept' | 'deny',
+): Promise<{ request: SupportAccessRequest }> {
+  return request(`/api/support-access/${encodeURIComponent(id)}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export function revokeSupportAccess(id: string): Promise<{ request: SupportAccessRequest }> {
+  return request(`/api/support-access/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+}

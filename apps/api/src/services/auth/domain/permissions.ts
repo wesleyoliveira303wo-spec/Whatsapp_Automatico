@@ -66,6 +66,14 @@ export type Permission =
   | 'audit:read'
   | 'tenant:manage'
   /**
+   * Painel `/admin`, Fase 5 — responder (autorizar/recusar/revogar) um pedido
+   * de ACESSO ASSISTIDO do dono da plataforma. Só `owner`/`administrator`,
+   * como manda a spec (§9.1: "só dono ou administrador respondem"). Não
+   * confere nenhum poder sobre o produto — só sobre o consentimento de deixar
+   * o suporte entrar.
+   */
+  | 'support:respond'
+  /**
    * DECLARADA MAS NUNCA APLICADA — nomeia uma funcionalidade que NAO EXISTE
    * no produto (transferir a posse do tenant), mesmo caso de
    * `conversation:reassign`. Nao e falha de seguranca: nao ha rota, servico
@@ -153,6 +161,10 @@ const ADMINISTRATOR: readonly Permission[] = [
   // Menu "⋮" da conversa (2026-08-29) — excluir é IRREVERSÍVEL, mesmo nível
   // de risco de campaign:manage acima.
   'conversation:delete',
+  // Painel `/admin`, Fase 5 — autorizar/recusar/revogar acesso assistido do
+  // dono da plataforma. Decisão de consentimento da empresa, não operação do
+  // dia a dia (§9.1). Owner herda via `hasPermission`.
+  'support:respond',
 ];
 
 /**
