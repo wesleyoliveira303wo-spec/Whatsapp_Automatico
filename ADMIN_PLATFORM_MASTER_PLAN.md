@@ -573,7 +573,14 @@ sem `tenantId` existe fora de `services/platform`.
 **Concluída quando:** dá para logar no `/admin`, ver uma casca vazia, e o
 login está registrado no `PlatformAuditLog`.
 
-### Fase 2 — Observabilidade: tenants
+### Fase 2 — Observabilidade: tenants ✅ CONCLUÍDA (2026-09-06)
+
+**Estado:** entregue e validada ao vivo na máquina do fundador — Centro de
+Tenants (`/admin/tenants`) com lista ordenada por urgência, detalhe por
+tenant, os 7 sinais do §6.3 e todos os indicadores do §6.4. Limiares
+conferidos contra a base real ANTES de virarem código (§6.3.1): 21 tenants,
+20 sem sessão → "Nunca começou"; tenant-1 com 53/213 ≈ 24,9% de
+`PROVIDER_ERROR` → "IA falhando". Ver `CLAUDE.md` §18.
 
 **Objetivo:** a dor original — decidir sobre um cliente com informação.
 **Entrega:** lista, detalhe, indicadores (§6.4), sinais (§6.3).
@@ -582,6 +589,14 @@ login está registrado no `PlatformAuditLog`.
 **Testes:** cada indicador contra dado real conhecido; precedência dos sinais;
 uma consulta por indicador (não N).
 **Concluída quando:** responde 6 das 13 perguntas do §1.
+
+**Desvio registrado (§6.3, sinal "Custo alto"):** o preço do plano não vive no
+banco (§10.2). O sinal foi implementado com uma constante `PLAN_MONTHLY_PRICE_USD`
+em `tenantSignals.ts`, derivada das cifras do `CONTEXT.md` a uma taxa de
+referência fixa — provisória, no mesmo espírito dos outros limiares. No free
+tier do Gemini o custo é US$ 0, então hoje o sinal nunca dispara; ele passa a
+valer quando um provider pago estiver ativo. Mover o preço para o schema é
+candidato à Fase 4 (junto da migration `Tenant.status`).
 
 ### Fase 3 — Observabilidade: plataforma
 

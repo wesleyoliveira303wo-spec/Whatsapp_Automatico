@@ -41,9 +41,13 @@ describe('AdminShell', () => {
     );
 
     expect(screen.getByRole('link', { name: 'Início' })).toHaveAttribute('href', '/admin');
-    // Aparecem — a estrutura de navegação já está decidida —, mas não são
-    // links quebrados.
-    for (const label of ['Tenants', 'Suporte', 'Saúde', 'Auditoria']) {
+    // Tenants é link de verdade desde a Fase 2.
+    expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute(
+      'href',
+      '/admin/tenants',
+    );
+    // Os destinos das próximas fases aparecem, mas não são links quebrados.
+    for (const label of ['Suporte', 'Saúde', 'Auditoria']) {
       expect(screen.queryByRole('link', { name: label })).toBeNull();
       expect(screen.getByText(label)).toHaveAttribute('aria-disabled', 'true');
     }

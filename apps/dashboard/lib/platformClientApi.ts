@@ -17,6 +17,61 @@ export interface PlatformAdmin {
   name: string;
 }
 
+// --- Fase 2 — Centro de Tenants (`ADMIN_PLATFORM_MASTER_PLAN.md` §6) ---
+
+export type TenantPlan = 'free' | 'pro' | 'enterprise';
+export type TenantSignalSeverity = 'red' | 'amber' | 'green';
+
+export interface TenantSignal {
+  key: string;
+  severity: TenantSignalSeverity;
+  label: string;
+  reading: string;
+}
+
+export interface PlatformTenantRow {
+  id: string;
+  name: string;
+  plan: TenantPlan;
+  /** ISO string. */
+  createdAt: string;
+  sessionCount: number;
+  connectedSessionCount: number;
+  userCount: number;
+  /** ISO string ou null. */
+  lastActivityAt: string | null;
+  messages30d: { inbound: number; outbound: number };
+  ai30d: {
+    total: number;
+    success: number;
+    providerError: number;
+    validationRejected: number;
+    /** STRING decimal exata — nunca `Number()` (D46). */
+    costUsd: string;
+  };
+  conversations30d: { total: number; escalated: number };
+  aiProfileConfigured: boolean;
+  signals: TenantSignal[];
+}
+
+export interface PlatformTenantDetail extends PlatformTenantRow {
+  contactCount: number;
+  campaigns: { total: number; running: number; paused: number; pausedByBreaker: number };
+  sessions: Array<{
+    sessionName: string;
+    status: 'connecting' | 'connected' | 'disconnected';
+    phoneNumber: string | null;
+    lastSeen: string | null;
+    aiProfileConfigured: boolean;
+  }>;
+  recentSessionEvents: Array<{
+    sessionName: string;
+    status: 'connecting' | 'connected' | 'disconnected';
+    disconnectReason: string | null;
+    occurredAt: string;
+  }>;
+}
+
 /**
  * Lê o espelho legível do token CSRF do `/admin` — cookie PRÓPRIO, nunca o do
  * produto: as duas sessões podem coexistir no mesmo navegador (o fundador é
@@ -65,4 +120,18 @@ export async function platformLogout(): Promise<void> {
 export async function fetchPlatformAdmin(): Promise<PlatformAdmin> {
   const body = await request<{ user: PlatformAdmin }>('/api/platform/me');
   return body.user;
+}
+
+export async function fetchPlatformTenants(): Promise<PlatformTenantRow[]> {
+  const body = await request<{ tenants: PlatformTenantRow[] }>('/api/platform/tenants');
+  return body.tenants;
+}
+
+export async function fetchPlatformTenantDetail(
+  tenantId: string,
+): Promise<PlatformTenantDetail> {
+  const body = await request<{ tenant: PlatformTenantDetail }>(
+    `/api/platform/tenants/${encodeURIComponent(tenantId)}`,
+  );
+  return body.tenant;
 }

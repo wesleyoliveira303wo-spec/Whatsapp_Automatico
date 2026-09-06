@@ -346,6 +346,9 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         rateLimitStore,
       );
       app.use('/api/platform', platform.platformRouter);
+      // Fase 2 — Centro de Tenants (leitura cross-tenant), mesmo prefixo e
+      // mesmo porteiro (`requirePlatformUser`, aplicado dentro do router).
+      app.use('/api/platform', platform.platformTenantsRouter);
       app.use('/api/platform', platform.platformErrorHandler);
     } else {
       console.warn(

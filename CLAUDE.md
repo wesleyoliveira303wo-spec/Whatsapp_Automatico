@@ -1292,6 +1292,101 @@ banco, não só no código.
 **Próximo passo:** Fase 2 (§15) — observabilidade de tenants: lista, detalhe,
 indicadores (§6.4) e sinais de atenção (§6.3).
 
+
+### Painel `/admin`, Fase 2 — Observabilidade: Centro de Tenants
+
+**Data:** 2026-09-06
+**Contexto:** segunda fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§6/§15), logo
+após a Fase 1 (login + fronteira). Entrega a "dor original": decidir sobre um
+cliente com informação. Só leitura, sem migration (risco 🟢). Nenhum número
+inventado — cada indicador tem uma fonte real no banco (§6.4).
+**Disciplina cumprida ANTES do código (§6.3.1):** os limiares dos sinais foram
+conferidos contra a base real. Subi Postgres e medi: **21 tenants — 1
+ENTERPRISE (o do fundador), 20 FREE, dos quais 20 sem NENHUMA sessão nem
+mensagem.** tenant-1: 53/213 = 24,9% de `PROVIDER_ERROR` na janela de 30 dias
+(dispara "IA falhando", como o §5.2 previa), escalonamento ~3% (não dispara
+"IA travando"). É a mesma lição que o projeto já pagou três vezes (ADR #88, o
+balão único, as fotos de perfil): regra escrita parece certa até encontrar os
+dados. Estes encontraram — e a redação corrigida do §6.3.1 ("nunca conectou ≠
+caiu") passou: os 20 shells caem em "Nunca começou" (âmbar), não em
+"Desconectado" (vermelho).
+**Decisão — 7 sinais como FUNÇÕES PURAS (`domain/tenantSignals.ts`):** um
+predicado por linha do §6.3, limiares como constantes EXPORTADAS (calibráveis,
+mesmo caminho do rate limit de IA / F1.10). `evaluateTenantSignals(overview,
+now)` devolve a lista inteira ordenada por gravidade (vermelho antes de
+âmbar; entre vermelhos, `Desconectado` antes de `Sumiu`), com fallback num
+único `Saudável` 🟢. Cada sinal carrega `severity` + `label` + `reading` — a
+regra inegociável do §5.3 (nunca só cor) é estrutural: o tipo não deixa
+existir um sinal sem rótulo.
+**Decisão — sinal "Custo alto" com constante provisória, registrado como
+desvio.** O preço do plano não vive no banco (§10.2 — só o enum `plan`).
+`PLAN_MONTHLY_PRICE_USD` em `tenantSignals.ts` deriva as cifras do
+`CONTEXT.md` (R$ 0/99/349) a uma taxa de referência fixa de R$ 5,50/US$,
+documentada como provisória. No free tier o custo real é US$ 0, então o sinal
+nunca dispara hoje — passa a valer com um provider pago. Mover o preço para o
+schema é candidato à Fase 4. Alternativa (adiar o sinal) foi descartada por
+fragmentar o conjunto de 7 sinais que o fundador aprovou.
+**Arquitetura — tudo em `services/platform` (§3.3):** porta
+`TenantObservabilityRepository` (leitura cross-tenant — o único diretório
+autorizado a consultar sem `tenantId`), `PrismaTenantObservabilityRepository`
+como a ÚNICA camada que vê SQL (mesmo contrato de `PrismaAnalyticsRepository`:
+`$queryRaw` parametrizado, só leitura, dinheiro como STRING decimal `::text`
+D46, contagens `::int` para não virar `BigInt`). A lista faz **8 consultas
+agregadas no total** — uma por indicador, `GROUP BY tenant_id`, montadas em
+memória — NUNCA uma por tenant (há teste de integração que espiona
+`$queryRaw` e trava em 8). A leitura lê as tabelas físicas direto
+(`whatsapp_sessions`, `whatsapp_messages`, `ai_interactions`,
+`whatsapp_conversations`, `ai_business_profiles`, ...), sem importar
+entidades/ports dos outros bounded contexts (D47) — é o que permite
+`services/platform` não acoplar a `whatsapp`/`ai`/`campaigns`.
+`TenantObservabilityService` é fino (resolve a janela de 30 dias fixa, chama o
+repo, anexa os sinais da função pura) e ordena a LISTA por urgência: dentro da
+mesma faixa de severidade, atividade mais recente primeiro — um cliente vivo
+com a IA falhando é um incêndio; um tenant que nunca começou (sem atividade
+nenhuma, `lastActivityAt = null`) é acompanhamento conhecido, vai para o fim
+da faixa.
+**Rotas:** `platformTenantsRouter` (separado do `platformRouter` da Fase 1,
+mesmo prefixo `/api/platform`, mesmo `requirePlatformUser`):
+`GET /tenants` (lista) e `GET /tenants/:tenantId` (detalhe, 404 se não
+existe). SÓ LEITURA — nenhuma auditada: `PlatformAuditLog` é para AÇÕES sobre
+um tenant (§8, Fase 4); abrir uma tela de observação não é ação (mesmo
+critério do `auditLogRouter` do produto).
+**Detalhe (§6.2):** `TenantDetail` estende o `TenantOverview` com sessões uma
+a uma (status "última informação conhecida" — ADR #80, a sobreposição pelo
+registry ao vivo é da Fase 3, e a UI diz isso), campanhas (total/running/
+paused/pausedByBreaker), contatos e histórico recente de quedas
+(`whatsapp_session_events`, teto de 30). "Últimos acessos de suporte" fica
+FORA — depende de `TenantAccessRequest`, que só nasce na Fase 5; o campo não é
+declarado para não fingir que existe.
+**UI:** `/admin/tenants` (tira de resumo — 3 stat tiles derivados da própria
+lista, sem consulta nova — + tabela ordenada por urgência) e
+`/admin/tenants/[tenantId]` (indicadores em grade + sessões + histórico de
+conexão). `TenantSignalBadge` = ícone + rótulo, cor do Design System
+(`destructive`/`warning`/`success`), `reading` no `title`. Item "Tenants" do
+`AdminShell` deixou de ser `comingSoon`; a tela Início aponta para a lista.
+Custo de IA formatado só na fronteira de renderização (`parseFloat`, mesmo
+padrão de `analyticsView.ts`) — o valor exato continua STRING no payload.
+**Impacto:** zero migration, zero mudança em qualquer contrato do produto —
+nada de `services/*` pré-existente tocado além do mount em `index.ts` e do
+`AdminShell`/Início. Testes novos: `tenantSignals` (24 — cada predicado,
+precedência, "nunca só cor", os casos reais medidos), `TenantObservabilityService`
+(6 — anexo de sinais, ordenação por urgência, janela de 30d),
+`platformTenantsRouter` (7 — 401 sem crachá, crachá de tenant não abre,
+serialização Date→ISO, 404), `tenantObservability.integration` (3 — contra
+Postgres REAL: formato dos agregados, "8 consultas fixas não uma por tenant",
+detalhe + null), BFF `tenantsRoutes` (6), `TenantSignalBadge` (3, jsdom),
+`AdminShell` (ajustado — Tenants agora é link). Suíte do monorepo: **313/313
+suítes, 3173/3173 testes verdes**; `tsc`/`eslint`/`next build` limpos nos dois
+pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real, admin de teste
+criado e removido ao final): login → lista com `Whatsapp-Automatico`
+("IA falhando", 1.542 msgs) no topo e os 20 shells "Nunca começou" abaixo →
+detalhe com os 8 indicadores, 2 sessões (uma conectada, uma não), 30 eventos
+de conexão e o aviso do ADR #80.
+**Próximo passo:** Fase 3 (§15) — observabilidade da PLATAFORMA: Início com
+KPIs globais e Fila de ação; Saúde (3 filas, Postgres, Redis); ampliar
+`/health/ready` para as três filas.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

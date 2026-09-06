@@ -31,7 +31,9 @@ export interface AdminNavItem {
 
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin', label: 'Início', icon: Home },
-  { href: '/admin/tenants', label: 'Tenants', icon: Building2, comingSoon: true },
+  // Tenants: entregue na Fase 2. Início/Suporte/Saúde/Auditoria seguem nas
+  // próximas fases (§15).
+  { href: '/admin/tenants', label: 'Tenants', icon: Building2 },
   { href: '/admin/support', label: 'Suporte', icon: LifeBuoy, comingSoon: true },
   { href: '/admin/health', label: 'Saúde', icon: Activity, comingSoon: true },
   { href: '/admin/audit', label: 'Auditoria', icon: ScrollText, comingSoon: true },

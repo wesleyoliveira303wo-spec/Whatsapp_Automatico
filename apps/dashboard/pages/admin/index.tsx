@@ -1,5 +1,6 @@
 import type { GetServerSideProps } from 'next';
 import Head from 'next/head';
+import Link from 'next/link';
 
 import AdminShell from '@/components/admin/AdminShell';
 import { Card } from '@/components/ui/card';
@@ -37,12 +38,16 @@ export default function AdminHomePage({ admin }: AdminHomeProps): JSX.Element {
       </p>
 
       <Card className="mt-6 p-6">
-        <h2 className="text-base font-medium">O painel está de pé</h2>
+        <h2 className="text-base font-medium">Centro de Tenants disponível</h2>
         <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-          Esta é a primeira fase: login próprio, sessão separada da do produto e trilha de
-          auditoria. Os indicadores da plataforma, a lista de tenants, o suporte com
-          consentimento e a saúde da infraestrutura entram nas fases seguintes — e só aparecem
-          aqui quando houver dado real por trás de cada número.
+          A{' '}
+          <Link href="/admin/tenants" className="font-medium text-primary hover:underline">
+            lista de tenants
+          </Link>{' '}
+          já mostra cada cliente com seus indicadores reais (mensagens, IA, conexão) e os
+          sinais de atenção. Os KPIs globais da plataforma, o suporte com consentimento e a
+          saúde da infraestrutura entram nas próximas fases — e só aparecem aqui quando
+          houver dado real por trás de cada número.
         </p>
       </Card>
     </AdminShell>

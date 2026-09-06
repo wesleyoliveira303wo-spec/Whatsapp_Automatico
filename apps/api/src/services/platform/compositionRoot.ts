@@ -13,8 +13,11 @@ import { PrismaPlatformUserRepository } from './infrastructure/repositories/Pris
 import { PrismaPlatformAuditLogRepository } from './infrastructure/repositories/PrismaPlatformAuditLogRepository';
 import { Hs256PlatformSessionTokenService } from './infrastructure/Hs256PlatformSessionTokenService';
 import { createPlatformRouter } from './presentation/platformRouter';
+import { createPlatformTenantsRouter } from './presentation/platformTenantsRouter';
 import { createPlatformErrorHandler } from './presentation/platformErrorHandler';
 import { createRequirePlatformUser } from './presentation/requirePlatformUser';
+import { PrismaTenantObservabilityRepository } from './infrastructure/repositories/PrismaTenantObservabilityRepository';
+import { TenantObservabilityService } from './application/TenantObservabilityService';
 
 /** Sessão do `/admin`: 8 horas (§4 do plano mestre). */
 export const DEFAULT_PLATFORM_SESSION_TTL_SECONDS = 8 * 60 * 60;
@@ -31,9 +34,17 @@ export interface PlatformConfig {
 
 export interface PlatformComposition {
   platformRouter: Router;
+  /**
+   * Centro de Tenants — Fase 2. Router SEPARADO, montado no mesmo prefixo
+   * `/api/platform` e atrás do MESMO `requirePlatformUser`. Campo aditivo:
+   * consumidores da Fase 1 não mudam.
+   */
+  platformTenantsRouter: Router;
   platformErrorHandler: ErrorRequestHandler;
   platformAuthService: PlatformAuthService;
   platformUserRepository: PlatformUserRepository;
+  /** Fase 2 — exposto para teste e para as fases seguintes. */
+  tenantObservabilityService: TenantObservabilityService;
   /**
    * Exposto para as fases seguintes montarem rotas de plataforma reusando o
    * MESMO porteiro — nunca um segundo verificador.
@@ -84,6 +95,13 @@ export function createPlatformComposition(
 
   const requirePlatformUser = createRequirePlatformUser(tokenService, platformAuthService);
 
+  // Fase 2 — Centro de Tenants. Leitura cross-tenant, sem Redis, sem migration
+  // (§ Fase 2, risco 🟢). O `TenantObservabilityService` recebe o relógio real;
+  // testes injetam um fixo.
+  const tenantObservabilityService = new TenantObservabilityService(
+    new PrismaTenantObservabilityRepository(prisma),
+  );
+
   const byIp = createRateLimiter({
     store: rateLimitStore,
     scope: 'platform-login:ip',
@@ -106,9 +124,14 @@ export function createPlatformComposition(
       byIp,
       byIdentity,
     ]),
+    platformTenantsRouter: createPlatformTenantsRouter(
+      tenantObservabilityService,
+      requirePlatformUser,
+    ),
     platformErrorHandler: createPlatformErrorHandler(logger),
     platformAuthService,
     platformUserRepository,
+    tenantObservabilityService,
     requirePlatformUser,
   };
 }
