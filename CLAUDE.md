@@ -1644,6 +1644,23 @@ requisição). A `/code-review ultra` formal (§16) é gatilho/billing do
 fundador — pendente antes do merge.
 **Concluída quando:** um acesso completo acontece — pedido, aceite, operação,
 revogação — e o histórico conta a história inteira.
+
+**Correções de acompanhamento (mesmo dia, após o 1º uso real):** (1) operar o
+tenant como suporte ESCONDIA as telas com gate de papel (Cérebro da IA,
+Analytics) e o `getServerSideProps` de `/sessions/:s/ai` redirecionava — a
+sessão de suporte não tem `user`. Novo `withSupportUser()` anexa um `user`
+SINTÉTICO de cargo `owner` (flag `isSupport`, sem `accessToken` — `isUserSession`
+segue `false` e o `apiClient` continua mandando `X-Support-Token`) em
+`requirePageSession` e `/api/auth/me`; o rail e os gates tratam suporte como
+acesso total (decisão #5), Perfil fica escondido. (2) O banner do CLIENTE
+aparecia para a própria sessão de suporte do admin e o "Encerrar" (revoke)
+batia em `requireHumanActor` → 403. `/active` passou a devolver
+`viewerIsSupport`; nesse caso o banner mostra "Sessão de suporte — Sair do
+suporte", que chama a nova `POST /api/admin/support/leave` (encerra o acesso
+best-effort pela sessão de plataforma ainda válida + descarta o cookie de
+suporte). `/admin/support` "Encerrar" trata 409 (já encerrado) como recarga,
+não erro.
+
 **Próximo passo:** Fase 6 (§15) — busca global + polimento visual + modo
 escuro. Risco 🟢.
 
