@@ -90,6 +90,16 @@ export function createAuthRouter(
           });
           return;
         }
+        // Painel /admin, Fase 4 — tenant suspenso. 403 (nao 401): a senha
+        // esta certa, o bloqueio e da conta da empresa. A UI mostra um aviso
+        // proprio em vez de repetir "e-mail ou senha invalidos".
+        if (result.reason === 'tenant_suspended') {
+          res.status(403).json({
+            error: 'tenant_suspended',
+            message: 'O acesso desta empresa esta suspenso. Fale com o suporte.',
+          });
+          return;
+        }
         res
           .status(401)
           .json({ error: 'invalid_credentials', message: 'E-mail ou senha invalidos.' });

@@ -3,6 +3,8 @@ import { ErrorRequestHandler } from 'express';
 import { Logger } from '../../../shared/domain/Logger';
 import { InvalidPlatformCredentialsError } from '../domain/errors/InvalidPlatformCredentialsError';
 import { PlatformAccountLockedError } from '../domain/errors/PlatformAccountLockedError';
+import { TenantControlNoOpError } from '../domain/errors/TenantControlNoOpError';
+import { TenantNotFoundError } from '../domain/errors/TenantNotFoundError';
 
 /**
  * Error handler das rotas `/api/platform` — montado ESCOPADO ao path (D17),
@@ -28,6 +30,17 @@ export function createPlatformErrorHandler(logger: Logger): ErrorRequestHandler 
         message: 'Muitas tentativas de acesso. Tente novamente em instantes.',
         retryAfterSeconds,
       });
+      return;
+    }
+
+    // Fase 4 — ações de controle do tenant.
+    if (error instanceof TenantNotFoundError) {
+      res.status(404).json({ error: 'tenant_not_found', message: 'Tenant não encontrado.' });
+      return;
+    }
+
+    if (error instanceof TenantControlNoOpError) {
+      res.status(409).json({ error: 'no_op', message: error.message });
       return;
     }
 

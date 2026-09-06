@@ -7,6 +7,7 @@ import { RefreshTokenService } from './RefreshTokenService';
 import { PublicUser, toPublicUser } from '../domain/entities/User';
 import { MIN_PASSWORD_LENGTH } from '../domain/passwordPolicy';
 import { AccountLockout } from '../domain/AccountLockout';
+import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 
 /** Metadados de origem da requisicao (so diagnostico/auditoria). */
 export interface AuthRequestMeta {
@@ -19,15 +20,21 @@ export interface AuthRequestMeta {
  * deliberadamente generico (sem dizer se foi email ou senha) para nao
  * permitir enumeracao de usuarios.
  *
- * Bloco B1 — `reason: 'account_locked'` e a UNICA excecao a essa
+ * Bloco B1 — `reason: 'account_locked'` e a primeira excecao a essa
  * genericidade, e nao vaza existencia: o lockout conta o e-mail TENTADO,
  * exista ele ou nao (ver `AccountLockout`), entao receber "bloqueada" nao
  * prova que a conta existe. `reason` e OPCIONAL de proposito — todo
  * `return { ok: false }` ja escrito continua valido.
+ *
+ * Painel /admin, Fase 4 — `reason: 'tenant_suspended'` e a segunda excecao.
+ * So e devolvido DEPOIS de a senha bater (mesma ordem de `account_locked`):
+ * quem nao tem a senha nunca consegue sondar se um tenant esta suspenso. Nao
+ * vaza existencia de USUARIO — a suspensao e do tenant inteiro, independe de
+ * qual usuario tentou.
  */
 export type LoginResult =
   | { ok: true; accessToken: string; refreshToken: string; user: PublicUser }
-  | { ok: false; reason?: 'account_locked'; retryAfterMs?: number };
+  | { ok: false; reason?: 'account_locked' | 'tenant_suspended'; retryAfterMs?: number };
 
 /** Resultado do refresh — uniao discriminada. */
 export type RefreshResult = { ok: true; accessToken: string; refreshToken: string } | { ok: false };
@@ -72,6 +79,13 @@ export class AuthService {
      * bloco, sem lockout nenhum. Presente, conta falhas por e-mail tentado.
      */
     private readonly accountLockout?: AccountLockout,
+    /**
+     * Painel /admin, Fase 4 — OPCIONAL (mesmo padrão das demais dependências
+     * auxiliares). Ausente, nenhuma checagem de suspensão de tenant acontece
+     * (comportamento pré-Fase 4). Presente, `login`/`refresh` recusam um
+     * tenant `status: 'suspended'` DEPOIS de validar as credenciais.
+     */
+    private readonly tenantRepository?: TenantRepository,
   ) {}
 
   async login(
@@ -106,6 +120,15 @@ export class AuthService {
     // Login certo apaga o historico de falhas — quem errou a senha 4 vezes e
     // acertou na quinta nao pode ficar a uma falha do bloqueio.
     await this.accountLockout?.clear(email);
+
+    // Painel /admin, Fase 4 — tenant suspenso nao loga, mesmo com a senha
+    // certa. Checado SO aqui (credenciais ja validadas) para nao virar um
+    // oraculo de "este tenant esta suspenso" para quem nao tem a senha.
+    const tenant = await this.tenantRepository?.findById(user.tenantId);
+    if (tenant?.status === 'suspended') {
+      await this.audit(tenantId, user.id, 'auth.login.tenant_suspended', {}, meta);
+      return { ok: false, reason: 'tenant_suspended' };
+    }
 
     const updated = await this.userRepository.update(user.id, { lastLoginAt: this.now() });
     const accessToken = this.accessTokenService.issue({
@@ -165,6 +188,14 @@ export class AuthService {
     const user = await this.userRepository.findById(rotated.userId);
     if (!user || user.status !== 'active') {
       // Usuario sumiu/foi suspenso depois do token ser emitido — derruba tudo.
+      await this.refreshTokenService.revokeAllForUser(rotated.userId);
+      return { ok: false };
+    }
+
+    // Painel /admin, Fase 4 — tenant suspenso depois do token ser emitido:
+    // derruba a sessao inteira, mesmo tratamento de usuario suspenso.
+    const tenant = await this.tenantRepository?.findById(user.tenantId);
+    if (tenant?.status === 'suspended') {
       await this.refreshTokenService.revokeAllForUser(rotated.userId);
       return { ok: false };
     }

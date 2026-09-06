@@ -13,6 +13,7 @@ import {
   FakeAuditLogRepository,
   FakePasswordHasher,
 } from '../testDoubles';
+import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
 
@@ -31,12 +32,16 @@ function buildUser(overrides: Partial<User> = {}): User {
   };
 }
 
-function build(accountLockout?: AccountLockout): {
+function build(
+  accountLockout?: AccountLockout,
+  tenantRepository?: FakeTenantRepository,
+): {
   service: AuthService;
   users: FakeUserRepository;
   refreshRepo: FakeRefreshTokenRepository;
   audit: FakeAuditLogRepository;
   access: Hs256AccessTokenService;
+  tenants?: FakeTenantRepository;
 } {
   const users = new FakeUserRepository();
   const refreshRepo = new FakeRefreshTokenRepository();
@@ -56,8 +61,9 @@ function build(accountLockout?: AccountLockout): {
     new NoopLogger(),
     undefined,
     accountLockout,
+    tenantRepository,
   );
-  return { service, users, refreshRepo, audit, access };
+  return { service, users, refreshRepo, audit, access, tenants: tenantRepository };
 }
 
 describe('AuthService (Milestone 5, Bloco M5C)', () => {
@@ -382,5 +388,66 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
       // Nunca bloqueia, e a senha certa ainda entra.
       expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
     });
+  });
+});
+
+describe('AuthService — tenant suspenso (Painel /admin, Fase 4)', () => {
+  function withTenant(status: 'active' | 'suspended') {
+    const tenants = new FakeTenantRepository();
+    tenants.seed({ id: 'tenant-1', name: 'Empresa', apiKeyHash: null, plan: 'pro', status });
+    const ctx = build(undefined, tenants);
+    ctx.users.seed(buildUser());
+    return ctx;
+  }
+
+  it('login com a senha CERTA mas tenant suspenso → { ok: false, reason: "tenant_suspended" }', async () => {
+    const { service } = withTenant('suspended');
+
+    const result = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+
+    expect(result).toEqual({ ok: false, reason: 'tenant_suspended' });
+  });
+
+  it('login com a senha ERRADA num tenant suspenso continua genérico (não vaza a suspensão)', async () => {
+    const { service } = withTenant('suspended');
+
+    const result = await service.login('tenant-1', 'joao@empresa.com', 'senha-errada');
+
+    expect(result).toEqual({ ok: false });
+  });
+
+  it('tenant ativo loga normalmente', async () => {
+    const { service } = withTenant('active');
+
+    const result = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('loginByEmail também recusa um tenant suspenso', async () => {
+    const { service } = withTenant('suspended');
+
+    const result = await service.loginByEmail('joao@empresa.com', 'senha123');
+
+    expect(result).toEqual({ ok: false, reason: 'tenant_suspended' });
+  });
+
+  it('refresh após a suspensão derruba a sessão e revoga os refresh tokens', async () => {
+    const { service, tenants, refreshRepo } = withTenant('active');
+    const login = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+    if (!login.ok) throw new Error('login deveria ter funcionado');
+
+    await tenants!.setStatus('tenant-1', 'suspended');
+    const refreshed = await service.refresh(login.refreshToken);
+
+    expect(refreshed).toEqual({ ok: false });
+    expect(refreshRepo.all().every((t) => t.revokedAt !== undefined)).toBe(true);
+  });
+
+  it('sem tenantRepository injetado, nada de suspensão é checado (comportamento pré-Fase 4)', async () => {
+    const { service, users } = build();
+    users.seed(buildUser());
+
+    expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
   });
 });

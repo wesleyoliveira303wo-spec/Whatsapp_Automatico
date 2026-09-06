@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 
 import AdminShell from '@/components/admin/AdminShell';
 import { TenantSignalBadge } from '@/components/admin/TenantSignalBadge';
+import TenantControlPanel from '@/components/admin/TenantControlPanel';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { requirePlatformPageSession } from '@/lib/platformAuth';
@@ -91,7 +92,14 @@ export default function AdminTenantDetailPage({ admin, tenantId }: Props): JSX.E
       ) : (
         <div className="space-y-6">
           <header>
-            <h1 className="text-xl font-semibold tracking-tight">{tenant.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight">{tenant.name}</h1>
+              {tenant.status === 'suspended' ? (
+                <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
+                  Suspenso
+                </span>
+              ) : null}
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {tenant.id} · {PLAN_LABEL[tenant.plan]} · criado em {formatDateTime(tenant.createdAt)}
             </p>
@@ -142,6 +150,20 @@ export default function AdminTenantDetailPage({ admin, tenantId }: Props): JSX.E
               value={tenant.lastActivityAt ? formatShortRelativeTime(tenant.lastActivityAt) : 'nunca'}
             />
           </section>
+
+          <TenantControlPanel
+            tenant={{
+              id: tenant.id,
+              name: tenant.name,
+              plan: tenant.plan,
+              status: tenant.status,
+            }}
+            onChanged={(result) =>
+              setTenant((current) =>
+                current ? { ...current, plan: result.plan, status: result.status } : current,
+              )
+            }
+          />
 
           <section>
             <h2 className="text-sm font-medium">WhatsApps</h2>

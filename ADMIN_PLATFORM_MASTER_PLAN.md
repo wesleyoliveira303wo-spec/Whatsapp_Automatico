@@ -622,7 +622,18 @@ linha da Fila de ação) NÃO entrou — depende de `TenantAccessRequest`, que s
 nasce na Fase 5. `buildActionQueue` tem o comentário e o lugar reservado para
 somar esse item quando a tabela existir.
 
-### Fase 4 — Controle
+### Fase 4 — Controle ✅ CONCLUÍDA (2026-09-06)
+
+**Estado:** entregue — migration aditiva `20260906120000_add_tenant_status`
+(`tenants.status`, enum `user_status` reaproveitado, default `ACTIVE`);
+`TenantControlService` (`services/platform`) audita ANTES de escrever e recusa
+no-op com 409; três rotas escritas no `platformTenantsRouter`
+(`PATCH .../plan`, `POST .../suspend`, `.../reactivate`), todas atrás do mesmo
+`requirePlatformUser`; `AuthService` recusa tenant suspenso em `login`
+(`reason: 'tenant_suspended'`, só após a senha bater) e `refresh`; UI de
+Controle no detalhe do tenant com confirmação forte que nomeia a consequência
+na suspensão. Suíte: api 182/182 suítes 2183/2183, dashboard+jsdom 141/141
+suítes 1064/1064; `tsc`/`eslint`/`next build` limpos. Ver `CLAUDE.md` §18.
 
 **Objetivo:** agir sobre o tenant.
 **Entrega:** alterar plano, suspender/reativar (migration `Tenant.status`),
@@ -630,8 +641,20 @@ ações críticas com confirmação proporcional.
 **Depende de:** Fase 2 + **decisão do §8 confirmada**.
 **Risco:** 🟠 médio — primeira escrita cross-tenant.
 **Testes:** suspenso não consegue logar; toda ação auditada antes de executar;
-confirmação forte não é contornável por chamada direta à API.
+confirmação forte não é contornável por chamada direta à API. — todos cobertos
+(`AuthService.test`, `TenantControlService.test`, `platformTenantsRouter.test`,
+`tenantControl.integration` contra Postgres real).
 **Concluída quando:** o fundador ativa e desativa cliente sem tocar no banco.
+
+**Limitação registrada:** um usuário com access token ainda válido (TTL ~15
+min) segue chamando a API do tenant até expirar — `refresh` já não renova.
+Matar a sessão no ato exigiria o `authenticate` do tenant reler `status` a
+cada requisição, fora do escopo desta fase.
+
+**Desvio registrado (§16):** a `/code-review ultra` formal (billing/gatilho do
+fundador) não foi executada nesta rodada — feita uma revisão de segurança
+manual do primeiro caminho de escrita cross-tenant; a formal fica pendente
+antes do merge.
 
 ### Fase 5 — Suporte assistido
 

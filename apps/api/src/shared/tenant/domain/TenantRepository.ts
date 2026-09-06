@@ -1,4 +1,6 @@
 import { Tenant } from './Tenant';
+import { TenantPlan } from './TenantPlan';
+import { TenantStatus } from './TenantStatus';
 
 /**
  * Porta (port) do Domain para leitura de `Tenant` (Production Hardening,
@@ -56,4 +58,14 @@ export interface TenantRepository {
    * id nao existir, mesmo padrao de `UserRepository.update`.
    */
   update(id: string, changes: { name: string }): Promise<Tenant | undefined>;
+
+  /**
+   * Painel /admin, Fase 4 (`ADMIN_PLATFORM_MASTER_PLAN.md` §8) — PRIMEIRA
+   * escrita cross-tenant do projeto. Só o `services/platform` chama estes
+   * dois métodos; a orquestração (carregar antes, auditar antes de escrever)
+   * fica no `TenantControlService`, não aqui. Devolvem `undefined` se o id
+   * não existir — mesmo contrato de `update`.
+   */
+  changePlan(id: string, plan: TenantPlan): Promise<Tenant | undefined>;
+  setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined>;
 }

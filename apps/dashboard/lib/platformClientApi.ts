@@ -20,6 +20,8 @@ export interface PlatformAdmin {
 // --- Fase 2 — Centro de Tenants (`ADMIN_PLATFORM_MASTER_PLAN.md` §6) ---
 
 export type TenantPlan = 'free' | 'pro' | 'enterprise';
+/** Trava de acesso (Fase 4). `'suspended'` = o tenant inteiro não loga. */
+export type TenantStatus = 'active' | 'suspended';
 export type TenantSignalSeverity = 'red' | 'amber' | 'green';
 
 export interface TenantSignal {
@@ -33,6 +35,7 @@ export interface PlatformTenantRow {
   id: string;
   name: string;
   plan: TenantPlan;
+  status: TenantStatus;
   /** ISO string. */
   createdAt: string;
   sessionCount: number;
@@ -132,6 +135,47 @@ export async function fetchPlatformTenantDetail(
 ): Promise<PlatformTenantDetail> {
   const body = await request<{ tenant: PlatformTenantDetail }>(
     `/api/platform/tenants/${encodeURIComponent(tenantId)}`,
+  );
+  return body.tenant;
+}
+
+// --- Fase 4 — Controle (`ADMIN_PLATFORM_MASTER_PLAN.md` §8) ---
+
+/** O tenant depois de uma ação de controle — só os campos que a ação mexe. */
+export interface PlatformTenantControlResult {
+  id: string;
+  name: string;
+  plan: TenantPlan;
+  status: TenantStatus;
+}
+
+export async function changePlatformTenantPlan(
+  tenantId: string,
+  plan: TenantPlan,
+): Promise<PlatformTenantControlResult> {
+  const body = await request<{ tenant: PlatformTenantControlResult }>(
+    `/api/platform/tenants/${encodeURIComponent(tenantId)}/plan`,
+    { method: 'PATCH', body: JSON.stringify({ plan }) },
+  );
+  return body.tenant;
+}
+
+export async function suspendPlatformTenant(
+  tenantId: string,
+): Promise<PlatformTenantControlResult> {
+  const body = await request<{ tenant: PlatformTenantControlResult }>(
+    `/api/platform/tenants/${encodeURIComponent(tenantId)}/suspend`,
+    { method: 'POST' },
+  );
+  return body.tenant;
+}
+
+export async function reactivatePlatformTenant(
+  tenantId: string,
+): Promise<PlatformTenantControlResult> {
+  const body = await request<{ tenant: PlatformTenantControlResult }>(
+    `/api/platform/tenants/${encodeURIComponent(tenantId)}/reactivate`,
+    { method: 'POST' },
   );
   return body.tenant;
 }

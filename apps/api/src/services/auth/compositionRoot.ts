@@ -11,6 +11,7 @@ import { AccessTokenService } from './domain/AccessTokenService';
 import { PrismaUserRepository } from './infrastructure/repositories/PrismaUserRepository';
 import { PrismaRefreshTokenRepository } from './infrastructure/repositories/PrismaRefreshTokenRepository';
 import { PrismaAuditLogRepository } from './infrastructure/repositories/PrismaAuditLogRepository';
+import { PrismaTenantRepository } from '../../shared/tenant/infrastructure/PrismaTenantRepository';
 import { ScryptPasswordHasher } from './infrastructure/ScryptPasswordHasher';
 import { Hs256AccessTokenService } from './infrastructure/Hs256AccessTokenService';
 import { Sha256RefreshTokenCodec } from './infrastructure/Sha256RefreshTokenCodec';
@@ -95,6 +96,10 @@ export function createAuthComposition(
   // login bem-sucedido.
   const accountLockout = new RateLimitStoreAccountLockout(rateLimitStore);
 
+  // Painel /admin, Fase 4 — `login`/`refresh` recusam um tenant suspenso.
+  // Mesma instância só-leitura usada em todo o resto do projeto.
+  const tenantRepository = new PrismaTenantRepository(prisma);
+
   const authService = new AuthService(
     userRepository,
     passwordHasher,
@@ -104,6 +109,7 @@ export function createAuthComposition(
     logger,
     undefined,
     accountLockout,
+    tenantRepository,
   );
 
   const requireUser = createRequireUser(accessTokenService);

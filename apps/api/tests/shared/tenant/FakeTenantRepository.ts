@@ -1,6 +1,7 @@
 import { Tenant } from '../../../src/shared/tenant/domain/Tenant';
 import { TenantPlan } from '../../../src/shared/tenant/domain/TenantPlan';
 import { TenantRepository } from '../../../src/shared/tenant/domain/TenantRepository';
+import { TenantStatus } from '../../../src/shared/tenant/domain/TenantStatus';
 
 /**
  * Fake compartilhado do `TenantRepository` — em memória, sem Prisma/Postgres.
@@ -32,15 +33,28 @@ export class FakeTenantRepository implements TenantRepository {
       name: input.name,
       apiKeyHash: null,
       plan: 'free',
+      status: 'active',
     };
     this.tenants.set(tenant.id, tenant);
     return tenant;
   }
 
   async update(id: string, changes: { name: string }): Promise<Tenant | undefined> {
+    return this.patch(id, { name: changes.name });
+  }
+
+  async changePlan(id: string, plan: TenantPlan): Promise<Tenant | undefined> {
+    return this.patch(id, { plan });
+  }
+
+  async setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined> {
+    return this.patch(id, { status });
+  }
+
+  private patch(id: string, changes: Partial<Tenant>): Tenant | undefined {
     const existing = this.tenants.get(id);
     if (!existing) return undefined;
-    const updated = { ...existing, name: changes.name };
+    const updated = { ...existing, ...changes };
     this.tenants.set(id, updated);
     return updated;
   }
@@ -49,7 +63,11 @@ export class FakeTenantRepository implements TenantRepository {
    * Helper de teste, não faz parte da interface de produção. `plan` é
    * opcional — omitido, assume `'pro'` (ver docstring da classe).
    */
-  seed(tenant: Omit<Tenant, 'plan'> & { plan?: TenantPlan }): void {
-    this.tenants.set(tenant.id, { ...tenant, plan: tenant.plan ?? 'pro' });
+  seed(tenant: Omit<Tenant, 'plan' | 'status'> & { plan?: TenantPlan; status?: TenantStatus }): void {
+    this.tenants.set(tenant.id, {
+      ...tenant,
+      plan: tenant.plan ?? 'pro',
+      status: tenant.status ?? 'active',
+    });
   }
 }

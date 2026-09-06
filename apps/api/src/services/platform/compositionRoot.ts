@@ -21,6 +21,8 @@ import { PrismaTenantObservabilityRepository } from './infrastructure/repositori
 import { TenantObservabilityService } from './application/TenantObservabilityService';
 import { PlatformOverviewService } from './application/PlatformOverviewService';
 import { PlatformHealthService } from './application/PlatformHealthService';
+import { PrismaTenantRepository } from '../../shared/tenant/infrastructure/PrismaTenantRepository';
+import { TenantControlService } from './application/TenantControlService';
 
 /** Sessão do `/admin`: 8 horas (§4 do plano mestre). */
 export const DEFAULT_PLATFORM_SESSION_TTL_SECONDS = 8 * 60 * 60;
@@ -45,6 +47,8 @@ export interface PlatformComposition {
   platformTenantsRouter: Router;
   /** Início + Saúde — Fase 3. Mesmo prefixo, mesmo porteiro. Campo aditivo. */
   platformOverviewRouter: Router;
+  /** Controle do tenant — Fase 4. Exposto para teste. Campo aditivo. */
+  tenantControlService: TenantControlService;
   platformErrorHandler: ErrorRequestHandler;
   platformAuthService: PlatformAuthService;
   platformUserRepository: PlatformUserRepository;
@@ -121,6 +125,15 @@ export function createPlatformComposition(
     observabilityRepository,
   );
 
+  // Fase 4 — Controle. PRIMEIRA escrita cross-tenant. `TenantRepository` é a
+  // mesma porta só-leitura do resto do projeto, agora com `changePlan`/
+  // `setStatus`; a orquestração (auditar ANTES de escrever) fica no service.
+  const tenantControlService = new TenantControlService(
+    new PrismaTenantRepository(prisma),
+    auditLogRepository,
+    logger,
+  );
+
   const byIp = createRateLimiter({
     store: rateLimitStore,
     scope: 'platform-login:ip',
@@ -146,6 +159,7 @@ export function createPlatformComposition(
     platformTenantsRouter: createPlatformTenantsRouter(
       tenantObservabilityService,
       requirePlatformUser,
+      tenantControlService,
     ),
     platformOverviewRouter: createPlatformOverviewRouter(
       platformOverviewService,
@@ -157,6 +171,7 @@ export function createPlatformComposition(
     platformUserRepository,
     tenantObservabilityService,
     platformHealthService,
+    tenantControlService,
     requirePlatformUser,
   };
 }

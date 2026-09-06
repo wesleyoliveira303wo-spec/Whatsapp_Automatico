@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 
 import { TenantPlan } from '../../../../shared/tenant/domain/TenantPlan';
+import { TenantStatus } from '../../../../shared/tenant/domain/TenantStatus';
 import { TenantOverview } from '../../domain/entities/TenantOverview';
 import {
   TenantCampaignCounts,
@@ -21,6 +22,12 @@ const PLAN_TO_DOMAIN: Record<string, TenantPlan> = {
   ENTERPRISE: 'enterprise',
 };
 
+/** `tenants.status` (enum `user_status`) → união do Domain. Fase 4. */
+const TENANT_STATUS_TO_DOMAIN: Record<string, TenantStatus> = {
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+};
+
 const SESSION_STATUS_TO_DOMAIN: Record<string, TenantSessionSummary['status']> = {
   CONNECTING: 'connecting',
   CONNECTED: 'connected',
@@ -34,6 +41,7 @@ interface TenantRow {
   id: string;
   name: string;
   plan: string;
+  status: string;
   createdAt: Date;
 }
 interface SessionAggRow {
@@ -99,7 +107,8 @@ export class PrismaTenantObservabilityRepository implements TenantObservabilityR
     const [tenants, sessions, users, lastActivity, messages, ai, conversations, aiProfiles] =
       await Promise.all([
         this.prisma.$queryRaw<TenantRow[]>(Prisma.sql`
-          SELECT "id", "name", "plan"::text AS "plan", "created_at" AS "createdAt"
+          SELECT "id", "name", "plan"::text AS "plan", "status"::text AS "status",
+            "created_at" AS "createdAt"
           FROM "tenants"
         `),
         this.prisma.$queryRaw<SessionAggRow[]>(Prisma.sql`
@@ -179,6 +188,7 @@ export class PrismaTenantObservabilityRepository implements TenantObservabilityR
         id: tenant.id,
         name: tenant.name,
         plan: PLAN_TO_DOMAIN[tenant.plan] ?? 'free',
+        status: TENANT_STATUS_TO_DOMAIN[tenant.status] ?? 'active',
         createdAt: tenant.createdAt,
         sessionCount: session?.sessionCount ?? 0,
         connectedSessionCount: session?.connectedCount ?? 0,

@@ -166,6 +166,16 @@ model Tenant {
   /// Todo tenant (existente e novo, via `/register`) nasce `FREE`.
   plan TenantPlan @default(FREE)
 
+  /// Trava de ACESSO (Painel /admin, Fase 4 — ADMIN_PLATFORM_MASTER_PLAN.md
+  /// §8). `plan` responde "o que ele pode fazer"; `status` responde "ele pode
+  /// entrar". Suspenso, o tenant inteiro deixa de logar (checado no
+  /// `AuthService`, login e refresh). Reaproveita o enum `UserStatus`
+  /// (`user_status`) — mesmo critério da migration da Fase 1
+  /// (`platform_users.status`): dois valores idênticos não merecem um enum
+  /// paralelo. Aditiva, default `ACTIVE` — os 21 tenants existentes nascem
+  /// ativos.
+  status UserStatus @default(ACTIVE)
+
   /// Hash da API key emitida para este tenant (Production Hardening, Bloco
   /// 1) — nunca a chave em texto plano. `null` até uma chave ser emitida
   /// (provisionamento continua manual nesta milestone; ver

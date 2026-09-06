@@ -1479,6 +1479,83 @@ histórico da cota do Gemini), taxa de falha de IA 24,9%, 0 WhatsApps caídos.
 (migration `Tenant.status`), primeira ESCRITA cross-tenant, com
 `security-review` (risco 🟠).
 
+### Painel `/admin`, Fase 4 — Controle do tenant (alterar plano, suspender/reativar)
+
+**Data:** 2026-09-06
+**Contexto:** quarta fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§8/§15), logo
+após a Fase 3. É a PRIMEIRA escrita cross-tenant do projeto — até aqui
+`services/platform` só lia. Risco 🟠. A decisão do §8 já estava confirmada
+pelo fundador (2026-09-05): suspensão é coluna própria `Tenant.status`, não
+rebaixar para `free`.
+**Decisão — `Tenant.status` reaproveita o enum `user_status`.** Migration
+aditiva `20260906120000_add_tenant_status`: `ALTER TABLE "tenants" ADD COLUMN
+"status" "user_status" NOT NULL DEFAULT 'ACTIVE'` — mesmo critério da Fase 1
+(`platform_users.status`), dois valores idênticos não merecem um enum
+paralelo. Os 21 tenants existentes nascem `ACTIVE` pelo default, sem backfill.
+`plan` continua respondendo "o que ele pode fazer"; `status` passa a
+responder "ele pode entrar".
+**Decisão — `TenantRepository` ganhou `changePlan`/`setStatus`, mas a
+orquestração fica no `TenantControlService` (Application, `services/platform`).**
+Os dois métodos novos são `updateMany({ where: { id } })` + re-find, mesmo
+padrão do `update` de nome já existente — escopados a UM tenant, o id vindo
+do path. O service carrega o tenant (404 se não existe), **audita ANTES de
+escrever** (regra testada de §15: `append` no `PlatformAuditLog` primeiro,
+`metadata: { from, to }`, ator/ip/user-agent; só depois a escrita) e trata
+no-op (plano igual, já suspenso) como ERRO 409 (`TenantControlNoOpError`) — a
+trilha só registra mudança real.
+**Decisão — três rotas novas no `platformTenantsRouter`** (as leituras da
+Fase 2 seguem intocadas): `PATCH /tenants/:id/plan` (corpo `{ plan }`, zod
+enum), `POST /tenants/:id/suspend`, `POST /tenants/:id/reactivate`, cada uma
+com o MESMO `requirePlatformUser` das leituras. "Confirmação forte não
+contornável por chamada direta à API" (§15) = **não existe caminho
+privilegiado que pule a auditoria**: nenhum parâmetro "forçar", nenhuma rota
+alternativa sem porteiro; uma chamada direta a `.../suspend` faz exatamente o
+que o botão faz. A fricção proporcional (§12) é da UI.
+**Decisão — `AuthService` recusa um tenant suspenso**, dependência OPCIONAL
+`TenantRepository` (mesmo padrão de `accountLockout`): sem ela, comportamento
+pré-Fase 4. Em `login`, a checagem vem SÓ DEPOIS de a senha bater — quem não
+tem a senha nunca sonda se um tenant está suspenso; devolve
+`{ ok: false, reason: 'tenant_suspended' }` (segunda exceção à genericidade,
+ao lado de `account_locked`; não vaza existência de USUÁRIO, a suspensão é do
+tenant inteiro). `refresh` derruba a família de tokens.
+`authRouter`/`globalAuthRouter` traduzem para **403** `tenant_suspended` (a
+senha está certa, o bloqueio é da empresa).
+**Limitação registrada, dentro do escopo:** um usuário com access token ainda
+válido (TTL ~15 min) segue chamando a API do tenant até expirar — `refresh`
+já não renova. Matar a sessão no ato exigiria o `authenticate` do tenant
+reler o status a cada requisição, mudança mais ampla que a Fase 4. O teste do
+plano ("suspenso não consegue logar") está cumprido; a janela é de no máximo
+um TTL.
+**UI:** `/admin/tenants/[tenantId]` ganhou a seção "Controle"
+(`TenantControlPanel`) — botões de plano (o atual desabilitado) e
+Suspender/Reativar conforme o status. Suspender abre um `ConfirmDialog` que
+NOMEIA a consequência ("todos os usuários param de conseguir entrar
+imediatamente"), rótulo de ação, nunca "OK". 409 (no-op) vira toast
+informativo. Selo "Suspenso" no cabeçalho do detalhe e na lista. BFF:
+`pages/api/platform/tenants/[tenantId]/{plan,suspend,reactivate}.ts` (proxy
+fino compartilhado `lib/platformControlProxy.ts`; repassa 400/404/409, 401
+limpa o cookie), `platformClientApi` ganhou as 3 funções.
+**Impacto:** requer a migration + `npx prisma generate`. Nenhuma mudança em
+contrato pré-existente do produto (o `status` é aditivo no payload de tenant
+do `/admin`; o 403 `tenant_suspended` é caminho de falha novo, não contrato
+quebrado). Testes novos: `TenantControlService` (9), `platformTenantsRouter`
+(+9 escritas auditadas), `AuthService` (+7), `tenantControl.integration` (2
+contra Postgres REAL — coluna existe, default `ACTIVE`, `setStatus`/
+`changePlan` persistem, id inexistente → undefined), BFF `tenantsRoutes`
+(+7), jsdom `TenantControlPanel` (5). `FakeTenantRepository` ganhou
+`changePlan`/`setStatus` e `seed({ status })`. Suíte do monorepo: **api
+182/182 suítes 2183/2183; dashboard+jsdom 141/141 suítes 1064/1064** — todos
+verdes; `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**security-review:** revisão manual do primeiro caminho de escrita
+cross-tenant (autorização por rota, auditoria antes da escrita não
+contornável, escopo `updateMany` por id, anti-enumeração no login,
+CSRF/Origin no BFF, migration aditiva). A `/code-review ultra` formal (§16) é
+gatilho/billing do fundador — pendente antes do merge.
+**Concluída quando:** o fundador ativa e desativa um cliente sem tocar no
+banco.
+**Próximo passo:** Fase 5 (§15) — Suporte assistido (`TenantAccessRequest`,
+consentimento do cliente, sessão de suporte marcada). Risco 🔴.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

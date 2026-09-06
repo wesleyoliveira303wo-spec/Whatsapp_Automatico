@@ -1,4 +1,5 @@
 import { TenantPlan } from '../../../../shared/tenant/domain/TenantPlan';
+import { TenantStatus } from '../../../../shared/tenant/domain/TenantStatus';
 
 /**
  * Retrato de UM tenant para o Centro de Tenants do `/admin` — Fase 2
@@ -17,6 +18,11 @@ export interface TenantOverview {
   id: string;
   name: string;
   plan: TenantPlan;
+  /**
+   * Trava de acesso (Fase 4). `'suspended'` = o tenant inteiro não loga. A
+   * lista do `/admin` mostra um selo; o detalhe mostra os botões de ação.
+   */
+  status: TenantStatus;
   createdAt: Date;
 
   /** Sessões de WhatsApp REGISTRADAS (qualquer status). 0 = nunca instalou. */

@@ -111,6 +111,11 @@ export default function AdminTenantsPage({ admin }: Props): JSX.Element {
                       >
                         {t.name}
                       </Link>
+                      {t.status === 'suspended' ? (
+                        <span className="ml-2 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[0.7rem] font-medium text-destructive">
+                          Suspenso
+                        </span>
+                      ) : null}
                       <span className="block text-xs text-muted-foreground">{t.id}</span>
                     </TableCell>
                     <TableCell>{PLAN_LABEL[t.plan]}</TableCell>
