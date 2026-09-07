@@ -180,4 +180,24 @@ describe('authenticate — plano SUPORTE (Fase 5 do /admin)', () => {
       expect.objectContaining({ error: 'support_access_unavailable' }),
     );
   });
+
+  it('idempotente: se `req.principal` já foi resolvido, só chama next() (sem reprocessar)', async () => {
+    const { authenticate, supportRepo } = build();
+    const findSpy = jest.spyOn(supportRepo, 'findById');
+    const req = makeReq({ 'x-support-token': 'nao-importa' }, { tenantId: 'tenant-1' });
+    (req as RequestWithPrincipal).principal = { kind: 'machine', tenantId: 'tenant-1' };
+    const { res, statusMock } = fakeRes();
+    const next = jest.fn();
+
+    authenticate(req, res, next);
+    await flush();
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(statusMock).not.toHaveBeenCalled();
+    expect(findSpy).not.toHaveBeenCalled();
+    expect((req as RequestWithPrincipal).principal).toEqual({
+      kind: 'machine',
+      tenantId: 'tenant-1',
+    });
+  });
 });

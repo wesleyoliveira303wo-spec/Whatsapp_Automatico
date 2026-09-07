@@ -107,4 +107,16 @@ describe('Integração real — Busca global (Fase 6)', () => {
     const res = await service.search(tenantId);
     expect(res.groups.find((g) => g.kind === 'tenant')?.hits[0]?.id).toBe(tenantId);
   });
+
+  it('curinga do ILIKE (`%`) é literal — não devolve "tudo"', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real da Fase 6.');
+      return;
+    }
+    // O tenant semeado NÃO tem `%` no nome; se `%` fosse curinga, ele voltaria.
+    const res = await service.search('BuscaGlobal %');
+    expect(res.groups.find((g) => g.kind === 'tenant')?.hits.some((h) => h.id === tenantId)).toBe(
+      false,
+    );
+  });
 });

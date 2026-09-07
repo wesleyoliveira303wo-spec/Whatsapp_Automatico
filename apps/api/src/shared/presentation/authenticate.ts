@@ -72,6 +72,17 @@ export function createAuthenticate(
   supportAccessVerifier?: SupportAccessVerifier,
 ): RequestHandler {
   return function authenticate(req: Request, res: Response, next: NextFunction): void {
+    // Idempotente: no pipeline `/api/tenants/:tenantId` o `authenticate` é
+    // montado tanto no prefixo (antes do `supportAccessAuditMiddleware`, Fase 5)
+    // quanto em cada sub-router. Sem esta guarda, toda requisição de tenant
+    // resolvia o ator DUAS vezes — dois hits no Postgres (API key ou crachá de
+    // suporte) por requisição, em todo o produto. Se `req.principal` já foi
+    // resolvido, a segunda passagem não tem nada a fazer.
+    if ((req as RequestWithPrincipal).principal) {
+      next();
+      return;
+    }
+
     // --- Plano SUPORTE (crachá de acesso assistido, Fase 5) ---
     const supportToken = req.header(SUPPORT_TOKEN_HEADER);
     if (supportToken) {

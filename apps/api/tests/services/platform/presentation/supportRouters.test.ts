@@ -81,7 +81,9 @@ describe('platformSupportRouter', () => {
 
   it('POST /support com um pedido já aberto → 409', async () => {
     const { a, requests } = app();
-    requests.seed({ tenantId: 't-1', status: 'pending' });
+    // Fresco: um pendente recente ainda bloqueia (um pendente obsoleto, > 2 h
+    // sem resposta, é superado — coberto em SupportAccessService.test.ts).
+    requests.seed({ tenantId: 't-1', status: 'pending', requestedAt: new Date() });
     const res = await request(a)
       .post('/api/platform/support')
       .send({ tenantId: 't-1', reason: 'x' });
@@ -125,6 +127,13 @@ describe('tenantSupportAccessRouter', () => {
       .get('/api/tenants/t-1/support-access/active')
       .set('x-role', 'operator');
     expect(operator.body.canRespond).toBe(false);
+
+    // Plano máquina: `canRespond` deve espelhar o que /respond aceita — e
+    // /respond rejeita `machine` com 403 human_required. Antes devolvia `true`.
+    const machine = await request(a)
+      .get('/api/tenants/t-1/support-access/active')
+      .set('x-role', 'machine');
+    expect(machine.body.canRespond).toBe(false);
   });
 
   it('POST /:id/respond exige cargo com support:respond', async () => {
