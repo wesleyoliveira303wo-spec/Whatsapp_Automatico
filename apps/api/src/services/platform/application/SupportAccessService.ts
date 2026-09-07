@@ -36,8 +36,19 @@ export interface SupportActionMeta {
  *
  * Toda transição de estado é auditada nas DUAS trilhas: `PlatformAuditLog`
  * (o que o dono fez) e `AuditLog` do tenant (o que o cliente vê na Auditoria
- * dele — §9.4 brecha 3). Auditoria vem ANTES da mudança fazer efeito visível,
- * mesmo racional do `TenantControlService` (Fase 4).
+ * dele — §9.4 brecha 3). A trilha da PLATAFORMA vem ANTES da escrita de
+ * estado — mesmo racional do `TenantControlService` (Fase 4): se o `append`
+ * falhar, a transição não acontece (fail-closed), em vez de mudar o estado e
+ * só então descobrir que não deu para registrar. `respond`/`end`/`revoke`
+ * seguem essa ordem. `request` é a exceção: a trilha referencia o `id` da
+ * linha, que só existe depois do `create` — ali o `append` roda depois e é
+ * best-effort (uma falha não derruba o pedido nem deixa a linha órfã).
+ *
+ * A trilha do TENANT (`AuditLog`) é sempre best-effort: o tenant pode ter
+ * sido apagado no meio de uma janela ativa (a FK do `audit_logs` para
+ * `tenants` é `ON DELETE CASCADE`, mas `TenantAccessRequest` não tem FK), e um
+ * `record` que estoure por isso não pode devolver 500 para uma ação que já
+ * decidiu acontecer.
  */
 export class SupportAccessService {
   constructor(
@@ -63,7 +74,27 @@ export class SupportAccessService {
 
     const open = await this.requests.findActiveOrPendingByTenant(input.tenantId);
     if (open) {
-      throw new SupportAccessAlreadyOpenError(input.tenantId);
+      // Um PENDING que o cliente não respondeu dentro da janela de 2 h (a
+      // mesma que rege o acesso já concedido) está obsoleto: sem isto, um
+      // pedido ignorado travava PARA SEMPRE qualquer novo pedido de acesso
+      // àquele tenant — `markExpiredStale` só mexe em ACCEPTED e nem `end`
+      // nem `revoke` transicionam um PENDING. Um ACCEPTED ainda dentro do
+      // prazo continua bloqueando (há acesso de fato ativo).
+      const stalePending =
+        open.status === 'pending' &&
+        this.now().getTime() - open.requestedAt.getTime() >= SUPPORT_ACCESS_WINDOW_MS;
+      if (!stalePending) {
+        throw new SupportAccessAlreadyOpenError(input.tenantId);
+      }
+      await this.requireUpdate(open.id, 'expired');
+      await this.tryPlatformAudit({
+        platformUserId: open.platformUserId,
+        action: 'support.access_ended',
+        tenantId: open.tenantId,
+        metadata: { supportAccessId: open.id, reason: 'pending_expired' },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
     }
 
     const created = await this.requests.create({
@@ -72,7 +103,9 @@ export class SupportAccessService {
       reason,
     });
 
-    await this.platformAudit.append({
+    // best-effort: a linha já existe; uma falha aqui não deve devolver 500
+    // nem deixar um PENDING órfão sem que o pedido tenha "acontecido".
+    await this.tryPlatformAudit({
       platformUserId: input.platformUserId,
       action: 'support.access_requested',
       tenantId: input.tenantId,
@@ -122,14 +155,13 @@ export class SupportAccessService {
     if (!isSupportAccessLive(request, this.now())) {
       throw new SupportAccessWrongStateError('Não há acesso ativo para encerrar.');
     }
-    const updated = await this.requireUpdate(request.id, 'ended');
-    await this.auditEnded(updated, {
+    await this.auditEnded(request, {
       actorUserId: undefined,
       reason: 'ended_by_admin',
       platformUserId: request.platformUserId,
       meta,
     });
-    return updated;
+    return this.requireUpdate(request.id, 'ended');
   }
 
   async listForAdmin(limit: number, cursor?: string): Promise<SupportAccessPage> {
@@ -176,10 +208,7 @@ export class SupportAccessService {
 
     const now = this.now();
     if (input.decision === 'deny') {
-      const updated = await this.requireUpdate(request.id, 'denied', {
-        respondedAt: now,
-        respondedByUserId: input.respondedByUserId,
-      });
+      // Trilha da plataforma ANTES da escrita (fail-closed, como a Fase 4).
       await this.platformAudit.append({
         platformUserId: request.platformUserId,
         action: 'support.access_denied',
@@ -188,7 +217,7 @@ export class SupportAccessService {
         ip: meta.ip,
         userAgent: meta.userAgent,
       });
-      await this.tenantAudit.record({
+      await this.tryTenantAudit({
         tenantId: request.tenantId,
         actorUserId: input.respondedByUserId,
         action: 'support.access_denied',
@@ -196,15 +225,13 @@ export class SupportAccessService {
         ip: meta.ip,
         userAgent: meta.userAgent,
       });
-      return updated;
+      return this.requireUpdate(request.id, 'denied', {
+        respondedAt: now,
+        respondedByUserId: input.respondedByUserId,
+      });
     }
 
     const expiresAt = new Date(now.getTime() + SUPPORT_ACCESS_WINDOW_MS);
-    const updated = await this.requireUpdate(request.id, 'accepted', {
-      respondedAt: now,
-      respondedByUserId: input.respondedByUserId,
-      expiresAt,
-    });
     await this.platformAudit.append({
       platformUserId: request.platformUserId,
       action: 'support.access_granted',
@@ -217,7 +244,7 @@ export class SupportAccessService {
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
-    await this.tenantAudit.record({
+    await this.tryTenantAudit({
       tenantId: request.tenantId,
       actorUserId: input.respondedByUserId,
       action: 'support.access_granted',
@@ -230,7 +257,11 @@ export class SupportAccessService {
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
-    return updated;
+    return this.requireUpdate(request.id, 'accepted', {
+      respondedAt: now,
+      respondedByUserId: input.respondedByUserId,
+      expiresAt,
+    });
   }
 
   /** O cliente revoga — a qualquer instante, sem passar pelo fundador (Regra 2). */
@@ -243,14 +274,13 @@ export class SupportAccessService {
     if (!isSupportAccessLive(request, this.now())) {
       throw new SupportAccessWrongStateError('Não há acesso ativo para revogar.');
     }
-    const updated = await this.requireUpdate(request.id, 'revoked');
-    await this.auditEnded(updated, {
+    await this.auditEnded(request, {
       actorUserId: input.revokedByUserId,
       reason: 'revoked_by_client',
       platformUserId: request.platformUserId,
       meta,
     });
-    return updated;
+    return this.requireUpdate(request.id, 'revoked');
   }
 
   // -------------------------------------------------------------------- helpers
@@ -301,7 +331,7 @@ export class SupportAccessService {
       ip: ctx.meta.ip,
       userAgent: ctx.meta.userAgent,
     });
-    await this.tenantAudit.record({
+    await this.tryTenantAudit({
       tenantId: request.tenantId,
       actorUserId: ctx.actorUserId,
       action: 'support.access_ended',
@@ -313,5 +343,39 @@ export class SupportAccessService {
       ip: ctx.meta.ip,
       userAgent: ctx.meta.userAgent,
     });
+  }
+
+  /**
+   * Trilha do TENANT — best-effort. O tenant pode ter sido apagado no meio de
+   * uma janela ativa (FK `audit_logs → tenants` é `ON DELETE CASCADE`, mas
+   * `TenantAccessRequest` não tem FK), e um `record` que estoure por isso não
+   * pode devolver 500 para uma transição que já foi decidida.
+   */
+  private async tryTenantAudit(
+    entry: Parameters<AuditLogRepository['record']>[0],
+  ): Promise<void> {
+    try {
+      await this.tenantAudit.record(entry);
+    } catch (error) {
+      this.logger.warn('Falha ao gravar ação de suporte na auditoria do tenant', {
+        tenantId: entry.tenantId,
+        action: entry.action,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Trilha da plataforma best-effort — usada só onde a linha já existe (`request`). */
+  private async tryPlatformAudit(
+    entry: Parameters<PlatformAuditLogRepository['append']>[0],
+  ): Promise<void> {
+    try {
+      await this.platformAudit.append(entry);
+    } catch (error) {
+      this.logger.warn('Falha ao gravar a trilha da plataforma no acesso de suporte', {
+        action: entry.action,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

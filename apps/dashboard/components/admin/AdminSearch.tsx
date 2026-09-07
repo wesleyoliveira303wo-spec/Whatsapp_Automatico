@@ -49,8 +49,13 @@ export default function AdminSearch(): JSX.Element {
       return;
     }
     setLoading(true);
+    // `cancelled` vive no escopo do efeito (não dentro do `setTimeout`, cujo
+    // retorno o `setTimeout` descarta) — é a limpeza do efeito que o marca.
+    // Sem isso, a resposta de uma busca anterior lenta sobrescrevia a de uma
+    // busca mais recente (o `q` mudou → o efeito rodou de novo, mas o fetch
+    // em voo do termo antigo continuava e resolvia por último).
+    let cancelled = false;
     const handle = setTimeout(() => {
-      let cancelled = false;
       searchPlatform(term)
         .then((res) => {
           if (!cancelled) {
@@ -64,11 +69,11 @@ export default function AdminSearch(): JSX.Element {
         .finally(() => {
           if (!cancelled) setLoading(false);
         });
-      return () => {
-        cancelled = true;
-      };
     }, DEBOUNCE_MS);
-    return () => clearTimeout(handle);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
   }, [q]);
 
   useEffect(() => {

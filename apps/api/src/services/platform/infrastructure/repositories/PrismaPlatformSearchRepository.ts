@@ -30,9 +30,15 @@ export class PrismaPlatformSearchRepository implements PlatformSearchRepository 
   constructor(private readonly prisma: PrismaClient) {}
 
   async search(term: string, digits: string, limit: number): Promise<RawSearchHits> {
-    const like = `%${term}%`;
+    // `%` e `_` são curingas do ILIKE: sem escapar, um admin que digita `%`
+    // ou `_` muda a semântica da busca (casa tudo / casa um caractere
+    // qualquer). Não é injeção (os valores são bind params), mas é
+    // surpreendente. `\` é o caractere de escape, casado com `ESCAPE '\'` em
+    // cada cláusula abaixo.
+    const like = `%${escapeLike(term)}%`;
     // Só casa telefone por dígitos quando há dígitos suficientes para não
-    // devolver "meio banco" com um `1` digitado.
+    // devolver "meio banco" com um `1` digitado. `digits` já é só dígitos
+    // (`q.replace(/\D/g, '')` no service), então não precisa escapar.
     const phoneDigits = digits.length >= 4 ? `%${digits}%` : null;
 
     const [tenants, users, contacts, sessions, campaigns] = await Promise.all([
@@ -97,6 +103,16 @@ export class PrismaPlatformSearchRepository implements PlatformSearchRepository 
       campaign: campaigns.map((r) => toHit('campaign', r)),
     };
   }
+}
+
+/**
+ * Neutraliza os curingas do LIKE/ILIKE (`%`, `_`) e o próprio `\` (o
+ * caractere de escape PADRÃO do Postgres — nenhuma cláusula `ESCAPE`
+ * explícita é necessária). Passado como bind param, `\%` casa um `%`
+ * literal.
+ */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 function toHit(kind: RawSearchHit['kind'], row: Row): RawSearchHit {

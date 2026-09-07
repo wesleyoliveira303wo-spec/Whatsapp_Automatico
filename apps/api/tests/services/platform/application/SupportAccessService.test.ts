@@ -62,6 +62,54 @@ describe('SupportAccessService', () => {
         service.request({ tenantId: 't-1', platformUserId: 'admin-1', reason: 'x' }),
       ).rejects.toBeInstanceOf(SupportAccessAlreadyOpenError);
     });
+
+    it('PENDING recente ainda bloqueia (< 2h)', async () => {
+      const { service, requests } = build();
+      requests.seed({
+        tenantId: 't-1',
+        status: 'pending',
+        requestedAt: new Date(NOW.getTime() - 90 * 60 * 1000),
+      });
+      await expect(
+        service.request({ tenantId: 't-1', platformUserId: 'admin-1', reason: 'x' }),
+      ).rejects.toBeInstanceOf(SupportAccessAlreadyOpenError);
+    });
+
+    it('PENDING obsoleto (>= 2h sem resposta) é superado — não trava para sempre', async () => {
+      const { service, requests, platformAudit } = build();
+      const stale = requests.seed({
+        tenantId: 't-1',
+        status: 'pending',
+        requestedAt: new Date(NOW.getTime() - 3 * 60 * 60 * 1000),
+      });
+      const created = await service.request({
+        tenantId: 't-1',
+        platformUserId: 'admin-1',
+        reason: 'novo pedido',
+      });
+      expect(created.status).toBe('pending');
+      expect(created.id).not.toBe(stale.id);
+      expect((await requests.findById(stale.id))?.status).toBe('expired');
+      expect(platformAudit.actions()).toEqual([
+        'support.access_ended',
+        'support.access_requested',
+      ]);
+    });
+
+    it('ACCEPTED ainda no prazo NÃO é superado (há acesso de fato ativo)', async () => {
+      const { service, requests } = build();
+      requests.seed({
+        tenantId: 't-1',
+        status: 'accepted',
+        requestedAt: new Date(NOW.getTime() - 10 * 60 * 60 * 1000),
+        // `findActiveOrPendingByTenant` do fake usa o relógio real — precisa
+        // estar no futuro real para ser considerado "ativo".
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      await expect(
+        service.request({ tenantId: 't-1', platformUserId: 'admin-1', reason: 'x' }),
+      ).rejects.toBeInstanceOf(SupportAccessAlreadyOpenError);
+    });
   });
 
   describe('respond', () => {
@@ -81,6 +129,69 @@ describe('SupportAccessService', () => {
       expect(updated.respondedByUserId).toBe('user-9');
       expect(platformAudit.actions()).toContain('support.access_granted');
       expect(tenantAudit.all().map((e) => e.action)).toContain('support.access_granted');
+    });
+
+    it('accept: a trilha da PLATAFORMA é gravada ANTES da escrita — se o append falha, o estado NÃO muda (fail-closed)', async () => {
+      const requests = new FakeSupportAccessRepository();
+      const users = new FakePlatformUserRepository();
+      users.seed({ id: 'admin-1', name: 'Dono', email: 'dono@francis.app' });
+      const explodingPlatformAudit = {
+        append: async () => {
+          throw new Error('trilha da plataforma fora do ar');
+        },
+      } as unknown as FakePlatformAuditLogRepository;
+      const service = new SupportAccessService(
+        requests,
+        explodingPlatformAudit,
+        new FakeAuditLogRepository(),
+        new FakeSupportAccessTokenService(),
+        users,
+        fakeLogger(),
+        () => NOW,
+      );
+      const row = requests.seed({ tenantId: 't-1', status: 'pending' });
+
+      await expect(
+        service.respond({
+          tenantId: 't-1',
+          supportAccessId: row.id,
+          respondedByUserId: 'user-9',
+          decision: 'accept',
+        }),
+      ).rejects.toThrow();
+      // O acesso NÃO foi concedido — a linha continua pendente.
+      expect((await requests.findById(row.id))?.status).toBe('pending');
+    });
+
+    it('accept: se a trilha do TENANT falha (tenant apagado no meio da janela), o acesso ainda é concedido', async () => {
+      const requests = new FakeSupportAccessRepository();
+      const platformAudit = new FakePlatformAuditLogRepository();
+      const users = new FakePlatformUserRepository();
+      users.seed({ id: 'admin-1', name: 'Dono', email: 'dono@francis.app' });
+      const explodingTenantAudit = {
+        record: async () => {
+          throw new Error('audit_logs_tenant_id_fkey');
+        },
+      } as unknown as FakeAuditLogRepository;
+      const service = new SupportAccessService(
+        requests,
+        platformAudit,
+        explodingTenantAudit,
+        new FakeSupportAccessTokenService(),
+        users,
+        fakeLogger(),
+        () => NOW,
+      );
+      const row = requests.seed({ tenantId: 't-1', status: 'pending' });
+
+      const updated = await service.respond({
+        tenantId: 't-1',
+        supportAccessId: row.id,
+        respondedByUserId: 'user-9',
+        decision: 'accept',
+      });
+      expect(updated.status).toBe('accepted');
+      expect(platformAudit.actions()).toContain('support.access_granted');
     });
 
     it('deny: status denied, sem expiresAt, auditado', async () => {

@@ -35,11 +35,14 @@ export function createTenantSupportAccessRouter(service: SupportAccessService): 
       const tenantId = req.params.tenantId;
       const open = await service.getOpenForTenant(tenantId);
       const principal = (req as RequestWithPrincipal).principal;
+      // Espelha EXATAMENTE o que `POST /:id/respond` e `/:id/revoke` aceitam:
+      // `requireHumanActor` (só `kind === 'user'`) + `requirePermission`. Antes
+      // isto devolvia `true` para `machine`/`support`, que os endpoints
+      // mutantes rejeitam com 403 — a UI/BFF desenhava um botão morto.
       const canRespond =
         !!principal &&
-        (principal.kind === 'machine' ||
-          principal.kind === 'support' ||
-          (principal.kind === 'user' && hasPermission(principal.role, 'support:respond')));
+        principal.kind === 'user' &&
+        hasPermission(principal.role, 'support:respond');
       res.status(200).json({
         canRespond,
         // O próprio admin operando o tenant (plano `support`) recebe isto para

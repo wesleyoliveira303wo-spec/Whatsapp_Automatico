@@ -96,4 +96,48 @@ describe('AdminSearch (Fase 6 — §7)', () => {
     jest.advanceTimersByTime(300);
     expect(await screen.findByText('Nada encontrado.')).toBeInTheDocument();
   });
+
+  it('resposta de uma busca ANTIGA não sobrescreve a de uma busca mais recente', async () => {
+    // 1ª busca ('wha') resolve LENTO; 2ª busca ('whats') resolve na hora.
+    let resolveSlow!: (v: PlatformSearchResults) => void;
+    const slow = new Promise<PlatformSearchResults>((r) => {
+      resolveSlow = r;
+    });
+    const stale: PlatformSearchResults = {
+      query: 'wha',
+      groups: [
+        {
+          kind: 'tenant',
+          hasMore: false,
+          hits: [
+            {
+              kind: 'tenant',
+              id: 'old',
+              label: 'Tenant Antigo',
+              sublabel: 'old',
+              tenantId: 'old',
+              href: '/admin/tenants/old',
+            },
+          ],
+        },
+      ],
+    };
+    search
+      .mockReturnValueOnce(slow)
+      .mockResolvedValueOnce({ query: 'whats', groups: RESULTS.groups });
+
+    render(<AdminSearch />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'wha' } });
+    jest.advanceTimersByTime(300); // dispara a 1ª busca (fica pendente)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'whats' } });
+    jest.advanceTimersByTime(300); // dispara a 2ª busca (resolve já)
+
+    expect(await screen.findByText('Cliente Um')).toBeInTheDocument();
+
+    // A 1ª busca resolve agora, DEPOIS da 2ª: não pode aparecer na tela.
+    resolveSlow(stale);
+    await Promise.resolve();
+    expect(screen.queryByText('Tenant Antigo')).not.toBeInTheDocument();
+    expect(screen.getByText('Cliente Um')).toBeInTheDocument();
+  });
 });

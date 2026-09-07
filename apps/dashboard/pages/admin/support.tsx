@@ -111,15 +111,19 @@ export default function AdminSupportPage({ admin }: Props): JSX.Element {
         expira em 2 horas.
       </p>
 
-      {requests === null ? (
+      {/* `error` vem ANTES de `requests === null`: numa falha de PRIMEIRA
+          carga o `load()` só chama `setError(true)` e `requests` continua
+          `null`, então checar o skeleton primeiro deixava a tela presa em
+          "carregando" para sempre, sem nenhum sinal de erro. */}
+      {error ? (
+        <Card className="mt-6 p-6 text-sm text-destructive">
+          Não foi possível carregar os pedidos de acesso.
+        </Card>
+      ) : requests === null ? (
         <div className="mt-6 space-y-3">
           <Skeleton className="h-24 w-full" />
           <Skeleton className="h-24 w-full" />
         </div>
-      ) : error ? (
-        <Card className="mt-6 p-6 text-sm text-destructive">
-          Não foi possível carregar os pedidos de acesso.
-        </Card>
       ) : (
         <div className="mt-6 space-y-8">
           <Section title="Ativos agora" empty="Nenhum acesso ativo.">
