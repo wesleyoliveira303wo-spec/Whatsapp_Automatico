@@ -125,6 +125,21 @@ ask_secret() {
   printf -v "$key" '%s' "$input"
 }
 
+# gen_secret_if_absent KEY BYTES generates a fresh base64 secret of BYTES
+# bytes ONLY when KEY has no value in ENV_FILE yet. Re-run safe: an existing
+# secret is never regenerated (regenerating WHATSAPP_CREDENTIALS_MASTER_KEY
+# would lose every WhatsApp session; regenerating ACCESS_TOKEN_SECRET would
+# log everyone out). Prints what it did.
+gen_secret_if_absent() {
+  local key="$1" bytes="$2" current
+  current=$(_existing "$key" || true)
+  if [[ -n "$current" ]]; then
+    printf '  %s• kept%s %s (já existe)\n' "$DIM" "$RESET" "$key"
+    return
+  fi
+  write_env "$key" "$(openssl rand -base64 "$bytes")"
+}
+
 # write_env KEY VALUE upserts KEY=VALUE into ENV_FILE (creates it; replaces
 # any existing line). Idempotent.
 write_env() {
@@ -254,20 +269,32 @@ stage "Gerar os segredos da aplicacao"
 if ! command -v openssl >/dev/null 2>&1; then
   warn "openssl nao encontrado. Gere cada valor abaixo e edite $ENV_FILE:"
   note "  base64 32 bytes:  WHATSAPP_CREDENTIALS_MASTER_KEY, API_KEY_PEPPER,"
-  note "                    INTERNAL_API_SECRET, DASHBOARD_SESSION_SECRET"
-  note "  base64 48 bytes:  ACCESS_TOKEN_SECRET"
+  note "                    INTERNAL_API_SECRET, DASHBOARD_SESSION_SECRET,"
+  note "                    PLATFORM_DASHBOARD_SESSION_SECRET"
+  note "  base64 48 bytes:  ACCESS_TOKEN_SECRET, PLATFORM_SESSION_SECRET,"
+  note "                    SUPPORT_ACCESS_TOKEN_SECRET  (os 3 DEVEM diferir entre si)"
   note "  hex 24 bytes:     POSTGRES_PASSWORD"
   SKIPPED+=("gerar segredos (openssl ausente -- preencha $ENV_FILE a mao)")
 else
-  say "Gerando com openssl (aleatorios, unicos desta instalacao)..."
-  write_env WHATSAPP_CREDENTIALS_MASTER_KEY "$(openssl rand -base64 32)"
-  write_env API_KEY_PEPPER "$(openssl rand -base64 32)"
-  write_env INTERNAL_API_SECRET "$(openssl rand -base64 32)"
-  write_env DASHBOARD_SESSION_SECRET "$(openssl rand -base64 32)"
-  write_env ACCESS_TOKEN_SECRET "$(openssl rand -base64 48)"
+  say "Gerando com openssl os que ainda faltam (nunca regenera um existente)..."
+  gen_secret_if_absent WHATSAPP_CREDENTIALS_MASTER_KEY 32
+  gen_secret_if_absent API_KEY_PEPPER 32
+  gen_secret_if_absent INTERNAL_API_SECRET 32
+  gen_secret_if_absent DASHBOARD_SESSION_SECRET 32
+  gen_secret_if_absent ACCESS_TOKEN_SECRET 48
+  # Painel /admin (Fases 1-6). TRÊS segredos distintos — a API recusa subir se
+  # dois colidirem entre si ou com ACCESS_TOKEN_SECRET. `gen_secret_if_absent`
+  # gera valores diferentes a cada chamada, então a distinção é automática.
+  gen_secret_if_absent PLATFORM_SESSION_SECRET 48
+  gen_secret_if_absent PLATFORM_DASHBOARD_SESSION_SECRET 32
+  gen_secret_if_absent SUPPORT_ACCESS_TOKEN_SECRET 48
   # hex (nao base64) para a senha do Postgres: ela entra numa DATABASE_URL e
   # os caracteres + / = do base64 quebrariam a string de conexao.
-  write_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+  if [[ -z "$(_existing POSTGRES_PASSWORD || true)" ]]; then
+    write_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+  else
+    printf '  %s• kept%s POSTGRES_PASSWORD (já existe)\n' "$DIM" "$RESET"
+  fi
   warn "GUARDE uma copia do $ENV_FILE fora da VM. Perder"
   warn "WHATSAPP_CREDENTIALS_MASTER_KEY = reescanear QR em todas as sessoes."
 fi
@@ -297,6 +324,7 @@ write_env API_BASE_URL "http://api:4000"
 write_env ACCESS_TOKEN_TTL_SECONDS "900"
 write_env REFRESH_TOKEN_TTL_DAYS "7"
 write_env TRUST_PROXY_HOPS "1"
+write_env PLATFORM_SESSION_TTL_SECONDS "28800"
 note "AI_PROMPT_VERSION=v10 (o T9 cita 'v4'; v10 e a recomendada em .env.example --"
 note "v3..v10 iteram a postura de venda sobre a base de v2). Edite se o fundador pedir v4."
 pause "Enter para continuar"
