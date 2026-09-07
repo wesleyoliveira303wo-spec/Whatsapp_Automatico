@@ -15,7 +15,7 @@ interface FakeSocket {
   ev: { on: jest.Mock; handlers: Record<string, EventHandler> };
   end: jest.Mock;
   sendMessage: jest.Mock;
-  /** Milestone 6, Bloco M6H-2b — `sock.profilePictureUrl(jid, 'image')`. */
+  /** Milestone 6, Bloco M6H-2b — `sock.profilePictureUrl(jid, 'preview')`. */
   profilePictureUrl: jest.Mock;
   user: { id: string } | undefined;
 }
@@ -998,9 +998,12 @@ describe('BaileysProvider', () => {
       const url = await provider.getProfilePictureUrl('5511888888888@s.whatsapp.net');
 
       expect(url).toBe('https://pps.whatsapp.net/fake-avatar.jpg');
+      // `'preview'` (miniatura), não `'image'` — a Dashboard mostra o avatar
+      // num círculo de 44px, então alta resolução é banda jogada fora (ver
+      // `BaileysProvider.lookupProfilePicture` para o segundo motivo).
       expect(createdSockets[0].profilePictureUrl).toHaveBeenCalledWith(
         '5511888888888@s.whatsapp.net',
-        'image',
+        'preview',
       );
     });
 

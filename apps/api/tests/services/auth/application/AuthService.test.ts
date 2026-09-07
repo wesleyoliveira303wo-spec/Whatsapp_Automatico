@@ -4,12 +4,16 @@ import { Sha256RefreshTokenCodec } from '../../../../src/services/auth/infrastru
 import { Hs256AccessTokenService } from '../../../../src/services/auth/infrastructure/Hs256AccessTokenService';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 import { User } from '../../../../src/services/auth/domain/entities/User';
+import { AccountLockout } from '../../../../src/services/auth/domain/AccountLockout';
+import { RateLimitStoreAccountLockout } from '../../../../src/services/auth/infrastructure/RateLimitStoreAccountLockout';
+import { InMemoryRateLimitStore } from '../../../../src/shared/infrastructure/rateLimit/InMemoryRateLimitStore';
 import {
   FakeUserRepository,
   FakeRefreshTokenRepository,
   FakeAuditLogRepository,
   FakePasswordHasher,
 } from '../testDoubles';
+import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 
 const SECRET = 'segredo-de-teste-bem-comprido-1234567890';
 
@@ -28,12 +32,16 @@ function buildUser(overrides: Partial<User> = {}): User {
   };
 }
 
-function build(): {
+function build(
+  accountLockout?: AccountLockout,
+  tenantRepository?: FakeTenantRepository,
+): {
   service: AuthService;
   users: FakeUserRepository;
   refreshRepo: FakeRefreshTokenRepository;
   audit: FakeAuditLogRepository;
   access: Hs256AccessTokenService;
+  tenants?: FakeTenantRepository;
 } {
   const users = new FakeUserRepository();
   const refreshRepo = new FakeRefreshTokenRepository();
@@ -51,8 +59,11 @@ function build(): {
     refresh,
     audit,
     new NoopLogger(),
+    undefined,
+    accountLockout,
+    tenantRepository,
   );
-  return { service, users, refreshRepo, audit, access };
+  return { service, users, refreshRepo, audit, access, tenants: tenantRepository };
 }
 
 describe('AuthService (Milestone 5, Bloco M5C)', () => {
@@ -258,5 +269,185 @@ describe('AuthService (Milestone 5, Bloco M5C)', () => {
       users.seed(buildUser({ status: 'suspended' }));
       expect(await service.loginByEmail('joao@empresa.com', 'senha123')).toEqual({ ok: false });
     });
+  });
+
+  describe('lockout de conta (B1)', () => {
+    /** 3 falhas / 60s — números pequenos para o teste ser legível. */
+    function buildLockout(): AccountLockout {
+      return new RateLimitStoreAccountLockout(new InMemoryRateLimitStore(), 3, 60_000);
+    }
+
+    it('bloqueia depois de N falhas e responde account_locked com o tempo restante', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+
+      const blocked = await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) {
+        expect(blocked.reason).toBe('account_locked');
+        expect(blocked.retryAfterMs).toBeGreaterThan(0);
+      }
+    });
+
+    it('conta bloqueada recusa até a senha CORRETA (o bloqueio vale mesmo para quem sabe a senha)', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      for (let i = 0; i < 3; i += 1) {
+        await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      }
+
+      const result = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('account_locked');
+    });
+
+    it('login bem-sucedido zera o histórico de falhas', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
+
+      // Zerado: dá para errar 3 vezes de novo antes de bloquear.
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      const stillOpen = await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      expect(stillOpen.ok).toBe(false);
+      if (!stillOpen.ok) expect(stillOpen.reason).toBeUndefined();
+    });
+
+    it('bloqueio é registrado na trilha de auditoria', async () => {
+      const lockout = buildLockout();
+      const { service, users, audit } = build(lockout);
+      users.seed(buildUser());
+
+      for (let i = 0; i < 4; i += 1) {
+        await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      }
+
+      expect(audit.all().some((entry) => entry.action === 'auth.login.locked')).toBe(true);
+    });
+
+    it('ANTI-ENUMERAÇÃO: e-mail INEXISTENTE também é bloqueado (a resposta não prova existência)', async () => {
+      const lockout = buildLockout();
+      const { service } = build(lockout);
+      // Nenhum usuário semeado — o e-mail não existe.
+
+      for (let i = 0; i < 3; i += 1) {
+        await service.loginByEmail('fantasma@empresa.com', 'qualquer');
+      }
+
+      const blocked = await service.loginByEmail('fantasma@empresa.com', 'qualquer');
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.reason).toBe('account_locked');
+    });
+
+    it('loginByEmail respeita o bloqueio antes de tocar o repositório', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      for (let i = 0; i < 3; i += 1) {
+        await service.loginByEmail('joao@empresa.com', 'errada');
+      }
+
+      const result = await service.loginByEmail('joao@empresa.com', 'senha123');
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('account_locked');
+    });
+
+    it('uma falha registra só UMA vez, mesmo passando por loginByEmail -> login', async () => {
+      const lockout = buildLockout();
+      const { service, users } = build(lockout);
+      users.seed(buildUser());
+
+      // Se cada tentativa contasse duas vezes, 2 tentativas já bloqueariam.
+      await service.loginByEmail('joao@empresa.com', 'errada');
+      await service.loginByEmail('joao@empresa.com', 'errada');
+
+      expect((await lockout.status('joao@empresa.com')).locked).toBe(false);
+    });
+
+    it('sem lockout injetado, o comportamento é exatamente o de antes do bloco', async () => {
+      const { service, users } = build();
+      users.seed(buildUser());
+
+      for (let i = 0; i < 10; i += 1) {
+        await service.login('tenant-1', 'joao@empresa.com', 'errada');
+      }
+
+      // Nunca bloqueia, e a senha certa ainda entra.
+      expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
+    });
+  });
+});
+
+describe('AuthService — tenant suspenso (Painel /admin, Fase 4)', () => {
+  function withTenant(status: 'active' | 'suspended') {
+    const tenants = new FakeTenantRepository();
+    tenants.seed({ id: 'tenant-1', name: 'Empresa', apiKeyHash: null, plan: 'pro', status });
+    const ctx = build(undefined, tenants);
+    ctx.users.seed(buildUser());
+    return ctx;
+  }
+
+  it('login com a senha CERTA mas tenant suspenso → { ok: false, reason: "tenant_suspended" }', async () => {
+    const { service } = withTenant('suspended');
+
+    const result = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+
+    expect(result).toEqual({ ok: false, reason: 'tenant_suspended' });
+  });
+
+  it('login com a senha ERRADA num tenant suspenso continua genérico (não vaza a suspensão)', async () => {
+    const { service } = withTenant('suspended');
+
+    const result = await service.login('tenant-1', 'joao@empresa.com', 'senha-errada');
+
+    expect(result).toEqual({ ok: false });
+  });
+
+  it('tenant ativo loga normalmente', async () => {
+    const { service } = withTenant('active');
+
+    const result = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('loginByEmail também recusa um tenant suspenso', async () => {
+    const { service } = withTenant('suspended');
+
+    const result = await service.loginByEmail('joao@empresa.com', 'senha123');
+
+    expect(result).toEqual({ ok: false, reason: 'tenant_suspended' });
+  });
+
+  it('refresh após a suspensão derruba a sessão e revoga os refresh tokens', async () => {
+    const { service, tenants, refreshRepo } = withTenant('active');
+    const login = await service.login('tenant-1', 'joao@empresa.com', 'senha123');
+    if (!login.ok) throw new Error('login deveria ter funcionado');
+
+    await tenants!.setStatus('tenant-1', 'suspended');
+    const refreshed = await service.refresh(login.refreshToken);
+
+    expect(refreshed).toEqual({ ok: false });
+    expect(refreshRepo.all().every((t) => t.revokedAt !== undefined)).toBe(true);
+  });
+
+  it('sem tenantRepository injetado, nada de suspensão é checado (comportamento pré-Fase 4)', async () => {
+    const { service, users } = build();
+    users.seed(buildUser());
+
+    expect((await service.login('tenant-1', 'joao@empresa.com', 'senha123')).ok).toBe(true);
   });
 });

@@ -15,7 +15,13 @@ describe('resolveTenantFromApiKey', () => {
       'chave-valida-do-tenant-1',
     );
 
-    expect(tenant).toEqual({ id: 'tenant-1', name: 'Empresa Teste', apiKeyHash, plan: 'pro' });
+    expect(tenant).toEqual({
+      id: 'tenant-1',
+      name: 'Empresa Teste',
+      apiKeyHash,
+      plan: 'pro',
+      status: 'active',
+    });
   });
 
   it('retorna null quando a API key não corresponde a nenhum tenant', async () => {

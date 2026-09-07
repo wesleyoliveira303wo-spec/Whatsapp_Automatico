@@ -4,6 +4,7 @@ import {
   requireSession,
   isUserSession,
   setSessionCookie,
+  withSupportUser,
 } from '../../../lib/dashboardSession';
 import { getApiBaseUrl } from '../../../lib/apiClient';
 
@@ -30,9 +31,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    // Sessão de MÁQUINA (API key) ou sem pessoa: não há perfil a enriquecer.
+    // Fase 5 — sessão de suporte: `user` sintético (owner) para o rail e os
+    // gates da UI não esconderem telas do admin operando o tenant.
+    const withSupport = withSupportUser(session);
     if (!isUserSession(session)) {
-      res.status(200).json({ tenantId: session.tenantId, user: session.user ?? null });
+      res.status(200).json({ tenantId: session.tenantId, user: withSupport.user ?? null });
       return;
     }
 

@@ -13,6 +13,7 @@ import { AiRateLimiter } from '../../../src/services/conversations/domain/reposi
 import { ContactResolver } from '../../../src/services/conversations/domain/repositories/ContactResolver';
 import { OptOutDetector } from '../../../src/services/conversations/domain/repositories/OptOutDetector';
 import { CampaignReplyTracker } from '../../../src/services/conversations/domain/repositories/CampaignReplyTracker';
+import { ContactAvatarRefresher } from '../../../src/services/conversations/domain/repositories/ContactAvatarRefresher';
 
 /**
  * Fake compartilhado do `ConversationRepository` (Milestone 3, Bloco 2) — em
@@ -499,7 +500,11 @@ export class FakeAiRateLimiter implements AiRateLimiter {
   private blocked = false;
   readonly calls: Array<{ tenantId: string; sessionName: string; conversationId: string }> = [];
 
-  consume(tenantId: string, sessionName: string, conversationId: string): boolean {
+  async consume(
+    tenantId: string,
+    sessionName: string,
+    conversationId: string,
+  ): Promise<boolean> {
     this.calls.push({ tenantId, sessionName, conversationId });
     return !this.blocked;
   }
@@ -566,6 +571,19 @@ export class FakeOptOutDetector implements OptOutDetector {
 }
 
 /** Fase L, Bloco L6 — Fake de `CampaignReplyTracker`. */
+/** Fake do gatilho de foto de perfil (2026-09-05) — registra o que foi enfileirado. */
+export class FakeContactAvatarRefresher implements ContactAvatarRefresher {
+  readonly calls: Array<{ tenantId: string; sessionName: string; contactJid: string }> = [];
+
+  async ensureAvatarQueued(
+    tenantId: string,
+    sessionName: string,
+    contactJid: string,
+  ): Promise<void> {
+    this.calls.push({ tenantId, sessionName, contactJid });
+  }
+}
+
 export class FakeCampaignReplyTracker implements CampaignReplyTracker {
   readonly calls: Array<{ tenantId: string; conversationId: string }> = [];
 

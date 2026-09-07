@@ -166,6 +166,16 @@ model Tenant {
   /// Todo tenant (existente e novo, via `/register`) nasce `FREE`.
   plan TenantPlan @default(FREE)
 
+  /// Trava de ACESSO (Painel /admin, Fase 4 — ADMIN_PLATFORM_MASTER_PLAN.md
+  /// §8). `plan` responde "o que ele pode fazer"; `status` responde "ele pode
+  /// entrar". Suspenso, o tenant inteiro deixa de logar (checado no
+  /// `AuthService`, login e refresh). Reaproveita o enum `UserStatus`
+  /// (`user_status`) — mesmo critério da migration da Fase 1
+  /// (`platform_users.status`): dois valores idênticos não merecem um enum
+  /// paralelo. Aditiva, default `ACTIVE` — os 21 tenants existentes nascem
+  /// ativos.
+  status UserStatus @default(ACTIVE)
+
   /// Hash da API key emitida para este tenant (Production Hardening, Bloco
   /// 1) — nunca a chave em texto plano. `null` até uma chave ser emitida
   /// (provisionamento continua manual nesta milestone; ver
@@ -967,7 +977,15 @@ model AiInteraction {
   id             String               @id @default(uuid())
   tenantId       String               @map("tenant_id")
   conversationId String               @map("conversation_id")
+  /// A mensagem OUTBOUND enviada como resposta (preenchida por `linkMessage()`
+  /// depois do envio). NÃO é a pergunta do cliente — ver `inboundMessageId`.
   messageId      String?              @map("message_id")
+  /// A mensagem INBOUND que originou esta tentativa: a pergunta do cliente.
+  /// Coluna PRÓPRIA desde 2026-09-05 — antes a Fase 1/F1.4 gravava isso em
+  /// `messageId`, que o `OutboundCommandConsumer` sobrescrevia com a resposta
+  /// logo em seguida, fazendo a tela de lacunas mostrar o que a IA respondeu
+  /// em vez do que o cliente perguntou.
+  inboundMessageId String?            @map("inbound_message_id")
   provider       AiProviderType
   model          String?
   promptVersion  String               @map("prompt_version")
@@ -1369,4 +1387,133 @@ model AuditLog {
   @@index([tenantId, actorUserId, occurredAt])
   @@index([tenantId, action, occurredAt])
   @@map("audit_logs")
+}
+
+/// Bloco B2 (issue #13) — cache SERVIDOR da foto de perfil de um contato.
+///
+/// Existe por causa de um incidente real: buscar a foto ao vivo é uma IQ
+/// query no MESMO socket Baileys que envia as mensagens (ADR #78 — uma
+/// consulta sem timeout travou o socket inteiro), e uma lista com dezenas de
+/// linhas buscando ao vivo virou um bombardeio que contribuiu para falhas de
+/// envio. Por isso as listas passaram a NÃO buscar foto nenhuma. Esta tabela
+/// devolve a foto às listas sem nunca tocar o socket no caminho da
+/// requisição: a leitura serve o que está aqui; o que falta ou venceu é
+/// atualizado fora do caminho, com teto de concorrência.
+///
+/// `avatarUrl` NULO com a linha PRESENTE é um registro negativo com
+/// significado próprio ("checamos e este contato não tem foto / bloqueou por
+/// privacidade") — distinto de linha ausente ("nunca checamos"). Sem essa
+/// distinção, todo contato sem foto — o caso mais comum — seria reconsultado
+/// a cada abertura de tela, que é exatamente o bombardeio que se quer evitar.
+/// O TTL de cada caso é decidido em Domain (`contactAvatarFreshness.ts`),
+/// nunca no banco.
+///
+/// Sem FK para `WhatsAppSession`/`WhatsAppConversation`: é cache derivado,
+/// chaveado por (tenant, sessão, JID) como texto — mesmo padrão de
+/// `WhatsAppSessionEvent` (ADR #49). A URL do WhatsApp é pública e
+/// temporária, então nada aqui é sigiloso (ver ADR #77).
+model WhatsAppContactAvatar {
+  tenantId    String   @map("tenant_id")
+  sessionName String   @map("session_name")
+  contactJid  String   @map("contact_jid")
+  avatarUrl   String?  @map("avatar_url") @db.Text
+  refreshedAt DateTime @map("refreshed_at")
+
+  @@id([tenantId, sessionName, contactJid])
+  @@map("whatsapp_contact_avatars")
+}
+
+/// Fase 1 do `/admin` (Platform Control Center, ADMIN_PLATFORM_MASTER_PLAN.md
+/// §3.1) — o dono da PLATAFORMA, não de um tenant.
+///
+/// Tabela SEPARADA de `User`, e essa é a decisão de segurança central do
+/// painel: hoje todo `User` pertence obrigatoriamente a um tenant, e a
+/// segurança do produto inteiro se apoia em "toda consulta filtra por
+/// `tenantId`". Um admin que atravessa tenants é, por definição, a exceção a
+/// essa regra — e exceção não pode morar na mesma tabela que a regra, senão o
+/// código que a viola fica encostado no código que jamais pode violá-la.
+///
+/// Sem `tenantId`, sem `role`: quem chega aqui já tem tudo. Distinção de
+/// poderes entre admins fica para quando existir um segundo admin (YAGNI).
+model PlatformUser {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@map("platform_users")
+}
+
+/// Trilha da PLATAFORMA — o que o dono do app faz SOBRE os tenants
+/// (ADMIN_PLATFORM_MASTER_PLAN.md §11). Distinta de `AuditLog`, que registra o
+/// que acontece DENTRO de um tenant.
+///
+/// Por que duas tabelas e não uma: o ator é de tipo diferente
+/// (`PlatformUser`, não `User`), o público que lê é diferente (só o `/admin`),
+/// e o ciclo de vida é diferente — esta trilha precisa SOBREVIVER à exclusão
+/// do tenant que ela auditou. Numa tabela só, `actorUserId` teria que apontar
+/// para dois tipos de ator.
+///
+/// `platformUserId` e `tenantId` são String sem FK, de propósito — mesmo
+/// racional já usado por `AuditLog.actorUserId` e `AiInteraction.conversationId`:
+/// um registro de auditoria deve sobreviver à exclusão do que ele audita, E
+/// preservar o id de quem agiu (uma FK `SetNull` apagaria o autor).
+model PlatformAuditLog {
+  id             String   @id @default(uuid())
+  platformUserId String   @map("platform_user_id")
+  action         String
+  /// Tenant alvo da ação, quando houver (login não tem alvo).
+  tenantId       String?  @map("tenant_id")
+  metadata       Json?
+  ip             String?
+  userAgent      String?  @map("user_agent")
+  occurredAt     DateTime @default(now()) @map("occurred_at")
+
+  @@index([occurredAt])
+  @@index([tenantId, occurredAt])
+  @@index([platformUserId, occurredAt])
+  @@map("platform_audit_logs")
+}
+
+/// Ciclo de vida de um pedido de ACESSO ASSISTIDO do dono da plataforma a um
+/// tenant (Painel /admin, Fase 5 — ADMIN_PLATFORM_MASTER_PLAN.md §9). O
+/// fundador pede acesso escrevendo um motivo; o cliente (dono/administrador)
+/// autoriza ou recusa; autorizado, o acesso vale por 2 horas e pode ser
+/// revogado pelo cliente a qualquer instante.
+enum SupportAccessStatus {
+  PENDING
+  ACCEPTED
+  DENIED
+  EXPIRED
+  REVOKED
+  ENDED
+
+  @@map("support_access_status")
+}
+
+/// Um pedido de acesso assistido — mantido PARA SEMPRE (recusas também são
+/// informação, §9.2). Sem FK para `tenants`/`users`: mesma justificativa de
+/// `PlatformAuditLog` — o registro sobrevive à exclusão do que ele descreve, e
+/// preserva o id de quem pediu/respondeu.
+model TenantAccessRequest {
+  id                String              @id @default(uuid())
+  tenantId          String              @map("tenant_id")
+  platformUserId    String              @map("platform_user_id")
+  /// O que o cliente lê antes de decidir, e o que fica gravado.
+  reason            String
+  status            SupportAccessStatus @default(PENDING)
+  requestedAt       DateTime            @default(now()) @map("requested_at")
+  respondedAt       DateTime?           @map("responded_at")
+  /// `User` do tenant que autorizou/recusou/revogou.
+  respondedByUserId String?             @map("responded_by_user_id")
+  /// Preenchido só ao autorizar: `respondedAt + 2h`.
+  expiresAt         DateTime?           @map("expires_at")
+
+  @@index([tenantId, status, requestedAt])
+  @@index([status, expiresAt])
+  @@map("tenant_access_requests")
 }

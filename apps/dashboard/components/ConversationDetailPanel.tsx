@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowDown } from 'lucide-react';
 import ConversationStatusBadge from './ConversationStatusBadge';
 import ConversationActions from './ConversationActions';
 import MessageTimeline from './MessageTimeline';
+import TeachAnswerDialog from './TeachAnswerDialog';
+import { useUnansweredMessageIds } from '@/hooks/useUnansweredMessageIds';
 import MessageComposer from './MessageComposer';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
@@ -67,6 +69,11 @@ export default function ConversationDetailPanel({
     refresh: refreshMessages,
   } = useMessagesTimeline(conversationId);
   const { interactions } = useAiInteractions(conversationId);
+  // Marcador de lacuna nas bolhas (2026-09-05, pedido do fundador): quais
+  // mensagens DESTA conversa a IA sinalizou não saber responder.
+  const { messageIds: unansweredMessageIds, refresh: refreshUnanswered } =
+    useUnansweredMessageIds(sessionName, conversationId);
+  const [teachQuestion, setTeachQuestion] = useState<string | null>(null);
 
   // Milestone 6, Bloco M6H-2 (pedido do fundador): abrir uma conversa sempre
   // pula para a ÚLTIMA mensagem (padrão "PgDn"), sem exigir rolar manualmente.
@@ -274,6 +281,8 @@ export default function ConversationDetailPanel({
             interactions={interactions}
             errorMessage={messagesError}
             onRetry={refreshMessages}
+            unansweredMessageIds={unansweredMessageIds}
+            onTeachAnswer={(message) => setTeachQuestion(message.content)}
           />
         </div>
         {showJumpToRecent && (
@@ -312,6 +321,18 @@ export default function ConversationDetailPanel({
           )}
         </div>
       </div>
+
+      {/*
+        Cadastro da resposta sem sair da conversa (2026-09-05). Fica no nível
+        do painel, não dentro da bolha: um diálogo por conversa, reaproveitado
+        por qualquer mensagem marcada.
+      */}
+      <TeachAnswerDialog
+        sessionName={sessionName}
+        question={teachQuestion}
+        onClose={() => setTeachQuestion(null)}
+        onSaved={refreshUnanswered}
+      />
     </div>
   );
 }

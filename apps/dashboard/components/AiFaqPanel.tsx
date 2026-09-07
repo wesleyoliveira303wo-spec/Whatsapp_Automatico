@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
 import EmptyState from '@/components/states/EmptyState';
+import UnansweredQuestionsSection from '@/components/UnansweredQuestionsSection';
 import { cn } from '@/lib/utils';
 
 interface AiFaqPanelProps {
@@ -147,8 +148,28 @@ export default function AiFaqPanel({ sessionName }: AiFaqPanelProps): JSX.Elemen
     }
   }
 
+  /**
+   * Bloco B3 (issue #14) — traz a pergunta da lacuna para o formulário
+   * "Nova pergunta" e leva o foco direto para a resposta: a pergunta o
+   * cliente já escreveu, o que falta é o operador escrever a resposta.
+   * Não salva sozinho — o caminho de gravação continua único (`handleCreate`).
+   */
+  function handleAnswerUnanswered(questionText: string): void {
+    setNewForm((current) => ({ ...current, question: questionText }));
+    const answerField = document.getElementById('newFaqAnswer');
+    if (answerField instanceof HTMLTextAreaElement) {
+      answerField.focus();
+    }
+  }
+
   return (
     <div>
+      <UnansweredQuestionsSection
+        sessionName={sessionName}
+        answeredQuestions={faqEntries.map((entry) => entry.question)}
+        onAnswer={handleAnswerUnanswered}
+      />
+
       {/*
         BUGFIX 2026-08-27 (mesmo padrão de `AiPreferencesPanel.tsx`) — este
         painel vive dentro do `<form>` de `AiProfilePanel` (aba "FAQ"). Um

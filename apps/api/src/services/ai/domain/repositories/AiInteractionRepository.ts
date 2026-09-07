@@ -1,4 +1,5 @@
 import { AiInteraction } from '../entities/AiInteraction';
+import { UnansweredQuestion } from '../entities/UnansweredQuestion';
 
 /**
  * Porta (port) de persistência de `AiInteraction` — Milestone 3, Bloco 3b.
@@ -86,6 +87,29 @@ export interface AiInteractionRepository {
    * racional de defesa em profundidade dos demais métodos deste port);
    * `messageId` costuma estar presente (é o `id` da pergunta original), mas
    * não é garantido para interações gravadas antes deste bloco.
+   *
+   * Bloco B3 (issue #14) — passou a devolver o read model
+   * `UnansweredQuestion` (pergunta + contato + sessão), não `AiInteraction`
+   * cru: a tela precisa do TEXTO perguntado, que mora na `Message` apontada
+   * por `messageId`, e de quem perguntou, que mora na `Conversation`. Ver a
+   * docstring de `UnansweredQuestion` para o porquê de não ser uma entidade
+   * persistida.
+   *
+   * `sessionName` é OBRIGATÓRIO — diferente de `listByTenant`. A tela que
+   * consome isto vive dentro do Cérebro da IA, que é 1:1 por sessão desde o
+   * M6H-3 (ADR #82): uma lacuna de conhecimento só faz sentido contra o
+   * Cérebro daquele WhatsApp específico, e o produto inteiro já trata cada
+   * sessão como uma empresa independente (M6H-1).
    */
-  listUnansweredQuestions(tenantId: string, limit: number): Promise<AiInteraction[]>;
+  listUnansweredQuestions(
+    tenantId: string,
+    sessionName: string,
+    limit: number,
+    /**
+     * Restringe a UMA conversa — usado pela timeline, que precisa saber quais
+     * bolhas daquela conversa carregam uma lacuna. Ausente lista a sessão
+     * inteira (a tela de FAQ).
+     */
+    conversationId?: string,
+  ): Promise<UnansweredQuestion[]>;
 }

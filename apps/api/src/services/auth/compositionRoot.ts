@@ -4,10 +4,14 @@ import type { Router, ErrorRequestHandler, RequestHandler } from 'express';
 import { Logger } from '../../shared/domain/Logger';
 import { createRequireUser } from '../../shared/presentation/requireUser';
 import { createRateLimiter } from '../../shared/presentation/rateLimit';
+import { RateLimitStore } from '../../shared/domain/RateLimitStore';
+import { InMemoryRateLimitStore } from '../../shared/infrastructure/rateLimit/InMemoryRateLimitStore';
+import { RateLimitStoreAccountLockout } from './infrastructure/RateLimitStoreAccountLockout';
 import { AccessTokenService } from './domain/AccessTokenService';
 import { PrismaUserRepository } from './infrastructure/repositories/PrismaUserRepository';
 import { PrismaRefreshTokenRepository } from './infrastructure/repositories/PrismaRefreshTokenRepository';
 import { PrismaAuditLogRepository } from './infrastructure/repositories/PrismaAuditLogRepository';
+import { PrismaTenantRepository } from '../../shared/tenant/infrastructure/PrismaTenantRepository';
 import { ScryptPasswordHasher } from './infrastructure/ScryptPasswordHasher';
 import { Hs256AccessTokenService } from './infrastructure/Hs256AccessTokenService';
 import { Sha256RefreshTokenCodec } from './infrastructure/Sha256RefreshTokenCodec';
@@ -61,6 +65,14 @@ export function createAuthComposition(
   prisma: PrismaClient,
   config: AuthConfig,
   logger: Logger,
+  /**
+   * Bloco B1 — onde vivem as contagens de rate limit e de falhas de login.
+   * OPCIONAL: sem ele, cai para memoria e o comportamento e o de antes do
+   * bloco. `index.ts` injeta o store apoiado em Redis quando `REDIS_URL`
+   * existe; no modo degradado (D8) as rotas de auth continuam de pe com a
+   * contagem por processo, em vez de nao subirem.
+   */
+  rateLimitStore: RateLimitStore = new InMemoryRateLimitStore(),
 ): AuthComposition {
   const userRepository = new PrismaUserRepository(prisma);
   const refreshTokenRepository = new PrismaRefreshTokenRepository(prisma);
@@ -77,6 +89,17 @@ export function createAuthComposition(
     config.refreshTokenTtlMs,
   );
 
+  // Bloco B1 — lockout de conta: conta as falhas de login por e-mail
+  // TENTADO (existente ou nao, ver `AccountLockout`) e bloqueia
+  // temporariamente ao atingir o teto. Complementa os dois rate limiters
+  // abaixo: eles contam requisicoes, este conta FALHAS e e zerado por um
+  // login bem-sucedido.
+  const accountLockout = new RateLimitStoreAccountLockout(rateLimitStore);
+
+  // Painel /admin, Fase 4 — `login`/`refresh` recusam um tenant suspenso.
+  // Mesma instância só-leitura usada em todo o resto do projeto.
+  const tenantRepository = new PrismaTenantRepository(prisma);
+
   const authService = new AuthService(
     userRepository,
     passwordHasher,
@@ -84,6 +107,9 @@ export function createAuthComposition(
     refreshTokenService,
     auditLogRepository,
     logger,
+    undefined,
+    accountLockout,
+    tenantRepository,
   );
 
   const requireUser = createRequireUser(accessTokenService);
@@ -91,7 +117,12 @@ export function createAuthComposition(
   // (login/refresh): 20 tentativas por IP a cada 15 minutos. Em memoria, por
   // processo — suficiente para instancia unica; Redis-backed fica como
   // evolucao futura (ver docstring de `createRateLimiter`).
-  const loginRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
+  const loginRateLimiter = createRateLimiter({
+    store: rateLimitStore,
+    scope: 'login:ip',
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+  });
   const authRouter = createAuthRouter(
     authService,
     requireUser,
@@ -106,6 +137,8 @@ export function createAuthComposition(
   // independente de quantos IPs o atacante usar. So no login (registro nao
   // tem "identidade" a proteger antes de existir).
   const loginByIdentityRateLimiter = createRateLimiter({
+    store: rateLimitStore,
+    scope: 'login:identity',
     windowMs: 15 * 60 * 1000,
     max: 10,
     keyFn: (req) => {

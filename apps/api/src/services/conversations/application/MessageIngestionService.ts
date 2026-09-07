@@ -9,6 +9,7 @@ import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
 import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
+import { ContactAvatarRefresher } from '../domain/repositories/ContactAvatarRefresher';
 import { OptOutDetector } from '../domain/repositories/OptOutDetector';
 import { CampaignReplyTracker } from '../domain/repositories/CampaignReplyTracker';
 import { TenantPlanRepository } from '../domain/repositories/TenantPlanRepository';
@@ -94,6 +95,18 @@ export class MessageIngestionService implements MessageReceivedHandler {
      */
     private campaignReplyTracker?: CampaignReplyTracker,
   ) {}
+
+  /**
+   * Injeção tardia (2026-09-05) — mesmo motivo de `setCampaignReplyTracker`:
+   * `services/whatsapp` é composto DEPOIS de `services/conversations`, então
+   * o adapter da foto de perfil só existe mais tarde. Sem ele configurado, a
+   * ingestão funciona igual e nenhuma foto é buscada.
+   */
+  setContactAvatarRefresher(contactAvatarRefresher: ContactAvatarRefresher): void {
+    this.contactAvatarRefresher = contactAvatarRefresher;
+  }
+
+  private contactAvatarRefresher?: ContactAvatarRefresher;
 
   /** Injeção tardia (Fase L, Bloco L6) — mesmo motivo de `ConversationsService.setMediaSender`. */
   setCampaignReplyTracker(campaignReplyTracker: CampaignReplyTracker): void {
@@ -233,6 +246,23 @@ export class MessageIngestionService implements MessageReceivedHandler {
       await this.optOutDetector.detectAndRecord(message.tenantId, contactId, message.content);
     }
 
+    // Foto de perfil (2026-09-05, decisão do fundador): a MENSAGEM é o
+    // gatilho, não a abertura de tela. Só para INBOUND — o contato acabou de
+    // dar sinal de vida, então vale a pena ter a foto dele; o operador
+    // escrevendo do celular não diz nada sobre a foto do cliente.
+    //
+    // Não busca nada aqui: só empurra para a fila, que goteja e recua sozinha
+    // (ver `ContactAvatarService`). `ensureAvatarQueued` já checa o cache
+    // antes, então a partir da segunda mensagem do mesmo contato isto é uma
+    // leitura barata que não enfileira nada.
+    if (!isOutbound && this.contactAvatarRefresher) {
+      await this.contactAvatarRefresher.ensureAvatarQueued(
+        message.tenantId,
+        message.sessionName,
+        message.from,
+      );
+    }
+
     // Fase L, Bloco L6 — marca REPLIED se esta conversa nasceu de campanha.
     // Só para INBOUND (o operador respondendo não é o "lead respondendo"),
     // chaveado por `conversationId` (não `contactId` — não precisa de
@@ -269,7 +299,7 @@ export class MessageIngestionService implements MessageReceivedHandler {
         // A janela é deslizante: a PRÓXIMA mensagem, depois que a rajada
         // esfriar, volta a ser respondida normalmente — nenhuma ação manual
         // necessária para "destravar".
-        const withinRateLimit = this.aiRateLimiter.consume(
+        const withinRateLimit = await this.aiRateLimiter.consume(
           message.tenantId,
           message.sessionName,
           conversation.id,

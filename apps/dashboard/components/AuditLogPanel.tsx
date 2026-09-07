@@ -56,6 +56,11 @@ const ACTION_LABELS: Record<string, string> = {
   'session.created': 'Sessão WhatsApp criada',
   'session.disconnected_by_user': 'Sessão desconectada',
   'session.removed': 'Sessão removida',
+  // Painel /admin, Fase 5 — acesso assistido do suporte da plataforma.
+  'support.access_granted': 'Acesso de suporte autorizado',
+  'support.access_denied': 'Acesso de suporte recusado',
+  'support.access_ended': 'Acesso de suporte encerrado',
+  'support.action': 'Ação do suporte durante o acesso',
 };
 
 function actionLabelFor(action: string): string {

@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #0E6E52; } a:hover { color: #0a5540; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="display: flex; width: 1440px; height: 900px; background: #F3F3F1; color: #16211C;">
+
+  <aside style="display: flex; width: 56px; flex-shrink: 0; flex-direction: column; align-items: center; background: #16211C; padding: 10px 0 12px;">
+    <div style="display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: rgba(14,110,82,0.22); color: #4ade80; font-size: 12px; font-weight: 700; margin-bottom: 14px;">F</div>
+    <nav style="display: flex; flex: 1; flex-direction: column; align-items: center; gap: 4px;">
+      <div style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: rgba(255,255,255,0.55);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+      <div style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: rgba(255,255,255,0.55);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l9-4 9 4v14"/><path d="M9 21v-6h6v6"/></svg></div>
+      <div style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: rgba(255,255,255,0.55);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+      <div style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: rgba(255,255,255,0.55);"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+      <div style="display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: rgba(255,255,255,0.14); color: #ffffff;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg></div>
+    </nav>
+  </aside>
+
+  <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+    <header style="display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 24px; background: #16211C; color: #ffffff; flex-shrink: 0;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 14px; font-weight: 600; letter-spacing: -0.01em;">Francis</span>
+        <span style="display: inline-flex; align-items: center; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.25); padding: 2px 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.85);">Plataforma</span>
+      </div>
+      <div style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9999px; background: rgba(255,255,255,0.14); font-size: 10px; font-weight: 600; color: #ffffff;">WF</div>
+    </header>
+
+    <main style="flex: 1; min-height: 0; padding: 22px 24px; overflow: hidden;">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px;">
+        <div>
+          <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em;">Auditoria da plataforma</h1>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #5C6B64;">O que <strong style="font-weight: 600; color: #16211C;">você</strong> fez sobre os clientes. A auditoria de dentro de cada conta fica no painel do próprio cliente.</p>
+        </div>
+        <div style="display: flex; gap: 7px;">
+          <span style="display: inline-flex; align-items: center; border-radius: 9999px; background: #16211C; color: #ffffff; padding: 5px 13px; font-size: 11.5px; font-weight: 500;">Tudo</span>
+          <span style="display: inline-flex; align-items: center; border-radius: 9999px; color: #5C6B64; padding: 5px 13px; font-size: 11.5px; font-weight: 500;">Acessos</span>
+          <span style="display: inline-flex; align-items: center; border-radius: 9999px; color: #5C6B64; padding: 5px 13px; font-size: 11.5px; font-weight: 500;">Planos</span>
+        </div>
+      </div>
+
+      <div style="border: 1px solid #E6E7E3; border-radius: 8px; background: #FFFFFF; overflow: hidden;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+          <thead>
+            <tr style="border-bottom: 1px solid #E6E7E3;">
+              <th style="height: 36px; padding: 0 8px 0 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #5C6B64; width: 130px;">Quando</th>
+              <th style="height: 36px; padding: 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #5C6B64;">Ação</th>
+              <th style="height: 36px; padding: 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #5C6B64;">Cliente</th>
+              <th style="height: 36px; padding: 0 16px 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #5C6B64;">Detalhe</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid rgba(230,231,227,0.7);">
+              <td style="padding: 11px 8px 11px 16px; font-size: 12.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">hoje 14:32</td>
+              <td style="padding: 11px 8px;"><span style="display: inline-flex; align-items: center; border-radius: 9999px; background: rgba(14,110,82,0.10); padding: 2px 9px; font-size: 11px; font-weight: 600; color: #0E6E52;">acesso concedido</span></td>
+              <td style="padding: 11px 8px; font-size: 12.5px; font-weight: 500;">Whatsapp-Automatico</td>
+              <td style="padding: 11px 16px 11px 8px; font-size: 12.5px; color: #5C6B64;">autorizado por Wesley Francis (dono) · 2h</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(230,231,227,0.7);">
+              <td style="padding: 11px 8px 11px 16px; font-size: 12.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">hoje 14:29</td>
+              <td style="padding: 11px 8px;"><span style="display: inline-flex; align-items: center; border-radius: 9999px; background: #F0F1EC; padding: 2px 9px; font-size: 11px; font-weight: 600; color: #5C6B64;">acesso solicitado</span></td>
+              <td style="padding: 11px 8px; font-size: 12.5px; font-weight: 500;">Whatsapp-Automatico</td>
+              <td style="padding: 11px 16px 11px 8px; font-size: 12.5px; color: #5C6B64;">“verificar por que a IA parou de responder”</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(230,231,227,0.7);">
+              <td style="padding: 11px 8px 11px 16px; font-size: 12.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">hoje 11:04</td>
+              <td style="padding: 11px 8px;"><span style="display: inline-flex; align-items: center; border-radius: 9999px; background: rgba(196,121,12,0.12); padding: 2px 9px; font-size: 11px; font-weight: 600; color: #8A5809;">plano alterado</span></td>
+              <td style="padding: 11px 8px; font-size: 12.5px; font-weight: 500;">Whatsapp-Automatico</td>
+              <td style="padding: 11px 16px 11px 8px; font-size: 12.5px; color: #5C6B64;">Grátis → Enterprise</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(230,231,227,0.7);">
+              <td style="padding: 11px 8px 11px 16px; font-size: 12.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">04/09 16:18</td>
+              <td style="padding: 11px 8px;"><span style="display: inline-flex; align-items: center; border-radius: 9999px; background: #F0F1EC; padding: 2px 9px; font-size: 11px; font-weight: 600; color: #5C6B64;">acesso encerrado</span></td>
+              <td style="padding: 11px 8px; font-size: 12.5px; font-weight: 500;">Whatsapp-Automatico</td>
+              <td style="padding: 11px 16px 11px 8px; font-size: 12.5px; color: #5C6B64;">encerrado pelo cliente · durou 38 min</td>
+            </tr>
+            <tr style="border-bottom: 1px solid rgba(230,231,227,0.7);">
+              <td style="padding: 11px 8px 11px 16px; font-size: 12.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">02/09 09:47</td>
+              <td style="padding: 11px 8px;"><span style="display: inline-flex; align-items: center; border-radius: 9999px; background: rgba(208,52,44,0.10); padding: 2px 9px; font-size: 11px; font-weight: 600; color: #D0342C;">acesso recusado</span></td>
+              <td style="padding: 11px 8px; font-size: 12.5px; font-weight: 500;">teste2</td>
+              <td style="padding: 11px 16px 11px 8px; font-size: 12.5px; color: #5C6B64;">recusado pelo cliente</td>
+            </tr>
+            <tr>
+              <td style="padding: 11px 8px 11px 16px; font-size: 12.5px; color: #5C6B64; font-variant-numeric: tabular-nums;">01/09 08:12</td>
+              <td style="padding: 11px 8px;"><span style="display: inline-flex; align-items: center; border-radius: 9999px; background: #F0F1EC; padding: 2px 9px; font-size: 11px; font-weight: 600; color: #5C6B64;">entrou na plataforma</span></td>
+              <td style="padding: 11px 8px; font-size: 12.5px; color: #5C6B64;">—</td>
+              <td style="padding: 11px 16px 11px 8px; font-size: 12.5px; color: #5C6B64;">wesleyoliveira303.wo · 187.xx.xx.xx</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display: flex; gap: 10px; align-items: flex-start; border: 1px solid #E6E7E3; border-radius: 8px; background: #FAFAF9; padding: 14px 16px; margin-top: 16px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5C6B64" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <p style="margin: 0; font-size: 12.5px; line-height: 1.55; color: #5C6B64;">Esta trilha registra o que <strong style="color: #16211C; font-weight: 600;">você</strong> faz sobre os clientes — nunca é apagada. O que acontece <strong style="color: #16211C; font-weight: 600;">dentro</strong> de uma conta durante um acesso de suporte fica na auditoria do próprio cliente, onde ele consegue ver, mesmo que não estivesse na tela quando aconteceu.</p>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

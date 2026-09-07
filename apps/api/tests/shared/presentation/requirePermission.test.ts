@@ -26,6 +26,24 @@ describe('requirePermission (Milestone 5, Bloco M5D)', () => {
     expect(statusMock).not.toHaveBeenCalled();
   });
 
+  it('plano SUPORTE (Fase 5 do /admin) libera tudo, como a maquina', () => {
+    const req = {
+      principal: {
+        kind: 'support',
+        tenantId: 'tenant-1',
+        platformUserId: 'admin-1',
+        supportAccessId: 'sa-1',
+      },
+    } as unknown as RequestWithPrincipal;
+    const { res, statusMock } = fakeRes();
+    const next = jest.fn();
+
+    requirePermission('user:create')(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(statusMock).not.toHaveBeenCalled();
+  });
+
   it('plano PESSOA COM a permissao: libera', () => {
     const req = {
       principal: { kind: 'user', userId: 'u', tenantId: 't', role: 'operator' },

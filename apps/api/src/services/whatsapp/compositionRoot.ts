@@ -13,6 +13,9 @@ import { PrismaAuditLogRepository } from '../auth/infrastructure/repositories/Pr
 import { BaileysProviderFactory } from './infrastructure/providers/baileys/BaileysProviderFactory';
 import { WhatsAppConnectionRegistry } from './application/WhatsAppConnectionRegistry';
 import { WhatsAppSessionService } from './application/WhatsAppSessionService';
+import { ContactAvatarService } from './application/ContactAvatarService';
+import { PrismaContactAvatarCacheRepository } from './infrastructure/repositories/PrismaContactAvatarCacheRepository';
+import { RegistryContactAvatarSource } from './infrastructure/RegistryContactAvatarSource';
 import { MessageReceivedHandler } from './domain/handlers/MessageReceivedHandler';
 import { createRequireApiKey } from '../../shared/presentation/requireApiKey';
 import { OutboundCommandConsumer } from './infrastructure/OutboundCommandConsumer';
@@ -131,6 +134,13 @@ export interface WhatsAppSessionsComposition {
    * `mediaDownloader` (depende de `registry`, injeção tardia).
    */
   mediaSender: WhatsAppMediaSender;
+  /**
+   * Bloco B2 (issue #13) — serve as fotos de perfil das listas a partir do
+   * cache no Postgres, atualizando o que venceu fora do caminho da
+   * requisição, com teto de concorrência. Construído aqui pelo mesmo motivo
+   * de `mediaDownloader`/`mediaSender`: depende do `registry`.
+   */
+  contactAvatarService: ContactAvatarService;
 }
 
 /**
@@ -211,7 +221,22 @@ export function createWhatsAppSessionsComposition(
   const mediaDownloader = new WhatsAppMediaDownloader(registry);
   const mediaSender = new WhatsAppMediaSender(registry);
 
-  return { sessionService, requireApiKey, registry, mediaDownloader, mediaSender };
+  // Bloco B2 (issue #13): a fonte ao vivo usa `registry.peek` — atualizar um
+  // cache auxiliar nunca pode instanciar uma sessão que não estava de pé.
+  const contactAvatarService = new ContactAvatarService(
+    new PrismaContactAvatarCacheRepository(prisma),
+    new RegistryContactAvatarSource(registry),
+    logger,
+  );
+
+  return {
+    sessionService,
+    requireApiKey,
+    registry,
+    mediaDownloader,
+    mediaSender,
+    contactAvatarService,
+  };
 }
 
 /**

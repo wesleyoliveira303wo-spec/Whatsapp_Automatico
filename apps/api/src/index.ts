@@ -205,6 +205,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createContactsComposition },
       { createCampaignsComposition, wireCampaignSendEngine },
       { createAuthComposition },
+      { createPlatformComposition },
       { createAuthenticate },
       { requirePermission },
       { HmacSha256ApiKeyHasher },
@@ -232,6 +233,9 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       // envio ligado só no ramo completo, ver `wireCampaignSendEngine` abaixo).
       import('./services/campaigns/compositionRoot'),
       import('./services/auth/compositionRoot'),
+      // Painel /admin, Fase 1 — mesmo racional dos CRUDs acima: só HTTP +
+      // Postgres, então sobe nos dois ramos (degradado e completo).
+      import('./services/platform/compositionRoot'),
       import('./shared/presentation/authenticate'),
       import('./shared/presentation/requirePermission'),
       import('./shared/security/infrastructure/HmacSha256ApiKeyHasher'),
@@ -243,6 +247,38 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
 
     const logger = new ConsoleLogger({ module: 'api' });
     const prisma = new PrismaClient();
+
+    // Bloco B1 — store compartilhado das contagens de abuso (rate limit de
+    // login/refresh e lockout de conta). Montado AQUI, antes da ramificacao
+    // do Redis, porque as rotas de auth sobem nos dois modos: com
+    // `REDIS_URL`, a contagem passa a valer entre instancias e a sobreviver a
+    // um restart (essencial para o lockout — um bloqueio que evapora num
+    // deploy nao bloqueia nada); sem ela, cai para memoria e o comportamento
+    // e o de antes do bloco, em vez de as rotas de auth simplesmente nao
+    // subirem. Conexao dedicada: as do BullMQ usam `maxRetriesPerRequest:
+    // null`, que faria um comando de rate limit ficar pendurado para sempre
+    // durante uma queda do Redis em vez de falhar rapido e degradar.
+    const [{ InMemoryRateLimitStore }, { RedisRateLimitStore }, { FallbackRateLimitStore }] =
+      await Promise.all([
+        import('./shared/infrastructure/rateLimit/InMemoryRateLimitStore'),
+        import('./shared/infrastructure/rateLimit/RedisRateLimitStore'),
+        import('./shared/infrastructure/rateLimit/FallbackRateLimitStore'),
+      ]);
+    let rateLimitStore: import('./shared/domain/RateLimitStore').RateLimitStore =
+      new InMemoryRateLimitStore();
+    if (REDIS_URL) {
+      const { default: IORedisForRateLimit } = await import('ioredis');
+      const rateLimitConnection = new IORedisForRateLimit(REDIS_URL);
+      rateLimitStore = new FallbackRateLimitStore(
+        new RedisRateLimitStore(rateLimitConnection),
+        new InMemoryRateLimitStore(),
+        logger,
+      );
+    } else {
+      logger.warn(
+        'REDIS_URL ausente: rate limit e lockout de conta contam por processo (modo degradado)',
+      );
+    }
 
     // Milestone 5, Bloco M5C — rotas de autenticacao (login/refresh/logout/me).
     // Montadas ANTES da ramificacao do Redis porque auth NAO depende de Redis
@@ -266,6 +302,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           refreshTokenTtlMs: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7) * 24 * 60 * 60 * 1000,
         },
         logger,
+        rateLimitStore,
       );
       accessTokenService = authComposition.accessTokenService;
       app.use('/api/tenants/:tenantId/auth', authComposition.authRouter);
@@ -278,6 +315,66 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     } else {
       console.warn(
         'ACCESS_TOKEN_SECRET ausente: rotas de auth (login/refresh/logout/me) nao montadas (ver .env.example).',
+      );
+    }
+
+    // Painel /admin, Fase 1 (`ADMIN_PLATFORM_MASTER_PLAN.md` §15) — o único
+    // lugar do sistema que atravessa tenants vive em `services/platform`, e é
+    // montado num prefixo estruturalmente diferente do produto
+    // (`/api/platform`, sem `:tenantId` no caminho, §3.2).
+    //
+    // Segredo PRÓPRIO, nunca o `ACCESS_TOKEN_SECRET`: é ele que garante que um
+    // crachá de cliente jamais seja aceito como crachá de plataforma. Ausente,
+    // o painel simplesmente não sobe — degradação igual à do resto, e a mais
+    // segura possível para esta superfície (nunca há um modo "sem senha").
+    const { PLATFORM_SESSION_SECRET, SUPPORT_ACCESS_TOKEN_SECRET } = process.env;
+    // Construído aqui, mas as rotas são montadas mais abaixo (junto com a
+    // Fase 3), depois que `registry`/`aiReplyQueue` existem — a Fase 3 injeta
+    // o status ao vivo (ADR #80) e o probe de infra nele. `let` de escopo
+    // externo porque a montagem precisa alcançá-lo.
+    let platform:
+      | import('./services/platform/compositionRoot').PlatformComposition
+      | undefined;
+    if (PLATFORM_SESSION_SECRET) {
+      if (PLATFORM_SESSION_SECRET === ACCESS_TOKEN_SECRET) {
+        throw new Error(
+          'PLATFORM_SESSION_SECRET não pode ser igual a ACCESS_TOKEN_SECRET: os dois crachás precisam de segredos distintos.',
+        );
+      }
+      // Fase 5 — o crachá de ACESSO ASSISTIDO tem segredo próprio; se
+      // configurado, não pode colidir com os outros dois (um crachá de um
+      // plano nunca vale no outro).
+      if (
+        SUPPORT_ACCESS_TOKEN_SECRET &&
+        (SUPPORT_ACCESS_TOKEN_SECRET === ACCESS_TOKEN_SECRET ||
+          SUPPORT_ACCESS_TOKEN_SECRET === PLATFORM_SESSION_SECRET)
+      ) {
+        throw new Error(
+          'SUPPORT_ACCESS_TOKEN_SECRET não pode ser igual a ACCESS_TOKEN_SECRET nem a PLATFORM_SESSION_SECRET.',
+        );
+      }
+      platform = createPlatformComposition(
+        prisma,
+        {
+          sessionSecret: PLATFORM_SESSION_SECRET,
+          ...(process.env.PLATFORM_SESSION_TTL_SECONDS
+            ? { sessionTtlSeconds: Number(process.env.PLATFORM_SESSION_TTL_SECONDS) }
+            : {}),
+          ...(SUPPORT_ACCESS_TOKEN_SECRET
+            ? { supportAccessTokenSecret: SUPPORT_ACCESS_TOKEN_SECRET }
+            : {}),
+        },
+        logger,
+        rateLimitStore,
+      );
+      if (!SUPPORT_ACCESS_TOKEN_SECRET) {
+        console.warn(
+          'SUPPORT_ACCESS_TOKEN_SECRET ausente: acesso assistido do /admin sem operação (5b) — pedir/autorizar/revogar funciona, "entrar na conta" não.',
+        );
+      }
+    } else {
+      console.warn(
+        'PLATFORM_SESSION_SECRET ausente: painel /admin nao montado (ver .env.example).',
       );
     }
 
@@ -294,6 +391,11 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       new HmacSha256ApiKeyHasher(API_KEY_PEPPER),
       tenantRepository,
       logger,
+      // Fase 5 — plano `support`: só ligado quando o segredo próprio veio do
+      // ambiente (senão o `platform` usa um segredo efêmero e nenhum crachá de
+      // suporte seria aceito de qualquer forma).
+      SUPPORT_ACCESS_TOKEN_SECRET ? platform?.supportAccessTokenService : undefined,
+      SUPPORT_ACCESS_TOKEN_SECRET ? platform?.supportAccessVerifier : undefined,
     );
 
     // Milestone 5, Bloco M5E — rotas de GESTAO DE USUARIOS (o "RH"). Atras do
@@ -322,6 +424,22 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       );
     }
 
+    // Painel `/admin`, Fase 5 — Acesso assistido, LADO TENANT. Montado ANTES
+    // dos routers de domínio (conversas, campanhas, ...) para que o
+    // `supportAccessAuditMiddleware` registre no `AuditLog` do tenant toda
+    // requisição MUTANTE feita por um ator do plano `support` (§9.4 brecha 2).
+    // O `authenticate` roda uma vez a mais nas rotas de tenant por causa deste
+    // mount antecipado — custo irrelevante, e só há um admin.
+    if (platform) {
+      app.use('/api/tenants/:tenantId', authenticate, platform.supportAccessAuditMiddleware);
+      app.use(
+        '/api/tenants/:tenantId/support-access',
+        authenticate,
+        platform.tenantSupportAccessRouter,
+      );
+      app.use('/api/tenants/:tenantId/support-access', platform.supportAccessErrorHandler);
+    }
+
     // D17 (levantamento arquitetural do Bloco 5) — cada error handler é
     // montado ESCOPADO ao path do próprio router (`app.use(path, handler)`),
     // nunca globalmente sem path (como era até o Bloco 4). Um error handler
@@ -340,7 +458,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           'mas sem MessageIngestionService wired — mensagens recebidas serão ignoradas). Ver .env.example.',
       );
 
-      const { sessionService } = createWhatsAppSessionsComposition(
+      const { sessionService, contactAvatarService } = createWhatsAppSessionsComposition(
         prisma,
         WHATSAPP_CREDENTIALS_MASTER_KEY,
         API_KEY_PEPPER,
@@ -350,7 +468,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       app.use(
         '/api/tenants/:tenantId/whatsapp-sessions',
         authenticate,
-        createWhatsAppSessionsRouter(sessionService),
+        createWhatsAppSessionsRouter(sessionService, contactAvatarService),
       );
       app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
 
@@ -518,7 +636,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       aiReplyQueue,
     } = createConversationsComposition(prisma, aiReplyProducerConnection, logger);
 
-    const { sessionService, registry, mediaDownloader, mediaSender } =
+    const { sessionService, registry, mediaDownloader, mediaSender, contactAvatarService } =
       createWhatsAppSessionsComposition(
         prisma,
         WHATSAPP_CREDENTIALS_MASTER_KEY,
@@ -532,6 +650,15 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     conversationsService.setMediaDownloader(mediaDownloader);
     // Fase 1, Bloco F1.3 — mesmo motivo/mesmo lugar de `setMediaDownloader`.
     conversationsService.setMediaSender(mediaSender);
+    // Foto de perfil (2026-09-05) — mesmo motivo/mesmo lugar: o gatilho da
+    // busca de foto passou a ser a MENSAGEM que chega, e o serviço que
+    // enfileira só existe depois desta composição.
+    const { ContactAvatarRefresherImpl } = await import(
+      './services/whatsapp/infrastructure/ContactAvatarRefresherImpl'
+    );
+    messageIngestionService.setContactAvatarRefresher(
+      new ContactAvatarRefresherImpl(contactAvatarService, logger),
+    );
     // Guarda o serviço para a restauração automática de sessões no boot (ver
     // `restoreConnectedSessions()`). Só neste ramo — no degradado, sem
     // pipeline de conversas, reconectar seria enganoso.
@@ -575,7 +702,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use(
       '/api/tenants/:tenantId/whatsapp-sessions',
       authenticate,
-      createWhatsAppSessionsRouter(sessionService),
+      createWhatsAppSessionsRouter(sessionService, contactAvatarService),
     );
     app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
 
@@ -837,6 +964,75 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     );
     app.use('/api/tenants/:tenantId/conversations', createConversationSummaryErrorHandler(logger));
 
+    // --- Painel /admin — montagem das rotas (Fases 1, 2 e 3) ---
+    //
+    // Montado AQUI, e não junto da construção da composition, porque a Fase 3
+    // precisa de `registry` (status ao vivo, ADR #80) e das filas, que só
+    // existem neste ponto. As outras duas filas (`whatsapp-outbound`,
+    // `campaign-send`) não são expostas por suas composições, então montamos
+    // objetos `Queue` SÓ-LEITURA sobre uma conexão já existente — ler
+    // contagem não precisa de `Worker`.
+    let platformOutboundReadQueue: import('bullmq').Queue | undefined;
+    let platformCampaignSendReadQueue: import('bullmq').Queue | undefined;
+    if (platform) {
+      const { Queue: BullQueue } = await import('bullmq');
+      const { WHATSAPP_OUTBOUND_QUEUE_NAME } = await import(
+        './services/whatsapp/infrastructure/queues/WhatsAppOutboundQueue'
+      );
+      const { CAMPAIGN_SEND_QUEUE_NAME } = await import(
+        './services/campaigns/infrastructure/queues/CampaignSendQueue'
+      );
+      const { RegistryPlatformLiveSessionStatusResolver } = await import(
+        './services/whatsapp/infrastructure/RegistryPlatformLiveSessionStatusResolver'
+      );
+      const { BullMqPlatformHealthProbe } = await import(
+        './services/platform/infrastructure/BullMqPlatformHealthProbe'
+      );
+
+      platformOutboundReadQueue = new BullQueue(WHATSAPP_OUTBOUND_QUEUE_NAME, {
+        connection: aiReplyProducerConnection,
+      });
+      platformCampaignSendReadQueue = new BullQueue(CAMPAIGN_SEND_QUEUE_NAME, {
+        connection: aiReplyProducerConnection,
+      });
+
+      platform.tenantObservabilityService.setLiveSessionStatusResolver(
+        new RegistryPlatformLiveSessionStatusResolver(
+          registry,
+          logger.child({ module: 'platform-live-status' }),
+        ),
+      );
+      platform.platformHealthService.setHealthProbe(
+        new BullMqPlatformHealthProbe(
+          { ping: () => prisma.$queryRaw`SELECT 1` },
+          [
+            {
+              name: 'ai-reply',
+              getJobCounts: () =>
+                aiReplyQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+            },
+            {
+              name: 'whatsapp-outbound',
+              getJobCounts: () =>
+                platformOutboundReadQueue!.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+            },
+            {
+              name: 'campaign-send',
+              getJobCounts: () =>
+                platformCampaignSendReadQueue!.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+            },
+          ],
+        ),
+      );
+
+      app.use('/api/platform', platform.platformRouter);
+      app.use('/api/platform', platform.platformTenantsRouter); // Fase 2
+      app.use('/api/platform', platform.platformOverviewRouter); // Fase 3
+      app.use('/api/platform', platform.platformSupportRouter); // Fase 5 (lado admin)
+      app.use('/api/platform', platform.platformSearchRouter); // Fase 6 (busca global)
+      app.use('/api/platform', platform.platformErrorHandler); // por último
+    }
+
     // Fase 1, Bloco F1.10 (observabilidade mínima para o beta) — `/health`
     // (topo deste arquivo) é uma checagem de LIVENESS deliberadamente burra
     // (sempre 200, sem tocar dependência nenhuma — correto para um probe de
@@ -861,11 +1057,15 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     // dois lados (aplicado também ao Postgres, por simetria e defesa contra
     // um cenário futuro de rede degradada, não só desconexão total).
     const HEALTH_CHECK_TIMEOUT_MS = 3000;
+    type QueueCounts = { waiting: number; active: number; failed: number; delayed: number };
     app.get('/health/ready', async (_req: Request, res: Response) => {
       const checks: {
         database: 'ok' | 'down';
         redis: 'ok' | 'down';
-        aiQueue?: { waiting: number; active: number; failed: number; delayed: number };
+        aiQueue?: QueueCounts;
+        // Fase 3 do /admin — as outras duas filas passam a ser reportadas
+        // aqui também (a ampliação que o plano mestre §5.2 previa).
+        queues?: Record<string, QueueCounts>;
       } = { database: 'down', redis: 'down' };
 
       try {
@@ -895,12 +1095,41 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           ),
         ]);
         checks.redis = 'ok';
-        checks.aiQueue = {
+        const aiCounts: QueueCounts = {
           waiting: counts.waiting ?? 0,
           active: counts.active ?? 0,
           failed: counts.failed ?? 0,
           delayed: counts.delayed ?? 0,
         };
+        checks.aiQueue = aiCounts;
+        checks.queues = { 'ai-reply': aiCounts };
+
+        // As outras duas filas (só existem no ramo completo). Cada uma no seu
+        // próprio try — uma travada não some com o número da outra.
+        for (const [name, q] of [
+          ['whatsapp-outbound', platformOutboundReadQueue],
+          ['campaign-send', platformCampaignSendReadQueue],
+        ] as const) {
+          if (!q) continue;
+          try {
+            const c = q.getJobCounts('waiting', 'active', 'failed', 'delayed');
+            c.catch(() => {});
+            const qc = await Promise.race([
+              c,
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout')), HEALTH_CHECK_TIMEOUT_MS),
+              ),
+            ]);
+            checks.queues[name] = {
+              waiting: qc.waiting ?? 0,
+              active: qc.active ?? 0,
+              failed: qc.failed ?? 0,
+              delayed: qc.delayed ?? 0,
+            };
+          } catch {
+            // omite esta fila do relatório; não derruba a resposta.
+          }
+        }
       } catch {
         // fica 'down'/`aiQueue` ausente — Redis inacessível, comando parado
         // na fila de retentativas, ou timeout; não deixa a checagem inteira

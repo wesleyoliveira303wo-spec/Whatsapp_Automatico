@@ -1,5 +1,5 @@
 import handler from '../../../../pages/api/auth/register';
-import { createFakeReq, createFakeRes } from '../../../testDoubles';
+import { createFakeReq, createFakeRes, setCookieHeaders } from '../../../testDoubles';
 
 /** Fase Auth/Registro (2026-08-26) — POST /api/auth/register (BFF). */
 describe('POST /api/auth/register', () => {
@@ -60,7 +60,7 @@ describe('POST /api/auth/register', () => {
       new URL('/api/auth/register', 'http://api-de-teste:4000'),
       expect.objectContaining({ method: 'POST' }),
     );
-    expect(res._headers['Set-Cookie']).toMatch(/wa_dashboard_session=/);
+    expect(setCookieHeaders(res).join('; ')).toMatch(/wa_dashboard_session=/);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith({
       tenantId: 'tenant-1',
@@ -142,7 +142,7 @@ describe('POST /api/auth/register', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({ error: 'email_in_use', message: expect.any(String) });
-    expect(res._headers['Set-Cookie']).toBeUndefined();
+    expect(setCookieHeaders(res)).toEqual([]);
   });
 
   it('senha fraca: API responde 422 -> 422', async () => {

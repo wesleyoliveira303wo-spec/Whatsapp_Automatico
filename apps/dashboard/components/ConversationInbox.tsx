@@ -13,7 +13,7 @@ import EmptyState from '@/components/states/EmptyState';
 import { useConversationsList } from '@/hooks/useConversationsList';
 import { useAiToggleContext } from '@/contexts/AiToggleContext';
 import { formatContactJid } from '@/lib/formatters';
-import type { ConversationStatus } from '@/lib/clientApi';
+
 import { cn } from '@/lib/utils';
 
 interface ConversationInboxProps {
@@ -68,9 +68,15 @@ export default function ConversationInbox({
   const { aiEnabled: sessionAiEnabled } = useAiToggleContext();
   const aiEnabled = sessionAiEnabled ?? true;
 
-  const statusParam: ConversationStatus | undefined =
-    filter === 'bot' || filter === 'human' ? filter : undefined;
-  const needsHumanAttentionParam = filter === 'waiting' ? true : undefined;
+  // Filtros reduzidos a 3 (2026-09-05, pedido do fundador): as 5 pílulas
+  // anteriores não cabiam na coluna de 344px e ficavam cortadas. "IA"/"Humano"
+  // saíram como filtros próprios — "Humano" virou parte de "Aguardando", e
+  // "IA" era o complemento de tudo, ou seja, quase igual a "Todas".
+  //
+  // "Aguardando" é a fila humana INTEIRA (esperando atendente OU já em
+  // atendimento), resolvida no SERVIDOR com um OU — somar `status` com
+  // `needsHumanAttention` daria E, devolvendo só a interseção.
+  const awaitingOrInHumanCareParam = filter === 'waiting' ? true : undefined;
   // Menu "⋮" da conversa (2026-08-29) — diferente de needsHumanAttentionParam,
   // `archived` é SEMPRE um boolean explícito do lado da API (nunca "sem
   // filtro"): só a aba "Arquivadas" manda `true`, qualquer outra manda
@@ -86,13 +92,16 @@ export default function ConversationInbox({
     loadingMore,
     hasMore,
     applyLocalUpdate,
-  } = useConversationsList(statusParam, sessionName, needsHumanAttentionParam, archivedParam);
+  } = useConversationsList(
+    undefined,
+    sessionName,
+    undefined,
+    archivedParam,
+    awaitingOrInHumanCareParam,
+  );
 
   const visibleConversations = useMemo(() => {
     let list = conversations;
-    if (filter === 'unread') {
-      list = list.filter((conversation) => conversation.unreadCount > 0);
-    }
     const term = search.trim().toLowerCase();
     if (term) {
       list = list.filter(
@@ -104,7 +113,7 @@ export default function ConversationInbox({
       );
     }
     return list;
-  }, [conversations, search, filter]);
+  }, [conversations, search]);
 
   const hasSelection = Boolean(selectedConversationId);
   const hasActiveFilter = filter !== 'all';

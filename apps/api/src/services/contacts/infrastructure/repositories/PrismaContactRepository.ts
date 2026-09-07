@@ -55,6 +55,8 @@ interface ConversationSummaryRow {
   lastMessageAt: Date | null;
   /** Padronização de exibição de contato (2026-08-20) — apelido do WhatsApp daquela conversa. */
   contactName: string | null;
+  /** Bloco B2 (issue #13) — identificador com que a foto está no cache. */
+  contactJid: string;
 }
 
 /**
@@ -72,6 +74,7 @@ function toListItem(
     lastConversationSessionName: lastConversation?.sessionName,
     lastActivityAt: lastConversation?.lastMessageAt ?? undefined,
     lastConversationContactName: lastConversation?.contactName ?? undefined,
+    lastConversationContactJid: lastConversation?.contactJid,
   };
 }
 
@@ -202,7 +205,7 @@ export class PrismaContactRepository implements ContactRepository {
         conversations: {
           orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
           take: 1,
-          select: { id: true, sessionName: true, lastMessageAt: true, contactName: true },
+          select: { id: true, sessionName: true, lastMessageAt: true, contactName: true, contactJid: true },
         },
       },
     });

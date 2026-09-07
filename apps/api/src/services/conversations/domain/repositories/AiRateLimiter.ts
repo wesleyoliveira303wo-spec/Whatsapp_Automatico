@@ -28,6 +28,11 @@ export interface AiRateLimiter {
    * ESTOUROU (`false`, não deve enfileirar desta vez). Chamar de novo depois
    * que a janela expirar (mensagem seguinte) volta a permitir normalmente —
    * não é um bloqueio permanente, é uma janela deslizante.
+   *
+   * ASSÍNCRONO desde o bloco B1: a contagem passou a viver num store
+   * compartilhado (Redis), para o limite valer entre processos e sobreviver
+   * a um restart — ver `RateLimitStore`. A implementação em memória continua
+   * existindo como degradação quando não há Redis.
    */
-  consume(tenantId: string, sessionName: string, conversationId: string): boolean;
+  consume(tenantId: string, sessionName: string, conversationId: string): Promise<boolean>;
 }

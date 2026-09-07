@@ -11,6 +11,14 @@ interface MessageTimelineProps {
   interactions: AiInteractionSummary[] | null;
   errorMessage: string | null;
   onRetry: () => void;
+  /**
+   * Ids das mensagens desta conversa que a IA sinalizou não saber responder
+   * (pedido do fundador, 2026-09-05). Vem de uma consulta às lacunas — a
+   * timeline não infere nada do conteúdo.
+   */
+  unansweredMessageIds?: ReadonlySet<string>;
+  /** Abre o cadastro da resposta para a mensagem clicada. */
+  onTeachAnswer?: (message: ConversationMessage) => void;
 }
 
 /**
@@ -41,6 +49,8 @@ export default function MessageTimeline({
   interactions,
   errorMessage,
   onRetry,
+  unansweredMessageIds,
+  onTeachAnswer,
 }: MessageTimelineProps): JSX.Element {
   if (errorMessage) {
     return (
@@ -97,6 +107,8 @@ export default function MessageTimeline({
             <MessageBubble
               message={message}
               spacedFromPrevious={spacedFromPrevious}
+              unanswered={unansweredMessageIds?.has(message.id) ?? false}
+              onTeachAnswer={onTeachAnswer ? () => onTeachAnswer(message) : undefined}
               // CORREÇÃO 2026-08-18: `AiInteraction.messageId` é um campo de
               // DUPLO PROPÓSITO no backend — grava a mensagem INBOUND que
               // originou a geração (Fase 1, F1.4) até o envio outbound ter

@@ -2,6 +2,7 @@ import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { AiInteraction } from '../domain/entities/AiInteraction';
+import { UnansweredQuestion } from '../domain/entities/UnansweredQuestion';
 import { AiInteractionRepository } from '../domain/repositories/AiInteractionRepository';
 
 /** Milestone 3, Bloco 5 (D13) — default/teto de `listInteractions()`, mesmo padrão de `ConversationsService`. */
@@ -65,10 +66,20 @@ export class AiInteractionsService {
    * simples já consegue listar as N perguntas mais recentes que a IA não
    * soube responder". Mesmo default/teto de `listInteractions`.
    */
-  async listUnansweredQuestions(tenantId: string, limit?: number): Promise<AiInteraction[]> {
+  async listUnansweredQuestions(
+    tenantId: string,
+    sessionName: string,
+    limit?: number,
+    conversationId?: string,
+  ): Promise<UnansweredQuestion[]> {
     await this.assertTenantExists(tenantId);
     const resolvedLimit = Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT);
-    return this.aiInteractionRepository.listUnansweredQuestions(tenantId, resolvedLimit);
+    return this.aiInteractionRepository.listUnansweredQuestions(
+      tenantId,
+      sessionName,
+      resolvedLimit,
+      conversationId,
+    );
   }
 
   private async assertTenantExists(tenantId: string): Promise<void> {

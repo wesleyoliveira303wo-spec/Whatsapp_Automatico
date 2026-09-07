@@ -9,6 +9,7 @@
  * de relação do Prisma).
  */
 import { TenantPlan } from './TenantPlan';
+import { TenantStatus } from './TenantStatus';
 
 export interface Tenant {
   id: string;
@@ -23,4 +24,10 @@ export interface Tenant {
    * 'FREE'`. Um tenant novo (via `/register`) nasce `'free'`.
    */
   plan: TenantPlan;
+  /**
+   * Trava de acesso (Painel /admin, Fase 4, ver `TenantStatus` e §8 do plano
+   * mestre). Sempre presente — a coluna do banco é `NOT NULL DEFAULT
+   * 'ACTIVE'`. `'suspended'` bloqueia o login do tenant inteiro.
+   */
+  status: TenantStatus;
 }

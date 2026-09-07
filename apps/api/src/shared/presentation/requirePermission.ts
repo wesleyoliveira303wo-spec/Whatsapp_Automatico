@@ -9,6 +9,10 @@ import { RequestWithPrincipal } from './authenticate';
  * Regra:
  * - Plano MAQUINA (chave da empresa): LIBERA tudo — e o lado confiavel
  *   (worker/integracoes), fora do RBAC humano por decisao de arquitetura.
+ * - Plano SUPORTE (Fase 5 do `/admin`): LIBERA tudo, como a maquina — o
+ *   `authenticate` so resolve esse plano depois de revalidar no banco que ha
+ *   um `TenantAccessRequest` aceito e dentro do prazo (Regra 1); a decisao #5
+ *   da spec e "o admin faz tudo que o dono faz".
  * - Plano PESSOA: confere o cargo na regua (`hasPermission`). Sem a permissao
  *   -> 403.
  * - Sem `principal` (authenticate nao rodou antes): 401 — erro de montagem,
@@ -25,7 +29,7 @@ export function requirePermission(permission: Permission): RequestHandler {
       res.status(401).json({ error: 'not_authenticated', message: 'Autenticacao obrigatoria.' });
       return;
     }
-    if (principal.kind === 'machine') {
+    if (principal.kind === 'machine' || principal.kind === 'support') {
       next();
       return;
     }

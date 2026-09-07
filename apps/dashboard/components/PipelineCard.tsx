@@ -127,6 +127,10 @@ function PipelineCardImpl(
         // `group`: sustenta o `group-hover`/`group-focus-within` do seletor
         // "Mover…" na última linha (Onda 1 do redesign).
         'group cursor-grab rounded-lg border border-border bg-card px-3 py-[11px] transition-colors active:cursor-grabbing',
+        // Bloco B4 (issue #15): pula layout/pintura do card fora da tela SEM
+        // tirá-lo do DOM — é isso que preserva o arrastar-e-soltar (um card
+        // desmontado não seria alvo de soltura). Decisão em `globals.css`.
+        'pipeline-card-lazy',
         'hover:border-foreground/20',
         dragging && 'opacity-40',
       )}
@@ -141,7 +145,6 @@ function PipelineCardImpl(
           // CORREÇÃO 2026-08-18: mesmo motivo de `ConversationListItem` — o
           // board pode ter muitos cards simultâneos, cada um buscando foto ao
           // vivo martelava o socket do Baileys sem parar.
-          fetchLive={false}
         />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
           <DisplayNameParts

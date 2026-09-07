@@ -64,6 +64,15 @@ export interface ContactWithActivity extends Contact {
    * regra de `formatContactDisplayName` (`apps/dashboard`).
    */
   lastConversationContactName?: string;
+  /**
+   * Bloco B2 (issue #13) — o JID daquela conversa, para a tela de Contatos
+   * pedir a foto de perfil pelo MESMO identificador com que ela está no
+   * cache. Deliberadamente não é derivado do telefone: um contato pode estar
+   * salvo como `@lid` (endereço de privacidade), e um JID sintetizado a
+   * partir do número não bateria com nada — pediria uma foto que ninguém
+   * tem, gerando trabalho de fundo inútil.
+   */
+  lastConversationContactJid?: string;
 }
 
 /** Página de resultado — `nextCursor` ausente indica fim, mesmo contrato de `AuditLogPage`. */

@@ -38,6 +38,24 @@ function buildConversation(overrides: Partial<ConversationSummary> = {}): Conver
 }
 
 describe('PipelineCard (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
+  it('o card continua NO DOM fora da tela — é o que preserva o arrastar-e-soltar (bloco B4)', () => {
+    const { container } = render(
+      <PipelineCard
+        conversation={buildConversation()}
+        onDragStart={jest.fn()}
+        onDragEnd={jest.fn()}
+        onMoveToColumn={jest.fn()}
+      />,
+    );
+
+    // Trava de regressão: a otimização é `content-visibility` (pula pintura),
+    // NÃO uma janela virtual que desmonta itens. Um card desmontado não
+    // seria alvo de soltura — o critério da issue #15 exige não quebrar o
+    // DnD. Ver a decisão em `styles/globals.css`.
+    const card = container.querySelector('[draggable="true"]');
+    expect(card).toHaveClass('pipeline-card-lazy');
+  });
+
   it('renderiza o contato e o link para a conversa', () => {
     render(
       <PipelineCard

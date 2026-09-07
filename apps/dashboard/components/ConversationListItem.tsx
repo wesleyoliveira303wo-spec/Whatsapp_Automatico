@@ -74,6 +74,11 @@ function ConversationListItemImpl(
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
+      // Bloco B4 (issue #15): o navegador pula layout/pintura desta linha
+      // enquanto ela está fora da tela. O elemento CONTINUA no DOM — leitor
+      // de tela, Ctrl+F e foco por teclado seguem alcançando. Ver a
+      // decisão registrada em `styles/globals.css`.
+      className="list-row-lazy"
     >
       <Link
         href={`/sessions/${encodeURIComponent(conversation.sessionName)}/conversations/${encodeURIComponent(conversation.id)}`}
@@ -104,7 +109,6 @@ function ConversationListItemImpl(
           // parar (achado real de produção, contribuiu para falhas de envio).
           // Só iniciais aqui; a foto de verdade continua no cabeçalho da
           // conversa aberta (`ConversationContextPanel`), onde é só 1 contato.
-          fetchLive={false}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">

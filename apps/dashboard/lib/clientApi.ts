@@ -60,11 +60,48 @@ export class ClientApiError extends Error {
   }
 }
 
+/** Nome do cookie legível que espelha o token CSRF da sessão — ver `lib/dashboardSession.ts`. */
+const CSRF_COOKIE_NAME = 'wa_csrf_token';
+
+/**
+ * Lê o token CSRF do cookie legível (bloco B1).
+ *
+ * Este é o ÚNICO ponto do módulo que toca `document.cookie` — e de propósito:
+ * é justamente por conseguir ler este cookie que o Dashboard prova não ser um
+ * site atacante. Um site de terceiros consegue fazer o navegador ENVIAR os
+ * cookies do Francis numa requisição forjada, mas não consegue LÊ-LOS, então
+ * não tem como montar este cabeçalho.
+ *
+ * Devolve `undefined` fora do navegador (SSR) ou antes de existir sessão —
+ * nesses casos não há requisição mutante a proteger.
+ */
+function readCsrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE_NAME}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+/** Métodos que o BFF verifica quanto a CSRF (espelha `MUTATING_METHODS` do servidor). */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Cabeçalho CSRF pronto para espalhar num `headers` — para os uploads que
+ * fazem `fetch` cru (CSV, mídia) e portanto não passam por `request()`.
+ * Objeto vazio quando não há token, para nunca enviar um cabeçalho falso.
+ */
+function csrfHeader(): Record<string, string> {
+  const token = readCsrfToken();
+  return token ? { 'x-csrf-token': token } : {};
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const csrfToken = MUTATING_METHODS.has(method) ? readCsrfToken() : undefined;
   const response = await fetch(path, {
     ...init,
     headers: {
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
       ...init.headers,
     },
   });
@@ -126,6 +163,8 @@ export interface SessionUserInfo {
    */
   createdAt?: string;
   lastLoginAt?: string;
+  /** Painel `/admin`, Fase 5 — `user` sintético de uma sessão de SUPORTE (não é uma pessoa real do tenant). */
+  isSupport?: boolean;
 }
 
 /**
@@ -693,6 +732,8 @@ export interface Contact {
    * `name` salvo — ver `formatPersonLabel`.
    */
   lastConversationContactName?: string;
+  /** Bloco B2 (issue #13) — JID com que a foto de perfil está no cache do servidor. */
+  lastConversationContactJid?: string;
 }
 
 /** Contagens da base do tenant — cards do topo da tela de Contatos. */
@@ -767,7 +808,9 @@ export interface ContactImportReport {
 export async function importContacts(csvText: string): Promise<ContactImportReport> {
   const response = await fetch('/api/contacts/import', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/csv' },
+    // Upload cru (não passa por `request()`), então o cabeçalho CSRF do
+    // bloco B1 precisa ser adicionado explicitamente aqui.
+    headers: { 'Content-Type': 'text/csv', ...csrfHeader() },
     body: csvText,
   });
   const text = await response.text();
@@ -905,7 +948,9 @@ export interface ParseRecipientsCsvResult {
 export async function parseRecipientsCsv(csvText: string): Promise<ParseRecipientsCsvResult> {
   const response = await fetch('/api/campaigns/parse-recipients-csv', {
     method: 'POST',
-    headers: { 'Content-Type': 'text/csv' },
+    // Upload cru (não passa por `request()`), então o cabeçalho CSRF do
+    // bloco B1 precisa ser adicionado explicitamente aqui.
+    headers: { 'Content-Type': 'text/csv', ...csrfHeader() },
     body: csvText,
   });
   const text = await response.text();
@@ -1103,6 +1148,8 @@ export async function attachCampaignMedia(
     'content-type': file.type || 'application/octet-stream',
     'x-media-content-type': contentType,
     'x-media-filename': file.name,
+    // Upload cru (não passa por `request()`) — cabeçalho CSRF explícito.
+    ...csrfHeader(),
   };
   const response = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/media`, {
     method: 'POST',
@@ -1177,6 +1224,34 @@ export function fetchContactAvatar(
   return request(
     `/api/sessions/${encodeURIComponent(sessionName)}/contacts/${encodeURIComponent(contactJid)}/avatar`,
   );
+}
+
+/**
+ * Bloco B2 (issue #13) — fotos de perfil de VÁRIOS contatos numa requisição
+ * só, servidas do cache do servidor.
+ *
+ * Substitui, nas listas, o padrão de uma consulta ao vivo por linha, que
+ * bombardeava o mesmo socket Baileys usado para enviar mensagens (ADR #78 e
+ * a correção de 2026-08-18). O backend responde com o que tem em cache na
+ * hora e atualiza o que venceu em segundo plano, com teto de concorrência —
+ * então esta chamada nunca espera pelo WhatsApp.
+ *
+ * Um JID sem foto simplesmente vem com `avatarUrl` ausente: é resposta
+ * válida, não erro.
+ */
+export interface ContactAvatarEntry {
+  contactJid: string;
+  avatarUrl?: string;
+}
+
+export function fetchContactAvatars(
+  sessionName: string,
+  contactJids: string[],
+): Promise<{ avatars: ContactAvatarEntry[] }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/contact-avatars`, {
+    method: 'POST',
+    body: JSON.stringify({ contactJids }),
+  });
 }
 
 // --- Milestone 3, Bloco 6 (D22): DTOs e funcoes de `conversations`/`ai-interactions` ---
@@ -1377,6 +1452,8 @@ export interface FetchConversationsOptions {
   sessionName?: string;
   /** Reforma do escalonamento (2026-07-25) — filtra só conversas com `escalatedAt` definido ("aguardando atendente"). */
   needsHumanAttention?: boolean;
+  /** Filtro "Aguardando" da inbox (2026-09-05) — esperando atendente OU já em atendimento. */
+  awaitingOrInHumanCare?: boolean;
   /** ADR #94 (2026-08-01) — `true`/`false` filtra dentro/fora do funil comercial; ausente = sem filtro. */
   excludedFromPipeline?: boolean;
   /**
@@ -1395,6 +1472,7 @@ export function fetchConversations(
   if (options.cursor) params.set('cursor', options.cursor);
   if (options.sessionName) params.set('sessionName', options.sessionName);
   if (options.needsHumanAttention) params.set('needsHumanAttention', 'true');
+  if (options.awaitingOrInHumanCare) params.set('awaitingOrInHumanCare', 'true');
   if (options.excludedFromPipeline !== undefined)
     params.set('excludedFromPipeline', String(options.excludedFromPipeline));
   if (options.archived !== undefined) params.set('archived', String(options.archived));
@@ -1469,6 +1547,8 @@ export async function sendConversationMedia(
     'content-type': file.type || 'application/octet-stream',
     'x-media-content-type': options.contentType,
     'x-media-filename': file.name,
+    // Upload cru (não passa por `request()`) — cabeçalho CSRF explícito.
+    ...csrfHeader(),
   };
   if (options.caption?.trim()) {
     headers['x-media-caption'] = options.caption.trim();
@@ -1597,6 +1677,45 @@ export function fetchAiInteractions(
   return request(`/api/ai-interactions${query ? `?${query}` : ''}`);
 }
 
+
+/**
+ * Bloco B3 (issue #14) — uma pergunta que a IA marcou como "não soube
+ * responder". Espelha o read model `UnansweredQuestion` de
+ * `apps/api/src/services/ai/domain/entities/UnansweredQuestion.ts`;
+ * `occurredAt` chega como string ISO (mesma convenção de todo DTO deste
+ * arquivo — a conversão para `Date` acontece só onde a data é formatada).
+ */
+export interface UnansweredQuestionSummary {
+  interactionId: string;
+  conversationId: string;
+  /** `id` da mensagem que a IA não soube responder — é o que a timeline marca. */
+  messageId?: string;
+  sessionName: string;
+  questionText?: string;
+  contactJid: string;
+  contactName?: string;
+  savedContactName?: string;
+  occurredAt: string;
+}
+
+/**
+ * Lista as lacunas de conhecimento da IA naquele WhatsApp, da mais recente
+ * para a mais antiga. `sessionName` é obrigatório de propósito: o Cérebro
+ * da IA é 1:1 por sessão (M6H-3), então uma lacuna só significa alguma
+ * coisa contra o Cérebro daquele número.
+ */
+export function fetchUnansweredQuestions(
+  sessionName: string,
+  limit?: number,
+  /** Restringe a UMA conversa — usado pela timeline para marcar as bolhas. */
+  conversationId?: string,
+): Promise<{ questions: UnansweredQuestionSummary[] }> {
+  const params = new URLSearchParams({ sessionName });
+  if (limit) params.set('limit', String(limit));
+  if (conversationId) params.set('conversationId', conversationId);
+  return request(`/api/ai-interactions/unanswered?${params.toString()}`);
+}
+
 // --- Milestone 4, Bloco M4D: DTOs e funcoes de `analytics` (read-only, D51) ---
 // Tipos espelham os DTOs de `services/analytics/domain/AnalyticsMetrics.ts`
 // (apps/api). `costUsd` permanece STRING decimal exata (D46) — conversao para
@@ -1715,4 +1834,60 @@ export function fetchEscalationRateAnalytics(
   return request(
     `/api/sessions/${encodeURIComponent(sessionName)}/analytics/escalation-rate${analyticsQuery(range)}`,
   );
+}
+
+// --- Painel /admin, Fase 5 — acesso assistido (lado do TENANT/cliente) ---
+
+export type SupportAccessStatus =
+  | 'pending'
+  | 'accepted'
+  | 'denied'
+  | 'expired'
+  | 'revoked'
+  | 'ended';
+
+export interface SupportAccessRequest {
+  id: string;
+  tenantId: string;
+  platformUserId: string;
+  reason: string;
+  status: SupportAccessStatus;
+  requestedAt: string;
+  respondedAt: string | null;
+  respondedByUserId: string | null;
+  expiresAt: string | null;
+}
+
+/** `GET /active` — o pedido pendente/ativo agora, com o nome de quem pediu resolvido. */
+export interface ActiveSupportAccess extends SupportAccessRequest {
+  adminName: string;
+  adminEmail: string;
+}
+
+export function fetchActiveSupportAccess(): Promise<{
+  open: ActiveSupportAccess | null;
+  canRespond: boolean;
+  /** `true` quando quem chama É a sessão de suporte (o admin operando o tenant). */
+  viewerIsSupport: boolean;
+}> {
+  return request('/api/support-access/active');
+}
+
+/** "Sair do suporte" — encerra o acesso e descarta a sessão de suporte do cookie. */
+export function leaveSupportSession(): Promise<{ ok: boolean }> {
+  return request('/api/admin/support/leave', { method: 'POST' });
+}
+
+export function respondSupportAccess(
+  id: string,
+  decision: 'accept' | 'deny',
+): Promise<{ request: SupportAccessRequest }> {
+  return request(`/api/support-access/${encodeURIComponent(id)}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export function revokeSupportAccess(id: string): Promise<{ request: SupportAccessRequest }> {
+  return request(`/api/support-access/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
 }

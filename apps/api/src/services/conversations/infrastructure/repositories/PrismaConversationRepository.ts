@@ -319,8 +319,16 @@ export class PrismaConversationRepository implements ConversationRepository {
     tenantId: string,
     options: FindAllByTenantOptions,
   ): Promise<ConversationPage> {
-    const { status, limit, cursor, sessionName, needsHumanAttention, excludedFromPipeline, archived } =
-      options;
+    const {
+      status,
+      limit,
+      cursor,
+      sessionName,
+      needsHumanAttention,
+      awaitingOrInHumanCare,
+      excludedFromPipeline,
+      archived,
+    } = options;
 
     const rows = await this.prisma.whatsAppConversation.findMany({
       where: {
@@ -331,6 +339,13 @@ export class PrismaConversationRepository implements ConversationRepository {
         // agora é `escalatedAt` definido, não mais `status: 'human'` sem
         // dono (ver docstring do port).
         ...(needsHumanAttention ? { escalatedAt: { not: null } } : {}),
+        // Filtro "Aguardando" da inbox (2026-09-05): a fila humana inteira —
+        // quem espera atendente OU quem já está com um. É um OU de verdade;
+        // somar `status` com `needsHumanAttention` daria E e devolveria só a
+        // interseção (quase sempre vazia).
+        ...(awaitingOrInHumanCare
+          ? { OR: [{ escalatedAt: { not: null } }, { status: STATUS_TO_PRISMA.human }] }
+          : {}),
         // ADR #94 (2026-08-01): filtro explícito só quando informado — a
         // inbox geral continua mostrando tudo por padrão.
         ...(excludedFromPipeline !== undefined ? { excludedFromPipeline } : {}),

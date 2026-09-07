@@ -87,6 +87,7 @@ describe('requireApiKey', () => {
       name: 'Empresa Teste',
       apiKeyHash,
       plan: 'pro',
+      status: 'active',
     });
   });
 

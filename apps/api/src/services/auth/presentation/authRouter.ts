@@ -78,6 +78,28 @@ export function createAuthRouter(
       const meta = { userAgent: req.headers['user-agent'], ip: req.ip };
       const result = await authService.login(params.tenantId, body.email, body.password, meta);
       if (!result.ok) {
+        // Bloco B1 — mesmo tratamento de `globalAuthRouter`: 423 quando a
+        // conta esta temporariamente bloqueada por excesso de falhas.
+        if (result.reason === 'account_locked') {
+          const retryAfterSeconds = Math.ceil((result.retryAfterMs ?? 0) / 1000);
+          res.setHeader('Retry-After', String(retryAfterSeconds));
+          res.status(423).json({
+            error: 'account_locked',
+            message: 'Muitas tentativas de acesso. Tente novamente em instantes.',
+            retryAfterSeconds,
+          });
+          return;
+        }
+        // Painel /admin, Fase 4 — tenant suspenso. 403 (nao 401): a senha
+        // esta certa, o bloqueio e da conta da empresa. A UI mostra um aviso
+        // proprio em vez de repetir "e-mail ou senha invalidos".
+        if (result.reason === 'tenant_suspended') {
+          res.status(403).json({
+            error: 'tenant_suspended',
+            message: 'O acesso desta empresa esta suspenso. Fale com o suporte.',
+          });
+          return;
+        }
         res
           .status(401)
           .json({ error: 'invalid_credentials', message: 'E-mail ou senha invalidos.' });

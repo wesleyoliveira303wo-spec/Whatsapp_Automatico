@@ -7,11 +7,13 @@ import {
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 import { RequestWithPrincipal } from '../../../shared/presentation/authenticate';
+import { ContactAvatarService } from '../application/ContactAvatarService';
 
 /** Milestone 5, Bloco M5D-3 — traduz o `principal` no ator para auditoria. Plano máquina/sem principal = sem `userId`. */
 function toActor(req: Request): WhatsAppSessionActor {
   const principal = (req as RequestWithPrincipal).principal;
-  if (!principal || principal.kind === 'machine') {
+  // `machine` e `support` (Fase 5 do /admin) = planos confiáveis, sem `userId`.
+  if (!principal || principal.kind !== 'user') {
     return {};
   }
   return { userId: principal.userId };
@@ -43,6 +45,16 @@ const createSessionBodySchema = z.object({
  * duplica esse valor).
  */
 const historyQuerySchema = z.object({ limit: z.coerce.number().int().positive().optional() });
+
+/**
+ * Bloco B2 (issue #13) — corpo da consulta de fotos EM LOTE. O teto de 300
+ * existe para uma tela nunca virar uma consulta gigante: a lista de
+ * Conversas carrega algumas dezenas de linhas por vez, e um pedido muito
+ * maior que isso é sinal de uso indevido, não de tela cheia.
+ */
+const contactAvatarsBodySchema = z.object({
+  contactJids: z.array(z.string().trim().min(1)).min(1).max(300),
+});
 
 // `asyncHandler`/`validateOrRespond` extraídos para `shared/presentation/httpHelpers`
 // na Milestone 3, Bloco 5 (D9/D16) — ver docstring do arquivo de destino:
@@ -82,7 +94,16 @@ const historyQuerySchema = z.object({ limit: z.coerce.number().int().positive().
  * "criação" ou "reconexão" sem expandir esse contrato, o que está fora do
  * escopo deste bloco.
  */
-export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionService): Router {
+export function createWhatsAppSessionsRouter(
+  sessionService: WhatsAppSessionService,
+  /**
+   * Bloco B2 (issue #13) — opcional para não quebrar nenhum chamador
+   * existente (inclusive testes que só exercitam o ciclo de vida da sessão).
+   * Ausente, a rota em lote responde 503: melhor dizer "não configurado" do
+   * que servir uma lista vazia que a UI leria como "ninguém tem foto".
+   */
+  contactAvatarService?: ContactAvatarService,
+): Router {
   const router = Router({ mergeParams: true });
 
   /**
@@ -162,6 +183,50 @@ export function createWhatsAppSessionsRouter(sessionService: WhatsAppSessionServ
    * contatos que conversam com ela. `avatarUrl: undefined` (nunca 404) é uma
    * resposta válida — a UI trata como "sem foto", não como erro.
    */
+  /**
+   * Bloco B2 (issue #13) — fotos de perfil EM LOTE, servidas do cache do
+   * servidor. É a rota que as listas (Conversas, Pipeline, Contatos) usam:
+   * uma requisição por tela, nunca uma por linha.
+   *
+   * NUNCA toca o socket Baileys no caminho da requisição — o que falta ou
+   * venceu é atualizado em segundo plano, com teto de concorrência (ver
+   * `ContactAvatarService` e a ADR #78, que registra o socket travado por
+   * uma consulta de foto).
+   *
+   * `POST` para uma leitura é deliberado: a lista de JIDs passa fácil do que
+   * cabe com folga numa query string, e cada JID já é um valor longo. Mesma
+   * permissão da rota de foto individual (`session:read`).
+   *
+   * Declarada ANTES de `/:sessionName/contacts/:contactJid/avatar` por
+   * disciplina de ordem (não há colisão real — são 2 e 3 segmentos).
+   */
+  router.post(
+    '/:sessionName/contacts/avatars',
+    requirePermission('session:read'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(contactAvatarsBodySchema, req.body, res);
+      if (!body) return;
+
+      if (!contactAvatarService) {
+        res.status(503).json({ error: 'contact_avatar_cache_unavailable' });
+        return;
+      }
+
+      const avatars = await contactAvatarService.listAvatars(
+        params.tenantId,
+        params.sessionName,
+        body.contactJids,
+      );
+      res.status(200).json({ avatars });
+    }),
+  );
+
   router.get(
     '/:sessionName/contacts/:contactJid/avatar',
     requirePermission('session:read'),

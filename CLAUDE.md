@@ -1164,8 +1164,599 @@ O balão único e a genericidade eram **sintoma**, não causa: derrubada logo no
 - **Densidade da área rolável (Task 7):** margem lateral generosa no desktop (`lg:px-[7%]`, `sm:px-6`) e enxuta no mobile (`px-3 py-2`); o papel de parede fica no contêiner pai que não rola, só a lista de mensagens rola por cima.
 **Impacto:** zero mudança em `apps/api`, zero dependência nova, estética plana (sem gradiente/glass/animação nova). Suíte do monorepo: `dashboard-jsdom` 77/78 suítes 568/570 (as 2 falhas em `AiProfilePanel.test.tsx` são pré-existentes, ADR #105/#106), `dashboard` 48/48 suítes 377/377, `api` 153/154 suítes 1907/1909 (as 2 falhas em `ConversationAiService.test.ts` são pré-existentes, ADR #105/#106). `tsc`/`lint`/`build` do dashboard limpos (1 warning pré-existente em `settingsPage.test.tsx`). **Pendente:** validação visual item a item da checklist do brief (Step 5) na máquina do fundador — ferramentas de IA não fazem login; abrir `/sessions/<sessao>/conversations/<id>` após `docker compose restart dashboard`.
 
+### Épico "Endurecimento e escala" (issue #11) — Blocos B1–B4
+
+**Data:** 2026-09-05
+**Contexto:** com o produto no ar (deploy T9, Oracle + Caddy), o fundador listou sete itens de endurecimento. Um deles (alternativa de teclado no Pipeline) foi verificado como **já existente** — o backlog é que estava desatualizado, corrigido em `.claude/rules/skills-guide.md`. Os demais viraram os blocos abaixo. O B5 (self-signup com billing) segue bloqueado por cinco decisões de negócio — gateway, modelo de cobrança, teste grátis, tolerância de atraso e nota fiscal —, registradas na issue #16 sem nenhuma linha de código escrita.
+
+**B1 — Token CSRF, trava de conta e rate limit distribuído (issue #12, commit `50aeed3`).** Três proteções que a Milestone 5 deixou apenas MITIGADAS passaram a ser resolvidas. (1) CSRF: `setSessionCookie` grava DOIS cookies — a sessão cifrada (HttpOnly) e um token legível pelo JS; `requireSession` compara o cabeçalho `x-csrf-token` com o token guardado DENTRO do payload cifrado (synchronizer token, mais forte que double-submit puro) em todo método mutante, respondendo 403. Sessões antigas ganham o token em silêncio, sem deslogar ninguém. (2) Trava por conta: novo port `AccountLockout`, 5 falhas em 15 min → 423 com `Retry-After`; a contagem é pelo e-mail TENTADO, exista ele ou não — do contrário a diferença de resposta viraria um oráculo de quais e-mails estão cadastrados. (3) Rate limit: novo port `RateLimitStore` com três adapters — `RedisRateLimitStore` (janela deslizante em script Lua atômico), `InMemoryRateLimitStore` e `FallbackRateLimitStore`, que cai para a memória quando o Redis falha e nunca deixa infraestrutura auxiliar derrubar o login. A API segue subindo sem `REDIS_URL` (D8). `InMemorySlidingWindowAiRateLimiter` foi REMOVIDO: com o limitador de IA usando o mesmo port, virou duplicação.
+
+**B3 — Perguntas que a IA não soube responder (issue #14, commits `44f5c5a`, `f3caa17`, `0d54406`).** O F1.4 (ADR #95) já gravava a lacuna; nada no produto mostrava. `listUnansweredQuestions` deixou de devolver `AiInteraction` cru e passou a devolver o read model `UnansweredQuestion` — uma consulta só que junta interação + mensagem inbound + conversa, mesmo padrão de leitura de relatório de `PrismaAnalyticsRepository`. `sessionName` obrigatório (o Cérebro da IA é 1:1 por sessão, ADR #82). A lista vive DENTRO da aba FAQ, porque a ação que resolve uma lacuna é justamente cadastrar a resposta ali. Depois, a pedido do fundador, a bolha da mensagem na CONVERSA ganhou um marcador "!" (à direita) que abre o cadastro sem sair da tela, gravando pelo mesmo `createAiFaqEntry` — nenhuma rota paralela.
+
+**BUG CRÍTICO achado no meio do B3 — uma coluna servindo a dois donos.** A tela mostrava a RESPOSTA da IA no lugar da PERGUNTA. Causa medida por consulta direta ao banco (todas as linhas `UNKNOWN_ANSWER` apontavam para mensagens `direction = OUTBOUND`): o F1.4 gravava a pergunta em `ai_interactions.message_id`, e o `OutboundCommandConsumer`, logo depois do envio, chama `linkMessage()` e SOBRESCREVE a mesma coluna com a resposta. Corrigido com coluna própria `inbound_message_id` (migration `20260905160000`), incluindo backfill best-effort das linhas existentes (a última mensagem INBOUND antes da interação — o que `shouldGenerateReply` já garante). Sem essa correção, o marcador do B3 apontaria para a bolha errada.
+
+**B2 — Foto de perfil via cache no servidor (issue #13).** Ver a entrada dedicada abaixo: foram seis rodadas e o desfecho merece registro próprio.
+
+**B4 — Listas grandes (issue #15, commit `96bf922`).** DECISÃO: virtualização por CSS nativo (`content-visibility: auto` + `contain-intrinsic-size: auto`), NÃO uma janela virtual (biblioteca ou própria). O motivo não é preferência por solução nativa — é que desmontar itens fora da tela quebraria duas coisas que o produto já tem: (1) o arrastar-e-soltar do Pipeline (um card só é alvo de soltura se estiver no DOM), que o próprio critério da issue exige preservar; (2) as animações de `AnimatePresence`, que disparariam `initial`/`exit` a cada rolagem. `content-visibility` ataca o custo real apontado na auditoria de 2026-08-22 (layout e pintura) sem tocar no DOM: leitor de tela, Ctrl+F, foco por teclado e alvos de arrastar seguem funcionando. LIMITE REGISTRADO: elimina o custo de renderização, não o de reconciliação do React — é o gargalo certo para dezenas/centenas de itens com avatar e selos; para milhares, aí sim vale uma janela virtual, e o Pipeline precisará de solução própria para o DnD. Travas de regressão em `ConversationListItem`/`PipelineCard`.
+
+**Ajustes de UX na mesma rodada (commit `0d54406`):** filtros da inbox reduzidos de 5 para 3 (Todas/Aguardando/Arquivadas) — as 5 pílulas não cabiam nos 344px da coluna mesmo depois de duas rodadas de aperto de padding/fonte. "Aguardando" virou a fila humana INTEIRA (esperando atendente OU já em atendimento), resolvida no SERVIDOR (`awaitingOrInHumanCare`) com um OU de verdade: somar `status` com `needsHumanAttention` daria E e devolveria só a interseção. "Não lidas" saiu por ser o único filtro resolvido no cliente — e portanto o único que mentia sobre o resultado com a lista paginada. Indicador de plano (Grátis/Pro/Enterprise) no Perfil, lido do mesmo `GET /api/tenant` que já trazia o nome; plano não carregado NÃO vira "Grátis" por engano.
+
+**Impacto:** migrations `20260905120000_add_contact_avatar_cache` e `20260905160000_add_ai_interaction_inbound_message`. Suítes ao fim da rodada: `api` 167 suítes / 2.063 testes; `dashboard`+`jsdom` 134 suítes / 1.007 testes; `tsc`/`lint`/`next build` limpos.
+
+### O caso das fotos de perfil — três diagnósticos errados antes do certo
+
+**Data:** 2026-09-05
+**Contexto:** o B2 (issue #13, commits `918ed30`, `baa2b14`, `d5aaf1e`, `9206c83`, `8c3908a`, `63231db`) devolveu a foto de perfil às listas trocando a consulta ao vivo por um cache no Postgres (`WhatsAppContactAvatar`), com atualização fora do caminho da requisição e teto de concorrência — a garantia que a ADR #78 exige. A arquitetura funcionou como projetada. Mas as fotos continuavam não aparecendo, e a investigação virou o registro mais instrutivo desta rodada.
+
+**Erro nº 1 — cachear uma falha como se fosse informação.** `RegistryContactAvatarSource` usa `registry.peek`, que devolve nada quando a sessão não está instanciada em memória. Esse "nada" era indistinguível de "perguntamos e a pessoa não tem foto", e virava registro negativo com 6h de validade. Como o registry nasce vazio a cada reinício, a primeira abertura de tela depois de subir a API marcava TODOS os contatos como sem foto pelas 6 horas seguintes. Mesma classe do bug de 2026-07-30, agora do lado do servidor. Corrigido com `ContactAvatarLookup`, que separa "checamos" de "não deu para checar".
+
+**Erro nº 2 — afirmar sem medir.** Com 3 fotos em 52 contatos, foi afirmado ao fundador que "a maioria dos seus contatos não tem foto pública". Ele discordou com base no uso real do WhatsApp dele, e estava certo. A instrumentação (contagem por desfecho, um resumo por lote) mostrou: **72 de 81 consultas (89%) morriam por TIMEOUT; apenas 1 contato realmente não tinha foto.** A conclusão anterior era falsa e teria encerrado a investigação no lugar errado.
+
+**Erro nº 3 — corrigir sem verificar se o caminho era exercitado.** O teto subiu de 6s para 25s na atualização de fundo (seguro, porque ninguém espera por ela; a proteção real é o teto de concorrência). A medição seguinte deu UMA consulta em 4 minutos: o cliente pedia as fotos só ao MONTAR o componente. O TTL de "sem foto" existia desde o B2, mas nada o disparava — deixar a tela aberta não trazia nada, só um F5 trazia. Corrigido com um ticker único por tela (20s) que repete o pedido dos que faltam numa requisição só.
+
+**A causa real, medida na terceira instrumentação:** mesmo com uma consulta por vez e 3s de intervalo, o WhatsApp deu 5 timeouts seguidos e o disjuntor pausou a fila — e o próprio Baileys registra `"timed out waiting for message"`. Não é ausência de foto (1 contato), não é o teto de tempo (25s não ajudaram), não é o formato do endereço (2 dos 8 sucessos eram `@lid`). **O WhatsApp atende as primeiras consultas de foto depois de conectar e então para de responder.** É limitação dele para consulta em lote, fora do alcance deste projeto.
+
+**Estado final, deliberadamente aceito:** as fotos que o WhatsApp entrega aparecem; as listas nunca mais bombardeiam o socket de mensagens; timeout nunca mais é confundido com ausência; e o gotejamento (1 consulta a cada 3s, pausa de 10 min após 5 timeouts seguidos) impede o sistema de se debater à toa. As iniciais coloridas seguem cumprindo o papel de identificar o contato. Se a limitação do WhatsApp mudar, o sistema aproveita sozinho, sem alteração.
+
+**Lição de processo — a terceira vez que este projeto paga por ela.** A ADR #88 (Pipeline travado) e o incidente do balão único já haviam registrado "não acumular hipóteses sem medir". Aqui a regra foi seguida só em parte: cada rodada mediu ALGO, mas duas delas mediram a coisa errada — o desfecho da consulta, antes de verificar se a consulta estava sequer acontecendo. Refinamento da regra, para a próxima vez: **antes de corrigir um caminho, confirme que ele está sendo exercitado.** Uma correção num caminho que ninguém percorre é indistinguível de nenhuma correção — e custa uma rodada inteira de confiança do fundador.
+
+### Travamento da suíte `dashboard-jsdom` — menu modal do Radix contra o diálogo de confirmação
+
+**Data:** 2026-09-05
+**Contexto:** a suíte `dashboard-jsdom` não terminava. Não era lentidão: um worker girava com 2.500s de CPU e, como o travamento acontecia perto do fim, NENHUM resultado do pacote aparecia — inclusive falhas reais que existiam ali.
+**Causa medida** (sonda temporária, descartada depois de cumprir o papel): `fireEvent.click` num item do menu "⋮" da tabela de Campanhas nunca retornava. O menu era modal (padrão do Radix) e três de seus itens abrem um `Dialog` de confirmação; menu e diálogo montavam a própria camada de modalidade (trava de rolagem + `aria-hidden` + escopo de foco) no MESMO tique e entravam em laço infinito. Uma primeira hipótese (`onCloseAutoFocus` prevenido) foi testada, não resolveu e foi REVERTIDA antes da segunda — em vez de ficar no código "por precaução".
+**Decisão:** `modal={false}` no `DropdownMenu` (commit `2301449`). Um menu de ações pequeno não precisa de modalidade própria; quem prende o foco é o diálogo que ele abre. A suíte de `CampaignsPanel` voltou a rodar em 2s.
+**Achado colateral (commit `3a185f6`):** os 10 testes de integração falhavam de forma intermitente — passavam numa rodada, falhavam na seguinte, sem mudança de código. Medido: o `beforeAll` leva ~5s só para subir o motor do Prisma dentro do Jest no Windows, oscilando exatamente em cima do teto padrão de 5s do Jest, que nunca foi uma afirmação sobre esses testes. Teto próprio de 30s, com o motivo registrado no código.
+
+
+### Painel `/admin`, Fase 1 — Fundação de segurança (login próprio, bounded context `platform`, trilha)
+
+**Data:** 2026-09-05
+**Contexto:** primeira fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§15), iniciada
+logo após o fundador confirmar a última decisão em aberto ("suspender é coluna
+própria `Tenant.status`, e pode começar a implementar"). O `/admin` é a
+superfície mais sensível do sistema — é o único lugar que atravessa tenants —,
+então a fase entrega SÓ a fronteira: dá para entrar, a sessão é conferida no
+servidor a cada requisição, e todo login (inclusive o que falha) vira trilha.
+Nenhum dado de cliente é lido ainda.
+**Decisão — `PlatformUser` é tabela PRÓPRIA, nunca um `User` com cargo novo:**
+todo `User` pertence obrigatoriamente a um tenant e os cinco cargos são
+escopados a um tenant; o isolamento entre clientes se apoia em "toda consulta
+filtra por `tenantId`". Um admin que atravessa tenants é a EXCEÇÃO a essa
+regra, e exceção não pode morar na mesma tabela que a regra — assim um bug de
+RBAC no produto não tem como promover um cliente a dono da plataforma. Migration
+`20260905200000_add_platform_user_and_audit` (`platform_users` +
+`platform_audit_logs`, aditiva). `PlatformAuditLog` é append-only e SEM FK para
+tenant, de propósito: a prova do que o dono fez precisa sobreviver à exclusão do
+tenant que ela auditou — mesmo padrão de `AuditLog`/`ContactConsentEvent`.
+**Decisão — dois porteiros que nunca se cruzam (§3.2), e a separação é
+ESTRUTURAL, não um `if`:** cookie próprio (`wa_admin_session`), token CSRF
+próprio (`wa_admin_csrf`), prefixo de rota próprio (`/api/platform`, sem
+`:tenantId` no caminho — não há "tenant do path" para um atacante trocar), e
+crachá próprio. `Hs256PlatformSessionTokenService` é uma classe SEPARADA de
+`Hs256AccessTokenService` (mesma técnica, payload incompatível, segredo
+distinto): um crachá de tenant não passa no porteiro da plataforma nem o
+contrário, e há teste travando isso inclusive no pior cenário (mesmo segredo).
+O `index.ts` recusa subir se `PLATFORM_SESSION_SECRET === ACCESS_TOKEN_SECRET`.
+Três segredos ao todo, cada um com um propósito só: `PLATFORM_SESSION_SECRET`
+(assina o crachá na API) e `PLATFORM_DASHBOARD_SESSION_SECRET` (cifra o cookie
+no BFF) — mesma separação que já existe entre `ACCESS_TOKEN_SECRET` e
+`DASHBOARD_SESSION_SECRET`. Sem os segredos, o painel simplesmente não sobe:
+degradação igual à do resto e a mais segura possível aqui (nunca existe um modo
+"sem senha").
+**Decisão — o porteiro RELÊ o banco a cada requisição**, diferente do porteiro
+de tenant, que confia na assinatura até o crachá vencer. É isso que faz um admin
+suspenso perder o acesso na hora (§4: "expiração verificada no servidor a cada
+requisição"); o custo é uma consulta por requisição, irrelevante num painel de
+um usuário só. Pelo mesmo motivo o BFF NÃO renova nada em silêncio: a sessão é
+de 8h e expira de vez.
+**Reaproveitado sem reescrever** (é o `/admin`, não é lugar para uma segunda
+implementação de autenticação envelhecendo em paralelo): `ScryptPasswordHasher`,
+a trava de conta e o `RateLimitStore` do Bloco B1 — este com escopos PRÓPRIOS
+(`platform-login:ip`/`platform-login:identity`), senão um ataque a uma conta de
+cliente poderia trancar a porta do fundador. E-mail inexistente TAMBÉM gasta uma
+tentativa da trava: sem isso a própria trava viraria o oráculo de "este e-mail é
+admin" que a resposta genérica evita.
+**Arquitetura:** tudo em `services/platform` (§3.3) — inclusive o
+`requirePlatformUser`, que NÃO foi para `shared/presentation` como o
+`requireUser`, justamente para "que código pode atravessar tenants?" continuar
+respondível com um `grep` no diretório. `PublicPlatformUser` +
+`toPublicPlatformUser` tornam o vazamento de `passwordHash` um erro de
+compilação, não uma questão de disciplina.
+**UI:** `/admin/login` (austera de propósito — sem "criar conta", sem "esqueci a
+senha", sem marketing: o único admin nasce pelo script
+`createPlatformUser.ts`, e menos superfície é o ponto já que o painel fica
+publicamente alcançável, risco aceito em §4) e `/admin` com os cinco destinos de
+§3.5 já visíveis, os quatro das próximas fases desabilitados e explicados em vez
+de linkados. Ambas escuras de forma fixa: a diferença visual em relação ao
+produto é intencional, para nunca haver dúvida sobre em qual superfície se está.
+A tela de Início diz que os indicadores ainda não existem em vez de mostrar
+cartões zerados — "0 tenants em atenção" e "ainda não medimos isso" parecem
+iguais na tela e significam coisas opostas (mesma disciplina anti-invenção da
+Fase L).
+**Impacto:** requer a migration + `npx prisma generate` e duas variáveis novas
+no `.env`. Zero mudança em qualquer contrato existente do produto — nada de
+`services/*` pré-existente foi tocado além do mount em `index.ts`. Testes novos:
+`PlatformAuthService` (15), `Hs256PlatformSessionTokenService` (8, incluindo a
+trava dos dois porteiros), `platformRouter` (11, incluindo "admin suspenso
+depois do login perde o acesso na requisição seguinte"), `platformSession` do
+BFF (13), rotas `/api/platform/*` (13), `AdminShell` (5, jsdom). Suíte do
+monorepo: **307/307 suítes, 3139/3139 testes verdes**; `tsc`/`eslint`/
+`next build` limpos nos dois pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real): admin criado
+pelo script, login/`/me`/logout pela API por `curl`, e o fluxo completo pelo
+navegador (entrar → casca → sair → `/admin` volta a redirecionar para o login).
+As três ações apareceram em `platform_audit_logs`, e as linhas SOBREVIVERAM à
+exclusão do admin de teste — a garantia de append-only sem FK conferida no
+banco, não só no código.
+**Próximo passo:** Fase 2 (§15) — observabilidade de tenants: lista, detalhe,
+indicadores (§6.4) e sinais de atenção (§6.3).
+
+
+### Painel `/admin`, Fase 2 — Observabilidade: Centro de Tenants
+
+**Data:** 2026-09-06
+**Contexto:** segunda fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§6/§15), logo
+após a Fase 1 (login + fronteira). Entrega a "dor original": decidir sobre um
+cliente com informação. Só leitura, sem migration (risco 🟢). Nenhum número
+inventado — cada indicador tem uma fonte real no banco (§6.4).
+**Disciplina cumprida ANTES do código (§6.3.1):** os limiares dos sinais foram
+conferidos contra a base real. Subi Postgres e medi: **21 tenants — 1
+ENTERPRISE (o do fundador), 20 FREE, dos quais 20 sem NENHUMA sessão nem
+mensagem.** tenant-1: 53/213 = 24,9% de `PROVIDER_ERROR` na janela de 30 dias
+(dispara "IA falhando", como o §5.2 previa), escalonamento ~3% (não dispara
+"IA travando"). É a mesma lição que o projeto já pagou três vezes (ADR #88, o
+balão único, as fotos de perfil): regra escrita parece certa até encontrar os
+dados. Estes encontraram — e a redação corrigida do §6.3.1 ("nunca conectou ≠
+caiu") passou: os 20 shells caem em "Nunca começou" (âmbar), não em
+"Desconectado" (vermelho).
+**Decisão — 7 sinais como FUNÇÕES PURAS (`domain/tenantSignals.ts`):** um
+predicado por linha do §6.3, limiares como constantes EXPORTADAS (calibráveis,
+mesmo caminho do rate limit de IA / F1.10). `evaluateTenantSignals(overview,
+now)` devolve a lista inteira ordenada por gravidade (vermelho antes de
+âmbar; entre vermelhos, `Desconectado` antes de `Sumiu`), com fallback num
+único `Saudável` 🟢. Cada sinal carrega `severity` + `label` + `reading` — a
+regra inegociável do §5.3 (nunca só cor) é estrutural: o tipo não deixa
+existir um sinal sem rótulo.
+**Decisão — sinal "Custo alto" com constante provisória, registrado como
+desvio.** O preço do plano não vive no banco (§10.2 — só o enum `plan`).
+`PLAN_MONTHLY_PRICE_USD` em `tenantSignals.ts` deriva as cifras do
+`CONTEXT.md` (R$ 0/99/349) a uma taxa de referência fixa de R$ 5,50/US$,
+documentada como provisória. No free tier o custo real é US$ 0, então o sinal
+nunca dispara hoje — passa a valer com um provider pago. Mover o preço para o
+schema é candidato à Fase 4. Alternativa (adiar o sinal) foi descartada por
+fragmentar o conjunto de 7 sinais que o fundador aprovou.
+**Arquitetura — tudo em `services/platform` (§3.3):** porta
+`TenantObservabilityRepository` (leitura cross-tenant — o único diretório
+autorizado a consultar sem `tenantId`), `PrismaTenantObservabilityRepository`
+como a ÚNICA camada que vê SQL (mesmo contrato de `PrismaAnalyticsRepository`:
+`$queryRaw` parametrizado, só leitura, dinheiro como STRING decimal `::text`
+D46, contagens `::int` para não virar `BigInt`). A lista faz **8 consultas
+agregadas no total** — uma por indicador, `GROUP BY tenant_id`, montadas em
+memória — NUNCA uma por tenant (há teste de integração que espiona
+`$queryRaw` e trava em 8). A leitura lê as tabelas físicas direto
+(`whatsapp_sessions`, `whatsapp_messages`, `ai_interactions`,
+`whatsapp_conversations`, `ai_business_profiles`, ...), sem importar
+entidades/ports dos outros bounded contexts (D47) — é o que permite
+`services/platform` não acoplar a `whatsapp`/`ai`/`campaigns`.
+`TenantObservabilityService` é fino (resolve a janela de 30 dias fixa, chama o
+repo, anexa os sinais da função pura) e ordena a LISTA por urgência: dentro da
+mesma faixa de severidade, atividade mais recente primeiro — um cliente vivo
+com a IA falhando é um incêndio; um tenant que nunca começou (sem atividade
+nenhuma, `lastActivityAt = null`) é acompanhamento conhecido, vai para o fim
+da faixa.
+**Rotas:** `platformTenantsRouter` (separado do `platformRouter` da Fase 1,
+mesmo prefixo `/api/platform`, mesmo `requirePlatformUser`):
+`GET /tenants` (lista) e `GET /tenants/:tenantId` (detalhe, 404 se não
+existe). SÓ LEITURA — nenhuma auditada: `PlatformAuditLog` é para AÇÕES sobre
+um tenant (§8, Fase 4); abrir uma tela de observação não é ação (mesmo
+critério do `auditLogRouter` do produto).
+**Detalhe (§6.2):** `TenantDetail` estende o `TenantOverview` com sessões uma
+a uma (status "última informação conhecida" — ADR #80, a sobreposição pelo
+registry ao vivo é da Fase 3, e a UI diz isso), campanhas (total/running/
+paused/pausedByBreaker), contatos e histórico recente de quedas
+(`whatsapp_session_events`, teto de 30). "Últimos acessos de suporte" fica
+FORA — depende de `TenantAccessRequest`, que só nasce na Fase 5; o campo não é
+declarado para não fingir que existe.
+**UI:** `/admin/tenants` (tira de resumo — 3 stat tiles derivados da própria
+lista, sem consulta nova — + tabela ordenada por urgência) e
+`/admin/tenants/[tenantId]` (indicadores em grade + sessões + histórico de
+conexão). `TenantSignalBadge` = ícone + rótulo, cor do Design System
+(`destructive`/`warning`/`success`), `reading` no `title`. Item "Tenants" do
+`AdminShell` deixou de ser `comingSoon`; a tela Início aponta para a lista.
+Custo de IA formatado só na fronteira de renderização (`parseFloat`, mesmo
+padrão de `analyticsView.ts`) — o valor exato continua STRING no payload.
+**Impacto:** zero migration, zero mudança em qualquer contrato do produto —
+nada de `services/*` pré-existente tocado além do mount em `index.ts` e do
+`AdminShell`/Início. Testes novos: `tenantSignals` (24 — cada predicado,
+precedência, "nunca só cor", os casos reais medidos), `TenantObservabilityService`
+(6 — anexo de sinais, ordenação por urgência, janela de 30d),
+`platformTenantsRouter` (7 — 401 sem crachá, crachá de tenant não abre,
+serialização Date→ISO, 404), `tenantObservability.integration` (3 — contra
+Postgres REAL: formato dos agregados, "8 consultas fixas não uma por tenant",
+detalhe + null), BFF `tenantsRoutes` (6), `TenantSignalBadge` (3, jsdom),
+`AdminShell` (ajustado — Tenants agora é link). Suíte do monorepo: **313/313
+suítes, 3173/3173 testes verdes**; `tsc`/`eslint`/`next build` limpos nos dois
+pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real, admin de teste
+criado e removido ao final): login → lista com `Whatsapp-Automatico`
+("IA falhando", 1.542 msgs) no topo e os 20 shells "Nunca começou" abaixo →
+detalhe com os 8 indicadores, 2 sessões (uma conectada, uma não), 30 eventos
+de conexão e o aviso do ADR #80.
+**Próximo passo:** Fase 3 (§15) — observabilidade da PLATAFORMA: Início com
+KPIs globais e Fila de ação; Saúde (3 filas, Postgres, Redis); ampliar
+`/health/ready` para as três filas.
+
+
+### Painel `/admin`, Fase 3 — Observabilidade da plataforma (Início + Saúde)
+
+**Data:** 2026-09-06
+**Contexto:** terceira fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§5/§15),
+imediatamente após a Fase 2. Responde *"o que eu preciso fazer agora?"* e dá a
+visão global. Só leitura, sem migration (risco 🟢). Nenhum número inventado —
+cada KPI tem fonte real (§5.2), e o único registro de erro persistido no
+sistema (`ai_interactions.status = PROVIDER_ERROR`) é o que alimenta a "taxa
+de falha de IA".
+**Decisão — Fila de ação como FUNÇÃO PURA (`domain/platformActionQueue.ts`):**
+recebe a lista de tenants (com sinais da Fase 2, já reconciliados) + a
+contagem de campanhas pausadas pelo disjuntor e devolve os itens ordenados
+por urgência: WhatsApp fora do ar → tenant em atenção (outro vermelho, hoje
+"Sumiu") → campanhas pausadas pelo disjuntor → nunca começou. Cada item é uma
+agregação ("20 clientes que não passaram da instalação"), ícone + rótulo, com
+link. Lista vazia = sucesso. **Desvio:** "Pedidos de suporte aguardando
+resposta" (§5.1, 1ª linha) NÃO entrou — depende de `TenantAccessRequest`, da
+Fase 5; o lugar está reservado e comentado.
+**Decisão — sobreposição do status ao vivo (ADR #80), como a Fase 2 previa mas
+adiou.** Nova porta `PlatformLiveSessionStatusResolver`
+(`services/platform/domain`), implementada em
+`RegistryPlatformLiveSessionStatusResolver` (`services/whatsapp/infrastructure`
+— é lá que o `WhatsAppConnectionRegistry` mora, mesmo padrão de
+`RegistryContactAvatarSource`), usando `registry.peek()` (leitura pura, nunca
+instancia socket). Injetada de forma OPCIONAL e TARDIA (D15) no
+`TenantObservabilityService` — quando presente, `listTenants()` reconcilia
+`connectedSessionCount` com o status ao vivo ANTES de calcular os sinais (a
+função pura `applyLiveSessionOverlay`). Sem o resolvedor (teste, modo
+degradado), o comportamento é o da Fase 2, intocado. Isso conserta o
+"WhatsApp caiu" na Fila de ação disparando com dado velho depois de um
+reinício da API — o mesmo bug que a `listSessions()` do produto já corrige há
+tempos.
+**Decisão — probe de infra (`PlatformHealthProbe`) implementado em `index.ts`.**
+`BullMqPlatformHealthProbe` (`services/platform/infrastructure`) checa
+Postgres (`SELECT 1`) e as TRÊS filas (`ai-reply`/`whatsapp-outbound`/
+`campaign-send`), cada leitura com teto de tempo curto (`Promise.race`): a
+conexão de fila usa `maxRetriesPerRequest: null`, então um comando ioredis
+nunca rejeita sozinho enquanto o Redis está fora — mesma armadilha (e mesma
+correção) do `/health/ready`. As outras duas filas não são expostas por suas
+composições, então `index.ts` monta objetos `Queue` SÓ-LEITURA sobre uma
+conexão já existente — ler contagem não precisa de `Worker`. Injetado de
+forma tardia/opcional; sem ele (modo degradado, sem `REDIS_URL`) a tela Saúde
+diz "não verificável" em vez de fingir zeros.
+**Decisão — `/health/ready` ampliado para as três filas (o plano mestre §5.2
+pedia isso nesta fase).** Campo `queues` novo (`{ 'ai-reply', 'whatsapp-outbound',
+'campaign-send' }`, cada uma waiting/active/delayed/failed); `aiQueue`
+mantido intacto para não quebrar nada que já leia o formato antigo. Cada fila
+extra no seu próprio try — uma travada não some com o número da outra.
+**Arquitetura:** `PlatformOverviewService` e `PlatformHealthService`
+(`services/platform/application`) NÃO repetem a lógica de sinal nem de
+sobreposição — reaproveitam `TenantObservabilityService.listTenants()`, que
+já devolve a lista reconciliada com sinais. O overview soma os KPIs globais
+(`platformTotals` — um punhado de agregações que somam TODAS as linhas: um
+método novo no repositório da Fase 2) e monta a Fila de ação; a saúde junta o
+snapshot de infra + a taxa de falha de IA + a contagem de WhatsApps caídos.
+Rotas `GET /api/platform/overview` e `GET /api/platform/health` no
+`platformOverviewRouter` (separado, mesmo prefixo, mesmo porteiro, não
+auditadas — observar não é agir). O mount de TODAS as rotas de plataforma
+(Fases 1, 2, 3) desceu no `index.ts` para depois de o `registry`/filas
+existirem — o error handler continua por último.
+**UI:** `/admin` (Início) reconstruído — Fila de ação em cima (lista com
+ícone + rótulo + link, "nada precisa de atenção" quando vazia), número herói
+(21 clientes) + linha de stat tiles (precisam de atenção, saudáveis,
+usuários, WhatsApps conectados ao vivo, mensagens 30d, IA 30d + % de erro,
+custo de IA, campanhas). Nova tela `/admin/health` — Postgres/Redis com
+ícone + "respondendo"/"sem resposta", as 3 filas com profundidade, taxa de
+falha de IA e clientes com WhatsApp fora do ar. Item "Saúde" do `AdminShell`
+deixou de ser `comingSoon`. Custo de IA formatado só na fronteira de
+renderização (`parseFloat`, D46) — string exata no payload.
+**Impacto:** zero migration, zero mudança em qualquer contrato do produto além
+do campo aditivo `queues` em `/health/ready`. Testes novos:
+`platformActionQueue` (7), `liveSessionOverlay` (5),
+`PlatformOverviewService` (6), `PlatformHealthService` (6),
+`BullMqPlatformHealthProbe` (4 — inclui "Postgres pendurado não trava o
+probe" e "Redis todo fora → filas vazias"), `platformOverviewRouter` (7 — 401
+sem crachá, D46), `TenantObservabilityService` (+3 — overlay corrige banco
+velho, resolvedor que lança não derruba, sem resolvedor não consulta
+sessões), `tenantObservability.integration` (+2 — `platformTotals` e
+`listAllSessions` contra Postgres REAL), BFF `overviewHealthRoutes` (5),
+`AdminShell` (ajustado). Suíte do monorepo: **320/320 suítes, 3213/3213
+testes verdes**; `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real, admin de teste
+criado e removido): `/health/ready` mostrando as 3 filas; Início com a Fila de
+ação ("20 clientes que não passaram da instalação"), número herói 21 e os
+KPIs; Saúde com Postgres/Redis respondendo, as 3 filas (14/12/0 falhas —
+histórico da cota do Gemini), taxa de falha de IA 24,9%, 0 WhatsApps caídos.
+`sessionsConnectedLive` calculado pelo registry ao vivo.
+**Próximo passo:** Fase 4 (§15) — Controle: alterar plano, suspender/reativar
+(migration `Tenant.status`), primeira ESCRITA cross-tenant, com
+`security-review` (risco 🟠).
+
+### Painel `/admin`, Fase 4 — Controle do tenant (alterar plano, suspender/reativar)
+
+**Data:** 2026-09-06
+**Contexto:** quarta fase do `ADMIN_PLATFORM_MASTER_PLAN.md` (§8/§15), logo
+após a Fase 3. É a PRIMEIRA escrita cross-tenant do projeto — até aqui
+`services/platform` só lia. Risco 🟠. A decisão do §8 já estava confirmada
+pelo fundador (2026-09-05): suspensão é coluna própria `Tenant.status`, não
+rebaixar para `free`.
+**Decisão — `Tenant.status` reaproveita o enum `user_status`.** Migration
+aditiva `20260906120000_add_tenant_status`: `ALTER TABLE "tenants" ADD COLUMN
+"status" "user_status" NOT NULL DEFAULT 'ACTIVE'` — mesmo critério da Fase 1
+(`platform_users.status`), dois valores idênticos não merecem um enum
+paralelo. Os 21 tenants existentes nascem `ACTIVE` pelo default, sem backfill.
+`plan` continua respondendo "o que ele pode fazer"; `status` passa a
+responder "ele pode entrar".
+**Decisão — `TenantRepository` ganhou `changePlan`/`setStatus`, mas a
+orquestração fica no `TenantControlService` (Application, `services/platform`).**
+Os dois métodos novos são `updateMany({ where: { id } })` + re-find, mesmo
+padrão do `update` de nome já existente — escopados a UM tenant, o id vindo
+do path. O service carrega o tenant (404 se não existe), **audita ANTES de
+escrever** (regra testada de §15: `append` no `PlatformAuditLog` primeiro,
+`metadata: { from, to }`, ator/ip/user-agent; só depois a escrita) e trata
+no-op (plano igual, já suspenso) como ERRO 409 (`TenantControlNoOpError`) — a
+trilha só registra mudança real.
+**Decisão — três rotas novas no `platformTenantsRouter`** (as leituras da
+Fase 2 seguem intocadas): `PATCH /tenants/:id/plan` (corpo `{ plan }`, zod
+enum), `POST /tenants/:id/suspend`, `POST /tenants/:id/reactivate`, cada uma
+com o MESMO `requirePlatformUser` das leituras. "Confirmação forte não
+contornável por chamada direta à API" (§15) = **não existe caminho
+privilegiado que pule a auditoria**: nenhum parâmetro "forçar", nenhuma rota
+alternativa sem porteiro; uma chamada direta a `.../suspend` faz exatamente o
+que o botão faz. A fricção proporcional (§12) é da UI.
+**Decisão — `AuthService` recusa um tenant suspenso**, dependência OPCIONAL
+`TenantRepository` (mesmo padrão de `accountLockout`): sem ela, comportamento
+pré-Fase 4. Em `login`, a checagem vem SÓ DEPOIS de a senha bater — quem não
+tem a senha nunca sonda se um tenant está suspenso; devolve
+`{ ok: false, reason: 'tenant_suspended' }` (segunda exceção à genericidade,
+ao lado de `account_locked`; não vaza existência de USUÁRIO, a suspensão é do
+tenant inteiro). `refresh` derruba a família de tokens.
+`authRouter`/`globalAuthRouter` traduzem para **403** `tenant_suspended` (a
+senha está certa, o bloqueio é da empresa).
+**Limitação registrada, dentro do escopo:** um usuário com access token ainda
+válido (TTL ~15 min) segue chamando a API do tenant até expirar — `refresh`
+já não renova. Matar a sessão no ato exigiria o `authenticate` do tenant
+reler o status a cada requisição, mudança mais ampla que a Fase 4. O teste do
+plano ("suspenso não consegue logar") está cumprido; a janela é de no máximo
+um TTL.
+**UI:** `/admin/tenants/[tenantId]` ganhou a seção "Controle"
+(`TenantControlPanel`) — botões de plano (o atual desabilitado) e
+Suspender/Reativar conforme o status. Suspender abre um `ConfirmDialog` que
+NOMEIA a consequência ("todos os usuários param de conseguir entrar
+imediatamente"), rótulo de ação, nunca "OK". 409 (no-op) vira toast
+informativo. Selo "Suspenso" no cabeçalho do detalhe e na lista. BFF:
+`pages/api/platform/tenants/[tenantId]/{plan,suspend,reactivate}.ts` (proxy
+fino compartilhado `lib/platformControlProxy.ts`; repassa 400/404/409, 401
+limpa o cookie), `platformClientApi` ganhou as 3 funções.
+**Impacto:** requer a migration + `npx prisma generate`. Nenhuma mudança em
+contrato pré-existente do produto (o `status` é aditivo no payload de tenant
+do `/admin`; o 403 `tenant_suspended` é caminho de falha novo, não contrato
+quebrado). Testes novos: `TenantControlService` (9), `platformTenantsRouter`
+(+9 escritas auditadas), `AuthService` (+7), `tenantControl.integration` (2
+contra Postgres REAL — coluna existe, default `ACTIVE`, `setStatus`/
+`changePlan` persistem, id inexistente → undefined), BFF `tenantsRoutes`
+(+7), jsdom `TenantControlPanel` (5). `FakeTenantRepository` ganhou
+`changePlan`/`setStatus` e `seed({ status })`. Suíte do monorepo: **api
+182/182 suítes 2183/2183; dashboard+jsdom 141/141 suítes 1064/1064** — todos
+verdes; `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**security-review:** revisão manual do primeiro caminho de escrita
+cross-tenant (autorização por rota, auditoria antes da escrita não
+contornável, escopo `updateMany` por id, anti-enumeração no login,
+CSRF/Origin no BFF, migration aditiva). A `/code-review ultra` formal (§16) é
+gatilho/billing do fundador — pendente antes do merge.
+**Concluída quando:** o fundador ativa e desativa um cliente sem tocar no
+banco.
+**Próximo passo:** Fase 5 (§15) — Suporte assistido (`TenantAccessRequest`,
+consentimento do cliente, sessão de suporte marcada). Risco 🔴.
+
+### Painel `/admin`, Fase 5 — Suporte assistido ao tenant (acesso com consentimento)
+
+**Data:** 2026-09-06
+**Contexto:** quinta e mais sensível fase do `ADMIN_PLATFORM_MASTER_PLAN.md`
+(§9/§11/§15, risco 🔴 — consentimento, privacidade de terceiros, acesso
+total). Entrega o ciclo completo: o fundador pede acesso a um tenant com um
+motivo escrito → o cliente (dono/administrador) vê um aviso no topo do
+produto e **Autoriza** ou **Recusa** → autorizado, o fundador opera aquele
+tenant **nas telas reais do produto** por **2 horas**, com aviso fixo
+não-fechável e botão **Encerrar** para o cliente → tudo auditado nas duas
+trilhas. A spec (`docs/superpowers/specs/2026-09-05-painel-admin-design.md`)
+já estava aprovada (ciclo, tabela, as 4 regras invioláveis §9.3, a decisão #5
+= acesso TOTAL). Este bloco foi PLANEJADO antes de codificar (`EnterPlanMode`,
+`.claude/plans/…`) por causa do risco — a integração no porteiro de auth do
+produto não estava na spec.
+**Decisão central — o "terceiro plano de auth".** O `authenticate` do produto
+resolvia `req.principal` em dois planos: `user` (Bearer, RBAC por cargo) e
+`machine` (X-API-Key, acesso total). Nenhum serve para um `PlatformUser` que
+não pertence a tenant nenhum. Criado um **plano `support`**: header dedicado
+`X-Support-Token` (crachá HS256 com segredo próprio `SUPPORT_ACCESS_TOKEN_SECRET`,
+distinto de `ACCESS_TOKEN_SECRET`/`PLATFORM_SESSION_SECRET` — `index.ts` recusa
+colidir), claims `{ supportAccessId, tenantId, platformUserId }`, TTL fixo 2h.
+Descartado reusar API key (tenants não têm chave emitida; emitir vaza para
+além da janela) e "impersonar o `User` dono" (a auditoria diria que o dono
+agiu; um access token de 15 min sobreviveria a uma revogação). No ramo
+`support` do `authenticate`, **a validade é reconferida no BANCO a cada
+requisição** (`SupportAccessVerifier.verify` lê `TenantAccessRequest`, exige
+`status='accepted'` E `expiresAt > now` E o tenant do row === o do path) —
+**é a Regra inviolável 1**. `requirePermission` trata `support` como
+`machine` (libera tudo — decisão #5).
+**Decisão — como o admin "entra".** BFF `POST /api/admin/support/enter`:
+valida a sessão de plataforma, chama `POST /api/platform/support/:id/token`
+(a API revalida o row), e grava um `wa_dashboard_session` com um FORMATO NOVO
+(`{ tenantId, supportToken, support: {...} }` — sem `apiKey`/`accessToken`).
+O `apiClient` manda `X-Support-Token`; `requireSession` não renova nada
+(num 403 da API limpa o cookie — Regra 3); `requireProtectedPageSession`
+deixa passar pelo portão de senha (sessão de suporte não tem `user`). Os dois
+cookies coexistem (`wa_admin_session` + `wa_dashboard_session`).
+**Decisão — trilha durante o suporte (desvio do §11 registrado).** Threading
+`supportAccessId` por ~7 helpers de router + ~5 serviços seria ~30 edições no
+caminho de auditoria de um produto no ar. Escolhido um **middleware**
+(`supportAccessAuditMiddleware`), montado após `authenticate` no pipeline
+`/api/tenants/:tenantId`: para ator `support` + método MUTANTE, grava UMA
+linha em `AuditLog` do tenant (`action: 'support.action'`, `metadata:
+{ supportAccessId, platformUserId, method, path }`). Com os eventos de
+fronteira `support.access_granted`/`support.access_ended` (nas duas trilhas),
+"o que foi feito naquele acesso" é uma consulta direta. Trade-off: a linha
+descreve a REQUISIÇÃO HTTP, não a ação de domínio; a fidelidade fina fica
+como evolução. Cobre a brecha 2 do §9.4 (campanha disparada no fim do prazo
+continua, mas o `POST .../campaigns` já ficou logado).
+**Schema:** migration aditiva `20260906130000_add_tenant_access_request`
+(`tenant_access_requests` + enum `support_access_status`, sem FK — mantido
+para sempre, §9.2). Permissão nova `support:respond` (owner/administrator).
+**Arquitetura:** tudo em `services/platform` (dono do conceito) —
+`SupportAccessService` (request/respond/revoke/end/mintToken/getOpenForTenant,
+com sweep preguiçoso de `accepted` vencido → `expired`), `PrismaSupportAccessRepository`
+(também implementa `SupportAccessVerifier`), `Hs256SupportAccessTokenService`,
+`platformSupportRouter` (`/api/platform/support/*`, lado admin) e
+`tenantSupportAccessRouter` (`/api/tenants/:tenantId/support-access/*`, lado
+cliente, atrás de `authenticate` + `support:respond`, todas as consultas
+`where: { tenantId: req.params.tenantId }` — tenant-scoped por construção).
+UI: `SupportAccessBanner` montado em `_app.tsx` (único ponto que cobre TODAS
+as telas do produto; não renderiza em `/admin` nem pré-login; polling ~10s;
+`pending` → Autorizar/Recusar, `accepted` → faixa fixa SEM fechar +
+"Encerrar" = revoke, Regra 4); seção `/admin/support` (§9.5); botão "Pedir
+acesso" no detalhe do tenant (motivo obrigatório).
+**Impacto:** requer a migration + `npx prisma generate` + a variável
+`SUPPORT_ACCESS_TOKEN_SECRET` no `.env`. Nenhuma mudança de contrato
+pré-existente — o plano `support` é aditivo, sem token só existem os dois
+planos de antes. Testes novos: `Hs256SupportAccessTokenService` (7),
+`SupportAccessService` (15 — ciclo, 409 de "um por vez", 403 IDOR/admin
+errado, sweep), `authenticateSupportPlane` (6 — accepted+prazo → ok,
+revoked/expired/tenant-errado → 403, token inválido → 401, plano desligado →
+401), `requirePermission` (+1 support), `supportAccessAuditMiddleware` (4),
+`supportRouters` (13 — RBAC/IDOR/human_required), `supportAccess.integration`
+(3 contra Postgres REAL — ciclo, `markExpiredStale`, id inexistente), BFF
+`support-access/routes` (6), jsdom `SupportAccessBanner` (5), `AdminShell`
+(ajustado — Suporte não é mais `comingSoon`). Suíte: **api 188/188 suítes
+2228/2228; dashboard+jsdom 143/143 suítes 1075/1075** — todos verdes;
+`tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**security-review:** revisão manual do terceiro plano de auth (revalidação no
+banco a cada requisição, IDOR no token, anti-enumeração não se aplica —
+`GET /active` só expõe nome do admin + motivo, dados do próprio pedido;
+segredo distinto travado no boot; middleware de trilha não bloqueia a
+requisição). A `/code-review ultra` formal (§16) é gatilho/billing do
+fundador — pendente antes do merge.
+**Concluída quando:** um acesso completo acontece — pedido, aceite, operação,
+revogação — e o histórico conta a história inteira.
+
+**Correções de acompanhamento (mesmo dia, após o 1º uso real):** (1) operar o
+tenant como suporte ESCONDIA as telas com gate de papel (Cérebro da IA,
+Analytics) e o `getServerSideProps` de `/sessions/:s/ai` redirecionava — a
+sessão de suporte não tem `user`. Novo `withSupportUser()` anexa um `user`
+SINTÉTICO de cargo `owner` (flag `isSupport`, sem `accessToken` — `isUserSession`
+segue `false` e o `apiClient` continua mandando `X-Support-Token`) em
+`requirePageSession` e `/api/auth/me`; o rail e os gates tratam suporte como
+acesso total (decisão #5), Perfil fica escondido. (2) O banner do CLIENTE
+aparecia para a própria sessão de suporte do admin e o "Encerrar" (revoke)
+batia em `requireHumanActor` → 403. `/active` passou a devolver
+`viewerIsSupport`; nesse caso o banner mostra "Sessão de suporte — Sair do
+suporte", que chama a nova `POST /api/admin/support/leave` (encerra o acesso
+best-effort pela sessão de plataforma ainda válida + descarta o cookie de
+suporte). `/admin/support` "Encerrar" trata 409 (já encerrado) como recarga,
+não erro.
+
+**Próximo passo:** Fase 6 (§15) — busca global + polimento visual + modo
+escuro. Risco 🟢.
+
+---
+
+### Painel `/admin`, Fase 6 — Busca global + refino de acessibilidade
+
+**Data:** 2026-09-06
+**Contexto:** sexta e última fase do `ADMIN_PLATFORM_MASTER_PLAN.md`
+(§7/§15, risco 🟢). Fecha o painel: achar qualquer tenant/usuário/contato/
+sessão/campanha por um campo só, sem navegar de tela em tela.
+**Decisão — a busca vive inteira em `services/platform` (§3.3), só leitura,
+zero migration.** `PlatformSearchService` (Application) normaliza a query
+(mín. 2 chars, `digits = q.replace(/\D/g, '')` para casar telefone), chama o
+repositório com teto de `5 + 1` por tipo e monta os grupos na ordem fixa
+`tenant → user → contact → session → campaign`, com `hasMore` quando veio a
+6ª linha. `PrismaPlatformSearchRepository` é a ÚNICA camada que vê SQL — 5
+`$queryRaw` parametrizados em paralelo (`Prisma.sql`, nunca concat), `ILIKE`
+sobre colunas já indexadas + `id::text ILIKE` para casar id parcial;
+contato também por `regexp_replace(phone_e164, '\D', '', 'g') ILIKE` quando a
+query tem ≥ 4 dígitos (acha o número sem o `+` nem espaços). Lê as tabelas
+físicas direto (D47), sem importar entidade/porta de `whatsapp`/`campaigns`.
+**Decisão — privacidade por CONSTRUÇÃO (§7):** o `SELECT` de cada consulta
+só traz colunas de IDENTIDADE (nome, e-mail, telefone, id, nome do tenant) —
+nenhuma toca `whatsapp_messages`/conteúdo de conversa. O hit serializado tem
+EXATAMENTE as chaves `kind`/`id`/`label`/`sublabel`/`tenantId`/`href` (teste
+`PlatformSearchService` trava o conjunto), e `href` é SEMPRE
+`/admin/tenants/<id>` — a busca leva ao caminho até a entidade, nunca abre a
+coisa em si.
+**Rota:** `GET /api/platform/search?q=` no `platformSearchRouter` (separado,
+mesmo prefixo, mesmo `requirePlatformUser`), `q` opcional com `default('')` —
+query curta devolve `{ groups: [] }` sem tocar o repositório. NÃO auditada
+(observar/buscar não é agir, mesmo critério das leituras das Fases 2/3).
+BFF `pages/api/platform/search.ts` (GET, `requirePlatformSession`, 401 limpa
+o cookie).
+**UI:** `components/admin/AdminSearch.tsx` no cabeçalho do `AdminShell` —
+combobox acessível (`role="combobox"` + `aria-expanded`/`aria-controls`,
+listbox com `role="option"`, navegação ↓/↑/Enter/Esc, clique-fora fecha),
+debounce de 250ms, resultados agrupados com rótulo por tipo e "e mais…"
+quando `hasMore`. **Pass do `web-design-guidelines`:** os resultados
+passaram de `<button onClick>` para `<Link href>` (afordância de "abrir em
+nova aba" / ver o destino; `onClick` com `preventDefault` mantém a navegação
+client-side e o fechamento do dropdown) e ganharam anel de foco visível
+(`focus-visible:ring-2 focus-visible:ring-ring`). Refino visual / modo
+escuro: o `/admin` é escuro FIXO desde a Fase 1 (marcador visual permanente,
+§13.1) — não há um segundo tema a validar; varredura dos componentes das
+Fases 5/6 não achou dívida de contraste. Item "Buscar" não existe no menu —
+o campo fica sempre visível no topo.
+**Impacto:** zero migration, zero mudança em qualquer contrato do produto —
+nada de `services/*` pré-existente tocado além do mount em `index.ts` e do
+`AdminShell`. Testes novos: `PlatformSearchService` (6 — query curta não
+consulta, ordem dos grupos, teto + `hasMore`, extração de dígitos,
+privacidade = chaves exatas), `platformSearchRouter` (3 — 401 sem crachá,
+200 agrupado, `q` vazio não toca o repo), `platformSearch.integration` (4
+contra Postgres REAL — acha tenant por nome/ILIKE, usuário/sessão/campanha
+cada um com `href` do tenant, contato pelos DÍGITOS do telefone, tenant por
+id exato), BFF `search` (3), jsdom `AdminSearch` (4). Suíte do monorepo:
+**api 191/191 suítes 2240/2240; dashboard+jsdom 145/145 suítes 1083/1083** —
+todos verdes; `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**Validado ao vivo** (containers reconstruídos, Postgres real, admin de
+teste criado e removido ao final — inclusive a linha de auditoria do login
+do probe): `GET /api/platform/search?q=whats` acha o tenant pelo nome;
+`?q=gmail` acha usuários por e-mail (5, capado); `?q=5521` acha contatos
+pelos dígitos do telefone (`hasMore`); TODO `href` aponta para
+`/admin/tenants/<id>`, nenhum conteúdo de conversa no payload.
+**Concluída quando** (§15): o fundador acha um tenant por telefone de
+contato num campo só. ✅
+**Painel `/admin` completo** — §15 não tem fases após a 6.
+**Desvio registrado (§16):** a `/code-review ultra` formal (billing/gatilho
+do fundador) segue pendente para as Fases 4 e 5 antes do merge; a Fase 6 é
+risco 🟢 (só leitura, privacidade travada por teste) — revisão manual
+suficiente.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
+
+---
+
+## Agent skills
+
+> Configuração consumida pelas skills de engenharia instaladas via
+> `npx skills add mattpocock/skills` / plugin `mattpocock-skills`. Só aponta
+> onde as coisas ficam neste repositório — não altera código nem processo.
+> Editável direto nos arquivos `docs/agents/*.md`.
+
+### Issue tracker
+
+As tarefas/issues deste repositório ficam no **GitHub Issues**
+(`wesleyoliveira303wo-spec/Whatsapp_Automatico`), operadas pelo CLI `gh`.
+Ver `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Layout **single-context**: um `CONTEXT.md` na raiz + `docs/adr/` (criados sob
+demanda). Hoje esse papel é cumprido por `CLAUDE.md §18` e `DECISIONS.md`.
+Ver `docs/agents/domain.md`.
 
 ---

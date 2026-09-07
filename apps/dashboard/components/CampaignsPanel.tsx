@@ -876,7 +876,21 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                             primária) era parte da causa da coluna "Ações" mudar de
                             largura entre linhas. */}
 
-                              <DropdownMenu>
+                              {/*
+                                `modal={false}` NÃO é cosmético: três itens
+                                deste menu abrem um `Dialog` de confirmação.
+                                Com o menu em modo modal (padrão), o Radix
+                                monta a trava de rolagem + `aria-hidden` do
+                                menu e, no MESMO tique, o `Dialog` monta a
+                                dele — as duas camadas de modalidade entram em
+                                laço infinito e o processo trava de vez
+                                (medido: `fireEvent.click` no item de menu
+                                nunca retorna, worker de teste girando com
+                                2.500s de CPU). Um menu de ações pequeno não
+                                precisa de modalidade própria; quem prende o
+                                foco é o diálogo que ele abre.
+                              */}
+                              <DropdownMenu modal={false}>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     type="button"

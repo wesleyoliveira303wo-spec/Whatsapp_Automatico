@@ -38,7 +38,6 @@ function QueueRow({
         contactName={conversation.contactName}
         savedContactName={conversation.savedContactName}
         className="h-8 w-8 shrink-0 text-[12px]"
-        fetchLive={false}
       />
       <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
         <DisplayNameParts

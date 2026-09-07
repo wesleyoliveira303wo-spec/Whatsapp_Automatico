@@ -20,7 +20,10 @@ import { CredentialsStore } from '../../../../../shared/security/domain/Credenti
 import { Cipher } from '../../../../../shared/security/domain/Cipher';
 import { WhatsAppSession } from '../../../domain/entities/WhatsAppSession';
 import { WhatsAppDisconnectReason } from '../../../domain/entities/WhatsAppDisconnectReason';
-import { WhatsAppProvider } from '../../../domain/providers/WhatsAppProvider';
+import {
+  WhatsAppProvider,
+  ProfilePictureLookup,
+} from '../../../domain/providers/WhatsAppProvider';
 import {
   WhatsAppProviderEvent,
   WhatsAppMessageContentTypeEvent,
@@ -802,10 +805,11 @@ export class BaileysProvider implements WhatsAppProvider {
 
   /**
    * Implementa `WhatsAppProvider.getProfilePictureUrl` (Milestone 6, Bloco
-   * M6H-2b) sobre `sock.profilePictureUrl(jid, 'image')` do Baileys — API
-   * ao vivo do socket conectado, não um dado persistido. `'image'` (em vez
-   * de `'preview'`) pede a resolução alta; a Dashboard já redimensiona por
-   * CSS, então não há ganho em pedir a miniatura.
+   * M6H-2b) sobre `sock.profilePictureUrl(jid, 'preview')` do Baileys — API
+   * ao vivo do socket conectado, não um dado persistido. `'preview'`
+   * (miniatura) desde 2026-09-05: a Dashboard mostra o avatar num círculo de
+   * 44px, então pedir alta resolução era desperdício — ver o comentário no
+   * corpo do método para o segundo motivo (diagnóstico do bloqueio).
    *
    * Nunca lança: sem socket vivo, OU qualquer erro do Baileys (contato sem
    * foto, privacidade bloqueando, erro de rede — o Baileys não distingue
@@ -829,6 +833,19 @@ export class BaileysProvider implements WhatsAppProvider {
    * mais cedo (cai no fallback de iniciais).
    */
   async getProfilePictureUrl(jid: string): Promise<string | undefined> {
+    const lookup = await this.lookupProfilePicture(jid);
+    return lookup.outcome === 'found' ? lookup.url : undefined;
+  }
+
+  /**
+   * Versão INSTRUMENTADA (2026-09-05) — mesma consulta, dizendo o desfecho.
+   * `getProfilePictureUrl` acima é um invólucro fino sobre ela, então existe
+   * uma única implementação da consulta, não duas que podem divergir.
+   */
+  async lookupProfilePicture(
+    jid: string,
+    timeoutMs: number = PROFILE_PICTURE_TIMEOUT_MS,
+  ): Promise<ProfilePictureLookup> {
     if (!this.socket || this.currentStatus !== 'connected') {
       // CORREÇÃO 2026-07-30 (bug real: foto de perfil nunca aparece, mesmo
       // em contatos com foto pública confirmada): este retorno antecipado
@@ -845,7 +862,7 @@ export class BaileysProvider implements WhatsAppProvider {
         jid,
         currentStatus: this.currentStatus,
       });
-      return undefined;
+      return { outcome: 'unavailable', reason: 'session_not_live' };
     }
     try {
       // A Promise original do Baileys NÃO é cancelável — mesmo perdendo a
@@ -855,18 +872,32 @@ export class BaileysProvider implements WhatsAppProvider {
       // ninguém mais está esperando por ela, o resultado tardio é
       // descartado sem efeito (a Dashboard já recebeu `undefined` e caiu no
       // fallback de iniciais).
-      const liveQuery = this.socket.profilePictureUrl(jid, 'image');
+      // `'preview'` (miniatura), não `'image'` (alta resolução) — mudado em
+      // 2026-09-05 por DOIS motivos independentes:
+      //
+      // 1. Desperdício: a Dashboard mostra o avatar num círculo de 44px e
+      //    redimensiona por CSS. Baixar a foto em alta para exibir em 44px
+      //    sempre foi gastar banda à toa.
+      // 2. Última hipótese testável do bloqueio: as duas resoluções são
+      //    recursos DIFERENTES do lado do WhatsApp. Medido nesta data — 8
+      //    fotos vieram numa janela de 4 minutos e, depois disso, TODA
+      //    consulta em `'image'` deu timeout, inclusive uma a cada vários
+      //    minutos e inclusive após reconectar a sessão três vezes. Se a
+      //    miniatura vier por um caminho menos restrito, resolve; se não
+      //    vier, fica provado que o bloqueio é do número e não da forma de
+      //    pedir, e não há mais o que tentar deste lado.
+      const liveQuery = this.socket.profilePictureUrl(jid, 'preview');
       liveQuery.catch(() => {});
       const url = await Promise.race([
         liveQuery,
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error('Timeout ao buscar foto de perfil')),
-            PROFILE_PICTURE_TIMEOUT_MS,
+            timeoutMs,
           ),
         ),
       ]);
-      return url ?? undefined;
+      return url ? { outcome: 'found', url } : { outcome: 'absent' };
     } catch (error) {
       // CORREÇÃO 2026-07-30: diferenciar TIMEOUT (log `warn` — pode indicar
       // um problema real de performance/carga do socket, vale investigar
@@ -885,7 +916,15 @@ export class BaileysProvider implements WhatsAppProvider {
         timeout: isTimeout,
         error,
       });
-      return undefined;
+      // Timeout NÃO é resposta: o WhatsApp simplesmente não respondeu a
+      // tempo, o que não diz nada sobre o contato ter foto ou não.
+      // Qualquer outro erro do Baileys é tratado como "não tem foto" porque
+      // é assim que a lib sinaliza ausência/privacidade (ela não distingue
+      // por tipo de exceção) — separado em `reason: 'error'` no log para a
+      // frequência dos dois casos ficar visível.
+      return isTimeout
+        ? { outcome: 'unavailable', reason: 'timeout' }
+        : { outcome: 'absent' };
     }
   }
 

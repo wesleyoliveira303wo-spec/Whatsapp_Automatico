@@ -240,7 +240,7 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
         Configurações. Avatar da PESSOA (iniciais/foto), coerente com o que
         o item representa.
       */}
-      {user && (
+      {user && !user.isSupport && (
         <Link
           href="/perfil"
           title="Meu perfil"

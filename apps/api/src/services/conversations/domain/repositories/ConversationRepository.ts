@@ -36,6 +36,18 @@ export interface FindAllByTenantOptions {
    */
   needsHumanAttention?: boolean;
   /**
+   * Filtro "Aguardando" da inbox (pedido do fundador, 2026-09-05): a fila
+   * humana INTEIRA — quem ainda espera um atendente (`escalatedAt`) E quem
+   * já está sendo atendido por um (`status: 'human'`).
+   *
+   * Existe como opção própria, e não como combinação de `status` +
+   * `needsHumanAttention` (que se somam com E, não com OU), porque a régua
+   * do operador aqui é "o que depende de gente", que é justamente a UNIÃO
+   * dos dois casos. Resolvido no SERVIDOR por obrigação: a lista é paginada
+   * por cursor, então filtrar no cliente mentiria sobre o resultado (D24).
+   */
+  awaitingOrInHumanCare?: boolean;
+  /**
    * ADR #94 (2026-08-01) — quando `false` (default de todo consumidor
    * comercial: board Kanban, Analytics), filtra fora as conversas com
    * `excludedFromPipeline: true`. Ausente/`undefined` = sem filtro (usado

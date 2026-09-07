@@ -6,6 +6,7 @@ import type {
 } from '@prisma/client';
 
 import { AiInteraction } from '../../domain/entities/AiInteraction';
+import { UnansweredQuestion } from '../../domain/entities/UnansweredQuestion';
 import { AiInteractionRepository } from '../../domain/repositories/AiInteractionRepository';
 import { AiProviderName } from '../../domain/providers/AiProviderName';
 import { EscalationReason } from '../../domain/escalationSignal';
@@ -61,6 +62,7 @@ interface AiInteractionRow {
   tenantId: string;
   conversationId: string;
   messageId: string | null;
+  inboundMessageId: string | null;
   provider: string;
   model: string | null;
   promptVersion: string;
@@ -74,12 +76,30 @@ interface AiInteractionRow {
   createdAt: Date;
 }
 
+/**
+ * Shape cru devolvido pelo `$queryRaw` de `listUnansweredQuestions` (Bloco
+ * B3). Colunas que vêm de `LEFT JOIN` chegam como `null`, nunca
+ * `undefined` — a conversão para o opcional do Domain é feita no `map`.
+ */
+interface UnansweredQuestionRow {
+  interactionId: string;
+  conversationId: string;
+  messageId: string | null;
+  sessionName: string;
+  questionText: string | null;
+  contactJid: string;
+  contactName: string | null;
+  savedContactName: string | null;
+  occurredAt: Date;
+}
+
 function toDomain(row: AiInteractionRow): AiInteraction {
   return {
     id: row.id,
     tenantId: row.tenantId,
     conversationId: row.conversationId,
     messageId: row.messageId ?? undefined,
+    inboundMessageId: row.inboundMessageId ?? undefined,
     provider: PRISMA_TO_PROVIDER[row.provider],
     model: row.model ?? undefined,
     promptVersion: row.promptVersion,
@@ -126,6 +146,7 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
         tenantId: interaction.tenantId,
         conversationId: interaction.conversationId,
         messageId: interaction.messageId,
+        inboundMessageId: interaction.inboundMessageId,
         provider: PROVIDER_TO_PRISMA[interaction.provider],
         model: interaction.model,
         promptVersion: interaction.promptVersion,
@@ -189,17 +210,64 @@ export class PrismaAiInteractionRepository implements AiInteractionRepository {
   }
 
   /** Fase 1, Bloco F1.4 (2026-08-01) — ver docstring do port. */
-  async listUnansweredQuestions(tenantId: string, limit: number): Promise<AiInteraction[]> {
-    const rows = await this.prisma.aiInteraction.findMany({
-      where: {
-        tenantId,
-        status: 'SUCCESS' as PrismaAiInteractionStatus,
-        escalationReason: 'UNKNOWN_ANSWER' as PrismaAiEscalationReason,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
+  /**
+   * Bloco B3 (issue #14). Consulta crua porque o dado que a tela precisa
+   * mora em três tabelas: a interação (que a IA travou), a mensagem inbound
+   * (o que foi perguntado) e a conversa (quem perguntou, e em qual sessão —
+   * `ai_interactions` não tem `session_name` próprio). Mesmo racional e
+   * mesmo padrão de `PrismaAnalyticsRepository.aiUsageByPeriod`: leitura de
+   * relatório cruzando tabelas, 100% parametrizada.
+   *
+   * `LEFT JOIN` na mensagem de propósito: `message_id` é nulo em toda
+   * interação gravada antes do F1.4, e a mensagem pode ter sido apagada —
+   * nesses casos a linha ainda deve aparecer (a IA travou de fato), só sem
+   * o texto da pergunta. Um `INNER JOIN` esconderia justamente as lacunas
+   * mais antigas.
+   */
+  async listUnansweredQuestions(
+    tenantId: string,
+    sessionName: string,
+    limit: number,
+    conversationId?: string,
+  ): Promise<UnansweredQuestion[]> {
+    const rows = await this.prisma.$queryRaw<UnansweredQuestionRow[]>`
+      SELECT
+        "ai"."id"            AS "interactionId",
+        "ai"."conversation_id" AS "conversationId",
+        "ai"."inbound_message_id" AS "messageId",
+        "conv"."session_name"  AS "sessionName",
+        "msg"."content"        AS "questionText",
+        "conv"."contact_jid"   AS "contactJid",
+        "conv"."contact_name"  AS "contactName",
+        "contact"."name"       AS "savedContactName",
+        "ai"."created_at"      AS "occurredAt"
+      FROM "ai_interactions" AS "ai"
+      INNER JOIN "whatsapp_conversations" AS "conv" ON "conv"."id" = "ai"."conversation_id"
+      LEFT JOIN "whatsapp_messages" AS "msg" ON "msg"."id" = "ai"."inbound_message_id"
+      LEFT JOIN "whatsapp_contacts" AS "contact" ON "contact"."id" = "conv"."contact_id"
+      WHERE "ai"."tenant_id" = ${tenantId}
+        AND "conv"."session_name" = ${sessionName}
+        AND "ai"."status" = 'SUCCESS'
+        AND "ai"."escalation_reason" = 'UNKNOWN_ANSWER'
+        -- Filtro opcional por conversa: nulo (ausente) deixa passar tudo.
+        -- Parametrizado como qualquer outro valor, nunca concatenado.
+        -- ATENCAO: nada de crase neste bloco -- ele vive dentro de um
+        -- template literal, e uma crase aqui fecharia a consulta no meio.
+        AND (${conversationId ?? null}::text IS NULL OR "ai"."conversation_id" = ${conversationId ?? null})
+      ORDER BY "ai"."created_at" DESC
+      LIMIT ${limit}
+    `;
 
-    return rows.map(toDomain);
+    return rows.map((row) => ({
+      interactionId: row.interactionId,
+      conversationId: row.conversationId,
+      messageId: row.messageId ?? undefined,
+      sessionName: row.sessionName,
+      questionText: row.questionText ?? undefined,
+      contactJid: row.contactJid,
+      contactName: row.contactName ?? undefined,
+      savedContactName: row.savedContactName ?? undefined,
+      occurredAt: row.occurredAt,
+    }));
   }
 }

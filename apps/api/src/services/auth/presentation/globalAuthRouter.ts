@@ -82,6 +82,30 @@ export function createGlobalAuthRouter(
       const meta = { userAgent: req.headers['user-agent'], ip: req.ip };
       const result = await authService.loginByEmail(body.email, body.password, meta);
       if (!result.ok) {
+        // Bloco B1 — lockout: 423 Locked (nao 401) para a UI poder dizer
+        // "muitas tentativas, tente em X minutos" em vez de repetir
+        // "senha invalida", que confundiria quem sabe a senha. Nao vaza
+        // existencia: o lockout conta o e-mail TENTADO, exista ou nao
+        // (ver `AccountLockout`). `Retry-After` em SEGUNDOS, como manda o RFC.
+        if (result.reason === 'account_locked') {
+          const retryAfterSeconds = Math.ceil((result.retryAfterMs ?? 0) / 1000);
+          res.setHeader('Retry-After', String(retryAfterSeconds));
+          res.status(423).json({
+            error: 'account_locked',
+            message: 'Muitas tentativas de acesso. Tente novamente em instantes.',
+            retryAfterSeconds,
+          });
+          return;
+        }
+        // Painel /admin, Fase 4 — tenant suspenso. 403 (nao 401): a senha
+        // esta certa, o bloqueio e da conta da empresa.
+        if (result.reason === 'tenant_suspended') {
+          res.status(403).json({
+            error: 'tenant_suspended',
+            message: 'O acesso desta empresa esta suspenso. Fale com o suporte.',
+          });
+          return;
+        }
         res
           .status(401)
           .json({ error: 'invalid_credentials', message: 'E-mail ou senha invalidos.' });

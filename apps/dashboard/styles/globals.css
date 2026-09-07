@@ -288,3 +288,50 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Bloco B4 (issue #15) — listas grandes sem custo de renderização.
+ *
+ * DECISÃO REGISTRADA: virtualização por CSS nativo (`content-visibility`),
+ * NÃO uma biblioteca de janela virtual (`@tanstack/react-virtual` e afins) e
+ * NÃO uma implementação própria que desmonta itens fora da tela.
+ *
+ * O motivo não é preferência por solução nativa — é que desmontar itens
+ * QUEBRARIA duas coisas que este produto já tem, ambas verificadas no código:
+ *
+ * 1. O arrastar-e-soltar do Pipeline. Um card só é alvo de soltura se estiver
+ *    no DOM; virtualizar faria o operador arrastar para uma coluna cujo
+ *    conteúdo "não existe" enquanto ele arrasta. O critério da issue #15 é
+ *    explícito em não quebrar o DnD.
+ * 2. As animações de entrada/saída (`AnimatePresence` em `ConversationInbox`
+ *    e `PipelineColumn`): itens montando/desmontando por scroll disparariam
+ *    `initial`/`exit` o tempo todo, e a lista piscaria ao rolar.
+ *
+ * `content-visibility: auto` resolve o custo REAL apontado na auditoria — o
+ * navegador pula layout e pintura do que está fora da tela — sem tocar no
+ * DOM: leitor de tela, busca do navegador (Ctrl+F), foco por teclado e alvos
+ * de arrastar continuam funcionando exatamente como antes, porque os
+ * elementos continuam lá.
+ *
+ * `contain-intrinsic-size: auto <estimativa>` evita que a barra de rolagem
+ * pule: o `auto` faz o navegador lembrar o tamanho REAL já medido de cada
+ * item, e a estimativa só vale para o que ele ainda não viu.
+ *
+ * LIMITE CONHECIDO, registrado de propósito: isto elimina o custo de
+ * RENDERIZAÇÃO, não o de reconciliação do React. Para as dezenas/centenas de
+ * itens que o produto tem hoje (cada um com avatar, selos e tags — o custo
+ * caro é justamente pintar), é o gargalo certo. Se alguma lista chegar a
+ * milhares de itens, aí sim vale pagar o preço de uma janela virtual de
+ * verdade — e o Pipeline precisará de uma solução própria para o DnD.
+ */
+.list-row-lazy {
+  content-visibility: auto;
+  /* Altura típica de uma linha da inbox (avatar 44px + respiros). */
+  contain-intrinsic-size: auto 72px;
+}
+
+.pipeline-card-lazy {
+  content-visibility: auto;
+  /* Altura típica de um card do Pipeline (nome + prévia + selos + rodapé). */
+  contain-intrinsic-size: auto 132px;
+}
