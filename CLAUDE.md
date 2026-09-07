@@ -1730,9 +1730,109 @@ pelos dígitos do telefone (`hasMore`); TODO `href` aponta para
 contato num campo só. ✅
 **Painel `/admin` completo** — §15 não tem fases após a 6.
 **Desvio registrado (§16):** a `/code-review ultra` formal (billing/gatilho
-do fundador) segue pendente para as Fases 4 e 5 antes do merge; a Fase 6 é
-risco 🟢 (só leitura, privacidade travada por teste) — revisão manual
-suficiente.
+do fundador) rodou depois desta fase — ver a entrada seguinte.
+
+---
+
+### Painel `/admin` — revisão de segurança + `/code-review ultra` das Fases 4–6 e merge para `main`
+
+**Data:** 2026-09-07
+**Contexto:** com as seis fases do `/admin` implementadas e commitadas na
+`feat/operacao-local-docker` (7 commits: `013e948` F1 → `8531f8f` F6, sobre
+o épico de endurecimento B1–B4), o fundador pediu — antes de qualquer merge —
+o fechamento seguro: revisão formal de segurança das Fases 4 e 5, depois a
+`/code-review ultra`, correção só dos achados reais com testes de regressão,
+e então o merge (PR, não merge direto, pelo volume e por tocar auth +
+primeira leitura/escrita cross-tenant).
+
+**Revisão manual de segurança (Fases 4/5 + fundação F1).** Conduzida sobre
+`c15899c` (F4), `d43ecfd`+`af5dec3` (F5) e `013e948` (F1). Auditadas as
+superfícies que o fundador listou: `PlatformUser`, sessão administrativa,
+acesso assistido, consentimento, revogação, expiração, cross-tenant,
+escalada de privilégio, ações administrativas, auditoria, SQL injection,
+XSS, segredos. **Nenhuma vulnerabilidade explorável (HIGH/MEDIUM).** Pontos
+que sustentam isso, para não reauditar: `requirePlatformUser` relê o admin
+do banco a cada requisição (`describe` → `null` se `status !== 'active'`);
+`SupportAccessVerifier.verify` reconfirma `accepted` + `expiresAt > now` em
+TODA requisição do plano `support` (Regras 1–3); `authenticate` casa
+`req.params.tenantId === claims.tenantId` E `verification.tenantId ===
+claims.tenantId`; o admin NÃO pode auto-aprovar (`requireHumanActor` em
+`respond`/`revoke`) NEM criar usuário no tenant do cliente
+(`usersRouter.use(requireHumanActor)` rejeita `kind: 'support'`) — não há
+backdoor persistente; os três serviços de crachá são classes separadas com
+segredos distintos e o `index.ts` recusa subir se colidirem; toda leitura
+cross-tenant usa `Prisma.sql` parametrizado. **Três limitações documentadas
+e aceitas** (não são vulnerabilidades): janela de graça de ~15 min do
+access token após suspensão do tenant (F4, TTL curto, registrado); trilha de
+suporte a nível HTTP e best-effort (§11 desvio); `support` = acesso total
+exceto `/users` (decisão #5) — ações no fim da janela continuam depois dela,
+mitigado pela trilha.
+
+**`/code-review ultra`** (`bf30056..8531f8f`, 51 agentes, ~29 min). 8
+achados confirmados — 4 de correção, 4 nits. Corrigidos na
+`fix/admin-ultrareview-findings` (PR #18):
+
+- **`AdminSearch.tsx` (normal):** a flag `cancelled` era declarada DENTRO do
+  callback do `setTimeout`, então a limpeza retornada de lá era descartada —
+  a resposta de uma busca anterior lenta sobrescrevia a de uma busca mais
+  recente. Flag movida para o escopo do efeito, marcada na limpeza dele.
+- **`pages/admin/support.tsx` (normal):** numa falha de PRIMEIRA carga o
+  `load()` só faz `setError(true)` e `requests` continua `null`; o render
+  checava `requests === null` ANTES de `error`, deixando a tela presa em
+  skeleton para sempre. `error` passou a ser o primeiro ramo.
+- **`SupportAccessService` `respond`/`end`/`revoke` (normal, security):**
+  escreviam o estado ANTES de auditar — o oposto do invariante que a própria
+  classe documenta e do `TenantControlService` (F4). Uma falha da trilha do
+  tenant depois da escrita deixava a linha alterada, o cliente vendo 500, e
+  o `AuditLog` do tenant sem a transição (§9.4 brecha 3). Reordenado: trilha
+  da PLATAFORMA primeiro (fail-closed, como a F4); trilha do TENANT agora
+  best-effort (`tryTenantAudit` — um tenant apagado no meio da janela não
+  gera mais 500 numa transição já decidida; resolve junto o nit da FK
+  `audit_logs → tenants ON DELETE CASCADE`).
+- **`SupportAccessService.request` (normal):** um `PENDING` que o cliente
+  nunca respondeu travava PARA SEMPRE qualquer novo pedido àquele tenant
+  (`markExpiredStale` só mexe em `ACCEPTED`; `end`/`revoke` exigem
+  `ACCEPTED`). Agora um `PENDING` ≥ 2 h (a mesma janela que rege um acesso
+  concedido) é superado por um novo `request`. Um `ACCEPTED` vivo continua
+  bloqueando. **Mudança de comportamento registrada:** o banner de
+  consentimento de um pedido ignorado some ~2 h depois de feito, em vez de
+  ficar para sempre — re-solicitar é 1 clique. A corrida de dois admins
+  criando `PENDING` ao mesmo tempo fica como resíduo (precisa de índice
+  único parcial; irrelevante com um admin).
+- **nit — `authenticate` idempotente:** o mount da F5 em
+  `/api/tenants/:tenantId` (antes do `supportAccessAuditMiddleware`) fazia o
+  `authenticate` rodar 2× por requisição de tenant — dois hits no Postgres.
+  Agora retorna cedo se `req.principal` já foi resolvido.
+- **nit — `PrismaPlatformSearchRepository` escapa curingas do LIKE**
+  (`%`, `_`, `\`): admin digitando `%` busca um `%` literal, não "tudo". Não
+  era injeção (bind params), só surpreendente.
+- **nit — `canRespond` em `GET /support-access/active`** passou a espelhar
+  EXATAMENTE o que os endpoints mutantes aceitam (`user` + `support:respond`),
+  não `machine`/`support`, que eles rejeitam com 403 (botão morto na UI).
+
+**Impacto:** zero migration, zero mudança de contrato pré-existente. Testes
+de regressão novos: `SupportAccessService` (+7 — supersede de `PENDING`
+obsoleto, `ACCEPTED` vivo ainda bloqueia, auditoria-primeiro fail-closed,
+trilha do tenant não-fatal), `authenticateSupportPlane` (+1 — idempotência),
+`supportRouters` (+1 — `canRespond` `machine` = false),
+`platformSearch.integration` (+1 — `%` literal), `AdminSearch` jsdom (+1 —
+corrida de resultados), `adminSupportPage` jsdom (novo, 2 — estado de erro na
+1ª carga). `tsc`/`eslint` limpos; api `services/platform` + `auth` +
+`shared/presentation` 42 suítes / 353 testes verdes. Integração
+(`supportAccess`/`tenantControl`/`platformSearch`) não reexecutada neste
+round (Docker Desktop caiu) — verde no PR #17.
+
+**Merge:** PR #17 (`feat/operacao-local-docker → main`, 31 commits, merge
+commit `32bb69f`) + PR #18 (fixes do ultrareview, merge commit `a0c235d`).
+`main` = `a0c235d`. **Pendente de produção** (checklist do PR #17):
+migrations (`20260905200000_add_platform_user_and_audit`,
+`20260906120000_add_tenant_status`, `20260906130000_add_tenant_access_request`
++ 2 do épico B), `npx prisma generate`, os três segredos no `.env`
+(`PLATFORM_SESSION_SECRET`, `PLATFORM_DASHBOARD_SESSION_SECRET`,
+`SUPPORT_ACCESS_TOKEN_SECRET` — distintos entre si e dos demais, o boot
+recusa colisão), criar o `PlatformUser` real (`createPlatformUser.ts`,
+remover o placeholder `seu@email.com`), validação visual das Fases 4/5/6 no
+navegador, `GET /health/ready`.
 
 ---
 
