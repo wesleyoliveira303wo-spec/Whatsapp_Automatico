@@ -1834,6 +1834,54 @@ recusa colisão), criar o `PlatformUser` real (`createPlatformUser.ts`,
 remover o placeholder `seu@email.com`), validação visual das Fases 4/5/6 no
 navegador, `GET /health/ready`.
 
+### Deploy de produção de 2026-09-09 — a VM estava 158 commits atrás de `main`
+
+**Data:** 2026-09-09 (registro feito em 2026-09-11)
+**Contexto:** com o `/admin` e o épico B1–B4 em `main`, o fundador pediu para
+subir a versão nova na VM Oracle (`137.131.229.253`, host
+`137-131-229-253.sslip.io`). Três surpresas no caminho, todas registradas
+porque vão se repetir no próximo deploy:
+1. **Acesso SSH perdido.** Nenhuma chave nos caminhos padrão do OpenSSH. A
+   chave certa era a gerada pela Oracle na criação da VM
+   (`ssh-key-2026-09-03.key`, na pasta Downloads). Hoje ela está em
+   `C:\Users\Meu Computador\.ssh\oracle_francis.key` e o login é
+   `ssh -i <chave> ubuntu@137.131.229.253`. O endereço `sslip.io` com traços
+   só vale no navegador; para SSH, IP com pontos.
+2. **O repositório na VM fica em `/home/ubuntu/francis`**, não em
+   `Whatsapp-automatico`. Para confirmar: `docker compose ls` mostra o caminho
+   real dos arquivos de compose.
+3. **A VM estava num branch de feature antigo**
+   (`feat/operacao-local-docker`), 158 commits atrás de `main`. Um `git pull`
+   ali traria só parte das mudanças e deixaria de fora as correções do
+   ultrareview, que só existem em `main`.
+**Decisão:** backup do banco antes de tudo; `git checkout main && git pull`
+(`f16fb38..ffef7a2`); conferência empírica do `.env` contra o
+`.env.prod.example` (`comm -13`), que mostrou faltarem SÓ as 4 chaves do
+`/admin`; rebuild completo (`docker compose -f docker-compose.prod.yml -f
+docker-compose.caddy.yml up -d --build`, ~1h na VM Always Free); o `migrate`
+aplicou 5 migrations e saiu 0; `/health/ready` passou a mostrar o campo
+`queues` (prova de que o código novo estava rodando); criado o `PlatformUser`
+de produção pelo `createPlatformUser.js`. Duas correções no repositório
+saíram do deploy (PR #20): o `.env.prod.example` ganhou os 3 segredos do
+`/admin` (sem eles, uma atualização subiria com o painel desligado em
+silêncio) e o `scripts/deploy-t9-wizard.sh` virou re-executável
+(`gen_secret_if_absent` — rodar o assistente de novo regenerava TODOS os
+segredos, invalidando as credenciais do WhatsApp e todos os logins).
+**Acompanhamento (2026-09-11):** a senha do `/admin` apareceu no chat durante o
+deploy. Não havia como trocá-la sem SQL, então nasceu o
+`scripts/resetPlatformUserPassword.ts`: pede a senha sem mostrar na tela
+(nunca como argumento, que fica no histórico do shell), exige 12+ caracteres,
+grava `platform.password_reset` na trilha. Sessões do `/admin` já abertas
+continuam valendo até expirar (8h), porque o porteiro relê só o `status` do
+admin. Backup novo do banco (`backup-2026-09-11-1314.sql.gz`) e cópia da chave
+SSH baixados para `D:\Arquivos\Documentos\Francis-backups\` — ainda no mesmo
+PC; o ideal é uma segunda cópia fora dele. A VM tem reboot pendente (kernel e
+`libc6`), deixado para o fundador fazer fora do horário de atendimento.
+**Impacto:** zero mudança de comportamento do produto. Lições para o próximo
+deploy: (1) só `main` vai para produção; confirme o branch da VM antes do
+`pull`; (2) todo segredo novo entra no `.env.prod.example` no mesmo PR que o
+cria; (3) nenhuma senha em argumento de linha de comando.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

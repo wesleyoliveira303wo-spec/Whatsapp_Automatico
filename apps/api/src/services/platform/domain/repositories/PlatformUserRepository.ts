@@ -20,4 +20,11 @@ export interface PlatformUserRepository {
    * (`ADMIN_PLATFORM_MASTER_PLAN.md`, anexo).
    */
   create(user: Omit<PlatformUser, 'id' | 'createdAt' | 'lastLoginAt'>): Promise<PlatformUser>;
+
+  /**
+   * Troca o hash da senha. Também só por script (`resetPlatformUserPassword`),
+   * pelo mesmo motivo do `create`: não existe rota HTTP que mexa na credencial
+   * do dono da plataforma. Devolve `false` quando o id não existe.
+   */
+  updatePasswordHash(id: string, passwordHash: string): Promise<boolean>;
 }
