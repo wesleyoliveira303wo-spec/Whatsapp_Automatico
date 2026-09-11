@@ -47,6 +47,13 @@ export class FakePlatformUserRepository implements PlatformUserRepository {
   async create(user: Omit<PlatformUser, 'id' | 'createdAt' | 'lastLoginAt'>): Promise<PlatformUser> {
     return this.seed(user);
   }
+
+  async updatePasswordHash(id: string, passwordHash: string): Promise<boolean> {
+    const user = this.users.find((u) => u.id === id);
+    if (!user) return false;
+    user.passwordHash = passwordHash;
+    return true;
+  }
 }
 
 export class FakePlatformAuditLogRepository implements PlatformAuditLogRepository {

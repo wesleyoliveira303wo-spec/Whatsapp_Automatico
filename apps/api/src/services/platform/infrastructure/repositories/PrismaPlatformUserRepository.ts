@@ -84,4 +84,12 @@ export class PrismaPlatformUserRepository implements PlatformUserRepository {
     });
     return toDomain(row);
   }
+
+  async updatePasswordHash(id: string, passwordHash: string): Promise<boolean> {
+    const { count } = await this.prisma.platformUser.updateMany({
+      where: { id },
+      data: { passwordHash },
+    });
+    return count > 0;
+  }
 }

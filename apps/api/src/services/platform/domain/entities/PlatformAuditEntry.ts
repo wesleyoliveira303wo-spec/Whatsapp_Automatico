@@ -31,6 +31,7 @@ export type PlatformAuditAction =
   | 'platform.login'
   | 'platform.login_failed'
   | 'platform.logout'
+  | 'platform.password_reset'
   // Fases seguintes (§15) — declaradas aqui para o catálogo viver num lugar só.
   | 'tenant.plan_changed'
   | 'tenant.suspended'

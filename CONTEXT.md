@@ -69,14 +69,18 @@ inadimplência a tolerar: se o pagamento não vem, o fundador desativa o plano
 à mão.
 _Avoid_: grace period, período de carência.
 
-**Painel de controle do fundador** (NÃO EXISTE — necessidade registrada em
-2026-09-05):
-Hoje não há nenhuma tela em que o fundador acompanhe, por tenant, se o
-cliente está tirando bom ou mau proveito do produto. Sem isso, decidir
-manter/ativar/desativar um plano é decisão no escuro. É a peça que substitui
-o "self-signup com billing" no lugar de prioridade — ver issue #16.
-_Avoid_: super-admin, back-office (o escopo aqui é observação, não
-administração).
+**Painel de controle do fundador** — o **`/admin`** (necessidade registrada em
+2026-09-05; entregue nas Fases 1–6 e em produção desde 2026-09-09):
+A tela em que o fundador acompanha, por tenant, se o cliente está tirando bom
+ou mau proveito do produto — indicadores e sinais de atenção por cliente,
+saúde da plataforma, alterar plano, suspender/reativar e suporte assistido
+(acesso à conta do cliente só com o aceite dele, por 2h). Login próprio,
+separado do login dos clientes. Detalhe em `ADMIN_PLATFORM_MASTER_PLAN.md` e
+`CLAUDE.md` §18. Foi a peça que substituiu o "self-signup com billing" no lugar
+de prioridade — ver issue #16.
+_Avoid_: super-admin, back-office (o fundador observa e controla o plano; não
+edita dados do cliente por fora — mexer na conta de alguém exige o suporte
+assistido, com consentimento).
 
 ## Lançamento
 
@@ -85,5 +89,6 @@ A forma como o Francis vai ao ar pela primeira vez: a **landing page e o
 cadastro (`/register`) são públicos e abertos** a qualquer um, mas o uso
 real fica atrás do plano pago (ver Trava de plano). Não é um "beta fechado"
 (o fundador não escolhe quem entra) nem um "lançamento comercial completo"
-(não há billing automático, nem LGPD completo, nem console de admin).
+(não há billing automático nem LGPD completo; o console de admin — `/admin` —
+passou a existir em 2026-09-09).
 _Avoid_: beta fechado, GA, lançamento oficial.
