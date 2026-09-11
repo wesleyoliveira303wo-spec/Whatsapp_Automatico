@@ -31,4 +31,17 @@ describe('createConversationsComposition (Milestone 3, Bloco 5 — D6/D15)', () 
     expect(composition.messageIngestionService).toBeInstanceOf(MessageIngestionService);
     expect(composition.conversationsService).toBeInstanceOf(ConversationsService);
   });
+
+  it('classificação de estágio: ligada por padrão, desligável por configuração', () => {
+    const fakePrisma = {} as unknown as PrismaClient;
+    const fakeRedisConnection = {} as never;
+
+    const enabled = createConversationsComposition(fakePrisma, fakeRedisConnection, new NoopLogger());
+    const disabled = createConversationsComposition(fakePrisma, fakeRedisConnection, new NoopLogger(), {
+      stageClassifierEnabled: false,
+    });
+
+    expect(enabled.stageClassificationScheduler).toBeDefined();
+    expect(disabled.stageClassificationScheduler).toBeUndefined();
+  });
 });

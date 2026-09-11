@@ -634,7 +634,14 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       conversationsService,
       agentMediaCache,
       aiReplyQueue,
-    } = createConversationsComposition(prisma, aiReplyProducerConnection, logger);
+      stageClassificationScheduler,
+    } = createConversationsComposition(prisma, aiReplyProducerConnection, logger, {
+      // Classificação de estágio independente de quem responde (2026-09-11).
+      stageClassifierEnabled: process.env.AI_STAGE_CLASSIFIER_ENABLED !== 'false',
+      ...(process.env.AI_STAGE_CLASSIFIER_DELAY_MS
+        ? { stageClassifierDelayMs: Number(process.env.AI_STAGE_CLASSIFIER_DELAY_MS) }
+        : {}),
+    });
 
     const { sessionService, registry, mediaDownloader, mediaSender, contactAvatarService } =
       createWhatsAppSessionsComposition(
@@ -671,6 +678,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       aiInteractionRepository,
       logger,
       outboundConsumerConnection,
+      stageClassificationScheduler,
     );
 
     // Fase 1, Bloco F1.2 — rota INTERNA (processo-a-processo) de download de

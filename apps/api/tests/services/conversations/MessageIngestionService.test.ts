@@ -10,6 +10,7 @@ import {
   FakeOptOutDetector,
   FakeCampaignReplyTracker,
   FakeContactAvatarRefresher,
+  FakeStageClassificationScheduler,
 } from './testDoubles';
 import { FakeTenantPlanRepository } from './FakeTenantPlanRepository';
 
@@ -790,6 +791,112 @@ describe('MessageIngestionService', () => {
       await sutLateWired.handle(buildInboundMessage());
 
       expect(lateTracker.calls).toHaveLength(1);
+    });
+  });
+
+  describe('classificação de estágio independente de quem responde (2026-09-11)', () => {
+    function buildWithClassifier(): ReturnType<typeof buildSut> & {
+      stageScheduler: FakeStageClassificationScheduler;
+    } {
+      const built = buildSut();
+      const stageScheduler = new FakeStageClassificationScheduler();
+      built.sut.setStageClassificationScheduler(stageScheduler);
+      return { ...built, stageScheduler };
+    }
+
+    function seedHumanConversation(
+      conversationRepository: FakeConversationRepository,
+      overrides: Record<string, unknown> = {},
+    ): void {
+      conversationRepository.seed({
+        id: 'conversation-humana',
+        tenantId: 'tenant-1',
+        sessionName: 'default',
+        contactJid: '5511999999999@s.whatsapp.net',
+        status: 'human',
+        assignedToUserId: 'user-atendente',
+        stage: 'new',
+        stageSetBy: 'ai',
+        excludedFromPipeline: false,
+        createdAt: new Date('2026-07-09T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-09T00:00:00.000Z'),
+        ...overrides,
+      } as never);
+    }
+
+    it('IA desligada (Botão POWER): agenda a classificação, não a resposta', async () => {
+      const { sut, aiAvailabilityRepository, aiReplyScheduler, stageScheduler, messageRepository } =
+        buildWithClassifier();
+      aiAvailabilityRepository.setEnabled('tenant-1', 'default', false);
+
+      await sut.handle(buildInboundMessage());
+
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+      expect(stageScheduler.scheduleCalls).toEqual([
+        {
+          tenantId: 'tenant-1',
+          conversationId: expect.any(String),
+          messageId: messageRepository.getAll()[0].id,
+        },
+      ]);
+    });
+
+    it('humano atendendo: a mensagem do cliente agenda a classificação', async () => {
+      const { sut, conversationRepository, stageScheduler } = buildWithClassifier();
+      seedHumanConversation(conversationRepository);
+
+      await sut.handle(buildInboundMessage());
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(1);
+      expect(stageScheduler.scheduleCalls[0].conversationId).toBe('conversation-humana');
+    });
+
+    it('mensagem do atendente pelo celular (outbound) também agenda', async () => {
+      const { sut, conversationRepository, stageScheduler } = buildWithClassifier();
+      seedHumanConversation(conversationRepository);
+
+      await sut.handle(buildInboundMessage({ direction: 'outbound', content: 'Fechado, te mando o pix' }));
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(1);
+    });
+
+    it('IA ligada respondendo: NÃO agenda (a resposta da IA já classifica)', async () => {
+      const { sut, aiReplyScheduler, stageScheduler } = buildWithClassifier();
+
+      await sut.handle(buildInboundMessage());
+
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
+      expect(stageScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('conversa fora do funil (não é cliente): nunca agenda', async () => {
+      const { sut, conversationRepository, stageScheduler } = buildWithClassifier();
+      seedHumanConversation(conversationRepository, { excludedFromPipeline: true });
+
+      await sut.handle(buildInboundMessage());
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('Plano Grátis: nunca agenda (classificar custa IA)', async () => {
+      const { sut, conversationRepository, tenantPlanRepository, stageScheduler } =
+        buildWithClassifier();
+      seedHumanConversation(conversationRepository);
+      tenantPlanRepository.setPlan('free');
+
+      await sut.handle(buildInboundMessage());
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('falha ao agendar não derruba a ingestão', async () => {
+      const { sut, conversationRepository, messageRepository, stageScheduler } =
+        buildWithClassifier();
+      seedHumanConversation(conversationRepository);
+      stageScheduler.failNextSchedule = true;
+
+      await expect(sut.handle(buildInboundMessage())).resolves.toBeUndefined();
+      expect(messageRepository.getAll()).toHaveLength(1);
     });
   });
 });

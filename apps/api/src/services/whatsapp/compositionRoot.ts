@@ -25,6 +25,7 @@ import {
 } from './infrastructure/queues/WhatsAppOutboundQueue';
 import { ConversationRepository } from '../conversations/domain/repositories/ConversationRepository';
 import { MessageRepository } from '../conversations/domain/repositories/MessageRepository';
+import { StageClassificationScheduler } from '../conversations/domain/schedulers/StageClassificationScheduler';
 import { AiInteractionRepository } from '../ai/domain/repositories/AiInteractionRepository';
 import { WhatsAppMediaDownloader } from './infrastructure/WhatsAppMediaDownloader';
 import { WhatsAppMediaSender } from './infrastructure/WhatsAppMediaSender';
@@ -265,6 +266,7 @@ export function createOutboundCommandConsumerWorker(
   aiInteractionRepository: AiInteractionRepository,
   logger: Logger,
   redisConnection: IORedis,
+  stageClassificationScheduler?: StageClassificationScheduler,
 ): Worker<WhatsAppOutboundJobData> {
   const consumer = new OutboundCommandConsumer(
     registry,
@@ -273,6 +275,9 @@ export function createOutboundCommandConsumerWorker(
     aiInteractionRepository,
     logger,
   );
+  if (stageClassificationScheduler) {
+    consumer.setStageClassificationScheduler(stageClassificationScheduler);
+  }
 
   const worker = new Worker<WhatsAppOutboundJobData>(
     WHATSAPP_OUTBOUND_QUEUE_NAME,

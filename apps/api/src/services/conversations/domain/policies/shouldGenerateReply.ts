@@ -77,7 +77,7 @@ export function shouldGenerateReply(messages: Message[], messageId: string): boo
  * que garante que exatamente um job da rajada se reconheça como o mais
  * recente quando os timestamps empatam.
  */
-function isNewerThan(a: Message, b: Message): boolean {
+export function isNewerThan(a: Message, b: Message): boolean {
   const aTime = a.occurredAt.getTime();
   const bTime = b.occurredAt.getTime();
 

@@ -7,10 +7,12 @@ import IORedis from 'ioredis';
 import { PrismaConversationRepository } from './services/conversations/infrastructure/repositories/PrismaConversationRepository';
 import { PrismaMessageRepository } from './services/conversations/infrastructure/repositories/PrismaMessageRepository';
 import { TenantPlanFromTenantRepository } from './services/conversations/infrastructure/repositories/TenantPlanFromTenantRepository';
+import { PrismaAiAvailabilityRepository } from './services/conversations/infrastructure/repositories/PrismaAiAvailabilityRepository';
 import { PrismaTenantRepository } from './shared/tenant/infrastructure/PrismaTenantRepository';
 import {
   AI_REPLY_QUEUE_NAME,
   AiReplyJobData,
+  STAGE_CLASSIFY_JOB_NAME,
 } from './services/conversations/infrastructure/queues/AiReplyQueue';
 import { PrismaAiInteractionRepository } from './services/ai/infrastructure/repositories/PrismaAiInteractionRepository';
 import { PrismaAiBusinessProfileRepository } from './services/ai/infrastructure/repositories/PrismaAiBusinessProfileRepository';
@@ -24,6 +26,7 @@ import { AiProviderName } from './services/ai/domain/providers/AiProviderName';
 import { PromptBuilder } from './services/ai/application/PromptBuilder';
 import { ConversationAiService } from './services/ai/application/ConversationAiService';
 import { AiReplyJobProcessor } from './services/ai/application/AiReplyJobProcessor';
+import { StageClassificationJobProcessor } from './services/ai/application/StageClassificationJobProcessor';
 import { getPromptVersion } from './services/ai/domain/PromptVersion';
 import {
   WHATSAPP_OUTBOUND_QUEUE_NAME,
@@ -96,6 +99,7 @@ async function main(): Promise<void> {
     AI_GEMINI_MAX_TOKENS,
     AI_PROMPT_VERSION,
     AI_HISTORY_LIMIT,
+    AI_STAGE_CLASSIFIER_MODEL,
     INTERNAL_API_SECRET,
     INTERNAL_API_BASE_URL,
   } = process.env;
@@ -322,10 +326,51 @@ async function main(): Promise<void> {
   // outro job da mesma conversa ao mesmo tempo.
   const conversationMutex = new KeyedMutex();
 
+  // Classificação de estágio independente de quem responde (2026-09-11).
+  // `AI_STAGE_CLASSIFIER_MODEL` (opcional) aponta o classificador para outro
+  // modelo do MESMO provider — no Gemini gratuito cada modelo tem cota própria,
+  // então um modelo mais leve aqui não compete com as respostas ao cliente.
+  const classifierProviderFactory = AI_STAGE_CLASSIFIER_MODEL
+    ? new AiProviderFactoryImpl(
+        {
+          claude:
+            selectedProvider === 'claude'
+              ? { apiKey: CLAUDE_API_KEY as string, model: AI_STAGE_CLASSIFIER_MODEL }
+              : undefined,
+          gemini:
+            selectedProvider === 'gemini'
+              ? {
+                  apiKey: GEMINI_API_KEY as string,
+                  model: AI_STAGE_CLASSIFIER_MODEL,
+                  maxTokens: AI_GEMINI_MAX_TOKENS ? Number(AI_GEMINI_MAX_TOKENS) : undefined,
+                }
+              : undefined,
+        },
+        logger.child({ module: 'stage-classifier-provider' }),
+      )
+    : aiProviderFactory;
+  const stageClassifier = new StageClassificationJobProcessor(
+    conversationRepository,
+    messageRepository,
+    aiInteractionRepository,
+    new PrismaAiAvailabilityRepository(prisma),
+    tenantPlanRepository,
+    classifierProviderFactory.create(selectedProvider),
+    selectedProvider,
+    logger.child({ module: 'stage-classifier' }),
+  );
+
   const worker = new Worker<AiReplyJobData>(
     AI_REPLY_QUEUE_NAME,
     async (job) => {
       const conversationKey = `${job.data.tenantId}:${job.data.conversationId}`;
+      // Mesma fila, dois tipos de job — ver `STAGE_CLASSIFY_JOB_NAME`. A trava
+      // por conversa vale para os dois: uma classificação nunca lê o histórico
+      // enquanto uma resposta da mesma conversa está sendo gerada.
+      if (job.name === STAGE_CLASSIFY_JOB_NAME) {
+        await conversationMutex.run(conversationKey, () => stageClassifier.process(job.data));
+        return;
+      }
       await conversationMutex.run(conversationKey, () => processor.process(job.data));
     },
     { connection: workerConnection, concurrency: 5 },
