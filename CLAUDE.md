@@ -1834,6 +1834,110 @@ recusa colisão), criar o `PlatformUser` real (`createPlatformUser.ts`,
 remover o placeholder `seu@email.com`), validação visual das Fases 4/5/6 no
 navegador, `GET /health/ready`.
 
+### Disparos em grupos de WhatsApp (2026-09-11) — segunda função de Campanhas, disparo ÚNICO (não recorrente)
+
+**Data:** 2026-09-11
+**Contexto:** item registrado em `PRODUCT_BACKLOG.md` §3 (2026-09-05) —
+publicar uma mensagem (texto, com imagem/vídeo opcional) em grupos de
+WhatsApp dos quais o número da sessão participa. O pedido do fundador foi
+explicitamente o disparo AVULSO ("segunda função" de Campanhas); recorrência/
+agendamento (repetir N vezes por dia, D dias) ficou de fora, registrado como
+pendência no próprio backlog.
+**Decisão — entidade PRÓPRIA, não `Campaign`.** `GroupBroadcast`/
+`GroupBroadcastTarget` (migration `20260911120000_add_group_broadcasts`),
+bounded context `services/groupBroadcasts` — os três descasamentos já
+antecipados no backlog (grupo não gera conversa/IA; destinatário não é
+pessoa, sem as três regras de supressão de `CampaignRecipient`; cadência
+própria e mais conservadora) resolvidos exatamente como previsto. `status`
+reaproveita o enum `CampaignStatus` (mesmo ciclo de vida draft→running↔
+paused→completed/cancelled); mídia reaproveita `WhatsAppMessageContentType`
+(restrita a `image`/`video` no Domain — "mensagem, imagem, vídeo", o escopo
+pedido). Um disparo por vez por sessão (`GroupBroadcastAlreadyRunningError`)
+— dois em paralelo dobrariam o ritmo de publicação.
+**Decisão — o servidor confere cada grupo AO VIVO na criação, nunca confia no
+cliente.** Novo `WhatsAppProvider.listGroups()` sobre
+`sock.groupFetchAllParticipating()` do Baileys — é IQ query no MESMO socket
+das mensagens, então SEMPRE com teto próprio (`GROUP_LIST_TIMEOUT_MS=15s`,
+`Promise.race` + `.catch(()=>{})` na promise órfã, mesma disciplina da ADR
+#78 que já travou o socket inteiro uma vez por falta disso).
+`WhatsAppGroupDirectoryService` (cache curto de 60s + piso de atualização
+forçada de 10s + deduplicação de consultas em voo) protege o socket de
+qualquer sequência de aberturas de tela/criações de disparo virarem uma
+consulta cada. `determineGroupTargetSkipReason` decide, a partir dessa
+listagem: grupo ausente → `group_not_found`; "só admins" e o número não é
+admin → `admin_only_group` — ambos nascem `skipped`, sem tentativa de envio.
+Detecção de admin compara TANTO o telefone quanto o LID do próprio número
+contra os participantes (grupos em modo LID têm o participante só nesse
+formato).
+**Decisão — calibragem anti-banimento mais conservadora que o motor 1:1**
+(`groupBroadcastPacing.ts`, reaproveitando as funções puras
+`computeSendDelayMs`/`shouldTripCircuitBreaker` da Fase L/L4, só a
+calibragem muda): intervalo padrão 60s (piso 30s, teto 600s) + jitter de até
+30s; teto de 30 grupos por disparo; disjuntor dispara com só 2 tentativas na
+amostra (`GROUP_CIRCUIT_BREAKER_SAMPLE_SIZE=2`, `maxFailureRate=0.5` — ou
+seja, as DUAS últimas tentativas falhando já pausa, contra 5 tentativas/40%
+do motor 1:1) — "ao primeiro sinal de falhas seguidas", como o risco descrito
+no backlog pedia. Fila BullMQ própria (`group-broadcast-send`), dentro de
+`apps/api` (nunca `worker.ts` — ADR #54, só a API tem o
+`WhatsAppConnectionRegistry`); `jobId = targetId` (UUID puro, sem `:` —
+incidente do "balão único" de 2026-08-21) e `queue.remove()` antes de
+`queue.add()` (bug de retomada de 2026-08-18, `BullMqCampaignSendDispatcher`).
+**Decisão — trilha de auditoria em criar/iniciar/cancelar** (não em
+pausar/excluir) — é a ação de maior risco de banimento do produto, "quem
+mandou isto para 30 grupos?" precisa ter resposta; `auditLogRepository` é
+dependência OPCIONAL (nunca derruba a ação por falha de log).
+**Frontend:** aba "Contatos | Grupos" na página `/sessions/:sessionName/
+campaigns` (componente `TabList`/`TabTrigger` já existente, navegação por
+`?tab=`) — o cabeçalho "Campanhas" migrou da `CampaignsPanel` para a página
+(evita duplicar título ao trocar de aba). `GroupBroadcastsPanel` (lista +
+ações, mais simples que `CampaignsPanel` de propósito — sem indicadores
+agregados/gráfico, volume esperado bem menor), `GroupBroadcastCreateForm`
+(lista de grupos ao vivo com busca, checkbox desabilitado + selo "Só admins"
+para quem não pode enviar, mensagem, anexo opcional, teto de 30 no cliente
+espelhando o do servidor), `GroupBroadcastDetailPanel` (resumo, status por
+grupo com polling enquanto `running`, pausar/cancelar). "Iniciar"/"Retomar"
+pede confirmação SEMPRE nomeando quantos grupos e citando o risco de
+banimento — nunca um "OK" genérico, em ambas as telas (lista e detalhe).
+**Impacto:** requer a migration + `npx prisma generate`. Zero mudança de
+contrato pré-existente (RBAC `campaign:read`/`campaign:manage` reaproveitado,
+mesmo nível de risco). Testes novos: `groupBroadcastPacing`/
+`GroupBroadcastService` (já existiam de uma tentativa anterior interrompida,
+revisados e confirmados corretos), `GroupBroadcastSendJobProcessor` (11),
+`BullMqGroupBroadcastSendDispatcher` (5, incluindo a trava do `jobId` sem
+`:`), `groupBroadcastsRouter` (RBAC+IDOR+validação, supertest),
+`groupBroadcasts.integration` (10 casos contra Postgres real — binário nunca
+vaza em lista/detalhe, `@@unique` via `skipDuplicates`, cascade delete;
+pulou nesta sessão por Postgres indisponível no sandbox, ver nota abaixo),
+`BaileysProvider.listGroups`/`buildWhatsAppGroupSummaries` (10, timeout
+incluído), `WhatsAppGroupDirectoryService` (9, cache/piso/dedup),
+`WhatsAppGroupDirectory` (4, tradução de erros), `WhatsAppGroupMessageSender`
+(6, incluindo retry), `SessionManager.listGroups` (2, passthrough). Frontend:
+`GroupBroadcastsPanel`/`GroupBroadcastCreateForm`/`GroupBroadcastDetailPanel`
+(28 casos jsdom) + 4 arquivos de proxy BFF (24 casos) — `createFakeRes`
+(`tests/testDoubles.ts`) ganhou suporte a `res.send()` (streaming de mídia),
+aditivo, não usado por nenhum teste pré-existente. Suíte do monorepo nesta
+sessão: **api 200/200 suítes, 2393/2393 testes; dashboard+dashboard-jsdom
+153/153 suítes, 1138/1138 testes** — todos verdes; `tsc`/`eslint`/`next
+build` limpos nos dois pacotes.
+**NOTA DE VERIFICAÇÃO — ambiente desta sessão (worktree paralela):** Docker
+Desktop não estava rodando (outra sessão trabalhava no checkout principal ao
+mesmo tempo) — os 10 casos de `groupBroadcasts.integration.test.ts` pularam
+de forma visível (aviso "Postgres indisponível — pulando", nunca reportados
+como verdes por engano) em vez de rodar contra Postgres real. Também
+descoberto e contornado nesta sessão: o Jest tem um bug de path no Windows
+quando o `rootDir` do projeto cai sob um segmento iniciado por ponto (aqui,
+`.claude\worktrees\...`) — o normalizador interno preserva `\.` como escape
+de glob em vez de convertê-lo para separador, e QUALQUER `testPathPattern`
+(inclusive contra arquivos pré-existentes, não só os novos) resolvia para 0
+arquivos. Contornado com um `jest.tmp.config.js` local e temporário
+(substituindo `<rootDir>` por uma string 100% barra-normal antes do Jest
+processar o config) — usado só para RODAR os testes nesta sessão, nunca
+comitado; não é um problema em produção (a VM de deploy não roda sob
+`.claude`). Validação real (migration, primeira publicação de verdade num
+grupo real, teste funcional do fluxo completo na tela) pendente na máquina
+do fundador — **é isso que ele precisa testar na mão**, junto do teste
+funcional de anexar imagem/vídeo de verdade a um grupo real.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
