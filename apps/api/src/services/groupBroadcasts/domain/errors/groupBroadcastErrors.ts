@@ -121,3 +121,15 @@ export class GroupBroadcastMediaNotFoundError extends Error {
     this.name = 'GroupBroadcastMediaNotFoundError';
   }
 }
+
+/**
+ * Configuração de recorrência incoerente (2026-09-11) — número de repetições
+ * fora da faixa, data de término no passado, ou janela de horário incompleta.
+ * Vira 400: é erro de quem pediu, não do sistema.
+ */
+export class InvalidRecurrenceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidRecurrenceError';
+  }
+}

@@ -1,3 +1,8 @@
+import {
+  MAX_RECURRENCE_INTERVAL_HOURS,
+  MAX_RECURRENCE_RUNS,
+  MIN_RECURRENCE_INTERVAL_HOURS,
+} from '../domain/policies/groupBroadcastRecurrence';
 import { Router, Request, raw } from 'express';
 import { z } from 'zod';
 
@@ -51,6 +56,25 @@ const createBodySchema = z.object({
     .int()
     .min(MIN_GROUP_INTERVAL_SECONDS)
     .max(MAX_GROUP_INTERVAL_SECONDS)
+    .optional(),
+  // Recorrência (2026-09-11). Ausente = publicação única, como sempre foi.
+  recurrenceIntervalHours: z
+    .number()
+    .int()
+    .min(MIN_RECURRENCE_INTERVAL_HOURS)
+    .max(MAX_RECURRENCE_INTERVAL_HOURS)
+    .optional(),
+  /** Fim por contagem: mínimo 2 (1 repetição seria a publicação única). */
+  recurrenceMaxRuns: z.number().int().min(2).max(MAX_RECURRENCE_RUNS).optional(),
+  /** Fim por data: ISO-8601; o Service recusa data no passado. */
+  recurrenceEndsAt: z.coerce.date().optional(),
+  sendWindowStart: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário precisa ser "HH:MM".')
+    .optional(),
+  sendWindowEnd: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário precisa ser "HH:MM".')
     .optional(),
 });
 
@@ -120,6 +144,11 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
           messageTemplate: body.messageTemplate,
           groupJids: body.groupJids,
           intervalSeconds: body.intervalSeconds,
+          recurrenceIntervalHours: body.recurrenceIntervalHours,
+          recurrenceMaxRuns: body.recurrenceMaxRuns,
+          recurrenceEndsAt: body.recurrenceEndsAt,
+          sendWindowStart: body.sendWindowStart,
+          sendWindowEnd: body.sendWindowEnd,
           createdByUserId: actor.userId,
         },
         actor,

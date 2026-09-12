@@ -542,6 +542,27 @@ model GroupBroadcast {
   /// Espaçamento-base entre um grupo e o seguinte. Default 60s, piso de 30s
   /// imposto pela aplicação (`clampGroupIntervalSeconds`).
   intervalSeconds  Int                         @default(60) @map("interval_seconds")
+  /// Recorrência (2026-09-11, pedido do fundador): de quantas em quantas horas
+  /// o MESMO disparo se repete. Nulo = publicação única (comportamento
+  /// original). Faixa validada no Domain (1h a 24h).
+  recurrenceIntervalHours Int?                  @map("recurrence_interval_hours")
+  /// Fim por CONTAGEM: para depois de N publicações concluídas. Nulo = sem
+  /// limite por contagem.
+  recurrenceMaxRuns       Int?                  @map("recurrence_max_runs")
+  /// Fim por DATA: não inicia nenhuma publicação depois deste instante. Nulo =
+  /// sem limite por data. Os dois limites convivem — vale o que vier primeiro;
+  /// ambos nulos = repete até alguém cancelar.
+  recurrenceEndsAt        DateTime?             @map("recurrence_ends_at")
+  /// Janela diária permitida ("HH:MM", fuso do SERVIDOR — mesma simplificação
+  /// já registrada em `AiBusinessProfile`/`workingHours.ts`). Uma repetição
+  /// que cairia fora dela é empurrada para o próximo horário permitido, nunca
+  /// descartada.
+  sendWindowStart         String?               @map("send_window_start")
+  sendWindowEnd           String?               @map("send_window_end")
+  /// Quantas publicações já foram CONCLUÍDAS (todos os grupos processados).
+  runsCompleted           Int                   @default(0) @map("runs_completed")
+  /// Quando a próxima repetição começa. Nulo em disparo único, e quando acabou.
+  nextRunAt               DateTime?             @map("next_run_at")
   pausedReason     String?                     @map("paused_reason")
   createdByUserId  String?                     @map("created_by_user_id")
   mediaContent     Bytes?                      @map("media_content")
@@ -588,6 +609,9 @@ model GroupBroadcastTarget {
   /// ("as duas últimas tentativas falharam?"), mesmo papel de
   /// `CampaignRecipient.attemptedAt`.
   attemptedAt  DateTime?                  @map("attempted_at")
+  /// Quantas vezes este grupo já recebeu a publicação (cresce a cada repetição).
+  /// `status` descreve só a repetição ATUAL, que é reiniciada a cada ciclo.
+  sentCount    Int                        @default(0) @map("sent_count")
   createdAt    DateTime                   @default(now()) @map("created_at")
 
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)

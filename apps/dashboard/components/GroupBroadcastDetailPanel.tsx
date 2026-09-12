@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Play, Pause, XCircle, FileText, X, Users } from 'lucide-react';
+import { ChevronLeft, Play, Pause, XCircle, FileText, X, Users, Repeat } from 'lucide-react';
 
 import {
   fetchGroupBroadcast,
@@ -247,6 +247,38 @@ export default function GroupBroadcastDetailPanel({
       <p className="mb-2 max-w-2xl whitespace-pre-wrap rounded-lg border border-dashed border-border bg-card p-3 text-[13px] text-foreground">
         {broadcast.messageTemplate}
       </p>
+
+      {broadcast.recurrenceIntervalHours && (
+        <div className="mb-3 flex max-w-2xl items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-[13px]">
+          <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="font-medium text-foreground">
+              Repete a cada{' '}
+              {broadcast.recurrenceIntervalHours === 1
+                ? '1 hora'
+                : broadcast.recurrenceIntervalHours + ' horas'}
+              {broadcast.recurrenceMaxRuns
+                ? ' · ' + broadcast.runsCompleted + ' de ' + broadcast.recurrenceMaxRuns
+                : ' · ' + broadcast.runsCompleted + ' publicada(s)'}
+            </p>
+            <p className="text-muted-foreground">
+              {broadcast.nextRunAt
+                ? 'Próxima publicação em ' + formatDateTime(broadcast.nextRunAt)
+                : broadcast.status === 'running'
+                  ? 'Publicando agora nos grupos selecionados.'
+                  : 'Sem próxima publicação agendada.'}
+              {broadcast.recurrenceEndsAt &&
+                ' · termina em ' + formatDateTime(broadcast.recurrenceEndsAt)}
+              {broadcast.sendWindowStart &&
+                broadcast.sendWindowEnd &&
+                ' · só entre ' + broadcast.sendWindowStart + ' e ' + broadcast.sendWindowEnd}
+              {!broadcast.recurrenceMaxRuns &&
+                !broadcast.recurrenceEndsAt &&
+                ' · sem prazo para acabar: cancele quando quiser parar'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {broadcast.media && (
         <div className="mb-4 flex max-w-2xl items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">

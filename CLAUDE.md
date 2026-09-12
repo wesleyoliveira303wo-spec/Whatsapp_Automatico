@@ -2058,6 +2058,64 @@ grupo real, teste funcional do fluxo completo na tela) pendente na máquina
 do fundador — **é isso que ele precisa testar na mão**, junto do teste
 funcional de anexar imagem/vídeo de verdade a um grupo real.
 
+### Disparo em grupos recorrente (repetir a cada N horas)
+
+**Data:** 2026-09-12
+**Contexto:** o fundador testou e aprovou o disparo em grupos e pediu, em
+seguida, a recorrência que tinha ficado registrada como pendência: "dentro da
+criação do disparo, ativar uma opção de disparo recorrente, repetindo a cada
+1h, 2h, 3h, em diante". Duas decisões de produto foram levadas a ele antes de
+qualquer código, porque mudam o comportamento e o risco de banimento — e ele
+escolheu as duas: **as TRÊS formas de término, todas configuráveis** (número de
+repetições, data/hora de término, até cancelar) e **janela de horário escolhida
+por ele**, não fixa.
+**Decisão — o modelo aceita as três formas SEM um enum de "modo".**
+`recurrenceMaxRuns` e `recurrenceEndsAt` são independentes e opcionais; os dois
+ausentes significam "até eu cancelar", e os dois presentes valem pelo que vier
+primeiro. A tela oferece os três como escolha única (rádio), mas o dado não
+precisa saber disso — menos estado para ficar inconsistente. Campos aditivos em
+`GroupBroadcast` (`recurrenceIntervalHours`, `recurrenceMaxRuns`,
+`recurrenceEndsAt`, `sendWindowStart`/`End`, `runsCompleted`, `nextRunAt`) e
+`sentCount` em `GroupBroadcastTarget`; migration
+`20260911160000_add_group_broadcast_recurrence`, sem backfill — disparo já
+criado fica com intervalo nulo, ou seja, publicação única, exatamente como
+antes.
+**Decisão — a repetição é um SEGUNDO tipo de job na fila que já existe**
+(`start-group-broadcast-run` em `group-broadcast-send`), mesmo raciocínio do
+`classify-stage` na fila `ai-reply`: o worker, a conexão e a observabilidade já
+estão de pé. O ciclo fecha assim: o processador de ENVIO, ao ver que não há
+mais grupos pendentes, pergunta ao Domain (`decideNextRun`) se repete; se sim,
+grava `runsCompleted`/`nextRunAt` e agenda o job do próximo ciclo; se não,
+conclui o disparo. O processador de CICLO relê o status (pausar/cancelar não
+precisa mexer na fila — o job dispara, vê o estado e encerra), devolve os alvos
+a `pending` e reagenda os envios com o mesmo ritmo conservador do primeiro
+disparo. `skipped` NUNCA é reaberto: grupo que virou só-admin, ou do qual o
+número saiu, fica fora até o disparo ser recriado.
+**Decisão — janela de horário adia, nunca descarta.** Uma repetição que cairia
+fora do horário permitido é reagendada para a próxima abertura (inclusive em
+janelas que viram a noite). O fuso é o do servidor — mesma simplificação já
+registrada em `AiBusinessProfile`/`workingHours.ts`; fuso por tenant continua
+sendo extensão futura, não esquecimento.
+**Limites de segurança:** intervalo de 1h a 24h (abaixo de 1h é o padrão que
+mais gera denúncia), teto de 100 repetições por disparo, mínimo de 2 repetições
+(1 seria a publicação única), data de término precisa ser futura, e a janela
+exige início e fim válidos e diferentes — janela de duração zero travaria a
+recorrência para sempre. O disjuntor e o teto de 30 grupos do disparo original
+seguem valendo em cada repetição.
+**Impacto:** requer a migration + `npx prisma generate`. Nenhuma mudança de
+contrato pré-existente — todos os campos são opcionais e ausentes significam o
+comportamento antigo. Um achado colateral da revisão de testes: as caixas de
+seleção dos grupos não tinham nome acessível (`aria-label`), o que só apareceu
+quando outras caixas entraram na mesma tela; corrigido na fonte. Testes novos:
+`groupBroadcastRecurrence` (15, Domain puro — janela, término, clamp),
+`groupBroadcastRecurrenceEngine` (9, os dois processadores), dispatcher (+2),
+`GroupBroadcastService` (+6, validação), `groupBroadcastsRouter` (+3),
+`GroupBroadcastCreateForm` (+5, jsdom), `GroupBroadcastDetailPanel` (+4).
+Suítes: `api` 207 suítes / 2462 testes; `dashboard`+`jsdom` 153 suítes / 1147
+testes — todos verdes, integração inclusa contra Postgres real. `tsc`/`eslint`/
+`next build` limpos. **Pendente:** validação real (criar um disparo recorrente
+de 1h num grupo de teste e confirmar a segunda publicação).
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

@@ -72,3 +72,31 @@ describe('BullMqGroupBroadcastSendDispatcher (Disparos em grupos, 2026-09-11)', 
     });
   });
 });
+
+describe('scheduleRun (recorrência, 2026-09-11)', () => {
+  it('usa um jobId por REPETIÇÃO, sem ":" e removendo o job anterior antes', async () => {
+    const queue = { add: jest.fn(), remove: jest.fn() };
+    const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
+
+    await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 3, 7200000);
+
+    expect(queue.remove).toHaveBeenCalledWith('broadcast-1-run-3');
+    expect(queue.add).toHaveBeenCalledWith(
+      'start-group-broadcast-run',
+      { tenantId: 'tenant-1', broadcastId: 'broadcast-1', runNumber: 3 },
+      { jobId: 'broadcast-1-run-3', delay: 7200000 },
+    );
+    expect(queue.add.mock.calls[0][2].jobId).not.toContain(':');
+  });
+
+  it('repetições diferentes nunca colidem no mesmo jobId', async () => {
+    const queue = { add: jest.fn(), remove: jest.fn() };
+    const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
+
+    await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 1, 0);
+    await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 2, 0);
+
+    const jobIds = queue.add.mock.calls.map((call) => call[2].jobId);
+    expect(new Set(jobIds).size).toBe(2);
+  });
+});

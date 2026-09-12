@@ -13,6 +13,12 @@ export interface CreateGroupBroadcastData {
   messageTemplate: string;
   intervalSeconds: number;
   createdByUserId?: string;
+  /** Recorrência (2026-09-11) — todos opcionais; ausentes = publicação única. */
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  recurrenceEndsAt?: Date;
+  sendWindowStart?: string;
+  sendWindowEnd?: string;
 }
 
 export interface GroupBroadcastTargetDraft {
@@ -72,6 +78,26 @@ export interface GroupBroadcastRepository {
     limit: number,
   ): Promise<Array<'sent' | 'failed'>>;
   countPending(tenantId: string, broadcastId: string): Promise<number>;
+
+  /**
+   * Prepara a próxima repetição: todo alvo `sent`/`failed` volta a `pending`
+   * (limpando erro/tentativa). `skipped` NUNCA é reaberto — grupo que só
+   * admins publicam, ou do qual o número saiu, continua fora até o disparo ser
+   * recriado. Devolve quantos alvos ficaram pendentes.
+   */
+  resetTargetsForNextRun(tenantId: string, broadcastId: string): Promise<number>;
+
+  /**
+   * Fecha uma repetição: grava `runsCompleted` e quando a próxima começa
+   * (`null` quando não há próxima). Nunca mexe em `status` — quem decide
+   * entre continuar e encerrar é o processador.
+   */
+  markRunFinished(
+    tenantId: string,
+    broadcastId: string,
+    runsCompleted: number,
+    nextRunAt: Date | null,
+  ): Promise<void>;
 
   updateStatus(
     tenantId: string,

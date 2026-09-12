@@ -77,6 +77,13 @@ const GROUP_BROADCAST_SELECT = {
   messageTemplate: true,
   status: true,
   intervalSeconds: true,
+  recurrenceIntervalHours: true,
+  recurrenceMaxRuns: true,
+  recurrenceEndsAt: true,
+  sendWindowStart: true,
+  sendWindowEnd: true,
+  runsCompleted: true,
+  nextRunAt: true,
   pausedReason: true,
   createdByUserId: true,
   mediaMimeType: true,
@@ -94,6 +101,13 @@ interface GroupBroadcastRow {
   messageTemplate: string;
   status: string;
   intervalSeconds: number;
+  recurrenceIntervalHours: number | null;
+  recurrenceMaxRuns: number | null;
+  recurrenceEndsAt: Date | null;
+  sendWindowStart: string | null;
+  sendWindowEnd: string | null;
+  runsCompleted: number;
+  nextRunAt: Date | null;
   pausedReason: string | null;
   createdByUserId: string | null;
   mediaMimeType: string | null;
@@ -114,6 +128,7 @@ interface GroupBroadcastTargetRow {
   errorMessage: string | null;
   sentAt: Date | null;
   attemptedAt: Date | null;
+  sentCount: number;
   createdAt: Date;
 }
 
@@ -129,6 +144,13 @@ function toDomain(row: GroupBroadcastRow): GroupBroadcast {
     messageTemplate: row.messageTemplate,
     status: STATUS_FROM_PRISMA[row.status] ?? 'draft',
     intervalSeconds: row.intervalSeconds,
+    recurrenceIntervalHours: row.recurrenceIntervalHours ?? undefined,
+    recurrenceMaxRuns: row.recurrenceMaxRuns ?? undefined,
+    recurrenceEndsAt: row.recurrenceEndsAt ?? undefined,
+    sendWindowStart: row.sendWindowStart ?? undefined,
+    sendWindowEnd: row.sendWindowEnd ?? undefined,
+    runsCompleted: row.runsCompleted,
+    nextRunAt: row.nextRunAt ?? undefined,
     pausedReason: row.pausedReason ?? undefined,
     createdByUserId: row.createdByUserId ?? undefined,
     // As colunas de mídia nascem/são limpas juntas (`attachMedia`/`removeMedia`).
@@ -156,6 +178,7 @@ function targetToDomain(row: GroupBroadcastTargetRow): GroupBroadcastTarget {
     errorMessage: row.errorMessage ?? undefined,
     sentAt: row.sentAt ?? undefined,
     attemptedAt: row.attemptedAt ?? undefined,
+    sentCount: row.sentCount,
     createdAt: row.createdAt,
   };
 }
@@ -183,6 +206,11 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
         name: data.name,
         messageTemplate: data.messageTemplate,
         intervalSeconds: data.intervalSeconds,
+        recurrenceIntervalHours: data.recurrenceIntervalHours ?? null,
+        recurrenceMaxRuns: data.recurrenceMaxRuns ?? null,
+        recurrenceEndsAt: data.recurrenceEndsAt ?? null,
+        sendWindowStart: data.sendWindowStart ?? null,
+        sendWindowEnd: data.sendWindowEnd ?? null,
         createdByUserId: data.createdByUserId ?? null,
       },
       select: GROUP_BROADCAST_SELECT,
@@ -295,7 +323,13 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
   async markTargetSent(tenantId: string, targetId: string, attemptedAt: Date): Promise<void> {
     await this.prisma.groupBroadcastTarget.updateMany({
       where: { id: targetId, tenantId, status: 'PENDING' },
-      data: { status: 'SENT', sentAt: attemptedAt, attemptedAt, errorMessage: null },
+      data: {
+        status: 'SENT',
+        sentAt: attemptedAt,
+        attemptedAt,
+        errorMessage: null,
+        sentCount: { increment: 1 },
+      },
     });
   }
 
@@ -333,6 +367,28 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
   async countPending(tenantId: string, broadcastId: string): Promise<number> {
     return this.prisma.groupBroadcastTarget.count({
       where: { tenantId, broadcastId, status: 'PENDING' },
+    });
+  }
+
+  async resetTargetsForNextRun(tenantId: string, broadcastId: string): Promise<number> {
+    // `skipped` fica de fora de propósito: grupo só-admin ou do qual o número
+    // saiu continua fora até o disparo ser recriado (ver o port).
+    const { count } = await this.prisma.groupBroadcastTarget.updateMany({
+      where: { tenantId, broadcastId, status: { in: ['SENT', 'FAILED'] } },
+      data: { status: 'PENDING', errorMessage: null, attemptedAt: null },
+    });
+    return count;
+  }
+
+  async markRunFinished(
+    tenantId: string,
+    broadcastId: string,
+    runsCompleted: number,
+    nextRunAt: Date | null,
+  ): Promise<void> {
+    await this.prisma.groupBroadcast.updateMany({
+      where: { id: broadcastId, tenantId },
+      data: { runsCompleted, nextRunAt },
     });
   }
 

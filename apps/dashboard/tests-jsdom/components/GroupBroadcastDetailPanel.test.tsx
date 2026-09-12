@@ -208,3 +208,55 @@ describe('GroupBroadcastDetailPanel', () => {
     expect(screen.queryByRole('button', { name: 'Remover anexo' })).not.toBeInTheDocument();
   });
 });
+
+describe('GroupBroadcastDetailPanel — repetição (2026-09-11)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('disparo único: nenhuma informação de repetição', async () => {
+    mockDetail();
+    await renderPanel();
+
+    expect(screen.queryByText(/Repete a cada/)).not.toBeInTheDocument();
+  });
+
+  it('recorrente com teto: mostra o andamento e a próxima publicação', async () => {
+    mockDetail({
+      broadcast: {
+        status: 'running',
+        recurrenceIntervalHours: 2,
+        recurrenceMaxRuns: 5,
+        runsCompleted: 2,
+        nextRunAt: '2026-09-12T14:30:00.000Z',
+      },
+    });
+    await renderPanel();
+
+    expect(screen.getByText(/Repete a cada 2 horas/)).toBeInTheDocument();
+    expect(screen.getByText(/2 de 5/)).toBeInTheDocument();
+    expect(screen.getByText(/Próxima publicação em/)).toBeInTheDocument();
+  });
+
+  it('sem limite: avisa que só para quando cancelarem', async () => {
+    mockDetail({
+      broadcast: { status: 'running', recurrenceIntervalHours: 1, runsCompleted: 7 },
+    });
+    await renderPanel();
+
+    expect(screen.getByText(/sem prazo para acabar/i)).toBeInTheDocument();
+  });
+
+  it('com janela de horário: mostra o intervalo permitido', async () => {
+    mockDetail({
+      broadcast: {
+        status: 'running',
+        recurrenceIntervalHours: 3,
+        runsCompleted: 1,
+        sendWindowStart: '09:00',
+        sendWindowEnd: '18:00',
+      },
+    });
+    await renderPanel();
+
+    expect(screen.getByText(/só entre 09:00 e 18:00/)).toBeInTheDocument();
+  });
+});

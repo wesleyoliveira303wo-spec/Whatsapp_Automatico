@@ -59,7 +59,7 @@ describe('GroupBroadcastCreateForm', () => {
 
     await waitFor(() => expect(screen.getByText('Grupo de clientes')).toBeInTheDocument());
     expect(screen.getByText('Só admins')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Grupo/ })).toBeDisabled();
   });
 
   it('busca filtra os grupos pelo nome', async () => {
@@ -109,7 +109,7 @@ describe('GroupBroadcastCreateForm', () => {
       target: { value: 'Disparo teste' },
     });
     fireEvent.change(screen.getByLabelText('Mensagem'), { target: { value: 'Olá!' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Grupo/ }));
 
     expect(submit).not.toBeDisabled();
   });
@@ -143,7 +143,7 @@ describe('GroupBroadcastCreateForm', () => {
       target: { value: 'Disparo teste' },
     });
     fireEvent.change(screen.getByLabelText('Mensagem'), { target: { value: 'Olá!' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Grupo/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
 
     await waitFor(() => expect(screen.getByText('Disparo criado')).toBeInTheDocument());
@@ -171,7 +171,7 @@ describe('GroupBroadcastCreateForm', () => {
 
     fireEvent.change(screen.getByLabelText('Nome do disparo'), { target: { value: 'X' } });
     fireEvent.change(screen.getByLabelText('Mensagem'), { target: { value: 'Y' } });
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Grupo/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
 
     await waitFor(() =>
@@ -179,5 +179,91 @@ describe('GroupBroadcastCreateForm', () => {
         screen.getByText('Seu cargo não permite criar disparos em grupos.'),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+describe('GroupBroadcastCreateForm — repetição (2026-09-11)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
+      groups: [group()],
+      fetchedAt: '2026-09-11T10:00:00.000Z',
+    });
+    (clientApi.createGroupBroadcast as jest.Mock).mockResolvedValue({
+      broadcast: { id: 'b1', status: 'draft' },
+      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0 },
+      targets: [],
+    });
+  });
+
+  async function preencherBasico(): Promise<void> {
+    render(<GroupBroadcastCreateForm sessionName="vendas" />);
+    await waitFor(() => expect(screen.getByText('Grupo de clientes')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Nome do disparo'), { target: { value: 'Disparo' } });
+    fireEvent.change(screen.getByLabelText('Mensagem'), { target: { value: 'Olá!' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Grupo/ }));
+  }
+
+  it('desligada por padrão: nenhum campo de repetição aparece', async () => {
+    await preencherBasico();
+
+    expect(screen.queryByLabelText('Repetir a cada')).not.toBeInTheDocument();
+  });
+
+  it('ligada: publicação única deixa de ser enviada e a configuração vai no pedido', async () => {
+    await preencherBasico();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
+    fireEvent.change(screen.getByLabelText('Repetir a cada'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Quantas repetições'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    expect(clientApi.createGroupBroadcast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recurrenceIntervalHours: 3,
+        recurrenceMaxRuns: 4,
+        sendWindowStart: '08:00',
+        sendWindowEnd: '20:00',
+      }),
+    );
+  });
+
+  it('"até eu cancelar": nenhum limite viaja no pedido, e o aviso aparece', async () => {
+    await preencherBasico();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Até eu cancelar' }));
+
+    expect(screen.getByText(/continua publicando até você pausar ou cancelar/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    const payload = (clientApi.createGroupBroadcast as jest.Mock).mock.calls[0][0];
+    expect(payload.recurrenceMaxRuns).toBeUndefined();
+    expect(payload.recurrenceEndsAt).toBeUndefined();
+    expect(payload.recurrenceIntervalHours).toBe(2);
+  });
+
+  it('sem horário permitido marcado, a janela não é enviada', async () => {
+    await preencherBasico();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Só publicar dentro de um horário' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    const payload = (clientApi.createGroupBroadcast as jest.Mock).mock.calls[0][0];
+    expect(payload.sendWindowStart).toBeUndefined();
+  });
+
+  it('término por data sem data preenchida: não deixa criar', async () => {
+    await preencherBasico();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Uma data e hora de término' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    expect(clientApi.createGroupBroadcast).not.toHaveBeenCalled();
   });
 });

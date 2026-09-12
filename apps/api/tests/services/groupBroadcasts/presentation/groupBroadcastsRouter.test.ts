@@ -685,4 +685,74 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       expect(response.status).toBe(404);
     });
   });
+
+  describe('POST / — recorrência (2026-09-11)', () => {
+    const grupo = { jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true };
+    const corpoBase = {
+      sessionName: 'sessao',
+      name: 'Disparo',
+      messageTemplate: 'Oi',
+      groupJids: ['111@g.us'],
+    };
+
+    it('aceita e persiste a configuração de repetição', async () => {
+      const { app, directory } = buildApp(person('administrator'));
+      directory.entries = [grupo];
+
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send({
+          ...corpoBase,
+          recurrenceIntervalHours: 3,
+          recurrenceMaxRuns: 4,
+          sendWindowStart: '09:00',
+          sendWindowEnd: '18:00',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.broadcast).toMatchObject({
+        recurrenceIntervalHours: 3,
+        recurrenceMaxRuns: 4,
+        sendWindowStart: '09:00',
+        sendWindowEnd: '18:00',
+        runsCompleted: 0,
+      });
+    });
+
+    it('recusa intervalo fora da faixa, horário mal formatado e repetição única (400)', async () => {
+      const { app, directory } = buildApp(person('administrator'));
+      directory.entries = [grupo];
+
+      const intervalo = await request(app)
+        .post(basePath('tenant-1'))
+        .send({ ...corpoBase, recurrenceIntervalHours: 48 });
+      const horario = await request(app)
+        .post(basePath('tenant-1'))
+        .send({ ...corpoBase, recurrenceIntervalHours: 2, sendWindowStart: '9h' });
+      const repeticoes = await request(app)
+        .post(basePath('tenant-1'))
+        .send({ ...corpoBase, recurrenceIntervalHours: 2, recurrenceMaxRuns: 1 });
+
+      expect(intervalo.status).toBe(400);
+      expect(horario.status).toBe(400);
+      expect(repeticoes.status).toBe(400);
+    });
+
+    it('data de término no passado: 400 com motivo próprio', async () => {
+      const { app, directory } = buildApp(person('administrator'));
+      directory.entries = [grupo];
+
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send({
+          ...corpoBase,
+          recurrenceIntervalHours: 2,
+          recurrenceEndsAt: new Date(Date.now() - 60000).toISOString(),
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_recurrence');
+    });
+  });
+
 });

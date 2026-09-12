@@ -28,6 +28,9 @@ interface GroupBroadcastCreateFormProps {
 /** Teto do lado do CLIENTE — puramente UX (falha rápido); a API impõe o teto de verdade (413). Espelha `MAX_GROUP_MEDIA_BYTES.video` (o maior dos dois). */
 const MAX_CLIENT_MEDIA_BYTES = 16 * 1024 * 1024;
 
+/** Intervalos oferecidos na tela — o Domain aceita 1h a 24h; aqui só os saltos usuais. */
+const RECURRENCE_HOUR_OPTIONS = [1, 2, 3, 4, 6, 8, 12, 24];
+
 const MAX_GROUPS_PER_BROADCAST = 30;
 
 /** Deriva a categoria do Domain a partir do `File.type` — mesmo padrão de `CampaignCreateForm.mediaContentTypeFor`, restrito a imagem/vídeo. */
@@ -92,6 +95,16 @@ export default function GroupBroadcastCreateForm({
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
+
+  // Recorrencia (2026-09-11). Desligada por padrao: quem quer repetir, liga.
+  const [recurring, setRecurring] = useState(false);
+  const [intervalHours, setIntervalHours] = useState(2);
+  const [stopMode, setStopMode] = useState<'runs' | 'date' | 'manual'>('runs');
+  const [maxRuns, setMaxRuns] = useState(5);
+  const [endsAt, setEndsAt] = useState('');
+  const [windowEnabled, setWindowEnabled] = useState(true);
+  const [windowStart, setWindowStart] = useState('08:00');
+  const [windowEnd, setWindowEnd] = useState('20:00');
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -159,8 +172,10 @@ export default function GroupBroadcastCreateForm({
   const canSubmit =
     name.trim().length > 0 && messageTemplate.trim().length > 0 && selected.size > 0;
 
+  const recurrenceIncomplete = recurring && stopMode === 'date' && endsAt.trim().length === 0;
+
   async function handleSubmit(): Promise<void> {
-    if (!canSubmit || submitting) return;
+    if (!canSubmit || submitting || recurrenceIncomplete) return;
     setSubmitting(true);
     setErrorMessage(null);
     setMediaError(null);
@@ -170,6 +185,18 @@ export default function GroupBroadcastCreateForm({
         name: name.trim(),
         messageTemplate: messageTemplate.trim(),
         groupJids: Array.from(selected.keys()),
+        ...(recurring
+          ? {
+              recurrenceIntervalHours: intervalHours,
+              ...(stopMode === 'runs' ? { recurrenceMaxRuns: maxRuns } : {}),
+              ...(stopMode === 'date' && endsAt
+                ? { recurrenceEndsAt: new Date(endsAt).toISOString() }
+                : {}),
+              ...(windowEnabled
+                ? { sendWindowStart: windowStart, sendWindowEnd: windowEnd }
+                : {}),
+            }
+          : {}),
       });
 
       if (mediaFile) {
@@ -337,6 +364,7 @@ export default function GroupBroadcastCreateForm({
                       checked={selected.has(group.jid)}
                       disabled={!group.canSend}
                       onChange={() => toggleGroup(group)}
+                      aria-label={group.name}
                       className="h-3.5 w-3.5 accent-primary"
                     />
                     <Users className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -426,7 +454,150 @@ export default function GroupBroadcastCreateForm({
       </Card>
 
       <Card className="p-5">
-        <h2 className="text-[15px] font-semibold text-foreground">4. Revisão</h2>
+        <h2 className="text-[15px] font-semibold text-foreground">4. Repetição</h2>
+        <label className="mt-3 flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            checked={recurring}
+            onChange={(event) => setRecurring(event.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border"
+            aria-describedby="group-broadcast-recurrence-hint"
+          />
+          <span className="text-[13px]">
+            <span className="font-medium text-foreground">Repetir automaticamente</span>
+            <span id="group-broadcast-recurrence-hint" className="mt-0.5 block text-muted-foreground">
+              Publica a mesma mensagem nos mesmos grupos de tempos em tempos. Publicar demais no
+              mesmo grupo é o que mais gera denúncia — prefira o maior intervalo que servir.
+            </span>
+          </span>
+        </label>
+
+        {recurring && (
+          <div className="mt-4 space-y-4 border-t border-border pt-4">
+            <div className="space-y-1.5">
+              <label
+                htmlFor="group-broadcast-interval-hours"
+                className="text-sm font-medium text-foreground"
+              >
+                Repetir a cada
+              </label>
+              <select
+                id="group-broadcast-interval-hours"
+                value={intervalHours}
+                onChange={(event) => setIntervalHours(Number(event.target.value))}
+                className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm"
+              >
+                {RECURRENCE_HOUR_OPTIONS.map((hours) => (
+                  <option key={hours} value={hours}>
+                    {hours === 1 ? '1 hora' : hours + ' horas'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-foreground">Até quando</legend>
+              <label className="flex items-center gap-2 text-[13px] text-foreground">
+                <input
+                  type="radio"
+                  name="group-broadcast-stop-mode"
+                  checked={stopMode === 'runs'}
+                  onChange={() => setStopMode('runs')}
+                  className="h-4 w-4"
+                />
+                Um número de repetições
+              </label>
+              {stopMode === 'runs' && (
+                <Input
+                  type="number"
+                  min={2}
+                  max={100}
+                  value={maxRuns}
+                  onChange={(event) => setMaxRuns(Number(event.target.value))}
+                  aria-label="Quantas repetições"
+                  className="ml-6 w-28"
+                />
+              )}
+
+              <label className="flex items-center gap-2 text-[13px] text-foreground">
+                <input
+                  type="radio"
+                  name="group-broadcast-stop-mode"
+                  checked={stopMode === 'date'}
+                  onChange={() => setStopMode('date')}
+                  className="h-4 w-4"
+                />
+                Uma data e hora de término
+              </label>
+              {stopMode === 'date' && (
+                <Input
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(event) => setEndsAt(event.target.value)}
+                  aria-label="Data e hora de término"
+                  className="ml-6 w-64 bg-card [color-scheme:light] dark:[color-scheme:dark]"
+                />
+              )}
+
+              <label className="flex items-center gap-2 text-[13px] text-foreground">
+                <input
+                  type="radio"
+                  name="group-broadcast-stop-mode"
+                  checked={stopMode === 'manual'}
+                  onChange={() => setStopMode('manual')}
+                  className="h-4 w-4"
+                />
+                Até eu cancelar
+              </label>
+              {stopMode === 'manual' && (
+                <p className="ml-6 flex items-start gap-1.5 text-[12px] text-muted-foreground">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  Sem prazo para acabar: continua publicando até você pausar ou cancelar na tela do
+                  disparo.
+                </p>
+              )}
+            </fieldset>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-[13px] text-foreground">
+                <input
+                  type="checkbox"
+                  checked={windowEnabled}
+                  onChange={(event) => setWindowEnabled(event.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                Só publicar dentro de um horário
+              </label>
+              {windowEnabled && (
+                <div className="ml-6 flex items-center gap-2">
+                  <Input
+                    type="time"
+                    value={windowStart}
+                    onChange={(event) => setWindowStart(event.target.value)}
+                    aria-label="Início do horário permitido"
+                    className="w-28 bg-card [color-scheme:light] dark:[color-scheme:dark]"
+                  />
+                  <span className="text-[13px] text-muted-foreground">até</span>
+                  <Input
+                    type="time"
+                    value={windowEnd}
+                    onChange={(event) => setWindowEnd(event.target.value)}
+                    aria-label="Fim do horário permitido"
+                    className="w-28 bg-card [color-scheme:light] dark:[color-scheme:dark]"
+                  />
+                </div>
+              )}
+              <p className="ml-6 text-[12px] text-muted-foreground">
+                Uma repetição que cairia fora desse horário espera até a próxima janela — nunca é
+                descartada.
+              </p>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <h2 className="text-[15px] font-semibold text-foreground">5. Revisão</h2>
         <dl className="mt-3 space-y-1.5 text-[13px]">
           <div className="flex justify-between gap-3">
             <dt className="text-muted-foreground">Nome</dt>

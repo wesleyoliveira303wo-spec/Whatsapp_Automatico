@@ -5,6 +5,12 @@ import {
   GROUP_CIRCUIT_BREAKER_SAMPLE_SIZE,
   shouldPauseGroupBroadcast,
 } from '../domain/policies/groupBroadcastPacing';
+import {
+  buildSendWindow,
+  decideNextRun,
+  isRecurring,
+} from '../domain/policies/groupBroadcastRecurrence';
+import { GroupBroadcastSendDispatcher } from '../domain/dispatchers/GroupBroadcastSendDispatcher';
 import { GroupBroadcastSendJobData } from './queues/GroupBroadcastSendQueue';
 
 /**
@@ -29,6 +35,12 @@ export class GroupBroadcastSendJobProcessor {
     private readonly repository: GroupBroadcastRepository,
     private readonly sender: GroupMessageSender,
     private readonly logger: Logger,
+    /**
+     * Recorrência (2026-09-11): usado só no fim de uma repetição, para agendar
+     * a próxima. OPCIONAL — sem ele, um disparo recorrente simplesmente
+     * encerra ao fim do primeiro ciclo, em vez de quebrar.
+     */
+    private readonly sendDispatcher?: GroupBroadcastSendDispatcher,
   ) {}
 
   async process(data: GroupBroadcastSendJobData): Promise<void> {
@@ -98,12 +110,65 @@ export class GroupBroadcastSendJobProcessor {
     }
 
     const remaining = await this.repository.countPending(data.tenantId, data.broadcastId);
-    if (remaining === 0) {
+    if (remaining > 0) return;
+
+    // Fim de UMA repetição. Sem recorrência, isso é o fim do disparo (é o
+    // comportamento original). Com recorrência, quem decide é o Domain
+    // (`decideNextRun`): as três formas de término do fundador — teto de
+    // repetições, data/hora limite e "até eu cancelar" — convivem, e vale a que
+    // vier primeiro.
+    // Releitura: o `broadcast` do topo do método foi lido ANTES do envio, e
+    // `runsCompleted`/status podem ter mudado nesse meio-tempo.
+    const current = await this.repository.findById(data.tenantId, data.broadcastId);
+    const finishedAt = new Date();
+
+    if (!current || !isRecurring(current) || !this.sendDispatcher) {
       await this.repository.updateStatus(data.tenantId, data.broadcastId, 'completed');
       this.logger.info('Disparo em grupos concluído', {
         tenantId: data.tenantId,
         broadcastId: data.broadcastId,
       });
+      return;
     }
+
+    const window = buildSendWindow(current.sendWindowStart, current.sendWindowEnd);
+    const decision = decideNextRun(current, window, finishedAt);
+    const runsCompleted = current.runsCompleted + 1;
+
+    if (!decision.shouldRepeat) {
+      await this.repository.markRunFinished(
+        data.tenantId,
+        data.broadcastId,
+        runsCompleted,
+        null,
+      );
+      await this.repository.updateStatus(data.tenantId, data.broadcastId, 'completed');
+      this.logger.info('Disparo em grupos recorrente encerrado', {
+        tenantId: data.tenantId,
+        broadcastId: data.broadcastId,
+        runsCompleted,
+        reason: decision.reason,
+      });
+      return;
+    }
+
+    await this.repository.markRunFinished(
+      data.tenantId,
+      data.broadcastId,
+      runsCompleted,
+      decision.nextRunAt,
+    );
+    await this.sendDispatcher.scheduleRun(
+      data.tenantId,
+      data.broadcastId,
+      runsCompleted + 1,
+      Math.max(0, decision.nextRunAt.getTime() - finishedAt.getTime()),
+    );
+    this.logger.info('Repetição concluída; próxima agendada', {
+      tenantId: data.tenantId,
+      broadcastId: data.broadcastId,
+      runsCompleted,
+      nextRunAt: decision.nextRunAt,
+    });
   }
 }

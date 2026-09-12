@@ -2,7 +2,9 @@ import { Queue } from 'bullmq';
 
 import { GroupBroadcastSendDispatcher } from '../../domain/dispatchers/GroupBroadcastSendDispatcher';
 import {
+  GROUP_BROADCAST_RUN_JOB_NAME,
   GROUP_BROADCAST_SEND_JOB_NAME,
+  GroupBroadcastRunJobData,
   GroupBroadcastSendJobData,
 } from '../queues/GroupBroadcastSendQueue';
 
@@ -21,7 +23,9 @@ import {
  *    `BullMqCampaignSendDispatcher`). `queue.remove` é idempotente.
  */
 export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDispatcher {
-  constructor(private readonly queue: Queue<GroupBroadcastSendJobData>) {}
+  constructor(
+    private readonly queue: Queue<GroupBroadcastSendJobData | GroupBroadcastRunJobData>,
+  ) {}
 
   async scheduleTarget(
     tenantId: string,
@@ -39,6 +43,24 @@ export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDis
       GROUP_BROADCAST_SEND_JOB_NAME,
       { tenantId, broadcastId, targetId },
       { jobId: targetId, delay: delayMs },
+    );
+  }
+
+  async scheduleRun(
+    tenantId: string,
+    broadcastId: string,
+    runNumber: number,
+    delayMs: number,
+  ): Promise<void> {
+    // Mesma regra do `jobId` de envio: sem ':' (o BullMQ recusa). O número da
+    // repetição entra na chave para um ciclo novo nunca ser engolido como
+    // duplicata de um ciclo antigo que ainda esteja retido em Redis.
+    const jobId = `${broadcastId}-run-${runNumber}`;
+    await this.queue.remove(jobId);
+    await this.queue.add(
+      GROUP_BROADCAST_RUN_JOB_NAME,
+      { tenantId, broadcastId, runNumber },
+      { jobId, delay: delayMs },
     );
   }
 }
