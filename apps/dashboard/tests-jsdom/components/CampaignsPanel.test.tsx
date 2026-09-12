@@ -97,15 +97,11 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     mockDefaults();
   });
 
-  it('mostra o cabeçalho e os cards do topo com dado real + tendência', async () => {
+  it('mostra os cards do topo com dado real + tendência', async () => {
+    // Onda de tabs "Contatos | Grupos" (2026-09-11): o cabeçalho "Campanhas"
+    // + subtítulo migrou para a PÁGINA (`campaigns/index.tsx`), que agora
+    // também mostra a aba "Grupos" — o painel deixou de duplicar o título.
     await renderPanel();
-
-    expect(screen.getByText('Campanhas')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Envie mensagens para seus contatos e acompanhe os resultados em tempo real.',
-      ),
-    ).toBeInTheDocument();
 
     const statCards = within(screen.getByTestId('campaigns-stat-cards'));
     function statCard(label: string): HTMLElement {

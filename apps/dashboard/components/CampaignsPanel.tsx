@@ -514,14 +514,6 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
 
   return (
     <div>
-      {/* Padronização de cabeçalhos (2026-08-25, pedido do fundador) —
-          mesmo padrão de Contatos/Configurações/IA: só h1 + subtítulo, sem
-          ícone, mesmo tamanho (21px/13px) e mesmo espaçamento (mt-1/mb-5). */}
-      <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Campanhas</h1>
-      <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
-        Envie mensagens para seus contatos e acompanhe os resultados em tempo real.
-      </p>
-
       <div className="flex flex-col gap-5 xl:flex-row">
         <div className="min-w-0 flex-1">
           {/* Onda 2 do redesign (2026-08-23) — faixa de indicadores em cascata, cada número contando até o valor. */}

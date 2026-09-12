@@ -61,6 +61,8 @@ export interface FakeResponse extends NextApiResponse {
   _headers: Record<string, string | string[]>;
   _ended: boolean;
   _written: string[];
+  /** Disparos em grupos (2026-09-11) — corpo passado a `res.send()` (proxy de streaming de mídia, `res.status(200).send(buffer)`). */
+  _sent: unknown;
 }
 
 export function createFakeRes(): FakeResponse {
@@ -72,6 +74,7 @@ export function createFakeRes(): FakeResponse {
     _headers: headers,
     _ended: false,
     _written: written,
+    _sent: undefined,
   };
 
   res.status = jest.fn((code: number) => {
@@ -83,6 +86,14 @@ export function createFakeRes(): FakeResponse {
     res._json = data;
     return res as NextApiResponse;
   }) as NextApiResponse['json'];
+
+  // Disparos em grupos (2026-09-11) — proxy de streaming de mídia
+  // (`res.status(200).send(buffer)`, mesmo padrão de
+  // `conversations/[conversationId]/messages/[messageId]/media.ts`).
+  res.send = jest.fn((data: unknown) => {
+    res._sent = data;
+    return res as NextApiResponse;
+  }) as NextApiResponse['send'];
 
   res.setHeader = jest.fn((name: string, value: string | string[]) => {
     headers[name] = value;
