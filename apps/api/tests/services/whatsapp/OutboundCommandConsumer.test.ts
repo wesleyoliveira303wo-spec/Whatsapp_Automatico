@@ -303,6 +303,24 @@ describe('OutboundCommandConsumer', () => {
       expect(stageScheduler.scheduleCalls).toHaveLength(0);
     });
 
+    it('aviso automático do sistema (system: true) NÃO agenda — evita gastar IA logo após uma falha', async () => {
+      const { consumer, conversationRepository } = buildSut();
+      const stageScheduler = new FakeStageClassificationScheduler();
+      consumer.setStageClassificationScheduler(stageScheduler);
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(
+        buildCommand({
+          aiInteractionId: undefined,
+          idempotencyKey: 'k-sys',
+          system: true,
+          content: ['Desculpe, vou te encaminhar para um atendente.'],
+        }),
+      );
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(0);
+    });
+
     it('falha ao agendar não faz o envio falhar', async () => {
       const { consumer, conversationRepository, messageRepository } = buildSut();
       const stageScheduler = new FakeStageClassificationScheduler();

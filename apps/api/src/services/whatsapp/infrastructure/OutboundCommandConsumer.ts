@@ -156,10 +156,12 @@ export class OutboundCommandConsumer {
       lastMessageId = message.id;
     }
 
-    // Mensagem do ATENDENTE digitada na Dashboard (sem `aiInteractionId`):
-    // também é sinal de estágio ("fechado, te mando o pix"). A da IA não
-    // agenda nada — a própria resposta já classificou.
-    if (!command.aiInteractionId && lastMessageId && this.stageClassificationScheduler) {
+    // Mensagem do ATENDENTE também é sinal de estágio ("fechado, te mando o
+    // pix"). A da IA não agenda — a própria resposta já classificou.
+    // Mensagem escrita por uma PESSOA: sem `aiInteractionId` (não veio da IA)
+    // e sem `system` (não é o aviso automático de encaminhamento).
+    const isFromAgent = !command.aiInteractionId && command.system !== true;
+    if (isFromAgent && lastMessageId && this.stageClassificationScheduler) {
       try {
         await this.stageClassificationScheduler.schedule(
           command.tenantId,

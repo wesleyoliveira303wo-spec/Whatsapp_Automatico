@@ -1895,9 +1895,14 @@ acordo com o que foi conversado, seja a IA ou uma pessoa respondendo.
 **Decisão — a tensão de custo guiou o desenho.** Um classificador por IA
 disputa a mesma cota que motivou desligar a IA. Três escolhas mantêm o gasto
 pequeno:
-1. **Só roda quando a IA NÃO vai responder** (`!shouldAutoRespond`). Quando ela
-   responde, a própria resposta já classifica; analisar de novo seria gasto
-   dobrado.
+1. **Só roda quando NENHUMA resposta de IA vai classificar aquela mensagem.**
+   A pergunta certa não é "a IA responde nesta conversa?", e sim "ESTA mensagem
+   vai gerar uma resposta que já classifique?". Mensagem do cliente que a IA vai
+   responder: não analisa (a resposta já traz o marcador). Mensagem NOSSA (o
+   atendente respondeu pelo celular, ADR #97): analisa sempre, inclusive com a
+   IA ligada — nenhuma resposta automática está a caminho, então sem isso o card
+   ficaria parado até o cliente escrever de novo. A revisão de código pegou
+   exatamente esse buraco na primeira versão, que checava só `shouldAutoRespond`.
 2. **Uma análise por pausa da conversa, não uma por mensagem.** Cada mensagem
    agenda um job com atraso de 3 min; quando rodam, só o da mensagem MAIS
    RECENTE (qualquer direção — nova policy `isLatestMessage`) chama a IA. Mesmo
@@ -1923,6 +1928,11 @@ conversa em vez de classificá-la. A saída reaproveita o formato do marcador,
 lida pela MESMA `extractStage`. A gravação segue a regra da IA que responde:
 nunca regride (ADR #89), exceto numa sessão nova depois de 24h
 (`trimHistoryToCurrentSession`); o arrastar humano segue livre.
+**Nunca é o sistema falando:** o aviso automático de "vou te encaminhar para um
+atendente" sai pelo mesmo caminho de uma mensagem do atendente (sem
+`aiInteractionId`), então ganhou a marca `system: true` no comando outbound —
+sem ela, uma falha de IA (muitas vezes a própria cota estourada) dispararia uma
+análise paga logo em seguida.
 **O que NÃO muda:** Botão POWER continua controlando só a resposta — desligar
 a IA não desliga a classificação (é o pedido). Conversa "Não é cliente" nunca
 é analisada. Plano Grátis nunca é analisado (custa IA). Falha do provider
@@ -1937,7 +1947,9 @@ Configuração (todas opcionais, default ligado): `AI_STAGE_CLASSIFIER_ENABLED`,
 Testes novos: `isLatestMessage` (4), `BullMqStageClassificationScheduler` (2),
 `StageClassificationPromptBuilder` (2), `StageClassificationJobProcessor` (9),
 `MessageIngestionService` (+7), `OutboundCommandConsumer` (+3),
-`compositionRoot` (+1). **Limite conhecido:** mídia enviada pelo atendente na
+`compositionRoot` (+1), mais 3 travas de regressão da revisão de código
+(mensagem nossa em conversa ainda em modo bot, aviso do sistema não agenda,
+mais recente do cliente com IA ligada segue sem gastar). **Limite conhecido:** mídia enviada pelo atendente na
 Dashboard (envio síncrono, F1.3) não agenda — a próxima mensagem de qualquer
 lado cobre. **Pendente:** validação real (uma conversa atendida à mão, com a IA
 desligada, esperar ~3 min e ver o card mudar de coluna).

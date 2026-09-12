@@ -860,6 +860,20 @@ describe('MessageIngestionService', () => {
       expect(stageScheduler.scheduleCalls).toHaveLength(1);
     });
 
+    // Trava de regressão (revisão de 2026-09-11): antes, esta combinação não
+    // agendava NADA — nem resposta (é outbound) nem classificação (a IA
+    // "responderia" a conversa) — e o card ficava parado.
+    it('conversa em modo bot com IA ligada: mensagem NOSSA ainda agenda a análise', async () => {
+      const { sut, aiReplyScheduler, stageScheduler } = buildWithClassifier();
+
+      await sut.handle(
+        buildInboundMessage({ direction: 'outbound', content: 'Fechado! te mando o pix' }),
+      );
+
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+      expect(stageScheduler.scheduleCalls).toHaveLength(1);
+    });
+
     it('IA ligada respondendo: NÃO agenda (a resposta da IA já classifica)', async () => {
       const { sut, aiReplyScheduler, stageScheduler } = buildWithClassifier();
 

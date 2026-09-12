@@ -305,13 +305,15 @@ export class MessageIngestionService implements MessageReceivedHandler {
     );
 
     // Classificação de estágio independente de quem responde (2026-09-11):
-    // quando a IA vai responder, a própria resposta já classifica (marcador
-    // `[[ESTAGIO:...]]`) — agendar outra análise seria gasto dobrado. Nos
-    // demais casos (IA desligada, humano atendendo, mensagem do atendente
-    // pelo celular), a conversa é analisada depois que assentar. Nunca para
-    // conversa fora do funil (ADR #94) nem sem plano que permita IA.
+    // a pergunta certa NÃO é "a IA responde nesta conversa?", e sim "ESTA
+    // mensagem vai gerar uma resposta de IA que já classifique?". Uma
+    // mensagem OUTBOUND (o atendente respondeu pelo celular, ADR #97) nunca
+    // gera resposta de IA — nem quando a conversa segue em modo bot com a IA
+    // ligada —, então ela sempre precisa de análise própria; sem isso o card
+    // ficaria parado até o cliente escrever de novo. Nunca para conversa fora
+    // do funil (ADR #94) nem sem plano que permita IA.
     if (
-      !aiWillReply &&
+      (isOutbound || !aiWillReply) &&
       tenantPlanAllowsAutoReply &&
       !effectiveConversation.excludedFromPipeline &&
       this.stageClassificationScheduler

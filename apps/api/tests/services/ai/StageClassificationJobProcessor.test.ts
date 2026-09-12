@@ -48,6 +48,7 @@ function message(id: string, occurredAt: string, direction: Message['direction']
 function setup(conv: Conversation = conversation()): {
   processor: StageClassificationJobProcessor;
   conversationRepository: FakeConversationRepository;
+  messageRepository: FakeMessageRepository;
   aiInteractionRepository: FakeAiInteractionRepository;
   availability: FakeAiAvailabilityRepository;
   plan: FakeTenantPlanRepository;
@@ -78,7 +79,15 @@ function setup(conv: Conversation = conversation()): {
     'gemini',
     new NoopLogger(),
   );
-  return { processor, conversationRepository, aiInteractionRepository, availability, plan, provider };
+  return {
+    processor,
+    conversationRepository,
+    messageRepository,
+    aiInteractionRepository,
+    availability,
+    plan,
+    provider,
+  };
 }
 
 const job = { tenantId: 't1', conversationId: 'c1', messageId: 'm2' };
@@ -113,11 +122,28 @@ describe('StageClassificationJobProcessor', () => {
     expect(provider.generateReplyCalls).toHaveLength(0);
   });
 
-  it('IA ligada e respondendo a conversa: não gasta IA (a resposta já classifica)', async () => {
-    const { processor, provider } = setup(conversation({ status: 'bot', assignedToUserId: undefined }));
+  it('IA ligada e a mais recente é do CLIENTE: não gasta IA (a resposta dela já classifica)', async () => {
+    const { processor, provider, messageRepository } = setup(
+      conversation({ status: 'bot', assignedToUserId: undefined }),
+    );
+    messageRepository.seed(message('m3', '2026-09-11T10:02:00Z', 'inbound', 'e o prazo?'));
 
-    await expect(processor.process(job)).resolves.toBe('skipped');
+    await expect(processor.process({ ...job, messageId: 'm3' })).resolves.toBe('skipped');
     expect(provider.generateReplyCalls).toHaveLength(0);
+  });
+
+  // Trava de regressão (revisão de 2026-09-11): com a IA LIGADA e a conversa
+  // ainda em modo bot, o atendente que responde pelo celular não dispara
+  // resposta de IA nenhuma — se este caminho fosse pulado, ninguém
+  // classificaria o card até o cliente escrever de novo.
+  it('IA ligada mas a mais recente é NOSSA (atendente pelo celular): classifica', async () => {
+    const { processor, conversationRepository, provider } = setup(
+      conversation({ status: 'bot', assignedToUserId: undefined }),
+    );
+
+    await expect(processor.process(job)).resolves.toBe('updated');
+    expect(provider.generateReplyCalls).toHaveLength(1);
+    expect(conversationRepository.getAll()[0].stage).toBe('negotiating');
   });
 
   it('IA desligada (Botão POWER) numa conversa em modo bot: classifica', async () => {

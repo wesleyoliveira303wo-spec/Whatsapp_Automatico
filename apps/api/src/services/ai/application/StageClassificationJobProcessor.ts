@@ -21,7 +21,7 @@ import {
   buildStageClassificationPrompt,
 } from './StageClassificationPromptBuilder';
 
-/** Menos que o autoresponder (20 + contexto): basta para ler o rumo da conversa. */
+/** Um pouco mais que o autoresponder (20): aqui o histórico é o único insumo — não há Cérebro da IA nem contexto de campanha junto. */
 const DEFAULT_CLASSIFIER_HISTORY_LIMIT = 30;
 
 export interface StageClassificationJobData {
@@ -45,10 +45,12 @@ export type StageClassificationOutcome =
  * Portões, todos ANTES de gastar uma chamada de IA:
  * 1. conversa existe, é do tenant, e está no funil (`excludedFromPipeline`);
  * 2. o plano permite uso de IA;
- * 3. a IA não vai responder esta conversa sozinha — se vai, a resposta dela
- *    já classifica (marcador), e esta análise seria gasto dobrado;
- * 4. o job é da mensagem MAIS RECENTE da conversa (`isLatestMessage`) — numa
- *    troca de várias mensagens, só a última análise roda.
+ * 3. o job é da mensagem MAIS RECENTE da conversa (`isLatestMessage`) — numa
+ *    troca de várias mensagens, só a última análise roda;
+ * 4. essa mensagem mais recente é do CLIENTE E a IA vai respondê-la — aí a
+ *    resposta já classifica sozinha (marcador) e analisar seria gasto
+ *    dobrado. Mensagem mais recente NOSSA sempre é analisada: nenhuma
+ *    resposta de IA está a caminho para classificar aquilo.
  *
  * A gravação segue a MESMA regra da IA que responde: nunca regride no funil
  * (ADR #89), exceto numa sessão nova depois de 24h de silêncio
@@ -85,20 +87,27 @@ export class StageClassificationJobProcessor {
       return 'skipped';
     }
 
-    const aiEnabled = await this.aiAvailabilityRepository.isEnabled(
-      tenantId,
-      conversation.sessionName,
-    );
-    if (shouldAutoRespond(conversation, aiEnabled, planAllows)) {
-      return 'skipped';
-    }
-
     const recent = await this.messageRepository.listRecentByConversation(
       tenantId,
       conversationId,
       this.historyLimit,
     );
     if (!isLatestMessage(recent, messageId)) {
+      return 'skipped';
+    }
+
+    // A IA responder NESTA conversa só dispensa a análise quando a mensagem
+    // mais recente é do CLIENTE — é ela que gera a resposta, e a resposta já
+    // classifica (marcador `[[ESTAGIO:...]]`). Se a mais recente é NOSSA (o
+    // atendente respondeu pelo celular, ADR #97), nenhuma resposta de IA está
+    // a caminho: analisar aqui é a única forma de o card andar.
+    const latestIsInbound =
+      recent.find((message) => message.id === messageId)?.direction === 'inbound';
+    const aiEnabled = await this.aiAvailabilityRepository.isEnabled(
+      tenantId,
+      conversation.sessionName,
+    );
+    if (latestIsInbound && shouldAutoRespond(conversation, aiEnabled, planAllows)) {
       return 'skipped';
     }
 

@@ -468,6 +468,7 @@ export class AiReplyJobProcessor {
         tenantId,
         conversationId,
         idempotencyKey: randomUUID(),
+        system: true,
         content: [message],
       });
     } catch (error) {
