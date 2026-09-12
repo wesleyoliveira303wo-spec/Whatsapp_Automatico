@@ -422,7 +422,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       expect(response.body.error).toBe('sending_engine_not_configured');
     });
 
-    it('já existe outro disparo RUNNING nesta sessão: 409', async () => {
+    it('outro disparo RUNNING nesta sessão não bloqueia (2026-09-12: sem trava por pedido do fundador)', async () => {
       const { app, repository } = buildApp(person('administrator'), { withDispatcher: true });
       repository.seedBroadcast({ tenantId: 'tenant-1', sessionName: 'sessao', status: 'running' });
       const { broadcastId } = repository.seedBroadcast({
@@ -432,8 +432,8 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       const response = await request(app).post(`${basePath('tenant-1')}/${broadcastId}/start`);
 
-      expect(response.status).toBe(409);
-      expect(response.body.error).toBe('group_broadcast_already_running');
+      expect(response.status).toBe(200);
+      expect(response.body.broadcast.status).toBe('running');
     });
 
     it('disparo já RUNNING: 400 (transição inválida)', async () => {

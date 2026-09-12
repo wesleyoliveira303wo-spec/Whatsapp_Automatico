@@ -1,6 +1,5 @@
 import { GroupBroadcastService } from '../../../../src/services/groupBroadcasts/application/GroupBroadcastService';
 import {
-  GroupBroadcastAlreadyRunningError,
   InvalidRecurrenceError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
@@ -233,18 +232,18 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       );
     });
 
-    it('recusa se outro disparo em grupos já está em andamento na MESMA sessão', async () => {
+    it('permite iniciar mesmo com outro disparo já em andamento na MESMA sessão (2026-09-12: sem trava/fila por pedido do fundador)', async () => {
       const { service, repository, dispatcher } = buildSut();
       repository.seedBroadcast({ tenantId: 'tenant-1', sessionName: 'sessao', status: 'running' });
       const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1', sessionName: 'sessao' });
 
-      await expect(service.startBroadcast('tenant-1', broadcastId)).rejects.toBeInstanceOf(
-        GroupBroadcastAlreadyRunningError,
-      );
-      expect(dispatcher.scheduled).toHaveLength(0);
+      await expect(service.startBroadcast('tenant-1', broadcastId)).resolves.toMatchObject({
+        status: 'running',
+      });
+      expect(dispatcher.scheduled.length).toBeGreaterThan(0);
     });
 
-    it('outro disparo rodando em OUTRA sessão não bloqueia', async () => {
+    it('outro disparo rodando em OUTRA sessão também não bloqueia', async () => {
       const { service, repository } = buildSut();
       repository.seedBroadcast({ tenantId: 'tenant-1', sessionName: 'outra', status: 'running' });
       const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1', sessionName: 'sessao' });

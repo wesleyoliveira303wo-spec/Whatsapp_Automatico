@@ -19,7 +19,6 @@ import {
   GroupBroadcastTarget,
 } from '../domain/entities/GroupBroadcast';
 import {
-  GroupBroadcastAlreadyRunningError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
   GroupBroadcastMediaTooLargeError,
@@ -99,9 +98,11 @@ export interface GroupBroadcastListItem {
  *    cliente: grupo que não existe mais vira `group_not_found`; grupo "só
  *    admins" onde o número não é admin vira `admin_only_group` — ambos
  *    `skipped`, sem tentativa de envio.
- * 2. **Um disparo em andamento por sessão.** Iniciar um segundo enquanto
- *    outro roda é recusado (`GroupBroadcastAlreadyRunningError`) — dois em
- *    paralelo dobrariam o ritmo de publicação.
+ * 2. **Vários disparos podem rodar ao mesmo tempo na mesma sessão** — pedido
+ *    explícito do fundador (2026-09-12): não há trava nem fila por sessão.
+ *    Rodar mais de um em paralelo soma o ritmo de publicação de cada um
+ *    (risco de banimento aceito conscientemente; a confirmação de "Iniciar"
+ *    já nomeia esse risco por disparo).
  * 3. **Trilha de auditoria** em criar/iniciar/cancelar. O motor de campanhas
  *    1:1 não audita; aqui, por ser a ação de maior risco de banimento do
  *    produto, a pergunta "quem mandou isto para 30 grupos?" precisa ter
@@ -246,7 +247,9 @@ export class GroupBroadcastService {
   }
 
   /**
-   * Inicia (ou RETOMA, após pausa) — só `draft`/`paused`. Reagenda TODO alvo
+   * Inicia (ou RETOMA, após pausa) — só `draft`/`paused`. Nenhuma checagem
+   * contra outros disparos da mesma sessão (2026-09-12): rodar vários em
+   * paralelo é permitido, decisão explícita do fundador. Reagenda TODO alvo
    * ainda `pending` com delay FRESCO, contado a partir de agora (mesmo
    * racional de `CampaignService.startCampaign`: um job que disparou durante a
    * pausa viu `status !== 'running'` e não enviou; o alvo ficou `pending`,
@@ -265,15 +268,6 @@ export class GroupBroadcastService {
     const broadcast = await this.requireBroadcast(tenantId, broadcastId);
     if (broadcast.status !== 'draft' && broadcast.status !== 'paused') {
       throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'start');
-    }
-
-    const running = await this.repository.countRunningBySession(
-      tenantId,
-      broadcast.sessionName,
-      broadcast.id,
-    );
-    if (running > 0) {
-      throw new GroupBroadcastAlreadyRunningError(broadcast.sessionName);
     }
 
     const pendingTargets = await this.repository.listPendingTargets(tenantId, broadcastId);

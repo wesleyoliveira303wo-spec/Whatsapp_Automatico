@@ -63,19 +63,10 @@ export class GroupDirectoryUnavailableError extends Error {
   }
 }
 
-/**
- * Já existe outro disparo em grupos EM ANDAMENTO nesta sessão. Um de cada vez
- * por número: dois disparos em paralelo dobrariam o ritmo de publicação — o
- * padrão que o WhatsApp mais associa a spam.
- */
-export class GroupBroadcastAlreadyRunningError extends Error {
-  constructor(public readonly sessionName: string) {
-    super(
-      'Já existe um disparo em grupos em andamento neste WhatsApp. Aguarde terminar ou pause-o antes de iniciar outro.',
-    );
-    this.name = 'GroupBroadcastAlreadyRunningError';
-  }
-}
+// `GroupBroadcastAlreadyRunningError` existiu aqui até 2026-09-12: iniciar um
+// segundo disparo enquanto outro roda na mesma sessão virava erro 409. Pedido
+// explícito do fundador removeu a trava por completo — `startBroadcast` não
+// checa mais outros disparos da sessão; vários podem rodar em paralelo.
 
 /** Mesma trava de plano do disparo de campanha (`planPermiteUso`): criar é livre, DISPARAR é recurso pago. */
 export class GroupBroadcastRequiresPaidPlanError extends Error {
