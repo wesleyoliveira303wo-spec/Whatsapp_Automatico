@@ -11,6 +11,7 @@ export type ProfilePictureLookup =
   | { outcome: 'unavailable'; reason: 'session_not_live' | 'timeout' | 'error' };
 
 import { WhatsAppSession } from '../entities/WhatsAppSession';
+import { WhatsAppGroupSummary } from '../entities/WhatsAppGroupSummary';
 import { WhatsAppProviderEvent } from './WhatsAppProviderEvent';
 
 /**
@@ -186,4 +187,22 @@ export interface WhatsAppProvider {
       fileName?: string;
     },
   ): Promise<void>;
+
+  /**
+   * Grupos dos quais o número desta sessão participa — Disparos em grupos
+   * (2026-09-11). Consulta AO VIVO no socket conectado (no Baileys,
+   * `groupFetchAllParticipating`, uma consulta IQ no MESMO socket das
+   * mensagens).
+   *
+   * Por isso tem SEMPRE teto de tempo próprio (ADR #78 — uma consulta IQ
+   * pendurada já travou a sessão inteira, inclusive mensagens reais): se o
+   * WhatsApp não responder dentro de `timeoutMs`, lança
+   * `WhatsAppGroupsFetchTimeoutError` — nunca espera indefinidamente.
+   *
+   * Lança `WhatsAppNotConnectedError` sem socket vivo (mesma régua de
+   * `sendMessage`). Diferente de `getProfilePictureUrl`, aqui a falha
+   * PRECISA chegar a quem chamou: "não há grupos" e "não deu para perguntar"
+   * levariam o operador a conclusões opostas.
+   */
+  listGroups(timeoutMs?: number): Promise<WhatsAppGroupSummary[]>;
 }

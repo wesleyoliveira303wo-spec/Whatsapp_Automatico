@@ -176,5 +176,36 @@ já tem, calibrados mais conservadoramente.
 
 ### Estado
 
-**Não iniciado. Não especificado.** Próximo passo, quando o fundador quiser
-puxar: uma spec própria, seguindo o mesmo caminho de brainstorm → spec → plano.
+**Entregue em 2026-09-11 — disparo ÚNICO (avulso), NÃO recorrente.** O
+fundador pediu explicitamente a versão "disparo avulso" primeiro; a parte de
+"programar" (repetir N vezes por dia, durante D dias) ficou de fora desta
+rodada — ver a nota logo abaixo.
+
+O que os três descasamentos acima geraram na prática, cada um resolvido como
+previsto:
+
+1. **Entrada continua filtrada.** `isIgnoredChatJid` não foi tocado — grupo
+   segue sem criar `Conversation`/`Message`/interação de IA nenhuma. O disparo
+   em grupos é PURO ENVIO, implementado como bounded context próprio
+   (`services/groupBroadcasts`), nunca dentro de `services/conversations`.
+2. **Entidade própria, não `Campaign`.** `GroupBroadcast`/`GroupBroadcastTarget`
+   (migration `20260911120000_add_group_broadcasts`) — `status` reaproveita o
+   enum `CampaignStatus` (mesmo ciclo de vida), mas as três regras de
+   supressão de `CampaignRecipient` (opt-out/conversa ativa/recontato) NÃO se
+   aplicam: um grupo só nasce `skipped` por `admin_only_group` (o número não é
+   admin onde só admins publicam) ou `group_not_found` (saiu do grupo/id
+   inválido) — decididos por uma consulta AO VIVO ao WhatsApp na criação
+   (`GroupDirectory`/`groupFetchAllParticipating`, com timeout próprio, ADR
+   #78), nunca confiando no que o cliente diz sobre o grupo.
+3. **Cadência calibrada mais conservadora que o motor 1:1**
+   (`groupBroadcastPacing.ts`): intervalo padrão 60s (piso 30s, nunca abaixo),
+   teto de 30 grupos por disparo, disjuntor mais sensível (2 tentativas
+   seguidas falhando já pausa, contra 5 do motor 1:1) — "ao primeiro sinal de
+   falhas seguidas", como o risco descrito acima pedia.
+
+**Fora desta entrega, registrado para quando/se o fundador quiser avançar:**
+recorrência/agendamento (repetir a mesma mensagem N vezes por dia durante D
+dias) — exigiria um job recorrente e uma decisão de produto sobre como editar/
+cancelar uma série em andamento, nenhuma das duas resolvida aqui. Também fora:
+áudio/documento como anexo de grupo (só imagem/vídeo, mesmo escopo que o
+fundador pediu — "mensagem, imagem, vídeo").

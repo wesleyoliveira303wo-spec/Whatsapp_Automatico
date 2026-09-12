@@ -216,6 +216,11 @@ model Tenant {
   // e cálculo de destinatários nesta rodada, sem envio).
   campaigns             Campaign[]
   campaignRecipients    CampaignRecipient[]
+  // Disparos em grupos de WhatsApp (2026-09-11) — publicação única de uma
+  // mensagem (texto/imagem/vídeo) em grupos da sessão. Entidade própria, não
+  // `Campaign` (ver docstring de `GroupBroadcast`).
+  groupBroadcasts       GroupBroadcast[]
+  groupBroadcastTargets GroupBroadcastTarget[]
 
   @@map("tenants")
 }
@@ -502,6 +507,97 @@ model CampaignRecipient {
   /// hoje nesta campanha").
   @@index([tenantId, campaignId, attemptedAt])
   @@map("campaign_recipients")
+}
+
+/// Disparo ÚNICO de uma mensagem (texto, com imagem/vídeo opcional) em grupos
+/// de WhatsApp dos quais o número da sessão participa — 2026-09-11, pedido do
+/// fundador ("segunda função de disparos, a grupos").
+///
+/// ENTIDADE PRÓPRIA, não `Campaign`/`CampaignRecipient` — os três
+/// descasamentos registrados em `PRODUCT_BACKLOG.md` §3 continuam valendo:
+/// (1) grupo é destino de PUBLICAÇÃO, nunca de atendimento — mensagens de
+/// grupo continuam descartadas na entrada (`isIgnoredChatJid`), nenhum
+/// `WhatsAppConversation`/`WhatsAppMessage` nasce daqui; (2) o destinatário não
+/// é uma pessoa — opt-out/conversa ativa/recontato recente (as três regras de
+/// supressão de `CampaignRecipient`) não se aplicam a um grupo; (3) ritmo e
+/// risco são outros — publicar em grupo é o padrão que o WhatsApp mais associa
+/// a spam, então o ritmo é bem mais lento e o disjuntor mais sensível que o do
+/// motor 1:1 (ver `groupBroadcastPacing.ts`).
+///
+/// `status` reaproveita o enum `CampaignStatus` (mesmo ciclo de vida:
+/// rascunho → em andamento ↔ pausado → concluído/cancelado). `SCHEDULED` não é
+/// produzido por ninguém nesta entrega — recorrência/agendamento ficou para
+/// depois (`PRODUCT_BACKLOG.md` §3).
+///
+/// Mídia no MESMO formato do Bloco L8 (`Campaign.media*`): binário em `bytea`,
+/// NUNCA incluído nas leituras de lista/detalhe (ver `GROUP_BROADCAST_SELECT`
+/// em `PrismaGroupBroadcastRepository`).
+model GroupBroadcast {
+  id               String                      @id @default(uuid())
+  tenantId         String                      @map("tenant_id")
+  sessionName      String                      @map("session_name")
+  name             String
+  messageTemplate  String                      @db.Text @map("message_template")
+  status           CampaignStatus              @default(DRAFT)
+  /// Espaçamento-base entre um grupo e o seguinte. Default 60s, piso de 30s
+  /// imposto pela aplicação (`clampGroupIntervalSeconds`).
+  intervalSeconds  Int                         @default(60) @map("interval_seconds")
+  pausedReason     String?                     @map("paused_reason")
+  createdByUserId  String?                     @map("created_by_user_id")
+  mediaContent     Bytes?                      @map("media_content")
+  mediaMimeType    String?                     @map("media_mime_type")
+  mediaFileName    String?                     @map("media_file_name")
+  mediaContentType WhatsAppMessageContentType? @map("media_content_type")
+  createdAt        DateTime                    @default(now()) @map("created_at")
+  updatedAt        DateTime                    @updatedAt @map("updated_at")
+
+  tenant  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  targets GroupBroadcastTarget[]
+
+  @@index([tenantId, sessionName, status])
+  @@map("group_broadcasts")
+}
+
+/// Status de UM grupo dentro de um disparo em grupos.
+enum GroupBroadcastTargetStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@map("group_broadcast_target_status")
+}
+
+/// Um grupo-alvo de um `GroupBroadcast`. `groupName` é um RETRATO do nome no
+/// momento da criação (o nome do grupo pode mudar depois; o histórico mostra o
+/// que o operador viu ao escolher). `skipReason` é texto livre, mesmo racional
+/// de `CampaignRecipient.skipReason` — hoje: `admin_only_group` (grupo onde só
+/// administradores enviam e o número não é admin) e `group_not_found` (o número
+/// não participa mais do grupo, ou o id não existe).
+model GroupBroadcastTarget {
+  id           String                     @id @default(uuid())
+  tenantId     String                     @map("tenant_id")
+  broadcastId  String                     @map("broadcast_id")
+  groupJid     String                     @map("group_jid")
+  groupName    String                     @map("group_name")
+  status       GroupBroadcastTargetStatus @default(PENDING)
+  skipReason   String?                    @map("skip_reason")
+  errorMessage String?                    @db.Text @map("error_message")
+  sentAt       DateTime?                  @map("sent_at")
+  /// Quando o envio foi TENTADO (sucesso ou falha) — alimenta o disjuntor
+  /// ("as duas últimas tentativas falharam?"), mesmo papel de
+  /// `CampaignRecipient.attemptedAt`.
+  attemptedAt  DateTime?                  @map("attempted_at")
+  createdAt    DateTime                   @default(now()) @map("created_at")
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  broadcast GroupBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  /// O mesmo grupo nunca entra duas vezes no mesmo disparo.
+  @@unique([broadcastId, groupJid])
+  @@index([tenantId, broadcastId, status])
+  @@index([tenantId, broadcastId, attemptedAt])
+  @@map("group_broadcast_targets")
 }
 
 /// Espelha apps/api/src/services/whatsapp/domain/entities/WhatsAppSession.ts

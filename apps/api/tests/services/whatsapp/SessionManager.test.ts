@@ -4,6 +4,7 @@ import { WhatsAppProviderEvent } from '../../../src/services/whatsapp/domain/pro
 import { WhatsAppSession } from '../../../src/services/whatsapp/domain/entities/WhatsAppSession';
 import { WhatsAppSessionKey } from '../../../src/services/whatsapp/domain/valueObjects/WhatsAppSessionKey';
 import { WhatsAppSessionNotFoundError } from '../../../src/services/whatsapp/domain/errors/WhatsAppSessionNotFoundError';
+import { WhatsAppGroupSummary } from '../../../src/services/whatsapp/domain/entities/WhatsAppGroupSummary';
 import { Logger } from '../../../src/shared/domain/Logger';
 import {
   FakeWhatsAppSessionRepository,
@@ -172,6 +173,21 @@ class FakeWhatsAppProvider implements WhatsAppProvider {
       throw error;
     }
     this.sendMediaMessageCalls.push({ to, media });
+  }
+
+  /** Disparos em grupos (2026-09-11) — inerte por padrão, mesmo racional de `profilePictureUrl`. */
+  public listGroupsResult: WhatsAppGroupSummary[] = [];
+  public listGroupsCalls: (number | undefined)[] = [];
+  public nextListGroupsError: Error | undefined;
+
+  async listGroups(timeoutMs?: number): Promise<WhatsAppGroupSummary[]> {
+    this.listGroupsCalls.push(timeoutMs);
+    if (this.nextListGroupsError) {
+      const error = this.nextListGroupsError;
+      this.nextListGroupsError = undefined;
+      throw error;
+    }
+    return this.listGroupsResult;
   }
 }
 
@@ -840,6 +856,34 @@ describe('SessionManager', () => {
         { to: '5511999999999@s.whatsapp.net', media: MEDIA },
       ]);
       void initPromise; // não aguardado deliberadamente: connect() nunca resolve neste teste
+    });
+  });
+
+  describe('listGroups (Disparos em grupos, 2026-09-11)', () => {
+    it('deve delegar o timeout e devolver a lista do provider (thin passthrough)', async () => {
+      const { sessionManager, provider } = buildSut();
+      provider.listGroupsResult = [
+        {
+          jid: '111@g.us',
+          name: 'Grupo 1',
+          participantCount: 5,
+          announce: false,
+          isAdmin: true,
+          canSend: true,
+        },
+      ];
+
+      const groups = await sessionManager.listGroups(20_000);
+
+      expect(groups).toEqual(provider.listGroupsResult);
+      expect(provider.listGroupsCalls).toEqual([20_000]);
+    });
+
+    it('deve propagar um erro do provider (ex.: WhatsAppNotConnectedError), não engolir', async () => {
+      const { sessionManager, provider } = buildSut();
+      provider.nextListGroupsError = new Error('sem socket vivo');
+
+      await expect(sessionManager.listGroups()).rejects.toThrow('sem socket vivo');
     });
   });
 

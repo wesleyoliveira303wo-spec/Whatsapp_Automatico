@@ -235,6 +235,15 @@ export const callContactsApi = createApiClient('contacts');
 export const callCampaignsApi = createApiClient('campaigns');
 
 /**
+ * Cliente do recurso `group-broadcasts` (Disparos em grupos, 2026-09-11 —
+ * disparo único de mensagem/imagem/vídeo em grupos de WhatsApp da sessão),
+ * consumido por `pages/api/group-broadcasts/*`. TENANT-WIDE na URL, mesmo
+ * padrão de `callCampaignsApi` — `sessionName` é um campo de corpo/query,
+ * não da rota. RBAC (campaign:read/manage) imposto pela API.
+ */
+export const callGroupBroadcastsApi = createApiClient('group-broadcasts');
+
+/**
  * Cliente do proprio tenant (Reorganizacao Perfil/Configuracoes, 2026-08-27
  * — aba "Empresa"), consumido por `pages/api/tenant/index.ts`. Resource
  * vazio: a rota da API e `/api/tenants/:tenantId` sem sufixo nenhum —

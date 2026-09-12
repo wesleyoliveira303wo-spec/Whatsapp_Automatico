@@ -14,6 +14,7 @@ import { BaileysProviderFactory } from './infrastructure/providers/baileys/Baile
 import { WhatsAppConnectionRegistry } from './application/WhatsAppConnectionRegistry';
 import { WhatsAppSessionService } from './application/WhatsAppSessionService';
 import { ContactAvatarService } from './application/ContactAvatarService';
+import { WhatsAppGroupDirectoryService } from './application/WhatsAppGroupDirectoryService';
 import { PrismaContactAvatarCacheRepository } from './infrastructure/repositories/PrismaContactAvatarCacheRepository';
 import { RegistryContactAvatarSource } from './infrastructure/RegistryContactAvatarSource';
 import { MessageReceivedHandler } from './domain/handlers/MessageReceivedHandler';
@@ -142,6 +143,12 @@ export interface WhatsAppSessionsComposition {
    * de `mediaDownloader`/`mediaSender`: depende do `registry`.
    */
   contactAvatarService: ContactAvatarService;
+  /**
+   * Disparos em grupos (2026-09-11) — lista os grupos de uma sessão (cache
+   * curto + deduplicação, ver docstring da classe). Construído aqui pelo
+   * mesmo motivo de `contactAvatarService`: depende do `registry`.
+   */
+  groupDirectoryService: WhatsAppGroupDirectoryService;
 }
 
 /**
@@ -230,6 +237,12 @@ export function createWhatsAppSessionsComposition(
     logger,
   );
 
+  const groupDirectoryService = new WhatsAppGroupDirectoryService(
+    registry,
+    tenantRepository,
+    logger,
+  );
+
   return {
     sessionService,
     requireApiKey,
@@ -237,6 +250,7 @@ export function createWhatsAppSessionsComposition(
     mediaDownloader,
     mediaSender,
     contactAvatarService,
+    groupDirectoryService,
   };
 }
 

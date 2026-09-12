@@ -1178,6 +1178,196 @@ export function campaignMediaUrl(campaignId: string): string {
   return `/api/campaigns/${encodeURIComponent(campaignId)}/media`;
 }
 
+// --- Disparos em grupos (2026-09-11) ---
+// Disparo ÚNICO de uma mensagem (texto, com imagem/vídeo opcional) em grupos
+// de WhatsApp dos quais o número da sessão participa. Entidade PRÓPRIA — não
+// é `Campaign` (grupo é destino de publicação, não conversa do CRM; nenhuma
+// das três regras de supressão de campanha se aplica).
+
+/** Um grupo de WhatsApp do qual o número da sessão participa — consulta AO VIVO, nunca persistida. */
+export interface WhatsAppGroupSummary {
+  jid: string;
+  name: string;
+  participantCount: number;
+  announce: boolean;
+  isAdmin: boolean;
+  /** `!announce || isAdmin` — já calculado pelo servidor; a tela nunca recalcula. */
+  canSend: boolean;
+}
+
+/**
+ * Lista os grupos da sessão (cache curto no servidor + deduplicação — ver
+ * `WhatsAppGroupDirectoryService`). `refresh: true` ignora o cache,
+ * respeitando um piso de atualização no servidor. Exige `campaign:manage`
+ * (mesmo nível de quem pode disparar — reduz quem pode provocar a consulta
+ * IQ no socket compartilhado, ADR #78).
+ *
+ * Erros esperados: 409 (`whatsapp_not_connected` — sessão sem WhatsApp
+ * conectado) e 504 (`groups_fetch_timeout` — o WhatsApp não respondeu a
+ * tempo); a tela distingue os dois via `ClientApiError.body.error`.
+ */
+export function fetchWhatsAppGroups(
+  sessionName: string,
+  options: { refresh?: boolean } = {},
+): Promise<{ groups: WhatsAppGroupSummary[]; fetchedAt: string }> {
+  const query = options.refresh ? '?refresh=true' : '';
+  return request(`/api/sessions/${encodeURIComponent(sessionName)}/groups${query}`);
+}
+
+export type GroupBroadcastStatus =
+  'draft' | 'scheduled' | 'running' | 'paused' | 'completed' | 'cancelled';
+
+export type GroupBroadcastMediaContentType = 'image' | 'video';
+
+export interface GroupBroadcast {
+  id: string;
+  tenantId: string;
+  sessionName: string;
+  name: string;
+  /** Texto publicado; com mídia, vira a LEGENDA (uma mensagem só, nunca duas). */
+  messageTemplate: string;
+  status: GroupBroadcastStatus;
+  intervalSeconds: number;
+  pausedReason?: string;
+  media?: {
+    contentType: GroupBroadcastMediaContentType;
+    mimeType: string;
+    fileName?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type GroupBroadcastTargetStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+/** Motivos de um grupo nascer suprimido — decididos na criação, a partir da listagem AO VIVO. */
+export type GroupBroadcastSkipReason = 'admin_only_group' | 'group_not_found';
+
+export interface GroupBroadcastTarget {
+  id: string;
+  broadcastId: string;
+  groupJid: string;
+  /** Retrato do nome no momento da criação — o grupo pode ter sido renomeado desde então. */
+  groupName: string;
+  status: GroupBroadcastTargetStatus;
+  skipReason?: string;
+  errorMessage?: string;
+  sentAt?: string;
+  attemptedAt?: string;
+  createdAt: string;
+}
+
+export interface GroupBroadcastSummary {
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface GroupBroadcastListItem {
+  broadcast: GroupBroadcast;
+  summary: GroupBroadcastSummary;
+}
+
+/** Lista disparos em grupos de uma sessão. Exige `campaign:read`. */
+export function fetchGroupBroadcasts(
+  sessionName: string,
+): Promise<{ broadcasts: GroupBroadcastListItem[] }> {
+  return request(`/api/group-broadcasts?sessionName=${encodeURIComponent(sessionName)}`);
+}
+
+/**
+ * Cria o disparo — confere cada `groupJid` na listagem AO VIVO (o servidor
+ * nunca confia no que a tela diz sobre um grupo): quem não existe mais vira
+ * `group_not_found`; quem é "só admins" e o número não é admin vira
+ * `admin_only_group` — ambos nascem `skipped`, sem tentativa de envio.
+ * Exige `campaign:manage` (administrator+).
+ */
+export function createGroupBroadcast(input: {
+  sessionName: string;
+  name: string;
+  messageTemplate: string;
+  groupJids: string[];
+  intervalSeconds?: number;
+}): Promise<{ broadcast: GroupBroadcast; summary: GroupBroadcastSummary; targets: GroupBroadcastTarget[] }> {
+  return request('/api/group-broadcasts', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Detalhe de um disparo (disparo + resumo + alvos). Exige `campaign:read`. */
+export function fetchGroupBroadcast(broadcastId: string): Promise<{
+  broadcast: GroupBroadcast;
+  summary: GroupBroadcastSummary;
+  targets: GroupBroadcastTarget[];
+}> {
+  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`);
+}
+
+/** Inicia (ou retoma, após pausa) o disparo — reagenda todo alvo `pending` com ritmo espaçado. Exige `campaign:manage`. */
+export function startGroupBroadcast(broadcastId: string): Promise<{ broadcast: GroupBroadcast }> {
+  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/start`, {
+    method: 'POST',
+  });
+}
+
+/** Pausa um disparo em execução. Exige `campaign:manage`. */
+export function pauseGroupBroadcast(broadcastId: string): Promise<{ broadcast: GroupBroadcast }> {
+  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/pause`, {
+    method: 'POST',
+  });
+}
+
+/** Cancela um disparo (terminal). Exige `campaign:manage`. */
+export function cancelGroupBroadcast(broadcastId: string): Promise<{ broadcast: GroupBroadcast }> {
+  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/cancel`, {
+    method: 'POST',
+  });
+}
+
+/** Exclui o disparo definitivamente — a API recusa `running` (pause/cancele antes). Exige `campaign:manage`. */
+export async function deleteGroupBroadcast(broadcastId: string): Promise<void> {
+  await request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`, { method: 'DELETE' });
+}
+
+/** Anexa (ou substitui) a mídia de um disparo `draft`. Mesmo padrão de `attachCampaignMedia`. Exige `campaign:manage`. */
+export async function attachGroupBroadcastMedia(
+  broadcastId: string,
+  file: File,
+  contentType: GroupBroadcastMediaContentType,
+): Promise<{ broadcast: GroupBroadcast }> {
+  const headers: Record<string, string> = {
+    'content-type': file.type || 'application/octet-stream',
+    'x-media-content-type': contentType,
+    'x-media-filename': file.name,
+    ...csrfHeader(),
+  };
+  const response = await fetch(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/media`, {
+    method: 'POST',
+    headers,
+    body: file,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    throw new ClientApiError(response.status, body);
+  }
+  return body as { broadcast: GroupBroadcast };
+}
+
+/** Remove a mídia anexada a um disparo `draft`. Exige `campaign:manage`. */
+export function removeGroupBroadcastMedia(
+  broadcastId: string,
+): Promise<{ broadcast: GroupBroadcast }> {
+  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/media`, {
+    method: 'DELETE',
+  });
+}
+
+/** URL de preview/download do anexo — usada direto como `src` de `<img>`. */
+export function groupBroadcastMediaUrl(broadcastId: string): string {
+  return `/api/group-broadcasts/${encodeURIComponent(broadcastId)}/media`;
+}
+
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {
   return request('/api/sessions');
 }
