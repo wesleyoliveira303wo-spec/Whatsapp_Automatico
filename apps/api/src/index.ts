@@ -58,6 +58,9 @@ interface ShutdownHandles {
   /** Fase L, Bloco L4 — ausentes nos mesmos casos de `outboundWorker`/`aiReplyProducerConnection` (modo degradado, sem `REDIS_URL`). */
   campaignSendWorker?: Worker;
   campaignSendConnection?: Redis;
+  /** Disparos em grupos (2026-09-11) — ausentes nos mesmos casos de `campaignSendWorker`. */
+  groupBroadcastSendWorker?: Worker;
+  groupBroadcastSendConnection?: Redis;
 }
 
 let shutdownHandles: ShutdownHandles | undefined;
@@ -204,6 +207,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       { createTagsComposition },
       { createContactsComposition },
       { createCampaignsComposition, wireCampaignSendEngine },
+      { createGroupBroadcastsComposition, wireGroupBroadcastSendEngine },
       { createAuthComposition },
       { createPlatformComposition },
       { createAuthenticate },
@@ -232,6 +236,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       // Fase L, Blocos L3/L4 — campanhas (criação/cálculo sempre; motor de
       // envio ligado só no ramo completo, ver `wireCampaignSendEngine` abaixo).
       import('./services/campaigns/compositionRoot'),
+      // Disparos em grupos (2026-09-11) — mesmo racional de campanhas.
+      import('./services/groupBroadcasts/compositionRoot'),
       import('./services/auth/compositionRoot'),
       // Painel /admin, Fase 1 — mesmo racional dos CRUDs acima: só HTTP +
       // Postgres, então sobe nos dois ramos (degradado e completo).
@@ -458,17 +464,18 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
           'mas sem MessageIngestionService wired — mensagens recebidas serão ignoradas). Ver .env.example.',
       );
 
-      const { sessionService, contactAvatarService } = createWhatsAppSessionsComposition(
-        prisma,
-        WHATSAPP_CREDENTIALS_MASTER_KEY,
-        API_KEY_PEPPER,
-        logger,
-      );
+      const { sessionService, contactAvatarService, groupDirectoryService } =
+        createWhatsAppSessionsComposition(
+          prisma,
+          WHATSAPP_CREDENTIALS_MASTER_KEY,
+          API_KEY_PEPPER,
+          logger,
+        );
 
       app.use(
         '/api/tenants/:tenantId/whatsapp-sessions',
         authenticate,
-        createWhatsAppSessionsRouter(sessionService, contactAvatarService),
+        createWhatsAppSessionsRouter(sessionService, contactAvatarService, groupDirectoryService),
       );
       app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
 
@@ -565,6 +572,22 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       app.use('/api/tenants/:tenantId/campaigns', authenticate, degradedCampaigns.campaignsRouter);
       app.use('/api/tenants/:tenantId/campaigns', degradedCampaigns.campaignsErrorHandler);
 
+      // Disparos em grupos (2026-09-11) — mesmo racional de Campanhas acima:
+      // leitura/criação sobem sem Redis; iniciar responde 503 (sem motor).
+      const { WhatsAppGroupDirectory: DegradedWhatsAppGroupDirectory } =
+        await import('./services/whatsapp/infrastructure/WhatsAppGroupDirectory');
+      const degradedGroupBroadcasts = createGroupBroadcastsComposition(
+        prisma,
+        logger,
+        new DegradedWhatsAppGroupDirectory(groupDirectoryService),
+      );
+      app.use(
+        '/api/tenants/:tenantId/group-broadcasts',
+        authenticate,
+        degradedGroupBroadcasts.router,
+      );
+      app.use('/api/tenants/:tenantId/group-broadcasts', degradedGroupBroadcasts.errorHandler);
+
       shutdownHandles = { prisma };
       return;
     }
@@ -636,8 +659,14 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       aiReplyQueue,
     } = createConversationsComposition(prisma, aiReplyProducerConnection, logger);
 
-    const { sessionService, registry, mediaDownloader, mediaSender, contactAvatarService } =
-      createWhatsAppSessionsComposition(
+    const {
+      sessionService,
+      registry,
+      mediaDownloader,
+      mediaSender,
+      contactAvatarService,
+      groupDirectoryService,
+    } = createWhatsAppSessionsComposition(
         prisma,
         WHATSAPP_CREDENTIALS_MASTER_KEY,
         API_KEY_PEPPER,
@@ -702,7 +731,7 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
     app.use(
       '/api/tenants/:tenantId/whatsapp-sessions',
       authenticate,
-      createWhatsAppSessionsRouter(sessionService, contactAvatarService),
+      createWhatsAppSessionsRouter(sessionService, contactAvatarService, groupDirectoryService),
     );
     app.use('/api/tenants/:tenantId/whatsapp-sessions', createWhatsAppErrorHandler(logger));
 
@@ -933,6 +962,31 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       logger,
     );
 
+    // Disparos em grupos (2026-09-11) — bounded context próprio
+    // (`groupBroadcasts`), NUNCA enfiado no motor de campanhas 1:1 (ver
+    // docstring de `GroupBroadcast` no schema). O diretório de grupos e o
+    // sender são adapters de `whatsapp` (dependem do `registry`), montados
+    // aqui. Conexão Redis DEDICADA para o `Worker` (D19 — nunca reaproveitar a
+    // de outro papel; o `Worker` exige `maxRetriesPerRequest: null`).
+    const [{ WhatsAppGroupDirectory }, { WhatsAppGroupMessageSender }] = await Promise.all([
+      import('./services/whatsapp/infrastructure/WhatsAppGroupDirectory'),
+      import('./services/whatsapp/infrastructure/WhatsAppGroupMessageSender'),
+    ]);
+    const groupBroadcasts = createGroupBroadcastsComposition(
+      prisma,
+      logger,
+      new WhatsAppGroupDirectory(groupDirectoryService),
+    );
+    app.use('/api/tenants/:tenantId/group-broadcasts', authenticate, groupBroadcasts.router);
+    app.use('/api/tenants/:tenantId/group-broadcasts', groupBroadcasts.errorHandler);
+    const groupBroadcastSendConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+    const groupBroadcastSendWorker = wireGroupBroadcastSendEngine(
+      groupBroadcasts,
+      new WhatsAppGroupMessageSender(registry, logger.child({ module: 'group-broadcast-send' })),
+      groupBroadcastSendConnection,
+      logger,
+    );
+
     // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
     // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)
     // instancia seu PRÓPRIO `AiProviderFactoryImpl`, independente do que
@@ -1146,6 +1200,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       aiReplyProducerConnection,
       campaignSendWorker,
       campaignSendConnection,
+      groupBroadcastSendWorker,
+      groupBroadcastSendConnection,
     };
   } catch (error) {
     console.error('Falha ao montar rotas de sessão do WhatsApp:', error);
@@ -1170,6 +1226,8 @@ async function shutdown(): Promise<void> {
     aiReplyProducerConnection,
     campaignSendWorker,
     campaignSendConnection,
+    groupBroadcastSendWorker,
+    groupBroadcastSendConnection,
   } = shutdownHandles;
 
   if (outboundWorker) {
@@ -1178,11 +1236,17 @@ async function shutdown(): Promise<void> {
   if (campaignSendWorker) {
     await campaignSendWorker.close();
   }
+  if (groupBroadcastSendWorker) {
+    await groupBroadcastSendWorker.close();
+  }
   if (aiReplyProducerConnection) {
     await aiReplyProducerConnection.quit();
   }
   if (campaignSendConnection) {
     await campaignSendConnection.quit();
+  }
+  if (groupBroadcastSendConnection) {
+    await groupBroadcastSendConnection.quit();
   }
   await prisma.$disconnect();
 }

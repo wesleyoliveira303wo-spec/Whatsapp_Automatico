@@ -17,7 +17,9 @@ interface FakeSocket {
   sendMessage: jest.Mock;
   /** Milestone 6, Bloco M6H-2b — `sock.profilePictureUrl(jid, 'preview')`. */
   profilePictureUrl: jest.Mock;
-  user: { id: string } | undefined;
+  /** Disparos em grupos (2026-09-11) — `sock.groupFetchAllParticipating()`. */
+  groupFetchAllParticipating: jest.Mock;
+  user: { id: string; lid?: string } | undefined;
 }
 
 /**
@@ -41,6 +43,7 @@ function createFakeSocket(): FakeSocket {
     end: jest.fn(),
     sendMessage: jest.fn().mockResolvedValue(undefined),
     profilePictureUrl: jest.fn().mockResolvedValue('https://pps.whatsapp.net/fake-avatar.jpg'),
+    groupFetchAllParticipating: jest.fn().mockResolvedValue({}),
     user: { id: '5511999999999:1@s.whatsapp.net' },
   };
   createdSockets.push(socket);
@@ -90,7 +93,9 @@ jest.mock(
 import {
   BaileysProvider,
   buildBaileysMediaContent,
+  buildWhatsAppGroupSummaries,
 } from '../../../../src/services/whatsapp/infrastructure/providers/baileys/BaileysProvider';
+import { WhatsAppGroupsFetchTimeoutError } from '../../../../src/services/whatsapp/domain/errors/WhatsAppGroupsFetchTimeoutError';
 
 function createFakeCredentialsStore(): CredentialsStore {
   const data = new Map<string, string>();
@@ -1060,6 +1065,245 @@ describe('BaileysProvider', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+  });
+
+  describe('listGroups() — Disparos em grupos (2026-09-11, ADR #78: IQ query sempre com teto próprio)', () => {
+    it('lança WhatsAppNotConnectedError sem socket vivo', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+
+      await expect(provider.listGroups()).rejects.toBeInstanceOf(WhatsAppNotConnectedError);
+    });
+
+    it('lança WhatsAppNotConnectedError quando o socket existe mas ainda não está "connected"', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect(); // status vira "connecting", nunca "connected"
+
+      await expect(provider.listGroups()).rejects.toBeInstanceOf(WhatsAppNotConnectedError);
+    });
+
+    it('devolve os grupos mapeados (nome, participantes, admin/canSend), ignorando comunidades, ordenado por nome', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      createdSockets[0].ev.handlers['connection.update']({ connection: 'open' });
+      createdSockets[0].groupFetchAllParticipating.mockResolvedValue({
+        'z@g.us': {
+          id: 'z@g.us',
+          subject: 'Zebra',
+          size: 3,
+          announce: false,
+          participants: [{ id: '5511999999999@s.whatsapp.net' }],
+        },
+        'a@g.us': {
+          id: 'a@g.us',
+          subject: 'Anúncios',
+          size: 10,
+          announce: true,
+          participants: [
+            { id: '5511999999999@s.whatsapp.net', admin: 'admin' },
+            { id: '5511888888888@s.whatsapp.net', admin: null },
+          ],
+        },
+        'community@g.us': {
+          id: 'community@g.us',
+          subject: 'Comunidade',
+          isCommunity: true,
+          participants: [],
+        },
+      });
+
+      const groups = await provider.listGroups();
+
+      expect(groups).toEqual([
+        {
+          jid: 'a@g.us',
+          name: 'Anúncios',
+          participantCount: 10,
+          announce: true,
+          isAdmin: true,
+          canSend: true,
+        },
+        {
+          jid: 'z@g.us',
+          name: 'Zebra',
+          participantCount: 3,
+          announce: false,
+          isAdmin: false,
+          canSend: true,
+        },
+      ]);
+    });
+
+    it('grupo "só admins" onde o número NÃO é admin vem com canSend: false', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      createdSockets[0].ev.handlers['connection.update']({ connection: 'open' });
+      createdSockets[0].groupFetchAllParticipating.mockResolvedValue({
+        'a@g.us': {
+          id: 'a@g.us',
+          subject: 'Avisos',
+          size: 5,
+          announce: true,
+          participants: [{ id: '5511999999999@s.whatsapp.net', admin: null }],
+        },
+      });
+
+      const groups = await provider.listGroups();
+
+      expect(groups).toEqual([
+        {
+          jid: 'a@g.us',
+          name: 'Avisos',
+          participantCount: 5,
+          announce: true,
+          isAdmin: false,
+          canSend: false,
+        },
+      ]);
+    });
+
+    it('detecta admin mesmo quando o participante aparece em formato LID (não pelo telefone)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      createdSockets[0].ev.handlers['connection.update']({ connection: 'open' });
+      createdSockets[0].user = { id: '5511999999999:1@s.whatsapp.net', lid: '111222333@lid' };
+      createdSockets[0].groupFetchAllParticipating.mockResolvedValue({
+        'a@g.us': {
+          id: 'a@g.us',
+          subject: 'Grupo LID',
+          size: 2,
+          announce: true,
+          participants: [{ id: '111222333:1@lid', admin: 'superadmin' }],
+        },
+      });
+
+      const groups = await provider.listGroups();
+
+      expect(groups[0]).toMatchObject({ isAdmin: true, canSend: true });
+    });
+
+    it('devolve "Grupo sem nome" quando o assunto vem vazio/ausente', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      createdSockets[0].ev.handlers['connection.update']({ connection: 'open' });
+      createdSockets[0].groupFetchAllParticipating.mockResolvedValue({
+        'a@g.us': { id: 'a@g.us', subject: '  ', participants: [] },
+      });
+
+      const groups = await provider.listGroups();
+
+      expect(groups[0].name).toBe('Grupo sem nome');
+    });
+
+    it('lança WhatsAppGroupsFetchTimeoutError quando o WhatsApp não responde dentro do teto — nunca trava o socket para sempre (ADR #78)', async () => {
+      jest.useFakeTimers();
+      try {
+        const provider = new BaileysProvider(
+          'tenant-1',
+          'default',
+          createFakeCredentialsStore(),
+          createFakeLogger(),
+          new FakeReconnectionPolicy(),
+        );
+        await provider.connect();
+        createdSockets[0].ev.handlers['connection.update']({ connection: 'open' });
+        // Nunca resolve nem rejeita — simula o WhatsApp sem resposta.
+        createdSockets[0].groupFetchAllParticipating.mockReturnValue(new Promise(() => {}));
+
+        const resultPromise = provider.listGroups(15_000);
+        jest.advanceTimersByTime(15_000);
+
+        await expect(resultPromise).rejects.toBeInstanceOf(WhatsAppGroupsFetchTimeoutError);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('propaga um erro de fato do Baileys (não confunde com timeout)', async () => {
+      const provider = new BaileysProvider(
+        'tenant-1',
+        'default',
+        createFakeCredentialsStore(),
+        createFakeLogger(),
+        new FakeReconnectionPolicy(),
+      );
+      await provider.connect();
+      createdSockets[0].ev.handlers['connection.update']({ connection: 'open' });
+      createdSockets[0].groupFetchAllParticipating.mockRejectedValue(new Error('boom'));
+
+      await expect(provider.listGroups()).rejects.toThrow('boom');
+    });
+  });
+
+  describe('buildWhatsAppGroupSummaries() — função pura (Disparos em grupos, 2026-09-11)', () => {
+    const normalize = (jid: string): string => {
+      const [user, server] = jid.split('@');
+      return `${user.split(':')[0].split('_')[0]}@${server}`;
+    };
+
+    it('devolve lista vazia sem grupos', () => {
+      expect(buildWhatsAppGroupSummaries({}, [], normalize)).toEqual([]);
+    });
+
+    it('usa a contagem de participantes da lista quando "size" está ausente', () => {
+      const result = buildWhatsAppGroupSummaries(
+        {
+          'a@g.us': {
+            id: 'a@g.us',
+            subject: 'Sem size',
+            participants: [{ id: 'x@s.whatsapp.net' }, { id: 'y@s.whatsapp.net' }],
+          },
+        },
+        [],
+        normalize,
+      );
+      expect(result[0].participantCount).toBe(2);
+    });
+
+    it('ignora grupos sem id', () => {
+      const result = buildWhatsAppGroupSummaries(
+        // @ts-expect-error — simula entrada malformada do Baileys
+        { bad: { subject: 'sem id' } },
+        [],
+        normalize,
+      );
+      expect(result).toEqual([]);
     });
   });
 

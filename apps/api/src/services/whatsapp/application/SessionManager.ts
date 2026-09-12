@@ -7,6 +7,7 @@ import { WhatsAppProviderEvent } from '../domain/providers/WhatsAppProviderEvent
 import { WhatsAppSessionRepository } from '../domain/repositories/WhatsAppSessionRepository';
 import { WhatsAppSessionEventRepository } from '../domain/repositories/WhatsAppSessionEventRepository';
 import { WhatsAppSession } from '../domain/entities/WhatsAppSession';
+import { WhatsAppGroupSummary } from '../domain/entities/WhatsAppGroupSummary';
 import { WhatsAppSessionKey } from '../domain/valueObjects/WhatsAppSessionKey';
 import { WhatsAppSessionNotFoundError } from '../domain/errors/WhatsAppSessionNotFoundError';
 import { MessageReceivedHandler } from '../domain/handlers/MessageReceivedHandler';
@@ -303,6 +304,17 @@ export class SessionManager {
     mediaKeyEncrypted: string;
   }): Promise<Buffer | undefined> {
     return this.provider.downloadMedia(media);
+  }
+
+  /**
+   * Grupos dos quais o número desta sessão participa — Disparos em grupos
+   * (2026-09-11). Thin passthrough, mesmo padrão de `getProfilePictureUrl`/
+   * `downloadMedia`: sem lock de ciclo de vida (leitura independente).
+   * Propaga `WhatsAppNotConnectedError`/`WhatsAppGroupsFetchTimeoutError` do
+   * provider sem capturar — quem chama decide como apresentar cada caso.
+   */
+  async listGroups(timeoutMs?: number): Promise<WhatsAppGroupSummary[]> {
+    return this.provider.listGroups(timeoutMs);
   }
 
   /**

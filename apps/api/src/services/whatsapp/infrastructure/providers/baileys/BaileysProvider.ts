@@ -32,6 +32,8 @@ import {
 import { ReconnectionPolicy } from '../../../domain/providers/ReconnectionPolicy';
 import { WhatsAppQRCodeNotAvailableError } from '../../../domain/errors/WhatsAppQRCodeNotAvailableError';
 import { WhatsAppNotConnectedError } from '../../../domain/errors/WhatsAppNotConnectedError';
+import { WhatsAppGroupsFetchTimeoutError } from '../../../domain/errors/WhatsAppGroupsFetchTimeoutError';
+import { WhatsAppGroupSummary } from '../../../domain/entities/WhatsAppGroupSummary';
 import { buildWhatsAppCredentialsNamespace } from '../../../domain/credentialsNamespace';
 import { useCredentialsStoreAuthState } from './BaileysCredentialsAdapter';
 
@@ -346,6 +348,17 @@ const PROFILE_PICTURE_TIMEOUT_MS = 6_000;
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 20_000;
 
 /**
+ * Teto de espera por `listGroups` (Disparos em grupos, 2026-09-11) — mesma
+ * disciplina de `PROFILE_PICTURE_TIMEOUT_MS` (ADR #78: nenhuma consulta IQ
+ * auxiliar pode deixar o socket refém). Mais generoso que o da foto porque
+ * a resposta traz TODOS os grupos com seus participantes de uma vez (num
+ * número com muitos grupos grandes, é um payload considerável) e porque quem
+ * espera é um operador montando um disparo, não uma lista de conversas
+ * pintando dezenas de avatares.
+ */
+export const GROUP_LIST_TIMEOUT_MS = 15_000;
+
+/**
  * Implementação concreta de `WhatsAppProvider` usando Baileys (Milestone 1,
  * Item 3). Cada instância corresponde a exatamente um socket/uma sessão —
  * `tenantId`/`sessionName` são fixados na construção, não por chamada (ver
@@ -506,6 +519,80 @@ export function buildBaileysMediaContent(media: {
       throw new Error(`Tipo de mídia não suportado para envio: ${exhaustiveCheck}`);
     }
   }
+}
+
+/**
+ * Shape mínimo de um grupo devolvido por `sock.groupFetchAllParticipating()`
+ * (`GroupMetadata` do Baileys 7 — verificado no fonte instalado,
+ * `lib/Socket/groups.js`, `extractGroupMetadata`). Definido localmente pelo
+ * mesmo motivo de `BaileysInboundMessage`: só um subconjunto pequeno e estável
+ * é necessário, e os testes montam esse subconjunto sem precisar do tipo real.
+ *
+ * `participants[].id` pode vir em formato LID (`@lid`) OU telefone
+ * (`@s.whatsapp.net`) — o Baileys preenche o outro formato em
+ * `phoneNumber`/`lid` quando o WhatsApp manda. `admin` é `'admin'`,
+ * `'superadmin'` ou `null`.
+ */
+export interface BaileysGroupMetadataLike {
+  id: string;
+  subject?: string;
+  size?: number;
+  announce?: boolean;
+  isCommunity?: boolean;
+  participants?: Array<{
+    id: string;
+    phoneNumber?: string;
+    lid?: string;
+    admin?: 'admin' | 'superadmin' | null;
+  }>;
+}
+
+/**
+ * Traduz o resultado cru de `groupFetchAllParticipating()` para o vocabulário
+ * de Domain (`WhatsAppGroupSummary`) — Disparos em grupos (2026-09-11). Função
+ * pura/exportada pelo mesmo motivo de `buildBaileysMediaContent`: testável sem
+ * socket.
+ *
+ * - `ownJids`: identidades do PRÓPRIO número já normalizadas (telefone e,
+ *   quando o WhatsApp informa, LID). O número é admin se QUALQUER uma delas
+ *   aparecer entre os participantes com `admin` preenchido — comparar só o
+ *   telefone erraria nos grupos em modo LID, onde o participante vem como
+ *   `...@lid`.
+ * - `normalize`: `jidNormalizedUser` do Baileys, injetado (o módulo é
+ *   carregado por `import()` dinâmico, ver topo deste arquivo).
+ * - A "comunidade" em si (`isCommunity`) fica FORA da lista: não é um chat
+ *   onde se publica — as publicações de uma comunidade vão para o grupo de
+ *   avisos dela, que aparece normalmente (com `announce`).
+ * - Ordenado por nome (pt-BR), para a tela não depender da ordem do WhatsApp.
+ */
+export function buildWhatsAppGroupSummaries(
+  groups: Record<string, BaileysGroupMetadataLike>,
+  ownJids: string[],
+  normalize: (jid: string) => string,
+): WhatsAppGroupSummary[] {
+  const own = new Set(ownJids);
+  return Object.values(groups)
+    .filter((group) => Boolean(group?.id) && !group.isCommunity)
+    .map((group) => {
+      const participants = group.participants ?? [];
+      const isAdmin = participants.some((participant) => {
+        if (!participant.admin) return false;
+        const candidates = [participant.id, participant.phoneNumber, participant.lid].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        );
+        return candidates.some((jid) => own.has(normalize(jid)));
+      });
+      const announce = group.announce === true;
+      return {
+        jid: group.id,
+        name: group.subject?.trim() || 'Grupo sem nome',
+        participantCount: group.size ?? participants.length,
+        announce,
+        isAdmin,
+        canSend: !announce || isAdmin,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
 export class BaileysProvider implements WhatsAppProvider {
@@ -801,6 +888,60 @@ export class BaileysProvider implements WhatsAppProvider {
 
   onEvent(listener: (event: WhatsAppProviderEvent) => void): void {
     this.eventListener = listener;
+  }
+
+  /**
+   * Implementa `WhatsAppProvider.listGroups` (Disparos em grupos, 2026-09-11)
+   * sobre `sock.groupFetchAllParticipating()` — consulta IQ no MESMO socket
+   * das mensagens, então SEMPRE com teto próprio (ADR #78).
+   *
+   * Mesma técnica de `lookupProfilePicture`: a Promise do Baileys não é
+   * cancelável, então ganha `.catch(() => {})` (um resultado tardio, depois do
+   * timeout, é descartado sem virar "unhandled rejection"). Diferente dela,
+   * aqui o timer é LIMPO quando a consulta responde antes — não deixa um
+   * `setTimeout` pendurado a cada listagem bem-sucedida.
+   */
+  async listGroups(timeoutMs: number = GROUP_LIST_TIMEOUT_MS): Promise<WhatsAppGroupSummary[]> {
+    const socket = this.socket;
+    if (!socket || this.currentStatus !== 'connected') {
+      throw new WhatsAppNotConnectedError(this.tenantId, this.sessionName);
+    }
+
+    const liveQuery = socket.groupFetchAllParticipating() as Promise<
+      Record<string, BaileysGroupMetadataLike>
+    >;
+    liveQuery.catch(() => {});
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(new WhatsAppGroupsFetchTimeoutError(this.tenantId, this.sessionName, timeoutMs)),
+        timeoutMs,
+      );
+    });
+
+    let groups: Record<string, BaileysGroupMetadataLike>;
+    try {
+      groups = await Promise.race([liveQuery, timeout]);
+    } catch (error) {
+      this.logger.warn('Falha ao listar grupos do WhatsApp', {
+        tenantId: this.tenantId,
+        sessionName: this.sessionName,
+        timeout: error instanceof WhatsAppGroupsFetchTimeoutError,
+        error,
+      });
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    const normalize = (jid: string): string => this.baileys.jidNormalizedUser(jid);
+    const ownJids = [socket.user?.id, socket.user?.lid]
+      .filter((jid): jid is string => typeof jid === 'string' && jid.length > 0)
+      .map(normalize);
+
+    return buildWhatsAppGroupSummaries(groups ?? {}, ownJids, normalize);
   }
 
   /**

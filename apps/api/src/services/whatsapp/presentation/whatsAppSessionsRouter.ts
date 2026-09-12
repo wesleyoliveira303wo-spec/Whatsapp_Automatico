@@ -8,6 +8,7 @@ import { asyncHandler, validateOrRespond } from '../../../shared/presentation/ht
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 import { RequestWithPrincipal } from '../../../shared/presentation/authenticate';
 import { ContactAvatarService } from '../application/ContactAvatarService';
+import { WhatsAppGroupDirectoryService } from '../application/WhatsAppGroupDirectoryService';
 
 /** Milestone 5, Bloco M5D-3 — traduz o `principal` no ator para auditoria. Plano máquina/sem principal = sem `userId`. */
 function toActor(req: Request): WhatsAppSessionActor {
@@ -54,6 +55,11 @@ const historyQuerySchema = z.object({ limit: z.coerce.number().int().positive().
  */
 const contactAvatarsBodySchema = z.object({
   contactJids: z.array(z.string().trim().min(1)).min(1).max(300),
+});
+
+/** Disparos em grupos (2026-09-11) — `?refresh=true` pede para ignorar o cache (respeitando o piso de `GROUP_DIRECTORY_MIN_REFRESH_MS`). */
+const listGroupsQuerySchema = z.object({
+  refresh: z.enum(['true', 'false']).optional(),
 });
 
 // `asyncHandler`/`validateOrRespond` extraídos para `shared/presentation/httpHelpers`
@@ -103,6 +109,11 @@ export function createWhatsAppSessionsRouter(
    * que servir uma lista vazia que a UI leria como "ninguém tem foto".
    */
   contactAvatarService?: ContactAvatarService,
+  /**
+   * Disparos em grupos (2026-09-11) — opcional pelo mesmo motivo de
+   * `contactAvatarService`: ausente, a rota de grupos responde 503.
+   */
+  groupDirectoryService?: WhatsAppGroupDirectoryService,
 ): Router {
   const router = Router({ mergeParams: true });
 
@@ -244,6 +255,46 @@ export function createWhatsAppSessionsRouter(
         params.contactJid,
       );
       res.status(200).json({ avatarUrl });
+    }),
+  );
+
+  /**
+   * Disparos em grupos (2026-09-11) — grupos dos quais o número desta sessão
+   * participa, para o operador escolher onde publicar.
+   *
+   * `campaign:manage` (não `session:read`): o ÚNICO uso desta lista é montar
+   * um disparo em grupos, que já exige `campaign:manage`. Restringir a quem
+   * pode disparar também restringe quem pode provocar a consulta IQ no socket
+   * compartilhado (ADR #78) — o cache/deduplicação de
+   * `WhatsAppGroupDirectoryService` já protege, isto só reduz a superfície.
+   *
+   * Sessão sem conexão viva → 409; WhatsApp não respondeu a tempo → 504 (ver
+   * `whatsAppErrorHandler`). Nunca devolve lista vazia no lugar de um erro:
+   * "você não está em nenhum grupo" e "não deu para perguntar" são coisas
+   * diferentes para quem está montando um disparo.
+   */
+  router.get(
+    '/:sessionName/groups',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(sessionNameParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const query = validateOrRespond(listGroupsQuerySchema, req.query, res);
+      if (!query) return;
+
+      if (!groupDirectoryService) {
+        res.status(503).json({ error: 'group_directory_unavailable' });
+        return;
+      }
+
+      const snapshot = await groupDirectoryService.listGroups(params.tenantId, params.sessionName, {
+        forceRefresh: query.refresh === 'true',
+      });
+      res.status(200).json(snapshot);
     }),
   );
 
