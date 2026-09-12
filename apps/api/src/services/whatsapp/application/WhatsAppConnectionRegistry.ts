@@ -4,6 +4,7 @@ import { WhatsAppSessionEventRepository } from '../domain/repositories/WhatsAppS
 import { WhatsAppProviderFactory } from '../domain/providers/WhatsAppProviderFactory';
 import { WhatsAppSessionKey } from '../domain/valueObjects/WhatsAppSessionKey';
 import { MessageReceivedHandler } from '../domain/handlers/MessageReceivedHandler';
+import { OwnAvatarRefresher } from '../domain/providers/OwnAvatarRefresher';
 import { SessionManager } from './SessionManager';
 
 /**
@@ -54,6 +55,8 @@ import { SessionManager } from './SessionManager';
  */
 export class WhatsAppConnectionRegistry {
   private readonly sessionManagers = new Map<string, SessionManager>();
+  /** Injeção tardia — ver `setOwnAvatarRefresher()` abaixo para o porquê. */
+  private ownAvatarRefresher?: OwnAvatarRefresher;
 
   constructor(
     private readonly providerFactory: WhatsAppProviderFactory,
@@ -78,6 +81,20 @@ export class WhatsAppConnectionRegistry {
   ) {}
 
   /**
+   * Injeção TARDIA (2026-09-12, mesmo padrão de `ConversationsService.
+   * setMediaDownloader`/`setSendDispatcher`) — não dá para passar isto pelo
+   * construtor: `contactAvatarService` (de quem `SessionOwnAvatarRefresher`
+   * depende) só é construído DEPOIS deste Registry, porque ele mesmo depende
+   * do Registry (`RegistryContactAvatarSource`, ver `compositionRoot.ts`).
+   * Chamado uma vez, na composição, antes de qualquer sessão conectar de
+   * verdade — todo `SessionManager` criado por `getOrCreate()` daí em diante
+   * já nasce com a referência.
+   */
+  setOwnAvatarRefresher(ownAvatarRefresher: OwnAvatarRefresher): void {
+    this.ownAvatarRefresher = ownAvatarRefresher;
+  }
+
+  /**
    * Devolve o `SessionManager` responsável pelo par `(tenantId, sessionName)`
    * informado — cria-o (e o `provider` correspondente) na primeira chamada
    * para esse par; em qualquer chamada seguinte, devolve a MESMA instância já
@@ -100,6 +117,7 @@ export class WhatsAppConnectionRegistry {
       this.logger,
       this.eventRepository,
       this.messageReceivedHandler,
+      this.ownAvatarRefresher,
     );
     this.sessionManagers.set(cacheKey, sessionManager);
     return sessionManager;

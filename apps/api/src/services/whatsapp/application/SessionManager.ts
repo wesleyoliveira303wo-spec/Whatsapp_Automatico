@@ -11,6 +11,7 @@ import { WhatsAppGroupSummary } from '../domain/entities/WhatsAppGroupSummary';
 import { WhatsAppSessionKey } from '../domain/valueObjects/WhatsAppSessionKey';
 import { WhatsAppSessionNotFoundError } from '../domain/errors/WhatsAppSessionNotFoundError';
 import { MessageReceivedHandler } from '../domain/handlers/MessageReceivedHandler';
+import { OwnAvatarRefresher } from '../domain/providers/OwnAvatarRefresher';
 
 /**
  * Orquestra o ciclo de vida de UMA sessão do WhatsApp contra um
@@ -168,6 +169,13 @@ export class SessionManager {
     logger: Logger,
     eventRepository: WhatsAppSessionEventRepository,
     messageReceivedHandler?: MessageReceivedHandler,
+    /**
+     * Fecha a lacuna de 2026-09-12: sem isto, a foto de perfil do PRÓPRIO
+     * número da sessão nunca é pedida ao WhatsApp (o gatilho normal é o
+     * contato mandar mensagem, e a sessão nunca manda para si mesma).
+     * OPCIONAL — sem ele, comportamento inalterado (card mostra iniciais).
+     */
+    private readonly ownAvatarRefresher?: OwnAvatarRefresher,
   ) {
     this.provider = provider;
     this.sessionKey = sessionKey;
@@ -175,6 +183,20 @@ export class SessionManager {
     this.logger = logger;
     this.eventRepository = eventRepository;
     this.messageReceivedHandler = messageReceivedHandler;
+  }
+
+  /**
+   * Pede a foto do PRÓPRIO número, se houver um número e alguém para pedir.
+   * Nunca aguardado pelos chamadores (fire-and-forget) — pedir uma foto não
+   * pode atrasar nem falhar uma conexão; a porta já nunca lança por conta
+   * própria, mas o `catch` aqui é a garantia mesmo se isso mudar.
+   */
+  private requestOwnAvatarRefresh(phoneNumber: string | undefined): void {
+    if (!this.ownAvatarRefresher || !phoneNumber) return;
+    const { tenantId, sessionName } = this.sessionKey;
+    void this.ownAvatarRefresher
+      .ensureOwnAvatarQueued(tenantId, sessionName, phoneNumber)
+      .catch(() => {});
   }
 
   /**
@@ -471,6 +493,7 @@ export class SessionManager {
     }
     if (status === 'connected') {
       updates.connectedAt = finalNow;
+      this.requestOwnAvatarRefresh(phoneNumber);
     }
     await this.repo.update(sessionId, updates);
     const session: WhatsAppSession = { ...initialSession, ...updates };
@@ -580,6 +603,13 @@ export class SessionManager {
         };
         if (event.status === 'connected') {
           changes.connectedAt = now;
+          // Reconexão assíncrona (ex.: sessão caiu e voltou sozinha) também
+          // conta como "conexão confirmada" para o gatilho de foto de perfil
+          // — não só o `init()` síncrono. O evento nem sempre traz o número
+          // (ver abaixo); sem ele aqui, pergunta direto ao provider.
+          this.requestOwnAvatarRefresh(
+            event.phoneNumber ?? (await this.provider.getPhoneNumber()),
+          );
         }
         if (event.phoneNumber !== undefined) {
           changes.phoneNumber = event.phoneNumber;

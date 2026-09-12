@@ -171,6 +171,61 @@ describe('WhatsAppConnectionRegistry', () => {
     });
   });
 
+  describe('setOwnAvatarRefresher (2026-09-12 — injeção tardia)', () => {
+    // `NullWhatsAppProvider.getStatus()` é sempre 'disconnected' (docstring da
+    // classe) — `init()` sozinho nunca dispara o gatilho de foto (só age
+    // quando a conexão vira 'connected'). Por isso o cenário aqui é a
+    // reconexão assíncrona, com `phoneNumber` no próprio evento (o provider
+    // Null também devolve sempre `undefined` em `getPhoneNumber()`).
+    it('repassa o refresher a todo SessionManager criado DEPOIS da chamada', async () => {
+      const { registry, providerFactory } = buildRegistry();
+      const refresher = { ensureOwnAvatarQueued: jest.fn().mockResolvedValue(undefined) };
+
+      registry.setOwnAvatarRefresher(refresher);
+      const sessionManager = registry.getOrCreate('tenant-1', 'vendas');
+      await sessionManager.init();
+      const [createdProvider] = providerFactory.getCreatedProviders();
+      createdProvider.emitEvent({
+        type: 'status_changed',
+        status: 'connected',
+        phoneNumber: '+5511999999999',
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(refresher.ensureOwnAvatarQueued).toHaveBeenCalledWith(
+        'tenant-1',
+        'vendas',
+        '+5511999999999',
+      );
+    });
+
+    it('um SessionManager criado ANTES da chamada não é afetado — mantém o comportamento anterior sem refresher', async () => {
+      const { registry, providerFactory } = buildRegistry();
+      const sessionManager = registry.getOrCreate('tenant-1', 'vendas');
+      const refresher = { ensureOwnAvatarQueued: jest.fn().mockResolvedValue(undefined) };
+
+      registry.setOwnAvatarRefresher(refresher);
+      await sessionManager.init();
+      const [createdProvider] = providerFactory.getCreatedProviders();
+      createdProvider.emitEvent({
+        type: 'status_changed',
+        status: 'connected',
+        phoneNumber: '+5511999999999',
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(refresher.ensureOwnAvatarQueued).not.toHaveBeenCalled();
+    });
+
+    it('sem chamar setOwnAvatarRefresher (mesmo padrão anterior), continua funcionando normalmente', async () => {
+      const { registry } = buildRegistry();
+      const sessionManager = registry.getOrCreate('tenant-1', 'vendas');
+      await expect(sessionManager.init()).resolves.toBeDefined();
+    });
+  });
+
   describe('evictIfCurrent (Production Hardening, Bloco 4)', () => {
     it('remove a entrada quando a geração informada ainda é a atual (fluxo real: getOrCreate -> init -> disconnect -> evictIfCurrent)', async () => {
       const { registry } = buildRegistry();

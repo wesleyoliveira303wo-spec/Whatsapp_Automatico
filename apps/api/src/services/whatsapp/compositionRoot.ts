@@ -30,6 +30,7 @@ import { StageClassificationScheduler } from '../conversations/domain/schedulers
 import { AiInteractionRepository } from '../ai/domain/repositories/AiInteractionRepository';
 import { WhatsAppMediaDownloader } from './infrastructure/WhatsAppMediaDownloader';
 import { WhatsAppMediaSender } from './infrastructure/WhatsAppMediaSender';
+import { SessionOwnAvatarRefresher } from './infrastructure/SessionOwnAvatarRefresher';
 
 /**
  * Composition root do módulo WhatsApp (Item 5, Bloco 8): monta a cadeia real
@@ -236,6 +237,11 @@ export function createWhatsAppSessionsComposition(
     new RegistryContactAvatarSource(registry),
     logger,
   );
+  // 2026-09-12 — injeção tardia (ver docstring de `setOwnAvatarRefresher`):
+  // fecha a lacuna de a foto de perfil da PRÓPRIA sessão nunca ser pedida ao
+  // WhatsApp (o gatilho normal, desde a mudança de 2026-09-05, é o CONTATO
+  // mandar mensagem — e a sessão nunca manda mensagem para si mesma).
+  registry.setOwnAvatarRefresher(new SessionOwnAvatarRefresher(contactAvatarService, logger));
 
   const groupDirectoryService = new WhatsAppGroupDirectoryService(
     registry,
