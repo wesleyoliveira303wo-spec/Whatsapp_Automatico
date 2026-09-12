@@ -1,3 +1,8 @@
+import {
+  MAX_RECURRENCE_RUNS,
+  buildSendWindow,
+  clampRecurrenceIntervalHours,
+} from '../domain/policies/groupBroadcastRecurrence';
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { Tenant } from '../../../shared/tenant/domain/Tenant';
@@ -22,6 +27,7 @@ import {
   GroupBroadcastNotFoundError,
   GroupBroadcastRequiresPaidPlanError,
   InvalidGroupBroadcastTransitionError,
+  InvalidRecurrenceError,
   NoGroupsSelectedError,
   TooManyGroupsSelectedError,
 } from '../domain/errors/groupBroadcastErrors';
@@ -51,6 +57,17 @@ export interface CreateGroupBroadcastInput {
   groupJids: string[];
   intervalSeconds?: number;
   createdByUserId?: string;
+  /**
+   * Recorrência (2026-09-11). `recurrenceIntervalHours` ausente = publicação
+   * única. As três formas de término convivem: teto de repetições
+   * (`recurrenceMaxRuns`), data/hora limite (`recurrenceEndsAt`), e "até eu
+   * cancelar" (nenhuma das duas).
+   */
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  recurrenceEndsAt?: Date;
+  sendWindowStart?: string;
+  sendWindowEnd?: string;
 }
 
 /** Quem executou a ação — só para a trilha de auditoria (`undefined` = plano máquina). */
@@ -127,6 +144,31 @@ export class GroupBroadcastService {
     const directory = await this.groupDirectory.listGroups(input.tenantId, input.sessionName);
     const byJid = new Map(directory.map((entry) => [entry.jid, entry]));
 
+    const recurring =
+      input.recurrenceIntervalHours !== undefined && input.recurrenceIntervalHours !== null;
+    if (recurring) {
+      if (
+        input.recurrenceMaxRuns !== undefined &&
+        (input.recurrenceMaxRuns < 2 || input.recurrenceMaxRuns > MAX_RECURRENCE_RUNS)
+      ) {
+        throw new InvalidRecurrenceError(
+          `O número de repetições precisa estar entre 2 e ${MAX_RECURRENCE_RUNS}.`,
+        );
+      }
+      if (input.recurrenceEndsAt && input.recurrenceEndsAt.getTime() <= Date.now()) {
+        throw new InvalidRecurrenceError('A data de término precisa estar no futuro.');
+      }
+      const windowInformed = Boolean(input.sendWindowStart) || Boolean(input.sendWindowEnd);
+      if (
+        windowInformed &&
+        !buildSendWindow(input.sendWindowStart, input.sendWindowEnd)
+      ) {
+        throw new InvalidRecurrenceError(
+          'A janela de horário precisa de início e fim válidos ("HH:MM") e diferentes entre si.',
+        );
+      }
+    }
+
     const drafts: GroupBroadcastTargetDraft[] = groupJids.map((groupJid) => {
       const entry = byJid.get(groupJid);
       const skipReason = determineGroupTargetSkipReason(entry);
@@ -142,6 +184,16 @@ export class GroupBroadcastService {
       name: input.name,
       messageTemplate: input.messageTemplate,
       intervalSeconds: clampGroupIntervalSeconds(input.intervalSeconds),
+      // Recorrência: o intervalo passa pelo clamp do Domain (1h–24h); os
+      // limites de término e a janela são gravados como vieram (a rota já
+      // valida formato), e `undefined` em todos = publicação única.
+      recurrenceIntervalHours: recurring
+        ? clampRecurrenceIntervalHours(input.recurrenceIntervalHours)
+        : undefined,
+      recurrenceMaxRuns: recurring ? input.recurrenceMaxRuns : undefined,
+      recurrenceEndsAt: recurring ? input.recurrenceEndsAt : undefined,
+      sendWindowStart: recurring ? input.sendWindowStart : undefined,
+      sendWindowEnd: recurring ? input.sendWindowEnd : undefined,
       createdByUserId: input.createdByUserId,
     });
     await this.repository.createTargets(input.tenantId, broadcast.id, drafts);
@@ -156,6 +208,7 @@ export class GroupBroadcastService {
       groups: summary.total,
       pending: summary.pending,
       skipped: summary.skipped,
+      recurrenceIntervalHours: broadcast.recurrenceIntervalHours,
     });
     this.logger.info('Disparo em grupos criado', {
       tenantId: input.tenantId,

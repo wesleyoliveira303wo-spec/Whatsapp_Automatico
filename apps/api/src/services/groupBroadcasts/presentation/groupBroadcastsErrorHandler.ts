@@ -12,6 +12,7 @@ import {
   GroupBroadcastRequiresPaidPlanError,
   GroupDirectoryUnavailableError,
   InvalidGroupBroadcastTransitionError,
+  InvalidRecurrenceError,
   NoGroupsSelectedError,
   TooManyGroupsSelectedError,
 } from '../domain/errors/groupBroadcastErrors';
@@ -40,6 +41,10 @@ export function createGroupBroadcastsErrorHandler(logger: Logger): ErrorRequestH
     }
     if (error instanceof GroupBroadcastNotFoundError) {
       res.status(404).json({ error: 'group_broadcast_not_found', message: error.message });
+      return;
+    }
+    if (error instanceof InvalidRecurrenceError) {
+      res.status(400).json({ error: 'invalid_recurrence', message: error.message });
       return;
     }
     if (error instanceof GroupBroadcastMediaNotFoundError) {

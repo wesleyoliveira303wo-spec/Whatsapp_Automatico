@@ -1228,6 +1228,16 @@ export interface GroupBroadcast {
   messageTemplate: string;
   status: GroupBroadcastStatus;
   intervalSeconds: number;
+  /** Recorrência (2026-09-11): de quantas em quantas horas repete. Ausente = publicação única. */
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  /** ISO-8601. */
+  recurrenceEndsAt?: string;
+  sendWindowStart?: string;
+  sendWindowEnd?: string;
+  runsCompleted: number;
+  /** ISO-8601; ausente em disparo único ou já encerrado. */
+  nextRunAt?: string;
   pausedReason?: string;
   media?: {
     contentType: GroupBroadcastMediaContentType;
@@ -1254,6 +1264,8 @@ export interface GroupBroadcastTarget {
   errorMessage?: string;
   sentAt?: string;
   attemptedAt?: string;
+  /** Quantas vezes este grupo já recebeu a publicação (soma das repetições). */
+  sentCount: number;
   createdAt: string;
 }
 
@@ -1290,6 +1302,14 @@ export function createGroupBroadcast(input: {
   messageTemplate: string;
   groupJids: string[];
   intervalSeconds?: number;
+  /** Recorrência: ausente = publica uma vez só. */
+  recurrenceIntervalHours?: number;
+  /** Fim por contagem (mín. 2). Sem isto e sem `recurrenceEndsAt`, repete até alguém cancelar. */
+  recurrenceMaxRuns?: number;
+  /** Fim por data — ISO-8601, precisa ser futuro. */
+  recurrenceEndsAt?: string;
+  sendWindowStart?: string;
+  sendWindowEnd?: string;
 }): Promise<{ broadcast: GroupBroadcast; summary: GroupBroadcastSummary; targets: GroupBroadcastTarget[] }> {
   return request('/api/group-broadcasts', { method: 'POST', body: JSON.stringify(input) });
 }

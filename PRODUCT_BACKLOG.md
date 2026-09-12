@@ -203,9 +203,19 @@ previsto:
    seguidas falhando já pausa, contra 5 do motor 1:1) — "ao primeiro sinal de
    falhas seguidas", como o risco descrito acima pedia.
 
+**Recorrência entregue em 2026-09-12** (a pedido do fundador, logo após ele
+testar e aprovar o disparo avulso): dentro da criação do disparo dá para ligar
+"Repetir automaticamente" a cada 1h–24h, com as TRÊS formas de término
+escolhidas por ele — número de repetições, data/hora de término, ou até
+cancelar — e janela de horário configurável (uma repetição fora da janela é
+adiada para a próxima abertura, nunca descartada). Migration
+`20260911160000_add_group_broadcast_recurrence`; detalhe do desenho em
+`CLAUDE.md` §18 ("Disparo em grupos recorrente").
+
 **Fora desta entrega, registrado para quando/se o fundador quiser avançar:**
-recorrência/agendamento (repetir a mesma mensagem N vezes por dia durante D
-dias) — exigiria um job recorrente e uma decisão de produto sobre como editar/
-cancelar uma série em andamento, nenhuma das duas resolvida aqui. Também fora:
+
+editar uma série em andamento (hoje a configuração é definida na criação;
+para mudar, cancele e crie outro) e agendamento por calendário (dias da semana
+específicos, em vez de intervalo em horas). Também fora:
 áudio/documento como anexo de grupo (só imagem/vídeo, mesmo escopo que o
 fundador pediu — "mensagem, imagem, vídeo").

@@ -13,4 +13,16 @@ export interface GroupBroadcastSendDispatcher {
     targetId: string,
     delayMs: number,
   ): Promise<void>;
+
+  /**
+   * Agenda o INÍCIO de uma repetição (recorrência, 2026-09-11) para daqui a
+   * `delayMs`. Um job por ciclo — os envios de cada grupo são agendados
+   * depois, quando o ciclo começa.
+   */
+  scheduleRun(
+    tenantId: string,
+    broadcastId: string,
+    runNumber: number,
+    delayMs: number,
+  ): Promise<void>;
 }

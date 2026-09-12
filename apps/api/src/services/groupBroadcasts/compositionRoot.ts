@@ -13,8 +13,11 @@ import { GroupMessageSender } from './domain/providers/GroupMessageSender';
 import { PrismaGroupBroadcastRepository } from './infrastructure/repositories/PrismaGroupBroadcastRepository';
 import { BullMqGroupBroadcastSendDispatcher } from './infrastructure/dispatchers/BullMqGroupBroadcastSendDispatcher';
 import { GroupBroadcastSendJobProcessor } from './infrastructure/GroupBroadcastSendJobProcessor';
+import { GroupBroadcastRunJobProcessor } from './infrastructure/GroupBroadcastRunJobProcessor';
 import {
+  GROUP_BROADCAST_RUN_JOB_NAME,
   GROUP_BROADCAST_SEND_QUEUE_NAME,
+  GroupBroadcastRunJobData,
   GroupBroadcastSendJobData,
 } from './infrastructure/queues/GroupBroadcastSendQueue';
 import { createGroupBroadcastsRouter } from './presentation/groupBroadcastsRouter';
@@ -74,18 +77,36 @@ export function wireGroupBroadcastSendEngine(
   sender: GroupMessageSender,
   redisConnection: IORedis,
   logger: Logger,
-): Worker<GroupBroadcastSendJobData> {
-  const queue = new Queue<GroupBroadcastSendJobData>(GROUP_BROADCAST_SEND_QUEUE_NAME, {
-    connection: redisConnection,
-  });
-  composition.service.setSendDispatcher(new BullMqGroupBroadcastSendDispatcher(queue));
+): Worker<GroupBroadcastSendJobData | GroupBroadcastRunJobData> {
+  const queue = new Queue<GroupBroadcastSendJobData | GroupBroadcastRunJobData>(
+    GROUP_BROADCAST_SEND_QUEUE_NAME,
+    { connection: redisConnection },
+  );
+  const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue);
+  composition.service.setSendDispatcher(dispatcher);
 
-  const processor = new GroupBroadcastSendJobProcessor(composition.repository, sender, logger);
+  const processor = new GroupBroadcastSendJobProcessor(
+    composition.repository,
+    sender,
+    logger,
+    dispatcher,
+  );
+  // Recorrência (2026-09-11): segundo tipo de job na MESMA fila — o ciclo que
+  // reabre o disparo. Ver `GroupBroadcastRunJobProcessor`.
+  const runProcessor = new GroupBroadcastRunJobProcessor(
+    composition.repository,
+    dispatcher,
+    logger,
+  );
 
-  const worker = new Worker<GroupBroadcastSendJobData>(
+  const worker = new Worker<GroupBroadcastSendJobData | GroupBroadcastRunJobData>(
     GROUP_BROADCAST_SEND_QUEUE_NAME,
     async (job) => {
-      await processor.process(job.data);
+      if (job.name === GROUP_BROADCAST_RUN_JOB_NAME) {
+        await runProcessor.process(job.data as GroupBroadcastRunJobData);
+        return;
+      }
+      await processor.process(job.data as GroupBroadcastSendJobData);
     },
     {
       connection: redisConnection,

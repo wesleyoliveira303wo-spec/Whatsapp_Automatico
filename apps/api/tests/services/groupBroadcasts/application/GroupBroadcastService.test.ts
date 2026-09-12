@@ -1,6 +1,7 @@
 import { GroupBroadcastService } from '../../../../src/services/groupBroadcasts/application/GroupBroadcastService';
 import {
   GroupBroadcastAlreadyRunningError,
+  InvalidRecurrenceError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
   GroupBroadcastMediaTooLargeError,
@@ -398,5 +399,91 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
         GroupBroadcastMediaNotFoundError,
       );
     });
+  });
+});
+
+describe('GroupBroadcastService — recorrência (2026-09-11)', () => {
+  const recorrente = {
+    ...baseInput,
+    groupJids: ['aberto@g.us'],
+    recurrenceIntervalHours: 2,
+  };
+
+  it('sem recorrência, os campos ficam vazios (publicação única)', async () => {
+    const { service } = buildSut();
+
+    const { broadcast } = await service.createBroadcast({
+      ...baseInput,
+      groupJids: ['aberto@g.us'],
+    });
+
+    expect(broadcast.recurrenceIntervalHours).toBeUndefined();
+    expect(broadcast.runsCompleted).toBe(0);
+  });
+
+  it('grava intervalo, teto de repetições e janela', async () => {
+    const { service } = buildSut();
+
+    const { broadcast } = await service.createBroadcast({
+      ...recorrente,
+      recurrenceMaxRuns: 4,
+      sendWindowStart: '08:00',
+      sendWindowEnd: '20:00',
+    });
+
+    expect(broadcast).toMatchObject({
+      recurrenceIntervalHours: 2,
+      recurrenceMaxRuns: 4,
+      sendWindowStart: '08:00',
+      sendWindowEnd: '20:00',
+    });
+  });
+
+  it('intervalo fora da faixa é trazido para dentro dela (1h a 24h)', async () => {
+    const { service } = buildSut();
+
+    const { broadcast } = await service.createBroadcast({
+      ...recorrente,
+      recurrenceIntervalHours: 99,
+    });
+
+    expect(broadcast.recurrenceIntervalHours).toBe(24);
+  });
+
+  it('recusa número de repetições fora da faixa', async () => {
+    const { service } = buildSut();
+
+    await expect(
+      service.createBroadcast({ ...recorrente, recurrenceMaxRuns: 1 }),
+    ).rejects.toThrow(InvalidRecurrenceError);
+    await expect(
+      service.createBroadcast({ ...recorrente, recurrenceMaxRuns: 500 }),
+    ).rejects.toThrow(InvalidRecurrenceError);
+  });
+
+  it('recusa data de término no passado', async () => {
+    const { service } = buildSut();
+
+    await expect(
+      service.createBroadcast({
+        ...recorrente,
+        recurrenceEndsAt: new Date(Date.now() - 60000),
+      }),
+    ).rejects.toThrow(InvalidRecurrenceError);
+  });
+
+  it('recusa janela pela metade ou de duração zero', async () => {
+    const { service } = buildSut();
+
+    await expect(
+      service.createBroadcast({ ...recorrente, sendWindowStart: '08:00' }),
+    ).rejects.toThrow(InvalidRecurrenceError);
+    await expect(
+      service.createBroadcast({
+        ...recorrente,
+        sendWindowStart: '08:00',
+        sendWindowEnd: '08:00',
+      }),
+    ).rejects.toThrow(InvalidRecurrenceError);
   });
 });

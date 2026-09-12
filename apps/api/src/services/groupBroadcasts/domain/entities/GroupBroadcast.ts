@@ -33,6 +33,19 @@ export interface GroupBroadcast {
   messageTemplate: string;
   status: GroupBroadcastStatus;
   intervalSeconds: number;
+  /** Recorrência (2026-09-11): de quantas em quantas horas repete. Ausente = publicação única. */
+  recurrenceIntervalHours?: number;
+  /** Para depois de N publicações concluídas. Ausente = sem limite por contagem. */
+  recurrenceMaxRuns?: number;
+  /** Não inicia publicação depois deste instante. Ausente = sem limite por data. */
+  recurrenceEndsAt?: Date;
+  /** Janela diária permitida ("HH:MM", fuso do servidor). */
+  sendWindowStart?: string;
+  sendWindowEnd?: string;
+  /** Publicações já concluídas (todos os grupos processados). */
+  runsCompleted: number;
+  /** Quando a próxima repetição começa; ausente em disparo único ou já encerrado. */
+  nextRunAt?: Date;
   pausedReason?: string;
   createdByUserId?: string;
   media?: {
@@ -65,6 +78,8 @@ export interface GroupBroadcastTarget {
   errorMessage?: string;
   sentAt?: Date;
   attemptedAt?: Date;
+  /** Quantas vezes este grupo já recebeu a publicação (soma das repetições). */
+  sentCount: number;
   createdAt: Date;
 }
 

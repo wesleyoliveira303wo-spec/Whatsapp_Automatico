@@ -49,6 +49,12 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
       messageTemplate: data.messageTemplate,
       status: 'draft',
       intervalSeconds: data.intervalSeconds,
+      recurrenceIntervalHours: data.recurrenceIntervalHours,
+      recurrenceMaxRuns: data.recurrenceMaxRuns,
+      recurrenceEndsAt: data.recurrenceEndsAt,
+      sendWindowStart: data.sendWindowStart,
+      sendWindowEnd: data.sendWindowEnd,
+      runsCompleted: 0,
       createdByUserId: data.createdByUserId,
       createdAt: now,
       updatedAt: now,
@@ -143,7 +149,13 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
   async markTargetSent(tenantId: string, targetId: string, attemptedAt: Date): Promise<void> {
     const target = this.targets.get(targetId);
     if (!target || target.tenantId !== tenantId || target.status !== 'pending') return;
-    this.targets.set(targetId, { ...target, status: 'sent', sentAt: attemptedAt, attemptedAt });
+    this.targets.set(targetId, {
+      ...target,
+      status: 'sent',
+      sentAt: attemptedAt,
+      attemptedAt,
+      sentCount: target.sentCount + 1,
+    });
   }
 
   async markTargetFailed(
@@ -167,6 +179,32 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
       .sort((a, b) => (b.attemptedAt?.getTime() ?? 0) - (a.attemptedAt?.getTime() ?? 0))
       .slice(0, limit)
       .map((t) => (t.status === 'sent' ? 'sent' : 'failed'));
+  }
+
+  async resetTargetsForNextRun(tenantId: string, broadcastId: string): Promise<number> {
+    let count = 0;
+    for (const [id, target] of this.targets) {
+      if (target.tenantId !== tenantId || target.broadcastId !== broadcastId) continue;
+      if (target.status !== 'sent' && target.status !== 'failed') continue;
+      this.targets.set(id, { ...target, status: 'pending', errorMessage: undefined, attemptedAt: undefined });
+      count += 1;
+    }
+    return count;
+  }
+
+  async markRunFinished(
+    tenantId: string,
+    broadcastId: string,
+    runsCompleted: number,
+    nextRunAt: Date | null,
+  ): Promise<void> {
+    const broadcast = this.broadcasts.get(broadcastId);
+    if (!broadcast || broadcast.tenantId !== tenantId) return;
+    this.broadcasts.set(broadcastId, {
+      ...broadcast,
+      runsCompleted,
+      nextRunAt: nextRunAt ?? undefined,
+    });
   }
 
   async countPending(tenantId: string, broadcastId: string): Promise<number> {
@@ -258,6 +296,12 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
     intervalSeconds?: number;
     groupJids?: string[];
     messageTemplate?: string;
+    recurrenceIntervalHours?: number;
+    recurrenceMaxRuns?: number;
+    recurrenceEndsAt?: Date;
+    sendWindowStart?: string;
+    sendWindowEnd?: string;
+    runsCompleted?: number;
   }): { broadcastId: string; targetIds: string[] } {
     const now = new Date(Date.now() + this.sequence);
     const id = this.nextId('broadcast');
@@ -269,6 +313,12 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
       messageTemplate: input.messageTemplate ?? 'Promoção!',
       status: input.status ?? 'draft',
       intervalSeconds: input.intervalSeconds ?? 60,
+      recurrenceIntervalHours: input.recurrenceIntervalHours,
+      recurrenceMaxRuns: input.recurrenceMaxRuns,
+      recurrenceEndsAt: input.recurrenceEndsAt,
+      sendWindowStart: input.sendWindowStart,
+      sendWindowEnd: input.sendWindowEnd,
+      runsCompleted: input.runsCompleted ?? 0,
       createdAt: now,
       updatedAt: now,
     });
@@ -282,6 +332,7 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
         groupJid,
         groupName: `Grupo ${groupJid}`,
         status: 'pending',
+        sentCount: 0,
         createdAt: new Date(Date.now() + this.sequence),
       });
       targetIds.push(targetId);
@@ -338,6 +389,13 @@ export class FakeGroupBroadcastSendDispatcher implements GroupBroadcastSendDispa
     delayMs: number;
   }> = [];
 
+  public runs: Array<{
+    tenantId: string;
+    broadcastId: string;
+    runNumber: number;
+    delayMs: number;
+  }> = [];
+
   async scheduleTarget(
     tenantId: string,
     broadcastId: string,
@@ -345,6 +403,15 @@ export class FakeGroupBroadcastSendDispatcher implements GroupBroadcastSendDispa
     delayMs: number,
   ): Promise<void> {
     this.scheduled.push({ tenantId, broadcastId, targetId, delayMs });
+  }
+
+  async scheduleRun(
+    tenantId: string,
+    broadcastId: string,
+    runNumber: number,
+    delayMs: number,
+  ): Promise<void> {
+    this.runs.push({ tenantId, broadcastId, runNumber, delayMs });
   }
 }
 
