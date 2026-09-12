@@ -64,14 +64,14 @@ export default function CampaignsPage({ tenantId, sessionName }: CampaignsPagePr
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
       <Head>
-        <title>{pageTitle(`Campanhas · ${sessionName}`)}</title>
+        <title>{pageTitle(`Disparos · ${sessionName}`)}</title>
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
         {/* Largura maior (1400px), mesma medida de Contatos: duas colunas (lista + painel lateral) a partir de `xl`. */}
         <div className="max-w-[1400px] px-6 pb-12 pt-5">
-          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Campanhas</h1>
+          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Disparos</h1>
           <p className="mb-4 mt-1 text-[13px] text-muted-foreground">
-            Envie mensagens para contatos individuais ou publique em grupos de WhatsApp.
+            Envie a mesma mensagem para vários contatos, ou publique em grupos de WhatsApp.
           </p>
 
           <TabList ariaLabel="Tipo de disparo">
@@ -80,14 +80,14 @@ export default function CampaignsPage({ tenantId, sessionName }: CampaignsPagePr
               icon={<MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />}
               onClick={() => selectTab('contacts')}
             >
-              Contatos
+              Para contatos
             </TabTrigger>
             <TabTrigger
               active={tab === 'groups'}
               icon={<Users2 className="h-3.5 w-3.5" aria-hidden="true" />}
               onClick={() => selectTab('groups')}
             >
-              Grupos
+              Para grupos
             </TabTrigger>
           </TabList>
 

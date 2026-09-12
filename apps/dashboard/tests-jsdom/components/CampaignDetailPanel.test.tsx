@@ -89,7 +89,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
     mockDetail();
     await renderPanel();
 
-    expect(screen.getByText('Pediram para não receber mais campanhas:')).toBeInTheDocument();
+    expect(screen.getByText('Pediram para não receber mais disparos:')).toBeInTheDocument();
   });
 
   it('lista os destinatários com status', async () => {
@@ -101,7 +101,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
 
   /**
    * Paginação real dos destinatários (auditoria 2026-08-22). Antes a tela
-   * buscava 100 sem cursor e sem contagem: uma campanha de 5.000 mostrava 100
+   * buscava 100 sem cursor e sem contagem: um disparo de 5.000 mostrava 100
    * e omitia 4.900 sem nada na tela indicando isso.
    */
   describe('paginação dos destinatários', () => {
@@ -167,7 +167,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       ).not.toBeInTheDocument();
     });
 
-    it('não mostra o botão quando a campanha inteira coube numa página', async () => {
+    it('não mostra o botão quando a disparo inteira coube numa página', async () => {
       mockDetail();
       await renderPanel();
 
@@ -266,7 +266,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       expect(screen.getByText('US$ 0.0500')).toBeInTheDocument();
       expect(screen.getByText('Escalado para humano: 1')).toBeInTheDocument();
       expect(screen.getByText(/não soube responder/)).toHaveTextContent(
-        'A IA não soube responder 2 vez(es) em conversas desta campanha.',
+        'A IA não soube responder 2 vez(es) em conversas deste disparo.',
       );
     });
   });
@@ -322,16 +322,16 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
     });
   });
 
-  it('cancelar campanha: pede confirmação antes de chamar a API', async () => {
+  it('cancelar disparo: pede confirmação antes de chamar a API', async () => {
     mockDetail({ status: 'running' });
     (clientApi.cancelCampaign as jest.Mock).mockResolvedValue({
       campaign: { id: 'campaign-1', status: 'cancelled' },
     });
     await renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar campanha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar disparo' }));
     expect(clientApi.cancelCampaign).not.toHaveBeenCalled();
-    expect(screen.getByText('Cancelar esta campanha?')).toBeInTheDocument();
+    expect(screen.getByText('Cancelar este disparo?')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
 
@@ -346,10 +346,10 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
 
     expect(screen.getByRole('button', { name: /Iniciar envio/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Cancelar campanha' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar disparo' })).toBeDisabled();
   });
 
-  describe('reabrir campanha (retrofit 2026-08-18)', () => {
+  describe('reabrir disparo (retrofit 2026-08-18)', () => {
     function mockMetricsWithFailed(failed: number): void {
       (clientApi.fetchCampaignMetrics as jest.Mock).mockResolvedValue({
         metrics: {
@@ -368,12 +368,12 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       });
     }
 
-    it('COMPLETED sem nenhum FAILED: botão "Reabrir campanha" fica desabilitado', async () => {
+    it('COMPLETED sem nenhum FAILED: botão "Reabrir disparo" fica desabilitado', async () => {
       mockDetail({ status: 'completed' });
       mockMetricsWithFailed(0);
       await renderPanel();
 
-      expect(screen.getByRole('button', { name: 'Reabrir campanha' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Reabrir disparo' })).toBeDisabled();
     });
 
     it('COMPLETED com destinatário FAILED: botão habilitado, pede confirmação antes de chamar a API', async () => {
@@ -384,12 +384,12 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       });
       await renderPanel();
 
-      const reopenButton = await screen.findByRole('button', { name: 'Reabrir campanha' });
+      const reopenButton = await screen.findByRole('button', { name: 'Reabrir disparo' });
       expect(reopenButton).toBeEnabled();
       fireEvent.click(reopenButton);
 
       expect(clientApi.reopenCampaign).not.toHaveBeenCalled();
-      expect(screen.getByText('Reabrir esta campanha?')).toBeInTheDocument();
+      expect(screen.getByText('Reabrir este disparo?')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Confirmar e reenviar' }));
 
@@ -403,7 +403,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       mockMetricsWithFailed(1);
       await renderPanel();
 
-      expect(await screen.findByRole('button', { name: 'Reabrir campanha' })).toBeEnabled();
+      expect(await screen.findByRole('button', { name: 'Reabrir disparo' })).toBeEnabled();
     });
 
     it('DRAFT/RUNNING/PAUSED: botão sempre desabilitado, mesmo com FAILED > 0', async () => {
@@ -411,11 +411,11 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       mockMetricsWithFailed(3);
       await renderPanel();
 
-      expect(await screen.findByRole('button', { name: 'Reabrir campanha' })).toBeDisabled();
+      expect(await screen.findByRole('button', { name: 'Reabrir disparo' })).toBeDisabled();
     });
   });
 
-  describe('polling silencioso enquanto a campanha está em execução (pedido do fundador, 2026-08-18)', () => {
+  describe('polling silencioso enquanto a disparo está em execução (pedido do fundador, 2026-08-18)', () => {
     beforeEach(() => {
       jest.useFakeTimers();
     });
@@ -474,7 +474,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       expect(clientApi.fetchCampaign as jest.Mock).toHaveBeenCalledTimes(1);
     });
 
-    it('campanha RUNNING que conclui: o poll seguinte não é mais silencioso, mas para de repetir depois disso', async () => {
+    it('disparo RUNNING que conclui: o poll seguinte não é mais silencioso, mas para de repetir depois disso', async () => {
       mockDetail({ status: 'running' });
       await renderPanel();
 
@@ -516,7 +516,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
       expect(screen.getByText('catalogo.pdf')).toBeInTheDocument();
     });
 
-    it('com mídia + RUNNING: mostra o anexo, mas SEM botão de remover (não pode trocar mídia de campanha em andamento)', async () => {
+    it('com mídia + RUNNING: mostra o anexo, mas SEM botão de remover (não pode trocar mídia de disparo em andamento)', async () => {
       mockDetail({
         status: 'running',
         media: { contentType: 'document', mimeType: 'application/pdf', fileName: 'catalogo.pdf' },
@@ -564,7 +564,7 @@ describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
     render(<CampaignDetailPanel sessionName="sessao-principal" campaignId="campaign-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Não foi possível carregar esta campanha.')).toBeInTheDocument();
+      expect(screen.getByText('Não foi possível carregar este disparo.')).toBeInTheDocument();
     });
   });
 });

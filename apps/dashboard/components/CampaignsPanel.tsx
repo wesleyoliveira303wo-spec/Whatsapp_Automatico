@@ -1,26 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { fadeInUp, staggerContainer } from '@/lib/motion';
-import AnimatedNumber from '@/components/ui/animated-number';
 import {
   Megaphone,
   Send,
   MessageSquare,
   TrendingUp,
-  Search,
-  Filter,
-  ArrowUpDown,
-  Plus,
   Play,
   Pause,
   MoreVertical,
   XCircle,
   Trash2,
   RotateCcw,
-  Activity,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 
 import {
@@ -45,8 +35,6 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -63,6 +51,10 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
+import BroadcastStatRow from '@/components/broadcasts/BroadcastStatRow';
+import BroadcastToolbar from '@/components/broadcasts/BroadcastToolbar';
+import BroadcastPagination from '@/components/broadcasts/BroadcastPagination';
+import { useBroadcastListControls } from '@/hooks/useBroadcastListControls';
 import ErrorState from '@/components/states/ErrorState';
 import CampaignCreateForm from '@/components/CampaignCreateForm';
 import {
@@ -122,24 +114,24 @@ const CONFIRM_ACTION_COPY: Record<
     variant: 'default',
   },
   cancel: {
-    title: 'Cancelar esta campanha?',
+    title: 'Cancelar este disparo?',
     description:
-      'Ação definitiva — uma campanha cancelada não pode ser retomada. Destinatários ainda pendentes não receberão mensagem nenhuma.',
+      'Ação definitiva — um disparo cancelado não pode ser retomada. Destinatários ainda pendentes não receberão mensagem nenhuma.',
     confirmLabel: 'Confirmar cancelamento',
     variant: 'destructive',
   },
   delete: {
-    title: 'Excluir esta campanha?',
+    title: 'Excluir este disparo?',
     description:
-      'Ação definitiva e irreversível — a campanha e todos os seus destinatários serão apagados permanentemente. Mensagens já enviadas continuam entregues, mas o histórico desta campanha some.',
+      'Ação definitiva e irreversível — o disparo e todos os seus destinatários serão apagados permanentemente. Mensagens já enviadas continuam entregues, mas o histórico deste disparo some.',
     confirmLabel: 'Excluir',
     variant: 'destructive',
   },
-  // Retrofit 2026-08-18 — "reiniciar/refazer uma campanha".
+  // Retrofit 2026-08-18 — "reiniciar/refazer um disparo".
   reopen: {
-    title: 'Reabrir esta campanha?',
+    title: 'Reabrir este disparo?',
     description:
-      'Isto vai tentar enviar de novo para quem falhou (ex.: uma instabilidade momentânea na conexão do WhatsApp) — mensagens reais. Quem foi suprimido por opt-out, conversa já com um atendente, ou contato recente por outra campanha nunca é reenviado.',
+      'Isto vai tentar enviar de novo para quem falhou (ex.: uma instabilidade momentânea na conexão do WhatsApp) — mensagens reais. Quem foi suprimido por opt-out, conversa já com um atendente, ou contato recente por outro disparo nunca é reenviado.',
     confirmLabel: 'Confirmar e reenviar',
     variant: 'default',
   },
@@ -162,20 +154,19 @@ const SORT_OPTIONS: { key: SortOption; label: string }[] = [
   { key: 'name', label: 'Nome (A-Z)' },
 ];
 
-const PAGE_SIZE = 6;
 
 /**
  * Teto de páginas de carregamento (auditoria 2026-08-22, P1.1). Antes desta
  * rodada `load()` buscava só a PRIMEIRA página (`fetchCampaigns({limit:50})`)
- * e tratava como se fosse tudo — o card do topo ("Total de campanhas") vem
+ * e tratava como se fosse tudo — o card do topo ("Total de disparos") vem
  * de `GET /campaigns/overview`, agregado no servidor sobre TODAS as
- * campanhas da sessão, então uma sessão com mais de 50 campanhas mostrava um
+ * disparos da sessão, então uma sessão com mais de 50 disparos mostrava um
  * total no card que a tabela (e a busca/filtro/paginação client-side sobre
  * ela) nunca conseguia alcançar — sem nenhum aviso. Mesmo remédio já usado
  * em `usePipelineConversations` (`MAX_PIPELINE_PAGES`): acumula por cursor
  * até esgotar ou bater o teto, e avisa (`truncated`) em vez de mentir por
- * omissão. 10 páginas × 50 = 500 campanhas, folga generosa sobre o volume
- * real (criar campanha é ação deliberada de administrador, não algo que
+ * omissão. 10 páginas × 50 = 500 disparos, folga generosa sobre o volume
+ * real (criar disparo é ação deliberada de administrador, não algo que
  * acumula como mensagem).
  */
 const MAX_CAMPAIGNS_PAGES = 10;
@@ -188,7 +179,7 @@ interface CampaignRow {
 
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
-    if (error.status === 403) return 'Seu cargo não permite gerenciar campanhas.';
+    if (error.status === 403) return 'Seu cargo não permite gerenciar disparos.';
     if (error.status === 503) return 'O motor de envio não está configurado neste ambiente.';
     const message = (error.body as { message?: string } | undefined)?.message;
     if (message) return message;
@@ -196,128 +187,22 @@ function errorMessageFor(error: unknown): string {
   return 'Não foi possível concluir a ação. Tente novamente.';
 }
 
-/** `+N%`/`-N%` colorido (verde para alta, vermelho para queda) — `undefined` = sem base de comparação, não mostra nada (nunca inventa "0%"). */
-function TrendBadge({ deltaPct }: { deltaPct?: number }): JSX.Element | null {
-  if (deltaPct === undefined) return null;
-  const positive = deltaPct >= 0;
-  return (
-    <span
-      className={cn('text-[11.5px] font-medium', positive ? 'text-success' : 'text-destructive')}
-    >
-      {positive ? '+' : ''}
-      {deltaPct}% vs. mês anterior
-    </span>
-  );
-}
 
-interface StatCardProps {
-  icon: typeof Megaphone;
-  label: string;
-  value: string;
-  deltaPct?: number;
-  /** Onda 2 do redesign (2026-08-23) — quando presente, o card CONTA até o número (ver `MetricCard`, mesmo padrão). */
-  numericValue?: number;
-  /** Formata cada quadro da contagem; precisa devolver exatamente `value` no valor final. */
-  formatValue?: (current: number) => string;
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  deltaPct,
-  numericValue,
-  formatValue,
-}: StatCardProps): JSX.Element {
-  return (
-    <motion.div variants={fadeInUp} className="rounded-lg border border-border bg-card px-4 py-3.5">
-      <div className="mb-2 flex items-center gap-2.5">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </div>
-        <p className="text-[12.5px] text-muted-foreground">{label}</p>
-      </div>
-      <p className="text-[22px] font-semibold leading-tight tabular-nums text-foreground">
-        {numericValue !== undefined ? (
-          <AnimatedNumber value={numericValue} format={formatValue} />
-        ) : (
-          value
-        )}
-      </p>
-      <TrendBadge deltaPct={deltaPct} />
-    </motion.div>
-  );
-}
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
 /**
- * Donut "Progresso da campanha" (retrofit visual, réplica de imagem
- * 2026-08-18, 2ª rodada) — resposta vs. sem resposta, sobre o TOTAL
- * ENVIADO (`overview.totalSent`), com a taxa de resposta agregada no
- * centro. Mesmo dado de `overview.responseRate`, só desenhado.
- */
-function ResponseProgressDonut({
-  totalSent,
-  totalReplied,
-}: {
-  totalSent: number;
-  totalReplied: number;
-}): JSX.Element | null {
-  if (totalSent === 0) return null;
-  const circumference = 2 * Math.PI * 40;
-  const repliedLength = (totalReplied / totalSent) * circumference;
-  const responseRatePct = Math.round((totalReplied / totalSent) * 100);
-  return (
-    <svg viewBox="0 0 100 100" className="h-[104px] w-[104px] shrink-0 -rotate-90">
-      <circle cx="50" cy="50" r="40" fill="none" strokeWidth="14" className="stroke-primary/20" />
-      {totalReplied > 0 && (
-        <circle
-          cx="50"
-          cy="50"
-          r="40"
-          fill="none"
-          strokeWidth="14"
-          strokeDasharray={`${repliedLength} ${circumference - repliedLength}`}
-          className="stroke-success"
-        />
-      )}
-      <text
-        x="50"
-        y="46"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="rotate-90 fill-foreground text-[22px] font-semibold"
-        style={{ transformOrigin: '50px 50px' }}
-      >
-        {responseRatePct}%
-      </text>
-      <text
-        x="50"
-        y="62"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="rotate-90 fill-muted-foreground text-[9px]"
-        style={{ transformOrigin: '50px 50px' }}
-      >
-        taxa de resposta
-      </text>
-    </svg>
-  );
-}
-
-/**
- * Lista de campanhas de uma sessão — retrofit visual 2026-08-18, 2ª rodada
+ * Lista de disparos de uma sessão — retrofit visual 2026-08-18, 2ª rodada
  * (réplica exata de imagem do fundador). Fase L, Blocos L3/L4/L7.
  *
- * Cards do topo, o donut "Progresso da campanha" e a lista "Status das
- * campanhas" vêm de `GET /campaigns/overview` (agregado no servidor, sobre
- * TODAS as campanhas da sessão — não só a página carregada/filtrada). A
+ * Cards do topo, o donut "Progresso do disparo" e a lista "Status das
+ * disparos" vêm de `GET /campaigns/overview` (agregado no servidor, sobre
+ * TODAS os disparos da sessão — não só a página carregada/filtrada). A
  * tabela acumula `fetchCampaigns` por cursor até esgotar ou bater
  * `MAX_CAMPAIGNS_PAGES` (auditoria 2026-08-22, P1.1 — ver docstring da
- * constante) + `fetchCampaign`/`fetchCampaignMetrics` por campanha em
+ * constante) + `fetchCampaign`/`fetchCampaignMetrics` por disparo em
  * paralelo — mesmo padrão N+1 já aceito no restante do projeto para telas
  * de lista pequenas. Busca/filtro/ordenação/paginação (6 por página) são só
  * sobre esse conjunto já carregado — client-side, honesto porque a sessão
@@ -330,14 +215,10 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<CampaignStatus | 'all'>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
-  const [sortOption, setSortOption] = useState<SortOption>('recent');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
-  const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [actionPendingId, setActionPendingId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
@@ -393,7 +274,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
         );
         setRows(withDetails);
       })
-      .catch(() => setErrorMessage('Não foi possível carregar as campanhas.'))
+      .catch(() => setErrorMessage('Não foi possível carregar os disparos.'))
       .finally(() => setLoading(false));
   }, [sessionName]);
 
@@ -423,41 +304,27 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [sortMenuOpen]);
 
-  // Muda o filtro/busca/ordenação: a página 1 sempre volta a ser a certa (senão a
-  // paginação poderia apontar para uma página que não existe mais no resultado novo).
-  useEffect(() => {
-    setPage(1);
-  }, [search, statusFilter, sortOption]);
-
-  const filteredRows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const filtered = rows.filter(({ campaign }) => {
-      if (statusFilter !== 'all' && campaign.status !== statusFilter) return false;
-      if (term && !campaign.name.toLowerCase().includes(term)) return false;
-      return true;
-    });
-    const sorted = [...filtered];
-    if (sortOption === 'recent') {
-      sorted.sort(
-        (a, b) =>
-          new Date(b.campaign.createdAt).getTime() - new Date(a.campaign.createdAt).getTime(),
-      );
-    } else if (sortOption === 'oldest') {
-      sorted.sort(
-        (a, b) =>
-          new Date(a.campaign.createdAt).getTime() - new Date(b.campaign.createdAt).getTime(),
-      );
-    } else {
-      sorted.sort((a, b) => a.campaign.name.localeCompare(b.campaign.name, 'pt-BR'));
-    }
-    return sorted;
-  }, [rows, search, statusFilter, sortOption]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const pagedRows = useMemo(
-    () => filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filteredRows, page],
-  );
+  // Busca, filtro, ordenação e paginação vivem no hook compartilhado com a
+  // aba "Para grupos" (Revisão de Disparos, 2026-09-12): as duas telas usam a
+  // MESMA mecânica, então uma correção conserta as duas.
+  const controls = useBroadcastListControls<CampaignRow, CampaignStatus | 'all', SortOption>({
+    rows,
+    searchText: (row) => row.campaign.name,
+    matchesFilter: (row, filter) => filter === 'all' || row.campaign.status === filter,
+    compare: (a, b, sort) => {
+      if (sort === 'name') return a.campaign.name.localeCompare(b.campaign.name, 'pt-BR');
+      const first = new Date(a.campaign.createdAt).getTime();
+      const second = new Date(b.campaign.createdAt).getTime();
+      return sort === 'oldest' ? first - second : second - first;
+    },
+    initialFilter: 'all',
+    initialSort: 'recent',
+  });
+  const { search, setSearch, page, setPage, filteredRows, pagedRows, pageCount } = controls;
+  const statusFilter = controls.filter;
+  const setStatusFilter = controls.setFilter;
+  const sortOption = controls.sort;
+  const setSortOption = controls.setSort;
 
   async function runAction(
     campaign: Campaign,
@@ -488,17 +355,17 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
       await runAction(
         campaign,
         () => startCampaign(campaign.id),
-        campaign.status === 'paused' ? 'Campanha retomada' : 'Campanha iniciada',
+        campaign.status === 'paused' ? 'Disparo retomado' : 'Disparo iniciado',
       );
     } else if (type === 'cancel') {
-      await runAction(campaign, () => cancelCampaign(campaign.id), 'Campanha cancelada');
+      await runAction(campaign, () => cancelCampaign(campaign.id), 'Disparo cancelado');
     } else if (type === 'reopen') {
-      await runAction(campaign, () => reopenCampaign(campaign.id), 'Campanha reaberta');
+      await runAction(campaign, () => reopenCampaign(campaign.id), 'Disparo reaberta');
     } else {
       setDeleting(true);
       try {
         await deleteCampaign(campaign.id);
-        toast({ variant: 'success', title: 'Campanha excluída' });
+        toast({ variant: 'success', title: 'Disparo excluído' });
         load();
       } catch (error) {
         toast({
@@ -514,50 +381,43 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
 
   return (
     <div>
-      <div className="flex flex-col gap-5 xl:flex-row">
-        <div className="min-w-0 flex-1">
-          {/* Onda 2 do redesign (2026-08-23) — faixa de indicadores em cascata, cada número contando até o valor. */}
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="visible"
-            className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4"
-            data-testid="campaigns-stat-cards"
-          >
-            <StatCard
-              icon={Megaphone}
-              label="Total de campanhas"
-              value={overview ? String(overview.totalCampaigns) : '—'}
-              numericValue={overview?.totalCampaigns}
-              deltaPct={overview?.trends.campaignsDeltaPct}
-            />
-            <StatCard
-              icon={Send}
-              label="Mensagens enviadas"
-              value={overview ? overview.totalSent.toLocaleString('pt-BR') : '—'}
-              numericValue={overview?.totalSent}
-              formatValue={(current) => Math.round(current).toLocaleString('pt-BR')}
-              deltaPct={overview?.trends.messagesSentDeltaPct}
-            />
-            <StatCard
-              icon={MessageSquare}
-              label="Respostas"
-              value={overview ? overview.totalReplied.toLocaleString('pt-BR') : '—'}
-              numericValue={overview?.totalReplied}
-              formatValue={(current) => Math.round(current).toLocaleString('pt-BR')}
-              deltaPct={overview?.trends.repliesDeltaPct}
-            />
-            <StatCard
-              icon={TrendingUp}
-              label="Taxa de resposta"
-              value={
-                overview?.responseRate !== undefined ? formatPercent(overview.responseRate) : '—'
-              }
-              numericValue={overview?.responseRate}
-              formatValue={formatPercent}
-              deltaPct={overview?.trends.responseRateDeltaPct}
-            />
-          </motion.div>
+      <BroadcastStatRow
+        testId="campaigns-stat-cards"
+        stats={[
+          {
+            icon: Megaphone,
+            label: 'Disparos criados',
+            value: overview ? String(overview.totalCampaigns) : '—',
+            numericValue: overview?.totalCampaigns,
+            deltaPct: overview?.trends.campaignsDeltaPct,
+          },
+          {
+            icon: Send,
+            label: 'Mensagens enviadas',
+            value: overview ? overview.totalSent.toLocaleString('pt-BR') : '—',
+            numericValue: overview?.totalSent,
+            formatValue: (current: number) => Math.round(current).toLocaleString('pt-BR'),
+            deltaPct: overview?.trends.messagesSentDeltaPct,
+          },
+          {
+            icon: MessageSquare,
+            label: 'Respostas',
+            value: overview ? overview.totalReplied.toLocaleString('pt-BR') : '—',
+            numericValue: overview?.totalReplied,
+            formatValue: (current: number) => Math.round(current).toLocaleString('pt-BR'),
+            deltaPct: overview?.trends.repliesDeltaPct,
+          },
+          {
+            icon: TrendingUp,
+            label: 'Taxa de resposta',
+            value:
+              overview?.responseRate !== undefined ? formatPercent(overview.responseRate) : '—',
+            numericValue: overview?.responseRate,
+            formatValue: formatPercent,
+            deltaPct: overview?.trends.responseRateDeltaPct,
+          },
+        ]}
+      />
 
           {/*
             Teto de carga atingido (auditoria 2026-08-22, P1.1) — mesma
@@ -569,102 +429,24 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
               role="status"
               className="mb-3 rounded-md bg-warning/[.12] px-3 py-2 text-[12.5px] text-warning-emphasis"
             >
-              Mostrando as {MAX_CAMPAIGNS_PAGES * 50} campanhas mais recentes desta sessão. As mais
+              Mostrando as {MAX_CAMPAIGNS_PAGES * 50} disparos mais recentes desta sessão. As mais
               antigas não aparecem na tabela abaixo (os cards no topo continuam contando todas).
             </p>
           )}
 
-          <div className="mb-4 flex flex-wrap items-center gap-2.5">
-            <div className="relative min-w-[220px] flex-1">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar campanha por nome…"
-                aria-label="Buscar campanha por nome"
-                className="h-[34px] rounded-[9px] border-border bg-panel pl-8 text-[13px]"
-              />
-            </div>
-
-            <div className="relative" ref={filterMenuRef}>
-              <Button
-                type="button"
-                variant="outline"
-                size="cta"
-                onClick={() => setFilterMenuOpen((open) => !open)}
-              >
-                <Filter className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                Filtros
-              </Button>
-              {filterMenuOpen && (
-                <div className="absolute left-0 top-full z-10 mt-1 w-48 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                  {FILTER_OPTIONS.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => {
-                        setStatusFilter(option.key);
-                        setFilterMenuOpen(false);
-                      }}
-                      className={cn(
-                        'flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[13px] hover:bg-muted',
-                        statusFilter === option.key
-                          ? 'font-medium text-primary'
-                          : 'text-foreground',
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="relative" ref={sortMenuRef}>
-              <Button
-                type="button"
-                variant="outline"
-                size="cta"
-                onClick={() => setSortMenuOpen((open) => !open)}
-              >
-                <ArrowUpDown className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                {SORT_OPTIONS.find((option) => option.key === sortOption)?.label}
-              </Button>
-              {sortMenuOpen && (
-                <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                  {SORT_OPTIONS.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => {
-                        setSortOption(option.key);
-                        setSortMenuOpen(false);
-                      }}
-                      className={cn(
-                        'flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[13px] hover:bg-muted',
-                        sortOption === option.key ? 'font-medium text-primary' : 'text-foreground',
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Button
-              type="button"
-              size="cta"
-              className="shrink-0"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-              Nova campanha
-            </Button>
-          </div>
+      <BroadcastToolbar
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchLabel="Buscar disparo por nome"
+        filterOptions={FILTER_OPTIONS}
+        filterValue={statusFilter}
+        onFilterChange={setStatusFilter}
+        sortOptions={SORT_OPTIONS}
+        sortValue={sortOption}
+        onSortChange={setSortOption}
+        actionLabel="Novo disparo"
+        onAction={() => setCreateOpen(true)}
+      />
 
           {loading ? (
             <div className="space-y-2">
@@ -677,16 +459,16 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
           ) : filteredRows.length === 0 ? (
             <EmptyState
               icon={Megaphone}
-              title={rows.length === 0 ? 'Nenhuma campanha ainda' : 'Nenhuma campanha encontrada'}
+              title={rows.length === 0 ? 'Nenhum disparo ainda' : 'Nenhum disparo encontrado'}
               description={
                 rows.length === 0
-                  ? 'Crie a primeira campanha desta sessão — combine contatos salvos, planilha ou números digitados.'
+                  ? 'Crie a primeiro disparo desta sessão — combine contatos salvos, planilha ou números digitados.'
                   : 'Tente outro termo de busca ou outro filtro.'
               }
               action={
                 rows.length === 0 ? (
                   <Button size="sm" onClick={() => setCreateOpen(true)}>
-                    Nova campanha
+                    Novo disparo
                   </Button>
                 ) : undefined
               }
@@ -744,7 +526,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="px-4">Campanha</TableHead>
+                      <TableHead className="px-4">Disparo</TableHead>
                       <TableHead className="px-4">Status</TableHead>
                       <TableHead className="px-4">Progresso</TableHead>
                       <TableHead className="px-4">Destinatários</TableHead>
@@ -843,7 +625,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                     void runAction(
                                       campaign,
                                       () => pauseCampaign(campaign.id),
-                                      'Campanha pausada',
+                                      'Disparo pausado',
                                     )
                                   }
                                 >
@@ -864,7 +646,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                               ) : null}
                               {/* Botão "Ver" removido (2026-08-21, pedido do fundador) — era
                             redundante com "Ver detalhes" do menu "⋮" logo abaixo, e
-                            sua largura variável (presente só em campanhas sem ação
+                            sua largura variável (presente só em disparos sem ação
                             primária) era parte da causa da coluna "Ações" mudar de
                             largura entre linhas. */}
 
@@ -911,7 +693,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                         onClick={() => setConfirmAction({ type: 'cancel', campaign })}
                                       >
                                         <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Cancelar campanha
+                                        Cancelar disparo
                                       </button>
                                     </DropdownMenuItem>
                                   )}
@@ -923,7 +705,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                         onClick={() => setConfirmAction({ type: 'reopen', campaign })}
                                       >
                                         <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Reabrir campanha
+                                        Reabrir disparo
                                       </button>
                                     </DropdownMenuItem>
                                   )}
@@ -935,7 +717,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                         onClick={() => setConfirmAction({ type: 'delete', campaign })}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Excluir campanha
+                                        Excluir disparo
                                       </button>
                                     </DropdownMenuItem>
                                   )}
@@ -951,152 +733,22 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
               </div>
 
               {filteredRows.length > 0 && (
-                <div className="mt-3 flex items-center justify-between text-[12.5px] text-muted-foreground">
-                  <span>
-                    Mostrando {pagedRows.length} de {filteredRows.length} campanha
-                    {filteredRows.length === 1 ? '' : 's'}
-                  </span>
-                  {pageCount > 1 && (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        disabled={page === 1}
-                        aria-label="Página anterior"
-                        onClick={() => setPage((current) => Math.max(1, current - 1))}
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                      </Button>
-                      {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNumber) => (
-                        <button
-                          key={pageNumber}
-                          type="button"
-                          onClick={() => setPage(pageNumber)}
-                          className={cn(
-                            'flex h-7 w-7 items-center justify-center rounded-md text-[12px] font-medium',
-                            pageNumber === page
-                              ? 'bg-primary text-primary-foreground'
-                              : 'text-foreground hover:bg-muted',
-                          )}
-                        >
-                          {pageNumber}
-                        </button>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        disabled={page === pageCount}
-                        aria-label="Próxima página"
-                        onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
-                      >
-                        <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                <BroadcastPagination
+                  showing={pagedRows.length}
+                  total={filteredRows.length}
+                  page={page}
+                  pageCount={pageCount}
+                  onPageChange={setPage}
+                  noun="disparo"
+                />
               )}
             </>
           )}
-        </div>
-
-        <aside className="w-full shrink-0 space-y-4 xl:w-[300px]">
-          <Card className="p-4">
-            <div className="mb-1 flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
-              <p className="text-[13px] font-semibold text-foreground">Progresso da campanha</p>
-            </div>
-            {overview && overview.totalSent > 0 ? (
-              <div className="mt-3 flex items-center gap-4">
-                <ResponseProgressDonut
-                  totalSent={overview.totalSent}
-                  totalReplied={overview.totalReplied}
-                />
-                <div className="flex-1 space-y-1.5 text-[12.5px]">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-[3px] bg-primary/30" />
-                    <span className="text-foreground">Enviadas</span>
-                    <span className="ml-auto text-muted-foreground">
-                      {overview.totalSent.toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-[3px] bg-success" />
-                    <span className="text-foreground">Respondidas</span>
-                    <span className="ml-auto text-muted-foreground">
-                      {overview.totalReplied.toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-[3px] bg-muted-foreground" />
-                    <span className="text-foreground">Não respondidas</span>
-                    <span className="ml-auto text-muted-foreground">
-                      {(overview.totalSent - overview.totalReplied).toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-2 text-[12.5px] text-muted-foreground">
-                Nenhuma mensagem enviada ainda nesta sessão.
-              </p>
-            )}
-          </Card>
-
-          <Card className="p-4">
-            <p className="mb-3 text-[13px] font-semibold text-foreground">Status das campanhas</p>
-            {overview && overview.totalCampaigns > 0 ? (
-              <div className="space-y-2 text-[12.5px]">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />
-                  <span className="text-foreground">Em andamento</span>
-                  <span className="ml-auto text-muted-foreground">
-                    {overview.statusCounts.running}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-success" />
-                  <span className="text-foreground">Concluídas</span>
-                  <span className="ml-auto text-muted-foreground">
-                    {overview.statusCounts.completed}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-warning" />
-                  <span className="text-foreground">Pausadas</span>
-                  <span className="ml-auto text-muted-foreground">
-                    {overview.statusCounts.paused}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground" />
-                  <span className="text-foreground">Rascunho</span>
-                  <span className="ml-auto text-muted-foreground">
-                    {overview.statusCounts.draft + overview.statusCounts.scheduled}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-destructive" />
-                  <span className="text-foreground">Canceladas</span>
-                  <span className="ml-auto text-muted-foreground">
-                    {overview.statusCounts.cancelled}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-[12.5px] text-muted-foreground">Nenhuma campanha ainda.</p>
-            )}
-          </Card>
-        </aside>
-      </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nova campanha</DialogTitle>
+            <DialogTitle>Novo disparo</DialogTitle>
           </DialogHeader>
           <CampaignCreateForm
             sessionName={sessionName}

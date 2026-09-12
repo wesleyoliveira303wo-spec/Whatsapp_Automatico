@@ -26,7 +26,7 @@ import { toast } from '@/components/ui/use-toast';
 interface CampaignCreateFormProps {
   sessionName: string;
   /**
-   * Reorganização Contatos/Campanhas (pivô 2026-08-17): formulário embutido
+   * Reorganização Contatos/Disparos (pivô 2026-08-17): formulário embutido
    * num `Dialog` disparado do painel lateral de Contatos (não mais uma
    * página própria). `onCreated` avisa o painel para recarregar a lista;
    * `onClose` fecha o modal (usado pelo botão "Fechar"/"Cancelar").
@@ -36,9 +36,9 @@ interface CampaignCreateFormProps {
 }
 
 const SKIP_REASON_LABELS: Record<CampaignSkipReason, string> = {
-  opt_out: 'Pediram para não receber mais campanhas',
+  opt_out: 'Pediram para não receber mais disparos',
   active_human_conversation: 'Já estão sendo atendidos por um humano',
-  recently_contacted: 'Contatados por outra campanha há menos de 7 dias',
+  recently_contacted: 'Contatados por outro disparo há menos de 7 dias',
 };
 
 /** Teto do lado do CLIENTE — puramente UX (falha rápido); a API impõe o teto de verdade (`413`). Espelha `MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES`. */
@@ -54,14 +54,14 @@ function mediaContentTypeFor(file: File): CampaignMediaContentType {
 
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
-    if (error.status === 403) return 'Seu cargo não permite criar campanhas.';
+    if (error.status === 403) return 'Seu cargo não permite criar disparos.';
     if (error.status === 401) return 'Sessão expirada — faça login novamente.';
     if (error.status === 400) {
       const message = (error.body as { message?: string } | undefined)?.message;
       return message ?? 'Dados inválidos.';
     }
   }
-  return 'Não foi possível criar a campanha. Tente novamente.';
+  return 'Não foi possível criar o disparo. Tente novamente.';
 }
 
 function mediaErrorMessageFor(error: unknown): string {
@@ -104,16 +104,16 @@ function splitManualLines(text: string): RawPhoneRecipient[] {
 }
 
 /**
- * Formulário de criação de campanha, em 4 seções — Reorganização Contatos/
- * Campanhas (2026-08-17). Embutido num `Dialog` largo, disparado do painel
- * "Disparos / Campanhas" dentro da tela de Contatos (pivô do fundador,
+ * Formulário de criação de disparo, em 4 seções — Reorganização Contatos/
+ * Disparos (2026-08-17). Embutido num `Dialog` largo, disparado do painel
+ * "Disparos / Disparos" dentro da tela de Contatos (pivô do fundador,
  * 2026-08-17: nunca virou página/aba própria — tudo fica dentro de
  * Contatos).
  *
- * **Este formulário só CRIA a campanha (sempre `DRAFT`) e CALCULA quem
+ * **Este formulário só CRIA o disparo (sempre `DRAFT`) e CALCULA quem
  * receberia — nunca envia nenhuma mensagem.** O "Iniciar envio" de verdade
  * continua sendo uma ação separada, com sua própria confirmação, na página
- * de detalhe da campanha (Bloco L4, inalterado) — é ali que a mensagem
+ * de detalhe do disparo (Bloco L4, inalterado) — é ali que a mensagem
  * realmente sai. A "Seção 4 — Revisão" aqui mostra uma PRÉVIA (contagem
  * bruta, antes das regras de supressão); a contagem final REAL (depois de
  * descontar opt-out/conversa em atendimento/recontato recente) só existe
@@ -151,7 +151,7 @@ export default function CampaignCreateForm({
   // Seção 3 — conteúdo
   const [messageTemplate, setMessageTemplate] = useState('');
   // Fase L, Bloco L8 — mídia opcional anexada ao disparo. Upload real só
-  // acontece DEPOIS da campanha existir (POST /:campaignId/media) — aqui só
+  // acontece DEPOIS do disparo existir (POST /:campaignId/media) — aqui só
   // guardamos a seleção local, mesmo racional de `csvFileName`/`csvRecipients`.
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -263,8 +263,8 @@ export default function CampaignCreateForm({
         phoneRecipients: combinedPhoneRecipients,
       });
 
-      // A campanha já existe (sempre DRAFT) — anexar mídia é um SEGUNDO
-      // request. Se falhar, a campanha continua criada normalmente (o
+      // O disparo já existe (sempre DRAFT) — anexar mídia é um SEGUNDO
+      // request. Se falhar, o disparo continua criada normalmente (o
       // operador pode ver o erro e tentar de novo pela tela de detalhe) —
       // uma falha de anexo nunca deve parecer que a criação inteira falhou.
       if (mediaFile) {
@@ -291,16 +291,16 @@ export default function CampaignCreateForm({
   if (result) {
     return (
       <Card className="p-6">
-        <h2 className="text-[16px] font-semibold text-foreground">Campanha criada</h2>
+        <h2 className="text-[16px] font-semibold text-foreground">Disparo criada</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          A campanha foi calculada — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
-          disparar de verdade, abra a campanha e use &quot;Iniciar envio&quot; (que pede confirmação
+          O disparo foi calculada — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
+          disparar de verdade, abra o disparo e use &quot;Iniciar envio&quot; (que pede confirmação
           separada).
         </p>
 
         {mediaError && (
           <p className="mt-2 text-[12.5px] text-destructive">
-            A campanha foi criada, mas o anexo de mídia falhou: {mediaError} Você pode tentar de
+            O disparo foi criada, mas o anexo de mídia falhou: {mediaError} Você pode tentar de
             novo pela tela de detalhe.
           </p>
         )}
@@ -311,7 +311,7 @@ export default function CampaignCreateForm({
             <p className="text-[13px] text-foreground">
               <strong>{result.summary.pending}</strong> de <strong>{result.summary.total}</strong>{' '}
               destinatário(s) {result.summary.pending === 1 ? 'está' : 'estão'} elegíve
-              {result.summary.pending === 1 ? 'l' : 'is'} para receber esta campanha.
+              {result.summary.pending === 1 ? 'l' : 'is'} para receber este disparo.
             </p>
           </div>
 
@@ -342,7 +342,7 @@ export default function CampaignCreateForm({
             <Link
               href={`/sessions/${encodeURIComponent(sessionName)}/campaigns/${encodeURIComponent(result.campaignId)}`}
             >
-              Ver campanha
+              Ver disparo
             </Link>
           </Button>
           <Button type="button" variant="outline" onClick={onClose}>
@@ -361,7 +361,7 @@ export default function CampaignCreateForm({
         <div className="mt-3 space-y-3">
           <div className="space-y-1.5">
             <label htmlFor="campaign-name" className="text-sm font-medium text-foreground">
-              Nome da campanha
+              Nome do disparo
             </label>
             <Input
               id="campaign-name"
@@ -449,7 +449,7 @@ export default function CampaignCreateForm({
           <div>
             <p className="text-[13px] font-medium text-foreground">Planilha (.csv)</p>
             <p className="mt-0.5 text-[12px] text-muted-foreground">
-              Os números da planilha viram destinatários SÓ desta campanha — não criam contatos
+              Os números da planilha viram destinatários SÓ deste disparo — não criam contatos
               novos na base de Contatos.
             </p>
             <input
@@ -608,10 +608,10 @@ export default function CampaignCreateForm({
           </div>
         </dl>
         <p className="mt-3 rounded-lg bg-muted/40 px-3 py-2.5 text-[12px] leading-[1.5] text-muted-foreground">
-          Este número é uma prévia. Ao confirmar, a campanha é criada (como rascunho, sem enviar
+          Este número é uma prévia. Ao confirmar, o disparo é criada (como rascunho, sem enviar
           nada) e o servidor calcula a contagem REAL — descontando quem pediu opt-out, quem já está
-          em atendimento humano e quem foi contatado por outra campanha há menos de 7 dias. Você
-          ainda precisará abrir a campanha e confirmar &quot;Iniciar envio&quot; separadamente para
+          em atendimento humano e quem foi contatado por outro disparo há menos de 7 dias. Você
+          ainda precisará abrir o disparo e confirmar &quot;Iniciar envio&quot; separadamente para
           disparar de verdade.
         </p>
         {errorMessage && <p className="mt-2 text-[12.5px] text-destructive">{errorMessage}</p>}
@@ -621,7 +621,7 @@ export default function CampaignCreateForm({
             onClick={() => void handleSubmit()}
             disabled={!canSubmit || submitting}
           >
-            {submitting ? 'Criando…' : 'Criar campanha (rascunho)'}
+            {submitting ? 'Criando…' : 'Criar disparo (rascunho)'}
           </Button>
           {onClose && (
             <button
