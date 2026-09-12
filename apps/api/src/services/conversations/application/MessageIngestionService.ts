@@ -6,6 +6,7 @@ import { Conversation } from '../domain/entities/Conversation';
 import { ConversationRepository } from '../domain/repositories/ConversationRepository';
 import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
+import { StageClassificationScheduler } from '../domain/schedulers/StageClassificationScheduler';
 import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
@@ -112,6 +113,18 @@ export class MessageIngestionService implements MessageReceivedHandler {
   setCampaignReplyTracker(campaignReplyTracker: CampaignReplyTracker): void {
     this.campaignReplyTracker = campaignReplyTracker;
   }
+
+  /**
+   * Classificação de estágio independente de quem responde (2026-09-11).
+   * Opcional: sem ela (desligada por `AI_STAGE_CLASSIFIER_ENABLED=false`, ou
+   * modo degradado sem Redis) o estágio só muda pela resposta da IA ou pelo
+   * arrastar humano, como antes.
+   */
+  setStageClassificationScheduler(stageClassificationScheduler: StageClassificationScheduler): void {
+    this.stageClassificationScheduler = stageClassificationScheduler;
+  }
+
+  private stageClassificationScheduler?: StageClassificationScheduler;
 
   async handle(message: InboundWhatsAppMessage): Promise<void> {
     // ADR #97: mensagens enviadas pelo operador de outro dispositivo chegam com
@@ -274,19 +287,50 @@ export class MessageIngestionService implements MessageReceivedHandler {
       );
     }
 
+    const sessionAiEnabled = await this.aiAvailabilityRepository.isEnabled(
+      message.tenantId,
+      message.sessionName,
+    );
+    // Trava de plano (Lançamento suave, 2026-08-31): tenant no Plano Grátis
+    // não gera resposta automática. A mensagem já foi persistida/exibida
+    // acima (passos 1-3) — só não vira trabalho de IA, exatamente como o
+    // Botão POWER desligado.
+    const tenantPlanAllowsAutoReply = planPermiteUso(
+      await this.tenantPlanRepository.getPlan(message.tenantId),
+    );
+    const aiWillReply = shouldAutoRespond(
+      effectiveConversation,
+      sessionAiEnabled,
+      tenantPlanAllowsAutoReply,
+    );
+
+    // Classificação de estágio independente de quem responde (2026-09-11):
+    // a pergunta certa NÃO é "a IA responde nesta conversa?", e sim "ESTA
+    // mensagem vai gerar uma resposta de IA que já classifique?". Uma
+    // mensagem OUTBOUND (o atendente respondeu pelo celular, ADR #97) nunca
+    // gera resposta de IA — nem quando a conversa segue em modo bot com a IA
+    // ligada —, então ela sempre precisa de análise própria; sem isso o card
+    // ficaria parado até o cliente escrever de novo. Nunca para conversa fora
+    // do funil (ADR #94) nem sem plano que permita IA.
+    if (
+      (isOutbound || !aiWillReply) &&
+      tenantPlanAllowsAutoReply &&
+      !effectiveConversation.excludedFromPipeline &&
+      this.stageClassificationScheduler
+    ) {
+      try {
+        await this.stageClassificationScheduler.schedule(
+          message.tenantId,
+          conversation.id,
+          createdMessage.id,
+        );
+      } catch {
+        // Auxiliar: a mensagem já foi gravada; o próximo agendamento cobre.
+      }
+    }
+
     if (!isOutbound) {
-      const sessionAiEnabled = await this.aiAvailabilityRepository.isEnabled(
-        message.tenantId,
-        message.sessionName,
-      );
-      // Trava de plano (Lançamento suave, 2026-08-31): tenant no Plano Grátis
-      // não gera resposta automática. A mensagem já foi persistida/exibida
-      // acima (passos 1-3) — só não vira trabalho de IA, exatamente como o
-      // Botão POWER desligado.
-      const tenantPlanAllowsAutoReply = planPermiteUso(
-        await this.tenantPlanRepository.getPlan(message.tenantId),
-      );
-      if (shouldAutoRespond(effectiveConversation, sessionAiEnabled, tenantPlanAllowsAutoReply)) {
+      if (aiWillReply) {
         // Fase 1, Bloco F1.10 — segundo portão, IMEDIATAMENTE antes de gerar
         // custo de IA: `shouldAutoRespond` já decidiu que a IA DEVERIA
         // responder; `aiRateLimiter` decide se isso não excede o ritmo

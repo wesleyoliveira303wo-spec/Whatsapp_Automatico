@@ -5,7 +5,11 @@ import { OutboundMessageCommand } from '../../../src/services/whatsapp/domain/di
 import { Conversation } from '../../../src/services/conversations/domain/entities/Conversation';
 import { FakeWhatsAppProviderFactory } from './infrastructure/FakeWhatsAppProviderFactory';
 import { FakeWhatsAppSessionRepository, FakeWhatsAppSessionEventRepository } from './testDoubles';
-import { FakeConversationRepository, FakeMessageRepository } from '../conversations/testDoubles';
+import {
+  FakeConversationRepository,
+  FakeMessageRepository,
+  FakeStageClassificationScheduler,
+} from '../conversations/testDoubles';
 import { FakeAiInteractionRepository } from '../ai/infrastructure/FakeAiInteractionRepository';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 
@@ -268,6 +272,66 @@ describe('OutboundCommandConsumer', () => {
       await expect(consumer.consume(buildCommand())).rejects.toThrow(WhatsAppNotConnectedError);
       expect(messageRepository.getAll()).toHaveLength(0);
       expect(aiInteractionRepository.linkMessageCalls).toHaveLength(0);
+    });
+  });
+
+  describe('classificação de estágio (2026-09-11)', () => {
+    it('mensagem do ATENDENTE (sem aiInteractionId) agenda com o id da ÚLTIMA mensagem enviada', async () => {
+      const { consumer, conversationRepository, messageRepository } = buildSut();
+      const stageScheduler = new FakeStageClassificationScheduler();
+      consumer.setStageClassificationScheduler(stageScheduler);
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+
+      await consumer.consume(
+        buildCommand({ aiInteractionId: undefined, idempotencyKey: 'k-1', content: ['a', 'b'] }),
+      );
+
+      const created = messageRepository.getAll();
+      expect(stageScheduler.scheduleCalls).toEqual([
+        { tenantId: 'tenant-1', conversationId: 'conversation-1', messageId: created[1].id },
+      ]);
+    });
+
+    it('resposta da IA (com aiInteractionId) NÃO agenda — ela já classificou', async () => {
+      const { consumer, conversationRepository } = buildSut();
+      const stageScheduler = new FakeStageClassificationScheduler();
+      consumer.setStageClassificationScheduler(stageScheduler);
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(buildCommand());
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('aviso automático do sistema (system: true) NÃO agenda — evita gastar IA logo após uma falha', async () => {
+      const { consumer, conversationRepository } = buildSut();
+      const stageScheduler = new FakeStageClassificationScheduler();
+      consumer.setStageClassificationScheduler(stageScheduler);
+      conversationRepository.seed(buildConversation());
+
+      await consumer.consume(
+        buildCommand({
+          aiInteractionId: undefined,
+          idempotencyKey: 'k-sys',
+          system: true,
+          content: ['Desculpe, vou te encaminhar para um atendente.'],
+        }),
+      );
+
+      expect(stageScheduler.scheduleCalls).toHaveLength(0);
+    });
+
+    it('falha ao agendar não faz o envio falhar', async () => {
+      const { consumer, conversationRepository, messageRepository } = buildSut();
+      const stageScheduler = new FakeStageClassificationScheduler();
+      stageScheduler.failNextSchedule = true;
+      consumer.setStageClassificationScheduler(stageScheduler);
+      conversationRepository.seed(buildConversation({ status: 'human' }));
+
+      await expect(
+        consumer.consume(buildCommand({ aiInteractionId: undefined, idempotencyKey: 'k-2' })),
+      ).resolves.toBeUndefined();
+      expect(messageRepository.getAll()).toHaveLength(1);
     });
   });
 });

@@ -115,8 +115,8 @@ describe('Integração real — Busca global (Fase 6)', () => {
     }
     // O tenant semeado NÃO tem `%` no nome; se `%` fosse curinga, ele voltaria.
     const res = await service.search('BuscaGlobal %');
-    expect(res.groups.find((g) => g.kind === 'tenant')?.hits.some((h) => h.id === tenantId)).toBe(
-      false,
-    );
+    // Sem nenhum tenant casando, o grupo `tenant` nem vem na resposta.
+    const tenantHits = res.groups.find((g) => g.kind === 'tenant')?.hits ?? [];
+    expect(tenantHits.some((h) => h.id === tenantId)).toBe(false);
   });
 });

@@ -11,6 +11,8 @@ import { ConversationRepository } from './domain/repositories/ConversationReposi
 import { MessageRepository } from './domain/repositories/MessageRepository';
 import { AI_REPLY_QUEUE_NAME, AiReplyJobData } from './infrastructure/queues/AiReplyQueue';
 import { BullMqAiReplyScheduler } from './infrastructure/schedulers/BullMqAiReplyScheduler';
+import { BullMqStageClassificationScheduler } from './infrastructure/schedulers/BullMqStageClassificationScheduler';
+import { StageClassificationScheduler } from './domain/schedulers/StageClassificationScheduler';
 import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
 import { TenantPlanFromTenantRepository } from './infrastructure/repositories/TenantPlanFromTenantRepository';
 import { RateLimitStoreAiRateLimiter } from './infrastructure/repositories/RateLimitStoreAiRateLimiter';
@@ -82,12 +84,25 @@ export interface ConversationsComposition {
    * mesma conexão só para isso.
    */
   aiReplyQueue: Queue<AiReplyJobData>;
+  /**
+   * Classificação de estágio (2026-09-11) — exposta para `index.ts` ligá-la
+   * também ao envio do atendente pela Dashboard (`OutboundCommandConsumer`).
+   * Ausente quando desligada por configuração.
+   */
+  stageClassificationScheduler?: StageClassificationScheduler;
+}
+
+export interface ConversationsCompositionOptions {
+  /** Default `true`. `false` = o estágio só muda pela resposta da IA ou pelo arrastar humano. */
+  stageClassifierEnabled?: boolean;
+  stageClassifierDelayMs?: number;
 }
 
 export function createConversationsComposition(
   prisma: PrismaClient,
   redisConnection: IORedis,
   logger: Logger,
+  options: ConversationsCompositionOptions = {},
 ): ConversationsComposition {
   const conversationRepository = new PrismaConversationRepository(prisma);
   const messageRepository = new PrismaMessageRepository(prisma);
@@ -205,6 +220,13 @@ export function createConversationsComposition(
     optOutDetector,
     tenantPlanRepository,
   );
+  const stageClassificationScheduler =
+    options.stageClassifierEnabled === false
+      ? undefined
+      : new BullMqStageClassificationScheduler(aiReplyQueue, options.stageClassifierDelayMs);
+  if (stageClassificationScheduler) {
+    messageIngestionService.setStageClassificationScheduler(stageClassificationScheduler);
+  }
   // Instância explícita (não o default do construtor) — precisa ser
   // RETIDA/EXPOSTA para `index.ts` injetar a MESMA nela em
   // `WhatsAppCampaignMessageSender` (ver docstring de `agentMediaCache` em
@@ -234,5 +256,6 @@ export function createConversationsComposition(
     conversationsService,
     agentMediaCache,
     aiReplyQueue,
+    stageClassificationScheduler,
   };
 }

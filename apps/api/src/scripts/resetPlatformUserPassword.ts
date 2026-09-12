@@ -21,7 +21,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
  * para não ficar no histórico do shell (foi assim que a senha anterior vazou).
  *
  * Uso (produção, dentro do container):
- *   docker compose -f docker-compose.prod.yml exec api node dist/scripts/resetPlatformUserPassword.js <email>
+ *   docker compose -f docker-compose.prod.yml exec api node apps/api/dist/scripts/resetPlatformUserPassword.js <email>
  * Uso (dev):
  *   npx tsx src/scripts/resetPlatformUserPassword.ts <email>
  */

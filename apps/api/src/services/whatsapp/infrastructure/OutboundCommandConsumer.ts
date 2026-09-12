@@ -2,6 +2,7 @@ import { WhatsAppConnectionRegistry } from '../application/WhatsAppConnectionReg
 import { OutboundMessageCommand } from '../domain/dispatchers/OutboundMessageDispatcher';
 import { ConversationRepository } from '../../conversations/domain/repositories/ConversationRepository';
 import { MessageRepository } from '../../conversations/domain/repositories/MessageRepository';
+import { StageClassificationScheduler } from '../../conversations/domain/schedulers/StageClassificationScheduler';
 import { AiInteractionRepository } from '../../ai/domain/repositories/AiInteractionRepository';
 import { Logger } from '../../../shared/domain/Logger';
 
@@ -123,6 +124,7 @@ export class OutboundCommandConsumer {
     // PRIMEIRO envio (mesmo comportamento de antes, quando só o primeiro
     // comando carregava `aiInteractionId`) — é o vínculo 1:1 com a
     // `AiInteraction` de origem, não faz sentido repetir por parágrafo.
+    let lastMessageId: string | undefined;
     for (let index = 0; index < command.content.length; index += 1) {
       if (index > 0) {
         await this.sleepFn(this.paragraphDelayMs);
@@ -151,6 +153,35 @@ export class OutboundCommandConsumer {
       if (index === 0 && command.aiInteractionId) {
         await this.aiInteractionRepository.linkMessage(command.aiInteractionId, message.id);
       }
+      lastMessageId = message.id;
+    }
+
+    // Mensagem do ATENDENTE também é sinal de estágio ("fechado, te mando o
+    // pix"). A da IA não agenda — a própria resposta já classificou.
+    // Mensagem escrita por uma PESSOA: sem `aiInteractionId` (não veio da IA)
+    // e sem `system` (não é o aviso automático de encaminhamento).
+    const isFromAgent = !command.aiInteractionId && command.system !== true;
+    if (isFromAgent && lastMessageId && this.stageClassificationScheduler) {
+      try {
+        await this.stageClassificationScheduler.schedule(
+          command.tenantId,
+          command.conversationId,
+          lastMessageId,
+        );
+      } catch (error) {
+        this.logger.warn('Falha ao agendar classificação de estágio após envio do atendente', {
+          tenantId: command.tenantId,
+          conversationId: command.conversationId,
+          error,
+        });
+      }
     }
   }
+
+  /** Classificação de estágio (2026-09-11) — opcional, injetada pela composição. */
+  setStageClassificationScheduler(stageClassificationScheduler: StageClassificationScheduler): void {
+    this.stageClassificationScheduler = stageClassificationScheduler;
+  }
+
+  private stageClassificationScheduler?: StageClassificationScheduler;
 }

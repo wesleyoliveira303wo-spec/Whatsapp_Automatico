@@ -1882,6 +1882,78 @@ deploy: (1) só `main` vai para produção; confirme o branch da VM antes do
 `pull`; (2) todo segredo novo entra no `.env.prod.example` no mesmo PR que o
 cria; (3) nenhuma senha em argumento de linha de comando.
 
+### Pipeline classificado pela conversa, independente de quem responde
+
+**Data:** 2026-09-11
+**Contexto:** o fundador desligou a IA (Botão POWER) porque a cota gratuita do
+Gemini não dá conta do volume, e passou a responder os clientes à mão. O
+WhatsApp seguiu conectado e recebendo tudo (comportamento correto, ADR #99),
+mas o Pipeline parou: o estágio só mudava como EFEITO COLATERAL da resposta da
+IA (marcador `[[ESTAGIO:...]]`, M6H-5/ADR #89). Com humano respondendo, nenhum
+card saía de "Novo". Pedido: cada conversa analisada e o estágio mudando de
+acordo com o que foi conversado, seja a IA ou uma pessoa respondendo.
+**Decisão — a tensão de custo guiou o desenho.** Um classificador por IA
+disputa a mesma cota que motivou desligar a IA. Três escolhas mantêm o gasto
+pequeno:
+1. **Só roda quando NENHUMA resposta de IA vai classificar aquela mensagem.**
+   A pergunta certa não é "a IA responde nesta conversa?", e sim "ESTA mensagem
+   vai gerar uma resposta que já classifique?". Mensagem do cliente que a IA vai
+   responder: não analisa (a resposta já traz o marcador). Mensagem NOSSA (o
+   atendente respondeu pelo celular, ADR #97): analisa sempre, inclusive com a
+   IA ligada — nenhuma resposta automática está a caminho, então sem isso o card
+   ficaria parado até o cliente escrever de novo. A revisão de código pegou
+   exatamente esse buraco na primeira versão, que checava só `shouldAutoRespond`.
+2. **Uma análise por pausa da conversa, não uma por mensagem.** Cada mensagem
+   agenda um job com atraso de 3 min; quando rodam, só o da mensagem MAIS
+   RECENTE (qualquer direção — nova policy `isLatestMessage`) chama a IA. Mesmo
+   raciocínio do agrupamento de rajada (`shouldGenerateReply`, 2026-08-14): a
+   decisão é por estado, nunca por deduplicação de fila.
+3. **Modelo separado opcional** (`AI_STAGE_CLASSIFIER_MODEL`): no Gemini
+   gratuito cada modelo tem cota própria, então um modelo leve só para
+   classificar não disputa com as respostas ao cliente.
+**Arquitetura:** mesma fila `ai-reply`, segundo nome de job
+(`classify-stage`) — o worker já tem o provider, a trava por conversa
+(`KeyedMutex`, então uma classificação nunca lê o histórico enquanto uma
+resposta da mesma conversa é gerada) e a fila já aparece no `/health/ready` e
+no `/admin`. Porta nova `StageClassificationScheduler` (conversations/domain),
+agendada em dois pontos: `MessageIngestionService` (mensagem do cliente E
+mensagem do atendente pelo celular, ADR #97) e `OutboundCommandConsumer`
+(mensagem do atendente digitada na Dashboard — a da IA não agenda). O
+`StageClassificationJobProcessor` (services/ai) re-checa tudo antes de gastar:
+conversa no funil (ADR #94), plano que permite IA, IA não vai responder,
+mensagem é a mais recente. Prompt PRÓPRIO (`StageClassificationPromptBuilder`):
+a conversa vai como UMA mensagem de usuário com a transcrição rotulada
+(Cliente/Empresa), não como turnos — turnos convidariam o modelo a continuar a
+conversa em vez de classificá-la. A saída reaproveita o formato do marcador,
+lida pela MESMA `extractStage`. A gravação segue a regra da IA que responde:
+nunca regride (ADR #89), exceto numa sessão nova depois de 24h
+(`trimHistoryToCurrentSession`); o arrastar humano segue livre.
+**Nunca é o sistema falando:** o aviso automático de "vou te encaminhar para um
+atendente" sai pelo mesmo caminho de uma mensagem do atendente (sem
+`aiInteractionId`), então ganhou a marca `system: true` no comando outbound —
+sem ela, uma falha de IA (muitas vezes a própria cota estourada) dispararia uma
+análise paga logo em seguida.
+**O que NÃO muda:** Botão POWER continua controlando só a resposta — desligar
+a IA não desliga a classificação (é o pedido). Conversa "Não é cliente" nunca
+é analisada. Plano Grátis nunca é analisado (custa IA). Falha do provider
+(429) não relança nem escala: ninguém espera por uma classificação; a próxima
+mensagem agenda outra.
+**Impacto:** zero migration, zero mudança de contrato de API/BFF, zero mudança
+de tela (o card anda sozinho no board que já existe). Cada análise vira uma
+`AiInteraction` (`promptVersion: 'stage-classifier-v1'`) — o custo aparece no
+Analytics e no `/admin`, e uma falha de cota conta na taxa de falha de IA.
+Configuração (todas opcionais, default ligado): `AI_STAGE_CLASSIFIER_ENABLED`,
+`AI_STAGE_CLASSIFIER_DELAY_MS` (API) e `AI_STAGE_CLASSIFIER_MODEL` (worker).
+Testes novos: `isLatestMessage` (4), `BullMqStageClassificationScheduler` (2),
+`StageClassificationPromptBuilder` (2), `StageClassificationJobProcessor` (9),
+`MessageIngestionService` (+7), `OutboundCommandConsumer` (+3),
+`compositionRoot` (+1), mais 3 travas de regressão da revisão de código
+(mensagem nossa em conversa ainda em modo bot, aviso do sistema não agenda,
+mais recente do cliente com IA ligada segue sem gastar). **Limite conhecido:** mídia enviada pelo atendente na
+Dashboard (envio síncrono, F1.3) não agenda — a próxima mensagem de qualquer
+lado cobre. **Pendente:** validação real (uma conversa atendida à mão, com a IA
+desligada, esperar ~3 min e ver o card mudar de coluna).
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

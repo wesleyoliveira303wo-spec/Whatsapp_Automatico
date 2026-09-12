@@ -71,6 +71,15 @@ export interface OutboundMessageCommand {
    * caminho tem sua própria chave sem colidir com o outro.
    */
   idempotencyKey?: string;
+  /**
+   * Mensagem automática do SISTEMA, não escrita por uma pessoa (hoje só o
+   * aviso de encaminhamento para atendente humano, `AiReplyJobProcessor.
+   * sendHumanHandoffNotice`). Também não tem `aiInteractionId`, então sem
+   * esta marca seria indistinguível de uma mensagem do atendente — e
+   * dispararia uma classificação de estágio paga logo depois de uma falha de
+   * IA (muitas vezes a própria cota estourada). Ausente ≡ `false`.
+   */
+  system?: boolean;
 }
 
 /**

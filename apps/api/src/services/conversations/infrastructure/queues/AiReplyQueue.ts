@@ -22,6 +22,16 @@ export const AI_REPLY_QUEUE_NAME = 'ai-reply';
 export const AI_REPLY_JOB_NAME = 'generate-reply';
 
 /**
+ * Segundo tipo de job da MESMA fila (2026-09-11): classificar o estágio do
+ * Pipeline de uma conversa que a IA não está respondendo (IA desligada, ou um
+ * humano atendendo). Mesma fila de propósito — o worker já tem o provider de
+ * IA, a trava por conversa (`KeyedMutex`) e a fila já aparece no
+ * `/health/ready` e no `/admin`. O payload tem o mesmo formato; aqui
+ * `messageId` pode ser de uma mensagem inbound OU outbound.
+ */
+export const STAGE_CLASSIFY_JOB_NAME = 'classify-stage';
+
+/**
  * Payload de um job `ai-reply` — espelha exatamente os parâmetros de
  * `AiReplyScheduler.schedule(tenantId, conversationId, messageId)` (Domain,
  * Bloco 2). `messageId` aqui é o id da `Message` INBOUND que disparou o

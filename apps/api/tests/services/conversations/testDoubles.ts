@@ -8,6 +8,7 @@ import {
 import { Message } from '../../../src/services/conversations/domain/entities/Message';
 import { MessageRepository } from '../../../src/services/conversations/domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../../../src/services/conversations/domain/schedulers/AiReplyScheduler';
+import { StageClassificationScheduler } from '../../../src/services/conversations/domain/schedulers/StageClassificationScheduler';
 import { AiAvailabilityRepository } from '../../../src/services/conversations/domain/repositories/AiAvailabilityRepository';
 import { AiRateLimiter } from '../../../src/services/conversations/domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../../../src/services/conversations/domain/repositories/ContactResolver';
@@ -461,6 +462,25 @@ export class FakeAiReplyScheduler implements AiReplyScheduler {
     if (this.failNextSchedule) {
       this.failNextSchedule = false;
       throw new Error('Falha simulada no AiReplyScheduler');
+    }
+    this.scheduleCalls.push({ tenantId, conversationId, messageId });
+  }
+}
+
+/** Fake de `StageClassificationScheduler` (2026-09-11) — mesmo formato de `FakeAiReplyScheduler`. */
+export class FakeStageClassificationScheduler implements StageClassificationScheduler {
+  public readonly scheduleCalls: Array<{
+    tenantId: string;
+    conversationId: string;
+    messageId: string;
+  }> = [];
+
+  public failNextSchedule = false;
+
+  async schedule(tenantId: string, conversationId: string, messageId: string): Promise<void> {
+    if (this.failNextSchedule) {
+      this.failNextSchedule = false;
+      throw new Error('Falha simulada no StageClassificationScheduler');
     }
     this.scheduleCalls.push({ tenantId, conversationId, messageId });
   }
