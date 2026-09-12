@@ -254,3 +254,33 @@ describe('GroupBroadcastsPanel — anatomia compartilhada', () => {
     expect(screen.getByText(/Mostrando 1 de 1 disparo/)).toBeInTheDocument();
   });
 });
+
+/**
+ * Trava de paridade (2026-09-12, achado do fundador numa captura): a aba de
+ * grupos tinha uma frase própria logo abaixo das abas que a de contatos não
+ * tinha — diferença visível já no primeiro olhar. O subtítulo da página
+ * explica as duas; a frase por aba saiu.
+ */
+describe('GroupBroadcastsPanel — paridade com a aba de contatos', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDefaults();
+  });
+
+  it('não repete a explicação da página dentro da aba', async () => {
+    await renderPanel();
+
+    expect(screen.queryByText(/Publique uma mensagem em grupos de WhatsApp/)).not.toBeInTheDocument();
+  });
+
+  it('tem a coluna Progresso, como a aba de contatos', async () => {
+    (clientApi.fetchGroupBroadcasts as jest.Mock).mockResolvedValue({
+      broadcasts: [{ broadcast: broadcast(), summary: summary({ total: 4, sent: 1 }) }],
+    });
+    await renderPanel();
+
+    const table = within(screen.getByTestId('group-broadcasts-table'));
+    expect(table.getByText('Progresso')).toBeInTheDocument();
+    expect(table.getByText('25%')).toBeInTheDocument();
+  });
+});

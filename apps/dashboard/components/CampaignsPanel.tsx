@@ -501,7 +501,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                 largo); outra `running` tinha "Pausar" + "⋮" (largura
                 diferente ainda). Como a coluna `auto` variava, o espaço
                 que sobrava pras colunas `fr` (Destinatários/Enviados/
-                Respostas/Criada em) também variava — cada linha desenhava
+                Respostas/Criado em) também variava — cada linha desenhava
                 essas colunas em posições X diferentes, tanto entre si
                 quanto contra o cabeçalho.
 
@@ -532,7 +532,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                       <TableHead className="px-4">Destinatários</TableHead>
                       <TableHead className="px-4">Enviados</TableHead>
                       <TableHead className="px-4">Respostas</TableHead>
-                      <TableHead className="px-4">Criada em</TableHead>
+                      <TableHead className="px-4">Criado em</TableHead>
                       <TableHead className="px-4 text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>

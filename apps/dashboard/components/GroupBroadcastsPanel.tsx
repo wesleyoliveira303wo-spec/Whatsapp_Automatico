@@ -282,10 +282,6 @@ export default function GroupBroadcastsPanel({
 
   return (
     <div>
-      <p className="mb-4 text-[13px] text-muted-foreground">
-        Publique uma mensagem em grupos de WhatsApp dos quais este número participa.
-      </p>
-
       <BroadcastStatRow stats={stats} testId="group-broadcasts-stat-cards" />
 
       <BroadcastToolbar
@@ -328,6 +324,7 @@ export default function GroupBroadcastsPanel({
               <TableRow>
                 <TableHead className="px-4">Disparo</TableHead>
                 <TableHead className="px-4">Status</TableHead>
+                <TableHead className="px-4">Progresso</TableHead>
                 <TableHead className="px-4">Grupos</TableHead>
                 <TableHead className="px-4">Publicados</TableHead>
                 <TableHead className="px-4">Criado em</TableHead>
@@ -336,6 +333,9 @@ export default function GroupBroadcastsPanel({
             </TableHeader>
             <TableBody>
               {controls.pagedRows.map(({ broadcast, summary }) => {
+                // Mesma conta da aba de contatos: o que já saiu sobre o total.
+                const progressPct =
+                  summary.total > 0 ? Math.round((summary.sent / summary.total) * 100) : 0;
                 const canStart = broadcast.status === 'draft' || broadcast.status === 'paused';
                 const canPause = broadcast.status === 'running';
                 const canCancel =
@@ -362,6 +362,19 @@ export default function GroupBroadcastsPanel({
                       </Badge>
                     </TableCell>
 
+                    <TableCell className="px-4 py-3 align-top">
+                      <div className="w-24">
+                        <div className="mb-1 flex items-center justify-between text-[12px] text-foreground">
+                          <span>{progressPct}%</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-success transition-all"
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
                       {summary.total}
                     </TableCell>
