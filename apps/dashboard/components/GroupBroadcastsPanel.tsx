@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Users,
-  Plus,
   Play,
   Pause,
   MoreVertical,
   XCircle,
   Trash2,
+  Megaphone,
+  Users2,
+  Send,
 } from 'lucide-react';
 
 import {
@@ -42,6 +44,10 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
+import BroadcastStatRow, { type BroadcastStat } from '@/components/broadcasts/BroadcastStatRow';
+import BroadcastToolbar, { type ToolbarOption } from '@/components/broadcasts/BroadcastToolbar';
+import BroadcastPagination from '@/components/broadcasts/BroadcastPagination';
+import { useBroadcastListControls } from '@/hooks/useBroadcastListControls';
 import ErrorState from '@/components/states/ErrorState';
 import GroupBroadcastCreateForm from '@/components/GroupBroadcastCreateForm';
 import {
@@ -145,6 +151,25 @@ function errorMessageFor(error: unknown): string {
  * nem gráfico, o volume esperado é bem menor (ação deliberada de
  * administrador, teto de 30 grupos por disparo).
  */
+type GroupFilterKey = 'all' | GroupBroadcastStatus;
+type GroupSortKey = 'recent' | 'oldest' | 'name';
+
+/** Mesmos status do disparo para contatos, mesma ordem — a tela irmã usa a mesma lista. */
+const GROUP_FILTER_OPTIONS: ToolbarOption<GroupFilterKey>[] = [
+  { key: 'all', label: 'Todos os status' },
+  { key: 'draft', label: 'Rascunho' },
+  { key: 'running', label: 'Em andamento' },
+  { key: 'paused', label: 'Pausado' },
+  { key: 'completed', label: 'Concluído' },
+  { key: 'cancelled', label: 'Cancelado' },
+];
+
+const GROUP_SORT_OPTIONS: ToolbarOption<GroupSortKey>[] = [
+  { key: 'recent', label: 'Mais recentes' },
+  { key: 'oldest', label: 'Mais antigos' },
+  { key: 'name', label: 'Nome (A–Z)' },
+];
+
 export default function GroupBroadcastsPanel({
   sessionName,
 }: GroupBroadcastsPanelProps): JSX.Element {
@@ -159,6 +184,37 @@ export default function GroupBroadcastsPanel({
     | null
   >(null);
   const [deleting, setDeleting] = useState(false);
+
+  const controls = useBroadcastListControls<BroadcastRow, GroupFilterKey, GroupSortKey>({
+    rows,
+    searchText: (row) => row.broadcast.name,
+    matchesFilter: (row, filter) => filter === 'all' || row.broadcast.status === filter,
+    compare: (a, b, sort) => {
+      if (sort === 'name') return a.broadcast.name.localeCompare(b.broadcast.name, 'pt-BR');
+      const first = new Date(a.broadcast.createdAt).getTime();
+      const second = new Date(b.broadcast.createdAt).getTime();
+      return sort === 'oldest' ? first - second : second - first;
+    },
+    initialFilter: 'all',
+    initialSort: 'recent',
+  });
+
+  /**
+   * Indicadores desta aba: contados a partir da lista que já veio, sem
+   * nenhuma consulta nova — e por isso falam só desta sessão, o que o rótulo
+   * diz. Nunca um número inventado para preencher o quarto card.
+   */
+  const stats = useMemo<BroadcastStat[]>(() => {
+    const published = rows.reduce((total, row) => total + row.summary.sent, 0);
+    const groups = rows.reduce((total, row) => total + row.summary.total, 0);
+    const running = rows.filter((row) => row.broadcast.status === 'running').length;
+    return [
+      { icon: Megaphone, label: 'Disparos criados', value: String(rows.length), numericValue: rows.length },
+      { icon: Users2, label: 'Grupos alcançados', value: String(groups), numericValue: groups },
+      { icon: Send, label: 'Publicações feitas', value: String(published), numericValue: published },
+      { icon: Play, label: 'Em andamento', value: String(running), numericValue: running },
+    ];
+  }, [rows]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -226,15 +282,21 @@ export default function GroupBroadcastsPanel({
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between gap-2.5">
-        <p className="text-[13px] text-muted-foreground">
-          Publique uma mensagem em grupos de WhatsApp dos quais este número participa.
-        </p>
-        <Button type="button" size="cta" className="shrink-0" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-          Novo disparo em grupos
-        </Button>
-      </div>
+      <BroadcastStatRow stats={stats} testId="group-broadcasts-stat-cards" />
+
+      <BroadcastToolbar
+        searchValue={controls.search}
+        onSearchChange={controls.setSearch}
+        searchLabel="Buscar disparo por nome"
+        filterOptions={GROUP_FILTER_OPTIONS}
+        filterValue={controls.filter}
+        onFilterChange={controls.setFilter}
+        sortOptions={GROUP_SORT_OPTIONS}
+        sortValue={controls.sort}
+        onSortChange={controls.setSort}
+        actionLabel="Novo disparo"
+        onAction={() => setCreateOpen(true)}
+      />
 
       {loading ? (
         <div className="space-y-2">
@@ -243,24 +305,26 @@ export default function GroupBroadcastsPanel({
         </div>
       ) : errorMessage ? (
         <ErrorState description={errorMessage} onRetry={load} />
-      ) : rows.length === 0 ? (
+      ) : controls.filteredRows.length === 0 ? (
         <EmptyState
           icon={Users}
           title="Nenhum disparo em grupos ainda"
           description="Crie o primeiro disparo desta sessão — escolha os grupos, escreva a mensagem e revise antes de publicar."
           action={
             <Button size="sm" onClick={() => setCreateOpen(true)}>
-              Novo disparo em grupos
+              Novo disparo
             </Button>
           }
         />
       ) : (
+        <>
         <div className="rounded-lg border border-border bg-card" data-testid="group-broadcasts-table">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="px-4">Disparo</TableHead>
                 <TableHead className="px-4">Status</TableHead>
+                <TableHead className="px-4">Progresso</TableHead>
                 <TableHead className="px-4">Grupos</TableHead>
                 <TableHead className="px-4">Publicados</TableHead>
                 <TableHead className="px-4">Criado em</TableHead>
@@ -268,7 +332,10 @@ export default function GroupBroadcastsPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(({ broadcast, summary }) => {
+              {controls.pagedRows.map(({ broadcast, summary }) => {
+                // Mesma conta da aba de contatos: o que já saiu sobre o total.
+                const progressPct =
+                  summary.total > 0 ? Math.round((summary.sent / summary.total) * 100) : 0;
                 const canStart = broadcast.status === 'draft' || broadcast.status === 'paused';
                 const canPause = broadcast.status === 'running';
                 const canCancel =
@@ -295,6 +362,19 @@ export default function GroupBroadcastsPanel({
                       </Badge>
                     </TableCell>
 
+                    <TableCell className="px-4 py-3 align-top">
+                      <div className="w-24">
+                        <div className="mb-1 flex items-center justify-between text-[12px] text-foreground">
+                          <span>{progressPct}%</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-success transition-all"
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
                       {summary.total}
                     </TableCell>
@@ -406,12 +486,22 @@ export default function GroupBroadcastsPanel({
             </TableBody>
           </Table>
         </div>
+
+          <BroadcastPagination
+            showing={controls.pagedRows.length}
+            total={controls.filteredRows.length}
+            page={controls.page}
+            pageCount={controls.pageCount}
+            onPageChange={controls.setPage}
+            noun="disparo"
+          />
+        </>
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo disparo em grupos</DialogTitle>
+            <DialogTitle>Novo disparo</DialogTitle>
           </DialogHeader>
           <GroupBroadcastCreateForm
             sessionName={sessionName}

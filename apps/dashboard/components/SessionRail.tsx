@@ -104,7 +104,7 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
         // é CRM puro, "Campanhas" é a ferramenta de disparo, domínios separados
         // de propósito (ver docstring de `CampaignsSidePanel`... removido; a
         // criação/gestão de campanhas mora nas páginas `/campaigns`).
-        { href: `${base}/campaigns`, label: 'Campanhas', icon: Send },
+        { href: `${base}/campaigns`, label: 'Disparos', icon: Send },
         { href: `${base}/pipeline`, label: 'Pipeline', icon: Kanban },
         { href: `${base}/analytics`, label: 'Analytics', icon: BarChart3, requiresManager: true },
         { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },

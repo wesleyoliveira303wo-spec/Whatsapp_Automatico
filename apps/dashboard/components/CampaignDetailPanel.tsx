@@ -54,9 +54,9 @@ interface CampaignDetailPanelProps {
 }
 
 const SKIP_REASON_LABELS: Record<CampaignSkipReason, string> = {
-  opt_out: 'Pediram para não receber mais campanhas',
+  opt_out: 'Pediram para não receber mais disparos',
   active_human_conversation: 'Já estão sendo atendidos por um humano',
-  recently_contacted: 'Contatados por outra campanha há menos de 7 dias',
+  recently_contacted: 'Contatados por outro disparo há menos de 7 dias',
 };
 
 const STATUS_LABELS: Record<CampaignStatus, string> = {
@@ -135,7 +135,7 @@ function partsForRecipient(recipient: CampaignRecipient): PersonDisplayParts {
 
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
-    if (error.status === 403) return 'Seu cargo não permite gerenciar campanhas.';
+    if (error.status === 403) return 'Seu cargo não permite gerenciar disparos.';
     if (error.status === 503) {
       return 'O motor de envio não está configurado neste ambiente.';
     }
@@ -146,7 +146,7 @@ function errorMessageFor(error: unknown): string {
 }
 
 /**
- * Detalhe de uma campanha — Fase L, Bloco L4: resumo (elegíveis/suprimidos),
+ * Detalhe de um disparo — Fase L, Bloco L4: resumo (elegíveis/suprimidos),
  * lista de destinatários, e as ações do motor de envio (iniciar/pausar/
  * cancelar). "Iniciar" pede confirmação explícita — é a única ação deste
  * produto que dispara mensagens reais em lote.
@@ -161,7 +161,7 @@ export default function CampaignDetailPanel({
   /**
    * Paginação real dos destinatários (auditoria 2026-08-22). Antes esta tela
    * buscava `{ limit: 100 }` uma única vez, sem cursor, sem botão e sem
-   * contagem no título: uma campanha de 5.000 destinatários (o teto de
+   * contagem no título: um disparo de 5.000 destinatários (o teto de
    * importação) mostrava 100 e omitia 4.900 SEM nenhuma indicação na tela —
    * perda silenciosa de dado. A API já suportava `cursor`/`nextCursor` desde
    * o L3; só a UI não usava.
@@ -177,7 +177,7 @@ export default function CampaignDetailPanel({
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
 
   // CORREÇÃO 2026-08-18 (pedido do fundador): a tela de detalhe não
-  // atualizava sozinha enquanto uma campanha estava em execução — só um F5
+  // atualizava sozinha enquanto um disparo estava em execução — só um F5
   // manual mostrava o progresso real (destinatários enviados subindo). Ref
   // (não estado) para o polling silencioso ler o status ATUAL sem precisar
   // entrar nas deps de `fetchAll`/recriar o callback a cada mudança.
@@ -224,7 +224,7 @@ export default function CampaignDetailPanel({
           // Falha num refresh SILENCIOSO (polling) não deve substituir a
           // tela já carregada por um estado de erro — só a carga inicial
           // (não silenciosa) mostra o `ErrorState`.
-          if (!silent) setErrorMessage('Não foi possível carregar esta campanha.');
+          if (!silent) setErrorMessage('Não foi possível carregar este disparo.');
         })
         .finally(() => {
           if (!silent) setLoading(false);
@@ -262,7 +262,7 @@ export default function CampaignDetailPanel({
   }, [campaignId, recipientsCursor, loadingMoreRecipients]);
 
   const silentRefresh = useCallback(() => {
-    // Só atualiza sozinho enquanto a campanha está de fato disparando —
+    // Só atualiza sozinho enquanto o disparo está de fato disparando —
     // parada/concluída não tem progresso novo para mostrar, sem sentido
     // continuar batendo na API a cada poll.
     if (campaignStatusRef.current !== 'running') return;
@@ -323,7 +323,7 @@ export default function CampaignDetailPanel({
     );
   }
   if (errorMessage || !campaign || !summary) {
-    return <ErrorState description={errorMessage ?? 'Campanha não encontrada.'} onRetry={load} />;
+    return <ErrorState description={errorMessage ?? 'Disparo não encontrada.'} onRetry={load} />;
   }
 
   const canStart = campaign.status === 'draft' || campaign.status === 'paused';
@@ -331,7 +331,7 @@ export default function CampaignDetailPanel({
   const canCancel =
     campaign.status === 'draft' || campaign.status === 'running' || campaign.status === 'paused';
   // Retrofit 2026-08-18 — "não existe nenhum botão onde podemos reiniciar ou
-  // refazer uma campanha": só faz sentido reabrir quando há de fato alguém
+  // refazer um disparo": só faz sentido reabrir quando há de fato alguém
   // FAILED para tentar de novo (ex.: a sessão do WhatsApp reconectando bem na
   // hora do envio) — sem isso, o botão nunca teria efeito.
   const canReopen =
@@ -345,7 +345,7 @@ export default function CampaignDetailPanel({
         className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        Campanhas
+        Disparos
       </Link>
 
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
@@ -367,7 +367,7 @@ export default function CampaignDetailPanel({
       </p>
 
       {/* Fase L, Bloco L8 — mídia anexada. Só pode ser removida enquanto a
-          campanha ainda é `draft` (a mensagem já enviada não muda de anexo
+          disparo ainda é `draft` (a mensagem já enviada não muda de anexo
           no meio do disparo). */}
       {campaign.media && (
         <div className="mb-4 flex max-w-2xl items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
@@ -376,7 +376,7 @@ export default function CampaignDetailPanel({
               // eslint-disable-next-line @next/next/no-img-element -- proxy do BFF, não um asset estático local (mesmo padrão de MessageBubble).
               <img
                 src={campaignMediaUrl(campaignId)}
-                alt="Anexo da campanha"
+                alt="Anexo do disparo"
                 className="h-10 w-10 shrink-0 rounded object-cover"
               />
             ) : (
@@ -437,7 +437,7 @@ export default function CampaignDetailPanel({
                   setStartDialogOpen(false);
                   void runAction(
                     () => startCampaign(campaignId),
-                    campaign.status === 'paused' ? 'Campanha retomada' : 'Campanha iniciada',
+                    campaign.status === 'paused' ? 'Disparo retomado' : 'Disparo iniciado',
                   );
                 }}
               >
@@ -451,7 +451,7 @@ export default function CampaignDetailPanel({
           type="button"
           variant="outline"
           disabled={!canPause || actionPending}
-          onClick={() => void runAction(() => pauseCampaign(campaignId), 'Campanha pausada')}
+          onClick={() => void runAction(() => pauseCampaign(campaignId), 'Disparo pausado')}
         >
           <Pause className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
           Pausar
@@ -465,13 +465,13 @@ export default function CampaignDetailPanel({
             onClick={() => setCancelDialogOpen(true)}
           >
             <XCircle className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            Cancelar campanha
+            Cancelar disparo
           </Button>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Cancelar esta campanha?</DialogTitle>
+              <DialogTitle>Cancelar este disparo?</DialogTitle>
               <DialogDescription>
-                Ação definitiva — uma campanha cancelada não pode ser retomada. Destinatários ainda
+                Ação definitiva — um disparo cancelado não pode ser retomada. Destinatários ainda
                 pendentes não receberão mensagem nenhuma.
               </DialogDescription>
             </DialogHeader>
@@ -487,7 +487,7 @@ export default function CampaignDetailPanel({
                 disabled={actionPending}
                 onClick={() => {
                   setCancelDialogOpen(false);
-                  void runAction(() => cancelCampaign(campaignId), 'Campanha cancelada');
+                  void runAction(() => cancelCampaign(campaignId), 'Disparo cancelado');
                 }}
               >
                 Confirmar cancelamento
@@ -504,16 +504,16 @@ export default function CampaignDetailPanel({
             onClick={() => setReopenDialogOpen(true)}
           >
             <RotateCcw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            Reabrir campanha
+            Reabrir disparo
           </Button>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Reabrir esta campanha?</DialogTitle>
+              <DialogTitle>Reabrir este disparo?</DialogTitle>
               <DialogDescription>
                 Isto vai tentar enviar de novo para <strong>{metrics?.failed ?? 0}</strong>{' '}
                 contato(s) que falharam (ex.: uma instabilidade momentânea na conexão do WhatsApp) —
                 mensagens de WhatsApp reais. Quem foi suprimido por opt-out, conversa já com um
-                atendente, ou contato recente por outra campanha NUNCA é reenviado.
+                atendente, ou contato recente por outro disparo NUNCA é reenviado.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -527,7 +527,7 @@ export default function CampaignDetailPanel({
                 disabled={actionPending}
                 onClick={() => {
                   setReopenDialogOpen(false);
-                  void runAction(() => reopenCampaign(campaignId), 'Campanha reaberta');
+                  void runAction(() => reopenCampaign(campaignId), 'Disparo reaberta');
                 }}
               >
                 Confirmar e reenviar
@@ -655,7 +655,7 @@ export default function CampaignDetailPanel({
           {metrics.unknownAnswerCount > 0 && (
             <p className="text-[12.5px] text-muted-foreground">
               A IA não soube responder <strong>{metrics.unknownAnswerCount}</strong> vez(es) em
-              conversas desta campanha.
+              conversas deste disparo.
             </p>
           )}
         </div>
@@ -664,7 +664,7 @@ export default function CampaignDetailPanel({
       {/*
         Contagem no título (auditoria 2026-08-22): sem ela, a lista truncada
         em 100 parecia a lista completa. `summary.total` é o número real de
-        destinatários materializados da campanha.
+        destinatários materializados do disparo.
       */}
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="text-[15px] font-semibold text-foreground">Destinatários</h2>

@@ -2,8 +2,8 @@
  * Retrofit visual 2026-08-18, 2ª rodada (réplica exata de imagem do
  * fundador) — teste do `CampaignsPanel`: cards do topo (com tendência),
  * tabela com coluna de Progresso + ações por status, busca/filtro/
- * ordenação/paginação, e o painel lateral ("Progresso da campanha",
- * "Status das campanhas" — o card "Dica Francis" foi removido, 2026-08-21).
+ * ordenação/paginação, e o painel lateral ("Progresso do disparo",
+ * "Status dos disparos" — o card "Dica Francis" foi removido, 2026-08-21).
  */
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -98,7 +98,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
   });
 
   it('mostra os cards do topo com dado real + tendência', async () => {
-    // Onda de tabs "Contatos | Grupos" (2026-09-11): o cabeçalho "Campanhas"
+    // Onda de tabs "Contatos | Grupos" (2026-09-11): o cabeçalho "Disparos"
     // + subtítulo migrou para a PÁGINA (`campaigns/index.tsx`), que agora
     // também mostra a aba "Grupos" — o painel deixou de duplicar o título.
     await renderPanel();
@@ -108,7 +108,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
       return statCards.getByText(label).closest('div')!.parentElement as HTMLElement;
     }
 
-    expect(within(statCard('Total de campanhas')).getByText('1')).toBeInTheDocument();
+    expect(within(statCard('Disparos criados')).getByText('1')).toBeInTheDocument();
     expect(screen.getByText('+20% vs. mês anterior')).toBeInTheDocument();
     expect(within(statCard('Mensagens enviadas')).getByText('120')).toBeInTheDocument();
     expect(within(statCard('Respostas')).getByText('28')).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(screen.queryByText(/vs\. mês anterior/)).not.toBeInTheDocument();
   });
 
-  it('mostra a linha da campanha com destinatários/enviados/respostas/taxa reais', async () => {
+  it('mostra a linha do disparo com destinatários/enviados/respostas/taxa reais', async () => {
     await renderPanel();
 
     const table = within(screen.getByTestId('campaigns-table'));
@@ -160,7 +160,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
       ).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByPlaceholderText('Buscar campanha por nome…'), {
+    fireEvent.change(screen.getByPlaceholderText('Buscar disparo por nome'), {
       target: { value: 'boas' },
     });
 
@@ -169,17 +169,17 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(table.getByText('Boas-vindas')).toBeInTheDocument();
   });
 
-  it('Filtros: filtrar por "Em andamento" esconde a única campanha (Concluída)', async () => {
+  it('Filtros: filtrar por "Em andamento" esconde o único disparo (concluído)', async () => {
     await renderPanel();
 
     fireEvent.click(screen.getByRole('button', { name: /Filtros/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Em andamento' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Em andamento' }));
 
     expect(screen.queryByTestId('campaigns-table')).not.toBeInTheDocument();
-    expect(screen.getByText('Nenhuma campanha encontrada')).toBeInTheDocument();
+    expect(screen.getByText('Nenhum disparo encontrado')).toBeInTheDocument();
   });
 
-  it('campanha RUNNING: botão primário é "Pausar", sem confirmação', async () => {
+  it('disparo RUNNING: botão primário é "Pausar", sem confirmação', async () => {
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({
       campaigns: [campaign({ status: 'running' })],
     });
@@ -200,7 +200,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     });
   });
 
-  it('campanha PAUSED: botão primário é "Retomar" e pede confirmação antes de chamar a API', async () => {
+  it('disparo PAUSED: botão primário é "Retomar" e pede confirmação antes de chamar a API', async () => {
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({
       campaigns: [campaign({ status: 'paused' })],
     });
@@ -228,7 +228,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
   // O botão "Ver" dedicado foi removido em 2026-08-21 (pedido do fundador) —
   // era redundante com "Ver detalhes", já existente no menu "⋮", e sua
   // largura variável contribuía para o desalinhamento da coluna "Ações".
-  it('campanha COMPLETED: sem botão "Ver" dedicado, só o menu "⋮" com "Ver detalhes"', async () => {
+  it('disparo COMPLETED: sem botão "Ver" dedicado, só o menu "⋮" com "Ver detalhes"', async () => {
     await renderPanel();
 
     expect(screen.queryByRole('link', { name: 'Ver' })).not.toBeInTheDocument();
@@ -255,7 +255,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(container.className).not.toMatch(/overflow-/);
   });
 
-  it('menu "⋮" → Cancelar campanha pede confirmação antes de chamar a API', async () => {
+  it('menu "⋮" → Cancelar disparo pede confirmação antes de chamar a API', async () => {
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({
       campaigns: [campaign({ status: 'running' })],
     });
@@ -270,9 +270,9 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     await renderPanel();
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Cancelar campanha' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Cancelar disparo' }));
     expect(clientApi.cancelCampaign).not.toHaveBeenCalled();
-    expect(screen.getByText('Cancelar esta campanha?')).toBeInTheDocument();
+    expect(screen.getByText('Cancelar este disparo?')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
 
@@ -281,7 +281,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     });
   });
 
-  it('menu "⋮": campanha RUNNING não mostra "Excluir campanha" (precisa pausar/cancelar antes)', async () => {
+  it('menu "⋮": disparo RUNNING não mostra "Excluir disparo" (precisa pausar/cancelar antes)', async () => {
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({
       campaigns: [campaign({ status: 'running' })],
     });
@@ -293,18 +293,18 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     await renderPanel();
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
-    expect(screen.queryByRole('menuitem', { name: 'Excluir campanha' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Excluir disparo' })).not.toBeInTheDocument();
   });
 
-  it('menu "⋮" → Excluir campanha pede confirmação, chama a API e recarrega a lista', async () => {
+  it('menu "⋮" → Excluir disparo pede confirmação, chama a API e recarrega a lista', async () => {
     (clientApi.deleteCampaign as jest.Mock).mockResolvedValue(undefined);
 
     await renderPanel();
 
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir campanha' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Excluir disparo' }));
     expect(clientApi.deleteCampaign).not.toHaveBeenCalled();
-    expect(screen.getByText('Excluir esta campanha?')).toBeInTheDocument();
+    expect(screen.getByText('Excluir este disparo?')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
 
@@ -316,15 +316,15 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     });
   });
 
-  describe('menu "⋮" → Reabrir campanha (retrofit 2026-08-18)', () => {
-    it('campanha COMPLETED sem nenhum FAILED: não mostra "Reabrir campanha" (mockDefaults, failed: 0)', async () => {
+  describe('menu "⋮" → Reabrir disparo (retrofit 2026-08-18)', () => {
+    it('disparo COMPLETED sem nenhum FAILED: não mostra "Reabrir disparo" (mockDefaults, failed: 0)', async () => {
       await renderPanel();
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
-      expect(screen.queryByRole('menuitem', { name: 'Reabrir campanha' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'Reabrir disparo' })).not.toBeInTheDocument();
     });
 
-    it('campanha RUNNING: nunca mostra "Reabrir campanha", mesmo com FAILED > 0', async () => {
+    it('disparo RUNNING: nunca mostra "Reabrir disparo", mesmo com FAILED > 0', async () => {
       (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({
         campaigns: [campaign({ status: 'running' })],
       });
@@ -351,10 +351,10 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
       await renderPanel();
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
-      expect(screen.queryByRole('menuitem', { name: 'Reabrir campanha' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'Reabrir disparo' })).not.toBeInTheDocument();
     });
 
-    it('campanha COMPLETED com FAILED > 0: mostra o botão, pede confirmação, chama a API e recarrega', async () => {
+    it('disparo COMPLETED com FAILED > 0: mostra o botão, pede confirmação, chama a API e recarrega', async () => {
       (clientApi.fetchCampaignMetrics as jest.Mock).mockResolvedValue({
         metrics: {
           total: 120,
@@ -378,9 +378,9 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
       await renderPanel();
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Mais ações' }));
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Reabrir campanha' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Reabrir disparo' }));
       expect(clientApi.reopenCampaign).not.toHaveBeenCalled();
-      expect(screen.getByText('Reabrir esta campanha?')).toBeInTheDocument();
+      expect(screen.getByText('Reabrir este disparo?')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Confirmar e reenviar' }));
 
@@ -393,17 +393,6 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     });
   });
 
-  it('painel lateral: mostra "Progresso da campanha" (taxa de resposta real) e "Status das campanhas"', async () => {
-    await renderPanel();
-
-    expect(screen.getByText('Progresso da campanha')).toBeInTheDocument();
-    expect(screen.getByText('Enviadas')).toBeInTheDocument();
-    expect(screen.getByText('Respondidas')).toBeInTheDocument();
-    expect(screen.getByText('Não respondidas')).toBeInTheDocument();
-
-    expect(screen.getByText('Status das campanhas')).toBeInTheDocument();
-    expect(screen.getByText('Rascunho')).toBeInTheDocument();
-  });
 
   // Pedido do fundador (2026-08-21): removido o card "Dica Francis" do painel lateral.
   it('não mostra mais o card "Dica Francis" (removido a pedido do fundador)', async () => {
@@ -412,11 +401,11 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(screen.queryByText('Dica Francis')).not.toBeInTheDocument();
   });
 
-  it('"Nova campanha" abre o formulário de criação (com upload de planilha na Seção 2)', async () => {
+  it('"Novo disparo" abre o formulário de criação (com upload de planilha na Seção 2)', async () => {
     await renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: /Nova campanha/ }));
-    expect(screen.getByRole('heading', { name: 'Nova campanha' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Novo disparo/ }));
+    expect(screen.getByRole('heading', { name: 'Novo disparo' })).toBeInTheDocument();
   });
 
   it('ordenação "Mais antigas" reordena a lista pela data de criação', async () => {
@@ -444,7 +433,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(rowsBefore[0]).toHaveTextContent('Mais nova');
 
     fireEvent.click(screen.getByRole('button', { name: /Mais recentes/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mais antigas' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Mais antigas' }));
 
     const rowsAfter = within(screen.getByTestId('campaigns-table')).getAllByText(/Mais/);
     expect(rowsAfter[0]).toHaveTextContent('Mais antiga');
@@ -452,7 +441,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
 
   it('paginação: mostra "Mostrando X de Y" e navega para a página seguinte', async () => {
     const many = Array.from({ length: 7 }, (_, i) =>
-      campaign({ id: `campaign-${i}`, name: `Campanha ${i}` }),
+      campaign({ id: `campaign-${i}`, name: `Disparo ${i}` }),
     );
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({ campaigns: many });
     (clientApi.fetchCampaign as jest.Mock).mockImplementation((id: string) =>
@@ -463,27 +452,27 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     );
 
     render(<CampaignsPanel sessionName="vendas" />);
-    await waitFor(() => expect(screen.getByText('Mostrando 6 de 7 campanhas')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Mostrando 6 de 7 disparos')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Próxima página' }));
 
-    await waitFor(() => expect(screen.getByText('Mostrando 1 de 7 campanhas')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Mostrando 1 de 7 disparos')).toBeInTheDocument());
   });
 
   /**
    * Teto de carga (auditoria 2026-08-22, P1.1) — antes desta correção o
-   * painel buscava só a 1ª página (50 campanhas) e tratava como se fosse
+   * painel buscava só a 1ª página (50 disparos) e tratava como se fosse
    * tudo, sem nenhum aviso quando a sessão tinha mais. Mesma disciplina já
    * aplicada em `PipelineBoard`/`usePipelineConversations`: acumula por
    * cursor até esgotar ou bater o teto, e avisa (`role="status"`) em vez de
    * mentir por omissão.
    */
-  it('avisa quando a sessão tem mais campanhas do que cabe no teto de carga', async () => {
+  it('avisa quando a sessão tem mais disparos do que cabe no teto de carga', async () => {
     let callCount = 0;
     (clientApi.fetchCampaigns as jest.Mock).mockImplementation(() => {
       callCount += 1;
       return Promise.resolve({
-        campaigns: [campaign({ id: `campaign-${callCount}`, name: `Campanha ${callCount}` })],
+        campaigns: [campaign({ id: `campaign-${callCount}`, name: `Disparo ${callCount}` })],
         nextCursor: `cursor-${callCount}`,
       });
     });
@@ -497,7 +486,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     render(<CampaignsPanel sessionName="vendas" />);
 
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
-    expect(screen.getByRole('status')).toHaveTextContent(/500 campanhas mais recentes/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/500 disparos mais recentes/i);
     // Parou no teto (10 páginas), não ficou preso num laço infinito.
     expect(clientApi.fetchCampaigns).toHaveBeenCalledTimes(10);
   });
@@ -507,7 +496,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('estado vazio: nenhuma campanha ainda', async () => {
+  it('estado vazio: nenhum disparo ainda', async () => {
     (clientApi.fetchCampaigns as jest.Mock).mockResolvedValue({ campaigns: [] });
     (clientApi.fetchCampaignsOverview as jest.Mock).mockResolvedValue({
       overview: overview({
@@ -522,7 +511,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     render(<CampaignsPanel sessionName="vendas" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Nenhuma campanha ainda')).toBeInTheDocument();
+      expect(screen.getByText('Nenhum disparo ainda')).toBeInTheDocument();
     });
   });
 
@@ -532,7 +521,7 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     render(<CampaignsPanel sessionName="vendas" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Não foi possível carregar as campanhas.')).toBeInTheDocument();
+      expect(screen.getByText('Não foi possível carregar os disparos.')).toBeInTheDocument();
     });
   });
 });

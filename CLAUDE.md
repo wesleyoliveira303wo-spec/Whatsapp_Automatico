@@ -2116,6 +2116,55 @@ testes — todos verdes, integração inclusa contra Postgres real. `tsc`/`eslin
 `next build` limpos. **Pendente:** validação real (criar um disparo recorrente
 de 1h num grupo de teste e confirmar a segunda publicação).
 
+### Revisão da aba Disparos — anatomia compartilhada entre as duas abas
+
+**Data:** 2026-09-12
+**Contexto:** com a recorrência entregue, o fundador pediu uma revisão da área
+de Campanhas inteira: "hoje dentro de disparos tem contatos e grupos e essas
+abas estão totalmente diferentes uma da outra, parece que não tem regra nem
+objetivo". O levantamento confirmou, com números: a aba de contatos tinha
+quatro indicadores, busca, filtro, ordenação, paginação, oito colunas e uma
+coluna lateral com dois cartões; a de grupos tinha uma tabela de seis colunas
+e nada mais. Causa, sem rodeio: uma cresceu em seis rodadas, a outra nasceu um
+dia antes copiando só o essencial — sedimento, não decisão.
+**Duas decisões do fundador, tomadas ANTES do código:** (1) duas abas, porém
+**espelhadas** (descartadas "lista única com tipo na linha" e "assimetria
+deliberada"); (2) a **coluna lateral sai** e os números ficam só no topo — ela
+repetia o mesmo dado dos cartões, e a tabela passou a ocupar a largura toda.
+**Decisão de engenharia — espelhar por CÓDIGO, não por disciplina.** O próprio
+fundador nomeou o risco ("foi assim que divergiram"). Anatomia extraída para
+peças únicas que as duas abas consomem: `BroadcastStatRow` (faixa de até
+quatro indicadores), `BroadcastToolbar` (busca + filtro + ordenação + ação
+principal), `BroadcastPagination` (contagem + páginas) e o hook
+`useBroadcastListControls` (busca/filtro/ordenação/paginação por estado, com
+a página voltando para 1 a cada mudança). Uma aba nova declara três funções —
+onde buscar, como filtrar, como comparar — e herda o comportamento inteiro;
+divergir passa a exigir esforço em vez de acontecer sozinho.
+**Vocabulário unificado.** A mesma coisa se chamava "campanha" de um lado,
+"disparo" do outro, e o menu dizia "Campanhas" enquanto o fundador sempre
+disse "Disparos". Agora é **disparo** em todo lugar: menu, título da página,
+substantivo dentro das telas, botão ("Novo disparo" nos dois lados), aviso
+("Disparo criado"). As abas viraram "Para contatos"/"Para grupos" — dizem o
+DESTINO, que é a única diferença real entre elas.
+**Acessibilidade, da revisão `web-design-guidelines`:** os menus de filtro e
+ordenação ganharam `aria-haspopup`/`aria-expanded`, papel de menu nos itens e
+Escape para fechar; as caixas de seleção de grupo ganharam nome acessível
+(faltava desde a entrega anterior — só apareceu quando outras caixas
+entraram na mesma tela); e o gatilho do filtro passou a MOSTRAR o filtro
+ativo, em vez de dizer sempre "Filtros" e esconder o estado.
+**Impacto:** zero mudança em `apps/api`, zero migration, zero dependência
+nova. `CampaignsPanel` caiu de 1.141 para 793 linhas (a lateral saiu, e a
+mecânica de lista virou hook); `GroupBroadcastsPanel` foi de 483 para 560,
+ganhando indicadores, busca, filtro, ordenação e paginação que não tinha.
+Testes: `dashboard` + `jsdom` 153 suítes / 1.150 testes verdes (4 novos para a
+anatomia compartilhada na aba de grupos); `tsc`, `eslint` e `next build`
+limpos. As regras que saíram desta revisão ficaram em
+`.claude/rules/ui-telas-de-listagem.md`, para valerem nas próximas telas —
+era o objetivo declarado do fundador ao pedir a revisão.
+**Pendência registrada:** busca/filtro/página não vão para a URL (só a aba
+vai, via `?tab=`), então não dá para compartilhar um link já filtrado. Não é
+esquecimento — está anotado na regra 8 do documento acima.
+
 ---
 
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._

@@ -167,12 +167,12 @@ describe('GroupBroadcastsPanel', () => {
     await waitFor(() => expect(clientApi.deleteGroupBroadcast).toHaveBeenCalledWith('broadcast-1'));
   });
 
-  it('abre o diálogo de criação ao clicar em "Novo disparo em grupos"', async () => {
+  it('abre o diálogo de criação ao clicar em "Novo disparo"', async () => {
     await renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Novo disparo em grupos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Novo disparo' }));
 
-    expect(screen.getByRole('heading', { name: 'Novo disparo em grupos' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Novo disparo' })).toBeInTheDocument();
     // Aguarda a listagem de grupos do formulário resolver, para não deixar
     // um `setState` pendente vazando para o próximo teste (act warning).
     await waitFor(() => expect(clientApi.fetchWhatsAppGroups).toHaveBeenCalled());
@@ -182,5 +182,105 @@ describe('GroupBroadcastsPanel', () => {
     await renderPanel();
     const container = screen.getByTestId('group-broadcasts-table');
     expect(container.className).not.toMatch(/overflow-/);
+  });
+});
+
+/**
+ * Revisão de Disparos (2026-09-12) — a aba de grupos passou a usar as MESMAS
+ * peças da aba de contatos (faixa de números, busca, filtro, ordenação,
+ * paginação). Estes casos travam o que antes só existia do outro lado.
+ */
+describe('GroupBroadcastsPanel — anatomia compartilhada', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDefaults();
+  });
+
+  it('mostra a faixa de números contando a partir da própria lista', async () => {
+    (clientApi.fetchGroupBroadcasts as jest.Mock).mockResolvedValue({
+      broadcasts: [
+        { broadcast: broadcast({ id: 'b1', status: 'running' }), summary: summary({ total: 3, sent: 2 }) },
+        { broadcast: broadcast({ id: 'b2', name: 'Outro' }), summary: summary({ total: 5, sent: 1 }) },
+      ],
+    });
+    await renderPanel();
+
+    const faixa = within(screen.getByTestId('group-broadcasts-stat-cards'));
+    expect(faixa.getByText('Disparos criados')).toBeInTheDocument();
+    expect(faixa.getByText('Grupos alcançados')).toBeInTheDocument();
+    expect(faixa.getByText('Publicações feitas')).toBeInTheDocument();
+    expect(faixa.getByText('Em andamento')).toBeInTheDocument();
+  });
+
+  it('busca filtra a lista pelo nome', async () => {
+    (clientApi.fetchGroupBroadcasts as jest.Mock).mockResolvedValue({
+      broadcasts: [
+        { broadcast: broadcast({ id: 'b1', name: 'Aviso de promoção' }), summary: summary() },
+        { broadcast: broadcast({ id: 'b2', name: 'Convite do evento' }), summary: summary() },
+      ],
+    });
+    await renderPanel();
+
+    fireEvent.change(screen.getByLabelText('Buscar disparo por nome'), {
+      target: { value: 'convite' },
+    });
+
+    const table = within(screen.getByTestId('group-broadcasts-table'));
+    expect(table.getByText('Convite do evento')).toBeInTheDocument();
+    expect(table.queryByText('Aviso de promoção')).not.toBeInTheDocument();
+  });
+
+  it('filtro por status esconde quem não bate', async () => {
+    (clientApi.fetchGroupBroadcasts as jest.Mock).mockResolvedValue({
+      broadcasts: [
+        { broadcast: broadcast({ id: 'b1', name: 'Rascunho um', status: 'draft' }), summary: summary() },
+        { broadcast: broadcast({ id: 'b2', name: 'Rodando', status: 'running' }), summary: summary() },
+      ],
+    });
+    render(<GroupBroadcastsPanel sessionName="vendas" />);
+    await waitFor(() => expect(screen.getByText('Rodando')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /Filtros/ }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Em andamento' }));
+
+    const table = within(screen.getByTestId('group-broadcasts-table'));
+    expect(table.getByText('Rodando')).toBeInTheDocument();
+    expect(table.queryByText('Rascunho um')).not.toBeInTheDocument();
+  });
+
+  it('rodapé conta quantos disparos estão visíveis', async () => {
+    await renderPanel();
+
+    expect(screen.getByText(/Mostrando 1 de 1 disparo/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Trava de paridade (2026-09-12, achado do fundador numa captura): a aba de
+ * grupos tinha uma frase própria logo abaixo das abas que a de contatos não
+ * tinha — diferença visível já no primeiro olhar. O subtítulo da página
+ * explica as duas; a frase por aba saiu.
+ */
+describe('GroupBroadcastsPanel — paridade com a aba de contatos', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDefaults();
+  });
+
+  it('não repete a explicação da página dentro da aba', async () => {
+    await renderPanel();
+
+    expect(screen.queryByText(/Publique uma mensagem em grupos de WhatsApp/)).not.toBeInTheDocument();
+  });
+
+  it('tem a coluna Progresso, como a aba de contatos', async () => {
+    (clientApi.fetchGroupBroadcasts as jest.Mock).mockResolvedValue({
+      broadcasts: [{ broadcast: broadcast(), summary: summary({ total: 4, sent: 1 }) }],
+    });
+    await renderPanel();
+
+    const table = within(screen.getByTestId('group-broadcasts-table'));
+    expect(table.getByText('Progresso')).toBeInTheDocument();
+    expect(table.getByText('25%')).toBeInTheDocument();
   });
 });
