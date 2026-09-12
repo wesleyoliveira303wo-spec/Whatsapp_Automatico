@@ -3,7 +3,6 @@ import { ErrorRequestHandler } from 'express';
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import {
-  GroupBroadcastAlreadyRunningError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
   GroupBroadcastMediaTooLargeError,
@@ -84,10 +83,8 @@ export function createGroupBroadcastsErrorHandler(logger: Logger): ErrorRequestH
       res.status(403).json({ error: 'group_broadcast_requires_paid_plan', message: error.message });
       return;
     }
-    if (error instanceof GroupBroadcastAlreadyRunningError) {
-      res.status(409).json({ error: 'group_broadcast_already_running', message: error.message });
-      return;
-    }
+    // `group_broadcast_already_running` (409) existiu aqui até 2026-09-12 —
+    // ver `groupBroadcastErrors.ts`: virou fila, nunca mais erro.
     // Sessão desconectada = 409 (o recurso existe, não está no estado
     // necessário); WhatsApp sem resposta = 504 (o "gateway" é o WhatsApp).
     if (error instanceof GroupDirectoryUnavailableError) {

@@ -2167,6 +2167,37 @@ esquecimento — está anotado na regra 8 do documento acima.
 
 ---
 
+### Disparo em grupos: trava de "um por sessão" removida por pedido explícito do fundador
+
+**Data:** 2026-09-12
+**Contexto:** ao criar um segundo disparo em grupos na mesma sessão enquanto
+o primeiro ainda publicava, o fundador viu o erro deliberado da entrega
+original ("Já existe um disparo em grupos em andamento..."). Comecei a
+implementar uma FILA (disparo entra em espera e inicia sozinho quando o
+primeiro libera o slot) como meio-termo entre a trava e nenhuma trava — mas o
+fundador interrompeu explicitamente: "eu quero que seja possível iniciar mais
+de uma campanha de disparo ao mesmo tempo, não quero travas". Sinalizei o
+risco (rodar disparos em paralelo SOMA o ritmo de publicação de cada um —
+esse ritmo combinado é o que a trava original evitava, e publicar em grupo já
+é o padrão que o WhatsApp mais associa a spam) e prossegui com a remoção
+total, como instruído.
+**Decisão:** `GroupBroadcastService.startBroadcast` não checa mais
+`countRunningBySession` — vários disparos da mesma sessão podem estar
+`running` ao mesmo tempo. `GroupBroadcastAlreadyRunningError` removida
+(classe + tradução 409 no error handler). `countRunningBySession` continua no
+repositório como leitura de apoio (nada mais depende dela), não como regra de
+negócio.
+**Impacto:** zero migration (a coluna `queuedToStart` chegou a ser desenhada
+para a fila e foi revertida antes de qualquer migration real rodar). Testes
+atualizados: os dois casos que prendiam o comportamento antigo (`Service` e
+`Router`) viraram testes POSITIVOS provando que o paralelo funciona. Suíte de
+`groupBroadcasts`: 8 suítes / 150 testes verdes; `tsc`/`eslint` limpos. A
+confirmação de "Iniciar"/"Retomar" já nomeia o risco de banimento por
+disparo — isso não mudou; o que mudou é que agora dois desses avisos podem
+ser aceitos em paralelo pelo próprio fundador, conscientemente.
+
+---
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---

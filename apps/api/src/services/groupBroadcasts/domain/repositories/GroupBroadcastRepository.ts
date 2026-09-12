@@ -105,7 +105,13 @@ export interface GroupBroadcastRepository {
     status: GroupBroadcastStatus,
     pausedReason?: string,
   ): Promise<GroupBroadcast | undefined>;
-  /** Quantos disparos desta sessão estão `running` (opcionalmente ignorando um id). */
+  /**
+   * Quantos disparos desta sessão estão `running` (opcionalmente ignorando um
+   * id). Não é mais usado para travar `startBroadcast` (2026-09-12: o
+   * fundador pediu explicitamente que mais de um disparo rode em paralelo na
+   * mesma sessão) — mantido como leitura de apoio (histórico/painel), não
+   * como regra de negócio.
+   */
   countRunningBySession(
     tenantId: string,
     sessionName: string,
