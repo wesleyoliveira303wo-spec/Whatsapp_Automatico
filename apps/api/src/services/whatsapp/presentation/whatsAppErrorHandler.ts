@@ -3,6 +3,8 @@ import { Logger } from '../../../shared/domain/Logger';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { WhatsAppSessionNotFoundError } from '../domain/errors/WhatsAppSessionNotFoundError';
 import { WhatsAppQRCodeNotAvailableError } from '../domain/errors/WhatsAppQRCodeNotAvailableError';
+import { WhatsAppNotConnectedError } from '../domain/errors/WhatsAppNotConnectedError';
+import { WhatsAppGroupsFetchTimeoutError } from '../domain/errors/WhatsAppGroupsFetchTimeoutError';
 
 /**
  * Middleware de erro (Express, 4 parâmetros) para `createWhatsAppSessionsRouter`.
@@ -43,6 +45,19 @@ export function createWhatsAppErrorHandler(logger: Logger): ErrorRequestHandler 
     }
     if (error instanceof TenantNotFoundError) {
       res.status(404).json({ error: 'tenant_not_found', message: error.message });
+      return;
+    }
+    // Disparos em grupos (2026-09-11) — a listagem de grupos é a primeira
+    // rota deste router que exige conexão VIVA (as demais leem estado ou o
+    // alteram). 409: o recurso existe, mas não está no estado necessário.
+    if (error instanceof WhatsAppNotConnectedError) {
+      res.status(409).json({ error: 'whatsapp_not_connected', message: error.message });
+      return;
+    }
+    // O WhatsApp não respondeu dentro do teto (ADR #78) — 504, o "gateway"
+    // aqui é o próprio WhatsApp.
+    if (error instanceof WhatsAppGroupsFetchTimeoutError) {
+      res.status(504).json({ error: 'groups_fetch_timeout', message: error.message });
       return;
     }
     logger.error('Erro não tratado nas rotas de sessão do WhatsApp', { error });

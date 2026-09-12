@@ -2,6 +2,7 @@ import { WhatsAppProvider } from '../../../../src/services/whatsapp/domain/provi
 import { WhatsAppProviderEvent } from '../../../../src/services/whatsapp/domain/providers/WhatsAppProviderEvent';
 import { WhatsAppSession } from '../../../../src/services/whatsapp/domain/entities/WhatsAppSession';
 import { WhatsAppProviderFactory } from '../../../../src/services/whatsapp/domain/providers/WhatsAppProviderFactory';
+import { WhatsAppGroupSummary } from '../../../../src/services/whatsapp/domain/entities/WhatsAppGroupSummary';
 
 /**
  * Implementacao minima e inerte de `WhatsAppProvider`, usada apenas como o
@@ -109,6 +110,21 @@ export class NullWhatsAppProvider implements WhatsAppProvider {
       throw error;
     }
     this.sendMediaMessageCalls.push({ to, media });
+  }
+
+  /** Disparos em grupos (2026-09-11) — inerte por padrão: lista vazia, nenhum teste deste arquivo depende de grupos. */
+  public listGroupsResult: WhatsAppGroupSummary[] = [];
+  public listGroupsCalls: (number | undefined)[] = [];
+  public nextListGroupsError: Error | undefined;
+
+  async listGroups(timeoutMs?: number): Promise<WhatsAppGroupSummary[]> {
+    this.listGroupsCalls.push(timeoutMs);
+    if (this.nextListGroupsError) {
+      const error = this.nextListGroupsError;
+      this.nextListGroupsError = undefined;
+      throw error;
+    }
+    return this.listGroupsResult;
   }
 
   /**
