@@ -2198,6 +2198,16 @@ ser aceitos em paralelo pelo próprio fundador, conscientemente.
 
 ---
 
+### Foto de perfil da PRÓPRIA sessão nunca era pedida ao WhatsApp — achado real por trás de "as fotos não aparecem"
+
+**Data:** 2026-09-12
+**Contexto:** o fundador reportou, na versão em produção, que nem a foto de perfil das sessões (WhatsApps conectados, tela "Configurações → WhatsApps") nem a dos contatos aparecem, e pediu para resolver ambos.
+**Investigação (medição antes de mexer, lição da ADR #88):** a mudança de gatilho de 2026-09-05 (`ContactAvatarService`, B2) fez `ensureAvatarQueued` só ser chamado quando um CONTATO manda mensagem (`MessageIngestionService`). Isso nunca cobriu o número da própria sessão — ele nunca "manda mensagem para si mesmo", então nenhum caminho jamais pedia a foto dele. Confirmado no Postgres de produção: só 1 linha na tabela de cache (de 28 conversas ativas), e o log da API mostrou tentativas reais de CONTATOS terminando em timeout do próprio WhatsApp — ou seja, o mecanismo de contato está funcionando como projetado (medido, não suposto); o gargalo ali é a limitação externa já documentada em 2026-09-05 ("o WhatsApp atende as primeiras consultas depois de conectar e então para de responder"), não um bug novo.
+**Decisão:** nova porta `OwnAvatarRefresher` (`services/whatsapp/domain/providers`) + `SessionOwnAvatarRefresher` (implementação sobre o `ContactAvatarService` já existente, mesmo JID `${phoneNumber}@s.whatsapp.net` que `ContactAvatar`/`WhatsAppAccountCard` já usam desde 2026-08-07). `SessionManager` ganhou essa dependência opcional e chama `requestOwnAvatarRefresh()` nos DOIS pontos onde uma conexão é confirmada: `init()` (síncrono) e o handler assíncrono de `status_changed` (reconexões, ex.: depois de uma queda) — cobrindo tanto o primeiro connect quanto reconexões futuras. Injeção TARDIA em `WhatsAppConnectionRegistry` (`setOwnAvatarRefresher`, mesmo padrão de `setMediaDownloader`/`setSendDispatcher`): o `registry` nasce antes do `contactAvatarService` (que depende dele via `RegistryContactAvatarSource`), então não dava para passar pelo construtor.
+**Impacto:** zero migration, zero mudança de contrato. A foto dos CONTATOS não teve nenhuma mudança de código — continua sujeita à limitação real do WhatsApp para consulta em lote, já documentada e aceita (gotejamento de 1 consulta/3s, pausa de 10min após 5 timeouts seguidos); não há correção de código para isso, é limite do lado de fora. Testes novos: `SessionManager.test.ts` (+4: pede no `init()`, pede numa reconexão assíncrona, modo degradado sem lançar, não pede quando não conecta), `WhatsAppConnectionRegistry.test.ts` (+3: propaga a instâncias criadas DEPOIS da chamada, não afeta as criadas ANTES, funciona sem chamar o setter). Suíte `whatsapp`: 207 suítes / 2469 testes verdes; `tsc`/`eslint` limpos.
+
+---
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---

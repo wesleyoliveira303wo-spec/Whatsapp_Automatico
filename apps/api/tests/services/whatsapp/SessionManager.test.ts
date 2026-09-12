@@ -5,6 +5,7 @@ import { WhatsAppSession } from '../../../src/services/whatsapp/domain/entities/
 import { WhatsAppSessionKey } from '../../../src/services/whatsapp/domain/valueObjects/WhatsAppSessionKey';
 import { WhatsAppSessionNotFoundError } from '../../../src/services/whatsapp/domain/errors/WhatsAppSessionNotFoundError';
 import { WhatsAppGroupSummary } from '../../../src/services/whatsapp/domain/entities/WhatsAppGroupSummary';
+import { OwnAvatarRefresher } from '../../../src/services/whatsapp/domain/providers/OwnAvatarRefresher';
 import { Logger } from '../../../src/shared/domain/Logger';
 import {
   FakeWhatsAppSessionRepository,
@@ -239,10 +240,24 @@ class FakeLogger implements Logger {
   }
 }
 
+/** Fake de `OwnAvatarRefresher` (2026-09-12) — só registra as chamadas recebidas. */
+class FakeOwnAvatarRefresher implements OwnAvatarRefresher {
+  calls: Array<{ tenantId: string; sessionName: string; phoneNumber: string }> = [];
+
+  async ensureOwnAvatarQueued(
+    tenantId: string,
+    sessionName: string,
+    phoneNumber: string,
+  ): Promise<void> {
+    this.calls.push({ tenantId, sessionName, phoneNumber });
+  }
+}
+
 function buildSut(
   tenantId = 'tenant-1',
   sessionName = 'default',
   messageReceivedHandler?: FakeMessageReceivedHandler,
+  ownAvatarRefresher?: FakeOwnAvatarRefresher,
 ): {
   sessionManager: SessionManager;
   provider: FakeWhatsAppProvider;
@@ -263,6 +278,7 @@ function buildSut(
     logger,
     eventRepo,
     messageReceivedHandler,
+    ownAvatarRefresher,
   );
   return { sessionManager, provider, repo, eventRepo, logger, sessionKey };
 }
@@ -638,6 +654,63 @@ describe('SessionManager', () => {
       // a mesma Promise entre as duas chamadas.
       expect(provider.connectCalls).toBe(1);
       expect(sessionA.id).toBe(sessionB.id);
+    });
+  });
+
+  describe('OwnAvatarRefresher (2026-09-12) — foto de perfil da PRÓPRIA sessão', () => {
+    it('pede a foto do próprio número quando init() conecta com sucesso', async () => {
+      const ownAvatarRefresher = new FakeOwnAvatarRefresher();
+      const { sessionManager } = buildSut('tenant-1', 'default', undefined, ownAvatarRefresher);
+
+      await sessionManager.init();
+
+      expect(ownAvatarRefresher.calls).toEqual([
+        { tenantId: 'tenant-1', sessionName: 'default', phoneNumber: '+5511999999999' },
+      ]);
+    });
+
+    it('pede de novo numa reconexão assíncrona (status_changed -> connected)', async () => {
+      const ownAvatarRefresher = new FakeOwnAvatarRefresher();
+      const { sessionManager, provider } = buildSut(
+        'tenant-1',
+        'default',
+        undefined,
+        ownAvatarRefresher,
+      );
+      await sessionManager.init();
+      ownAvatarRefresher.calls = [];
+
+      provider.emitEvent({ type: 'status_changed', status: 'connecting' });
+      provider.emitEvent({ type: 'status_changed', status: 'connected' });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(ownAvatarRefresher.calls).toEqual([
+        { tenantId: 'tenant-1', sessionName: 'default', phoneNumber: '+5511999999999' },
+      ]);
+    });
+
+    it('sem OwnAvatarRefresher configurado (modo degradado): init() conecta normalmente, sem lançar', async () => {
+      const { sessionManager } = buildSut();
+      await expect(sessionManager.init()).resolves.toMatchObject({ status: 'connected' });
+    });
+
+    it('não pede nada quando a conexão não vira `connected` (status diferente)', async () => {
+      const ownAvatarRefresher = new FakeOwnAvatarRefresher();
+      const { sessionManager, provider } = buildSut(
+        'tenant-1',
+        'default',
+        undefined,
+        ownAvatarRefresher,
+      );
+      await sessionManager.init();
+      ownAvatarRefresher.calls = [];
+
+      provider.emitEvent({ type: 'status_changed', status: 'disconnected' });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(ownAvatarRefresher.calls).toEqual([]);
     });
   });
 
