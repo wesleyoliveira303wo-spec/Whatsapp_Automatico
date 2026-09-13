@@ -4,6 +4,7 @@ import { GroupBroadcastRepository } from '../domain/repositories/GroupBroadcastR
 import { computeGroupSendDelayMs } from '../domain/policies/groupBroadcastPacing';
 import {
   buildSendWindow,
+  DEFAULT_GROUP_BROADCAST_TIMEZONE,
   isWithinSendWindow,
   shiftIntoSendWindow,
 } from '../domain/policies/groupBroadcastRecurrence';
@@ -52,8 +53,8 @@ export class GroupBroadcastRunJobProcessor {
 
     const now = new Date();
     const window = buildSendWindow(broadcast.sendWindowStart, broadcast.sendWindowEnd);
-    if (!isWithinSendWindow(now, window)) {
-      const postponedTo = shiftIntoSendWindow(now, window);
+    if (!isWithinSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE)) {
+      const postponedTo = shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE);
       await this.repository.markRunFinished(
         tenantId,
         broadcastId,

@@ -205,7 +205,7 @@ export default function GroupBroadcastsPanel({
    * diz. Nunca um número inventado para preencher o quarto card.
    */
   const stats = useMemo<BroadcastStat[]>(() => {
-    const published = rows.reduce((total, row) => total + row.summary.sent, 0);
+    const published = rows.reduce((total, row) => total + row.summary.totalSent, 0);
     const groups = rows.reduce((total, row) => total + row.summary.total, 0);
     const running = rows.filter((row) => row.broadcast.status === 'running').length;
     return [
@@ -379,7 +379,7 @@ export default function GroupBroadcastsPanel({
                       {summary.total}
                     </TableCell>
                     <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
-                      {summary.sent}
+                      {broadcast.recurrenceIntervalHours ? summary.totalSent : summary.sent}
                       {summary.failed > 0 && (
                         <span className="ml-1 text-[12px] text-destructive">
                           ({summary.failed} falha{summary.failed === 1 ? '' : 's'})

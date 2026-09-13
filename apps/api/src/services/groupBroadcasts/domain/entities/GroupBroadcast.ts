@@ -83,11 +83,24 @@ export interface GroupBroadcastTarget {
   createdAt: Date;
 }
 
-/** Contagem por status dos grupos de um disparo — sempre as quatro chaves. */
+/**
+ * Contagem por status dos grupos de um disparo — sempre as quatro chaves.
+ *
+ * `sent`/`total`/etc. refletem o CICLO ATUAL (o status de cada alvo volta a
+ * `pending` a cada repetição, via `resetTargetsForNextRun`) — úteis para "quanto
+ * falta desta rodada". `totalSent` é a soma de `sentCount` de TODOS os alvos,
+ * cumulativa através de todas as repetições já concluídas — é o número que
+ * responde "quantas publicações foram feitas ao todo" (achado real de produção,
+ * 2026-09-13: o badge de recorrência já mostrava `runsCompleted`, cumulativo, mas
+ * a tabela mostrava `summary.sent`, do ciclo atual — os dois pareciam a mesma
+ * coisa e divergiam a cada nova repetição).
+ */
 export interface GroupBroadcastSummary {
   total: number;
   pending: number;
   sent: number;
   failed: number;
   skipped: number;
+  /** Soma de `GroupBroadcastTarget.sentCount` — publicações reais, cumulativas. */
+  totalSent: number;
 }

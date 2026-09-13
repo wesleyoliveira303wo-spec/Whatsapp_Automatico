@@ -418,8 +418,15 @@ export default function GroupBroadcastDetailPanel({
           <strong className="text-foreground">{summary.total}</strong> grupo(s) no total
         </span>
         <span>
-          <strong className="text-foreground">{summary.sent}</strong> publicado(s)
+          <strong className="text-foreground">{summary.sent}</strong>{' '}
+          {broadcast.recurrenceIntervalHours ? 'publicado(s) nesta repetição' : 'publicado(s)'}
         </span>
+        {Boolean(broadcast.recurrenceIntervalHours) && (
+          <span>
+            <strong className="text-foreground">{summary.totalSent}</strong> publicação(ões) no
+            total (todas as repetições)
+          </span>
+        )}
         <span>
           <strong className="text-foreground">{summary.pending}</strong> pendente(s)
         </span>

@@ -41,7 +41,7 @@ function broadcast(over: Partial<clientApi.GroupBroadcast> = {}): clientApi.Grou
 function summary(
   over: Partial<clientApi.GroupBroadcastSummary> = {},
 ): clientApi.GroupBroadcastSummary {
-  return { total: 3, pending: 3, sent: 0, failed: 0, skipped: 0, ...over };
+  return { total: 3, pending: 3, sent: 0, failed: 0, skipped: 0, totalSent: over.sent ?? 0, ...over };
 }
 
 function mockDefaults(): void {

@@ -81,6 +81,7 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
         groupName: draft.groupName,
         status: draft.status,
         skipReason: draft.skipReason,
+        sentCount: 0,
         createdAt: new Date(Date.now() + this.sequence),
       };
       this.targets.set(target.id, target);
@@ -126,10 +127,18 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
   }
 
   async summarizeTargets(tenantId: string, broadcastId: string): Promise<GroupBroadcastSummary> {
-    const summary: GroupBroadcastSummary = { total: 0, pending: 0, sent: 0, failed: 0, skipped: 0 };
+    const summary: GroupBroadcastSummary = {
+      total: 0,
+      pending: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      totalSent: 0,
+    };
     for (const target of await this.listTargets(tenantId, broadcastId)) {
       summary[target.status] += 1;
       summary.total += 1;
+      summary.totalSent += target.sentCount;
     }
     return summary;
   }

@@ -76,7 +76,14 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
 
       expect(directory.calls).toEqual([{ tenantId: 'tenant-1', sessionName: 'sessao' }]);
       expect(result.broadcast.status).toBe('draft');
-      expect(result.summary).toEqual({ total: 3, pending: 1, sent: 0, failed: 0, skipped: 2 });
+      expect(result.summary).toEqual({
+        total: 3,
+        pending: 1,
+        sent: 0,
+        failed: 0,
+        skipped: 2,
+        totalSent: 0,
+      });
       const byJid = new Map(result.targets.map((t) => [t.groupJid, t]));
       expect(byJid.get('aberto@g.us')).toMatchObject({ status: 'pending', groupName: 'Clientes VIP' });
       expect(byJid.get('admin@g.us')).toMatchObject({

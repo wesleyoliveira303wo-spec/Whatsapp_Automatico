@@ -61,7 +61,7 @@ function mockDetail(over: {
 } = {}): void {
   (clientApi.fetchGroupBroadcast as jest.Mock).mockResolvedValue({
     broadcast: broadcast(over.broadcast),
-    summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, ...over.summary },
+    summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0, ...over.summary },
     targets: over.targets ?? [target()],
   });
 }

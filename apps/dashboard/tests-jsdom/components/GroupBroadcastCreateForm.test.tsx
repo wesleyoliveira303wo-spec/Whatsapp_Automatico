@@ -131,7 +131,7 @@ describe('GroupBroadcastCreateForm', () => {
         createdAt: '2026-09-11T10:00:00.000Z',
         updatedAt: '2026-09-11T10:00:00.000Z',
       },
-      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0 },
+      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0 },
       targets: [],
     });
     const onCreated = jest.fn();
@@ -191,7 +191,7 @@ describe('GroupBroadcastCreateForm — repetição (2026-09-11)', () => {
     });
     (clientApi.createGroupBroadcast as jest.Mock).mockResolvedValue({
       broadcast: { id: 'b1', status: 'draft' },
-      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0 },
+      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0 },
       targets: [],
     });
   });

@@ -462,5 +462,5 @@ export class GroupBroadcastService {
 }
 
 function emptySummary(): GroupBroadcastSummary {
-  return { total: 0, pending: 0, sent: 0, failed: 0, skipped: 0 };
+  return { total: 0, pending: 0, sent: 0, failed: 0, skipped: 0, totalSent: 0 };
 }

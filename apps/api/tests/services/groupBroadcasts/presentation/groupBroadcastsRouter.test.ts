@@ -129,6 +129,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
         sent: 0,
         failed: 0,
         skipped: 0,
+        totalSent: 0,
       });
     });
   });
@@ -165,7 +166,14 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       expect(response.status).toBe(201);
       expect(response.body.broadcast).toMatchObject({ name: 'Disparo', status: 'draft' });
-      expect(response.body.summary).toEqual({ total: 1, pending: 1, sent: 0, failed: 0, skipped: 0 });
+      expect(response.body.summary).toEqual({
+        total: 1,
+        pending: 1,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        totalSent: 0,
+      });
     });
 
     it('owner cria e suprime grupo "só admin" onde o número não é admin', async () => {
@@ -184,7 +192,14 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(response.body.summary).toEqual({ total: 1, pending: 0, sent: 0, failed: 0, skipped: 1 });
+      expect(response.body.summary).toEqual({
+        total: 1,
+        pending: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 1,
+        totalSent: 0,
+      });
       expect(response.body.targets[0].skipReason).toBe('admin_only_group');
     });
 

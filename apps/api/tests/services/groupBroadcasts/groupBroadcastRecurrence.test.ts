@@ -9,6 +9,8 @@ import {
   shiftIntoSendWindow,
 } from '../../../src/services/groupBroadcasts/domain/policies/groupBroadcastRecurrence';
 
+const SAO_PAULO = 'America/Sao_Paulo';
+
 /** Hora local — a janela usa o relógio do servidor (limitação documentada). */
 function at(day: number, hour: number, minute = 0): Date {
   return new Date(2026, 8, day, hour, minute, 0, 0);
@@ -67,6 +69,50 @@ describe('shiftIntoSendWindow', () => {
 
   it('depois do fechamento, empurra para a abertura do dia SEGUINTE', () => {
     expect(shiftIntoSendWindow(at(1, 22), dia)).toEqual(at(2, 8));
+  });
+});
+
+describe('janela avaliada em fuso explícito (achado real de produção, 2026-09-13)', () => {
+  // Janela "06:00 às 22:00" em America/Sao_Paulo (UTC-3, sem DST desde 2019).
+  const janela = buildSendWindow('06:00', '22:00');
+
+  it('06:00 BRT (09:00 UTC) já está dentro da janela; 05:59 BRT (08:59 UTC) ainda não', () => {
+    expect(isWithinSendWindow(new Date('2026-09-14T09:00:00Z'), janela, SAO_PAULO)).toBe(true);
+    expect(isWithinSendWindow(new Date('2026-09-14T08:59:00Z'), janela, SAO_PAULO)).toBe(false);
+  });
+
+  it('03:00 BRT (06:00 UTC, madrugada) fica FORA da janela — era o bug relatado (publicação de madrugada)', () => {
+    expect(isWithinSendWindow(new Date('2026-09-14T06:00:00Z'), janela, SAO_PAULO)).toBe(false);
+  });
+
+  it('19:00 BRT (22:00 UTC) ainda está dentro; 22:00 BRT (01:00 UTC do dia seguinte) já fechou', () => {
+    expect(isWithinSendWindow(new Date('2026-09-14T22:00:00Z'), janela, SAO_PAULO)).toBe(true);
+    expect(isWithinSendWindow(new Date('2026-09-15T01:00:00Z'), janela, SAO_PAULO)).toBe(false);
+  });
+
+  it('shiftIntoSendWindow empurra uma publicação de madrugada (BRT) para as 06:00 BRT do MESMO dia', () => {
+    const madrugada = new Date('2026-09-14T06:00:00Z'); // 03:00 BRT
+    const empurrado = shiftIntoSendWindow(madrugada, janela, SAO_PAULO);
+    expect(empurrado.toISOString()).toBe('2026-09-14T09:00:00.000Z'); // 06:00 BRT
+  });
+
+  it('shiftIntoSendWindow depois do fechamento empurra para a abertura do dia SEGUINTE, no fuso certo', () => {
+    const depoisDoFechamento = new Date('2026-09-15T02:00:00Z'); // 23:00 BRT do dia 14 (já fechou às 22h)
+    const empurrado = shiftIntoSendWindow(depoisDoFechamento, janela, SAO_PAULO);
+    expect(empurrado.toISOString()).toBe('2026-09-15T09:00:00.000Z'); // 06:00 BRT do dia 15
+  });
+
+  it('sem `timeZone` explícito, preserva o comportamento antigo (relógio do processo) — compatibilidade', () => {
+    // Mesmo teste de `shiftIntoSendWindow` acima, mas usando Date local (não UTC) e sem passar timeZone.
+    const dia = buildSendWindow('08:00', '20:00');
+    const madrugadaLocal = new Date(2026, 8, 1, 3, 0, 0, 0);
+    expect(shiftIntoSendWindow(madrugadaLocal, dia)).toEqual(new Date(2026, 8, 1, 8, 0, 0, 0));
+  });
+
+  it('fuso inválido degrada graciosamente (nunca trava a recorrência)', () => {
+    expect(isWithinSendWindow(new Date('2026-09-14T06:00:00Z'), janela, 'Nao/Existe')).toBe(true);
+    const instante = new Date('2026-09-14T06:00:00Z');
+    expect(shiftIntoSendWindow(instante, janela, 'Nao/Existe')).toBe(instante);
   });
 });
 

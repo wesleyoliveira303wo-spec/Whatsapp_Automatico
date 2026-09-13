@@ -184,7 +184,7 @@ function targetToDomain(row: GroupBroadcastTargetRow): GroupBroadcastTarget {
 }
 
 function emptySummary(): GroupBroadcastSummary {
-  return { total: 0, pending: 0, sent: 0, failed: 0, skipped: 0 };
+  return { total: 0, pending: 0, sent: 0, failed: 0, skipped: 0, totalSent: 0 };
 }
 
 function addToSummary(summary: GroupBroadcastSummary, status: string, count: number): void {
@@ -289,15 +289,22 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
   }
 
   async summarizeTargets(tenantId: string, broadcastId: string): Promise<GroupBroadcastSummary> {
-    const groups = await this.prisma.groupBroadcastTarget.groupBy({
-      by: ['status'],
-      where: { tenantId, broadcastId },
-      _count: { _all: true },
-    });
+    const [groups, sentCountAgg] = await Promise.all([
+      this.prisma.groupBroadcastTarget.groupBy({
+        by: ['status'],
+        where: { tenantId, broadcastId },
+        _count: { _all: true },
+      }),
+      this.prisma.groupBroadcastTarget.aggregate({
+        where: { tenantId, broadcastId },
+        _sum: { sentCount: true },
+      }),
+    ]);
     const summary = emptySummary();
     for (const group of groups) {
       addToSummary(summary, group.status, group._count._all);
     }
+    summary.totalSent = sentCountAgg._sum.sentCount ?? 0;
     return summary;
   }
 
@@ -307,14 +314,26 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
   ): Promise<Map<string, GroupBroadcastSummary>> {
     const result = new Map<string, GroupBroadcastSummary>();
     if (broadcastIds.length === 0) return result;
-    const groups = await this.prisma.groupBroadcastTarget.groupBy({
-      by: ['broadcastId', 'status'],
-      where: { tenantId, broadcastId: { in: broadcastIds } },
-      _count: { _all: true },
-    });
+    const [groups, sentCountGroups] = await Promise.all([
+      this.prisma.groupBroadcastTarget.groupBy({
+        by: ['broadcastId', 'status'],
+        where: { tenantId, broadcastId: { in: broadcastIds } },
+        _count: { _all: true },
+      }),
+      this.prisma.groupBroadcastTarget.groupBy({
+        by: ['broadcastId'],
+        where: { tenantId, broadcastId: { in: broadcastIds } },
+        _sum: { sentCount: true },
+      }),
+    ]);
     for (const group of groups) {
       const summary = result.get(group.broadcastId) ?? emptySummary();
       addToSummary(summary, group.status, group._count._all);
+      result.set(group.broadcastId, summary);
+    }
+    for (const group of sentCountGroups) {
+      const summary = result.get(group.broadcastId) ?? emptySummary();
+      summary.totalSent = group._sum.sentCount ?? 0;
       result.set(group.broadcastId, summary);
     }
     return result;

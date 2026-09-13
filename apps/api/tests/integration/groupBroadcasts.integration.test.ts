@@ -74,7 +74,14 @@ describe('Integração real — Disparos em grupos (2026-09-11)', () => {
     ]);
 
     const summary = await repository.summarizeTargets(tenantId, broadcast.id);
-    expect(summary).toEqual({ total: 2, pending: 1, sent: 0, failed: 0, skipped: 1 });
+    expect(summary).toEqual({
+      total: 2,
+      pending: 1,
+      sent: 0,
+      failed: 0,
+      skipped: 1,
+      totalSent: 0,
+    });
 
     const targets = await repository.listTargets(tenantId, broadcast.id);
     expect(targets).toHaveLength(2);
@@ -305,8 +312,22 @@ describe('Integração real — Disparos em grupos (2026-09-11)', () => {
 
     const summaries = await repository.summarizeTargetsForBroadcasts(tenantId, [a.id, b.id]);
 
-    expect(summaries.get(a.id)).toEqual({ total: 1, pending: 1, sent: 0, failed: 0, skipped: 0 });
-    expect(summaries.get(b.id)).toEqual({ total: 1, pending: 0, sent: 0, failed: 0, skipped: 1 });
+    expect(summaries.get(a.id)).toEqual({
+      total: 1,
+      pending: 1,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      totalSent: 0,
+    });
+    expect(summaries.get(b.id)).toEqual({
+      total: 1,
+      pending: 0,
+      sent: 0,
+      failed: 0,
+      skipped: 1,
+      totalSent: 0,
+    });
   });
 
   it('markTargetSent/markTargetFailed só agem sobre alvo ainda pending (idempotência)', async () => {

@@ -1275,6 +1275,8 @@ export interface GroupBroadcastSummary {
   sent: number;
   failed: number;
   skipped: number;
+  /** Soma cumulativa de `sentCount` de todos os alvos — publicações reais, através de todas as repetições. */
+  totalSent: number;
 }
 
 export interface GroupBroadcastListItem {

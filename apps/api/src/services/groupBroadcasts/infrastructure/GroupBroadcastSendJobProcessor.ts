@@ -8,6 +8,7 @@ import {
 import {
   buildSendWindow,
   decideNextRun,
+  DEFAULT_GROUP_BROADCAST_TIMEZONE,
   isRecurring,
 } from '../domain/policies/groupBroadcastRecurrence';
 import { GroupBroadcastSendDispatcher } from '../domain/dispatchers/GroupBroadcastSendDispatcher';
@@ -132,7 +133,7 @@ export class GroupBroadcastSendJobProcessor {
     }
 
     const window = buildSendWindow(current.sendWindowStart, current.sendWindowEnd);
-    const decision = decideNextRun(current, window, finishedAt);
+    const decision = decideNextRun(current, window, finishedAt, DEFAULT_GROUP_BROADCAST_TIMEZONE);
     const runsCompleted = current.runsCompleted + 1;
 
     if (!decision.shouldRepeat) {
