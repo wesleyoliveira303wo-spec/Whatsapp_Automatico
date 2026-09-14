@@ -24,6 +24,8 @@ export const GROUP_BROADCAST_RUN_JOB_NAME = 'start-group-broadcast-run';
 export interface GroupBroadcastRunJobData {
   tenantId: string;
   broadcastId: string;
+  /** Qual etapa esta repetição é de — desde 2026-09-14, etapas rodam em paralelo, cada uma com seu próprio ciclo. */
+  stepId: string;
   /** Número da repetição que este job inicia (1 = a primeira). Só para log/idempotência. */
   runNumber: number;
 }
@@ -31,5 +33,7 @@ export interface GroupBroadcastRunJobData {
 export interface GroupBroadcastSendJobData {
   tenantId: string;
   broadcastId: string;
-  targetId: string;
+  stepId: string;
+  /** Id do `GroupBroadcastStepTarget` (progresso de UM grupo em UMA etapa), não mais do alvo campanha-wide. */
+  stepTargetId: string;
 }

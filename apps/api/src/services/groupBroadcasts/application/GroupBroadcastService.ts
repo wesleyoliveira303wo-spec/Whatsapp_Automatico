@@ -15,6 +15,8 @@ import {
 } from '../../conversations/domain/mediaMagicBytes';
 import {
   GroupBroadcast,
+  GroupBroadcastStep,
+  GroupBroadcastStepTarget,
   GroupBroadcastSummary,
   GroupBroadcastTarget,
 } from '../domain/entities/GroupBroadcast';
@@ -25,21 +27,27 @@ import {
   GroupBroadcastMediaTypeMismatchError,
   GroupBroadcastNotFoundError,
   GroupBroadcastRequiresPaidPlanError,
+  GroupBroadcastStepNotFoundError,
   InvalidGroupBroadcastTransitionError,
   InvalidRecurrenceError,
   NoGroupsSelectedError,
+  NoStepsProvidedError,
   TooManyGroupsSelectedError,
+  TooManyStepsError,
 } from '../domain/errors/groupBroadcastErrors';
 import {
   clampGroupIntervalSeconds,
+  clampStepLaunchOffsetMinutes,
   computeGroupSendDelayMs,
   determineGroupTargetSkipReason,
   MAX_GROUP_MEDIA_BYTES,
   MAX_GROUPS_PER_BROADCAST,
+  MAX_STEPS_PER_BROADCAST,
 } from '../domain/policies/groupBroadcastPacing';
 import { GroupDirectory } from '../domain/providers/GroupDirectory';
 import { GroupBroadcastSendDispatcher } from '../domain/dispatchers/GroupBroadcastSendDispatcher';
 import {
+  CreateGroupBroadcastStepData,
   GroupBroadcastMediaContent,
   GroupBroadcastRepository,
   GroupBroadcastTargetDraft,
@@ -48,25 +56,37 @@ import {
 /** Quantos disparos a lista de uma sessão mostra — volume baixo por natureza (ação deliberada de administrador). */
 const LIST_LIMIT = 100;
 
+/** Uma publicação da sequência, como recebida na criação — mesmos campos que `GroupBroadcastStep` tinha quando morava direto em `GroupBroadcast`. */
+export interface CreateGroupBroadcastStepInput {
+  messageTemplate: string;
+  /** Recorrência DESTA etapa. Ausente = publica uma vez, depois avança/encerra. */
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  recurrenceEndsAt?: Date;
+}
+
 export interface CreateGroupBroadcastInput {
   tenantId: string;
   sessionName: string;
   name: string;
-  messageTemplate: string;
   groupJids: string[];
   intervalSeconds?: number;
   createdByUserId?: string;
-  /**
-   * Recorrência (2026-09-11). `recurrenceIntervalHours` ausente = publicação
-   * única. As três formas de término convivem: teto de repetições
-   * (`recurrenceMaxRuns`), data/hora limite (`recurrenceEndsAt`), e "até eu
-   * cancelar" (nenhuma das duas).
-   */
-  recurrenceIntervalHours?: number;
-  recurrenceMaxRuns?: number;
-  recurrenceEndsAt?: Date;
   sendWindowStart?: string;
   sendWindowEnd?: string;
+  /**
+   * Escalonamento inicial (2026-09-14, "cadência entre publicações") —
+   * minutos entre o início de uma publicação e o início da seguinte, na
+   * primeira vez que cada uma dispara. Ausente = todas começam juntas.
+   */
+  stepLaunchOffsetMinutes?: number;
+  /**
+   * A sequência de publicações (2026-09-14) — 1 a `MAX_STEPS_PER_BROADCAST`.
+   * Um disparo "simples" (o modelo antigo) é apenas uma campanha com UMA
+   * etapa; não existe segundo conceito de campanha. Desde a "cadência entre
+   * publicações", todas rodam em PARALELO, cada uma com seu próprio ritmo.
+   */
+  steps: CreateGroupBroadcastStepInput[];
 }
 
 /** Quem executou a ação — só para a trilha de auditoria (`undefined` = plano máquina). */
@@ -78,6 +98,7 @@ export interface GroupBroadcastActor {
 
 export interface GroupBroadcastDetail {
   broadcast: GroupBroadcast;
+  steps: GroupBroadcastStep[];
   summary: GroupBroadcastSummary;
   targets: GroupBroadcastTarget[];
 }
@@ -88,7 +109,9 @@ export interface GroupBroadcastListItem {
 }
 
 /**
- * Orquestra o disparo ÚNICO de uma mensagem em grupos — 2026-09-11.
+ * Orquestra o disparo em grupos — 2026-09-11, estendido em 2026-09-14 para
+ * campanhas com múltiplas publicações em sequência ("etapas" — ver
+ * `docs/superpowers/specs/2026-09-14-group-broadcast-etapas-design.md`).
  *
  * Mesma forma de `CampaignService` (criar → iniciar/pausar/cancelar → anexar
  * mídia), com três diferenças deliberadas:
@@ -104,7 +127,7 @@ export interface GroupBroadcastListItem {
  *    (risco de banimento aceito conscientemente; a confirmação de "Iniciar"
  *    já nomeia esse risco por disparo).
  * 3. **Trilha de auditoria** em criar/iniciar/cancelar. O motor de campanhas
- *    1:1 não audita; aqui, por ser a ação de maior risco de banimento do
+ *    1:1 não audita; aqui, por ser a ação de maior raio de estrago do
  *    produto, a pergunta "quem mandou isto para 30 grupos?" precisa ter
  *    resposta. `auditLogRepository` é OPCIONAL (mesmo padrão das demais
  *    dependências auxiliares): ausente, só não registra — nunca quebra a ação.
@@ -130,6 +153,49 @@ export class GroupBroadcastService {
   ): Promise<GroupBroadcastDetail> {
     await this.assertTenantExists(input.tenantId);
 
+    if (input.steps.length === 0) {
+      throw new NoStepsProvidedError();
+    }
+    if (input.steps.length > MAX_STEPS_PER_BROADCAST) {
+      throw new TooManyStepsError(input.steps.length, MAX_STEPS_PER_BROADCAST);
+    }
+
+    const windowInformed = Boolean(input.sendWindowStart) || Boolean(input.sendWindowEnd);
+    if (windowInformed && !buildSendWindow(input.sendWindowStart, input.sendWindowEnd)) {
+      throw new InvalidRecurrenceError(
+        'A janela de horário precisa de início e fim válidos ("HH:MM") e diferentes entre si.',
+      );
+    }
+
+    const stepDrafts: CreateGroupBroadcastStepData[] = input.steps.map((step, order) => {
+      const recurring =
+        step.recurrenceIntervalHours !== undefined && step.recurrenceIntervalHours !== null;
+      if (recurring) {
+        if (
+          step.recurrenceMaxRuns !== undefined &&
+          (step.recurrenceMaxRuns < 2 || step.recurrenceMaxRuns > MAX_RECURRENCE_RUNS)
+        ) {
+          throw new InvalidRecurrenceError(
+            `Publicação ${order + 1}: o número de repetições precisa estar entre 2 e ${MAX_RECURRENCE_RUNS}.`,
+          );
+        }
+        if (step.recurrenceEndsAt && step.recurrenceEndsAt.getTime() <= Date.now()) {
+          throw new InvalidRecurrenceError(
+            `Publicação ${order + 1}: a data de término precisa estar no futuro.`,
+          );
+        }
+      }
+      return {
+        order,
+        messageTemplate: step.messageTemplate,
+        recurrenceIntervalHours: recurring
+          ? clampRecurrenceIntervalHours(step.recurrenceIntervalHours)
+          : undefined,
+        recurrenceMaxRuns: recurring ? step.recurrenceMaxRuns : undefined,
+        recurrenceEndsAt: recurring ? step.recurrenceEndsAt : undefined,
+      };
+    });
+
     const groupJids = Array.from(
       new Set(input.groupJids.map((jid) => jid.trim()).filter((jid) => jid.length > 0)),
     );
@@ -145,32 +211,7 @@ export class GroupBroadcastService {
     const directory = await this.groupDirectory.listGroups(input.tenantId, input.sessionName);
     const byJid = new Map(directory.map((entry) => [entry.jid, entry]));
 
-    const recurring =
-      input.recurrenceIntervalHours !== undefined && input.recurrenceIntervalHours !== null;
-    if (recurring) {
-      if (
-        input.recurrenceMaxRuns !== undefined &&
-        (input.recurrenceMaxRuns < 2 || input.recurrenceMaxRuns > MAX_RECURRENCE_RUNS)
-      ) {
-        throw new InvalidRecurrenceError(
-          `O número de repetições precisa estar entre 2 e ${MAX_RECURRENCE_RUNS}.`,
-        );
-      }
-      if (input.recurrenceEndsAt && input.recurrenceEndsAt.getTime() <= Date.now()) {
-        throw new InvalidRecurrenceError('A data de término precisa estar no futuro.');
-      }
-      const windowInformed = Boolean(input.sendWindowStart) || Boolean(input.sendWindowEnd);
-      if (
-        windowInformed &&
-        !buildSendWindow(input.sendWindowStart, input.sendWindowEnd)
-      ) {
-        throw new InvalidRecurrenceError(
-          'A janela de horário precisa de início e fim válidos ("HH:MM") e diferentes entre si.',
-        );
-      }
-    }
-
-    const drafts: GroupBroadcastTargetDraft[] = groupJids.map((groupJid) => {
+    const targetDrafts: GroupBroadcastTargetDraft[] = groupJids.map((groupJid) => {
       const entry = byJid.get(groupJid);
       const skipReason = determineGroupTargetSkipReason(entry);
       const groupName = entry?.name ?? 'Grupo não encontrado';
@@ -183,21 +224,19 @@ export class GroupBroadcastService {
       tenantId: input.tenantId,
       sessionName: input.sessionName,
       name: input.name,
-      messageTemplate: input.messageTemplate,
       intervalSeconds: clampGroupIntervalSeconds(input.intervalSeconds),
-      // Recorrência: o intervalo passa pelo clamp do Domain (1h–24h); os
-      // limites de término e a janela são gravados como vieram (a rota já
-      // valida formato), e `undefined` em todos = publicação única.
-      recurrenceIntervalHours: recurring
-        ? clampRecurrenceIntervalHours(input.recurrenceIntervalHours)
-        : undefined,
-      recurrenceMaxRuns: recurring ? input.recurrenceMaxRuns : undefined,
-      recurrenceEndsAt: recurring ? input.recurrenceEndsAt : undefined,
-      sendWindowStart: recurring ? input.sendWindowStart : undefined,
-      sendWindowEnd: recurring ? input.sendWindowEnd : undefined,
+      sendWindowStart: input.sendWindowStart,
+      sendWindowEnd: input.sendWindowEnd,
+      stepLaunchOffsetMinutes: clampStepLaunchOffsetMinutes(input.stepLaunchOffsetMinutes),
       createdByUserId: input.createdByUserId,
     });
-    await this.repository.createTargets(input.tenantId, broadcast.id, drafts);
+    const steps = await this.repository.createSteps(input.tenantId, broadcast.id, stepDrafts);
+    await this.repository.createTargets(input.tenantId, broadcast.id, targetDrafts);
+    // Materializa o progresso de TODAS as etapas × TODOS os alvos — desde a
+    // "cadência entre publicações", cada etapa roda em paralelo com sua
+    // PRÓPRIA lista de "quem já recebeu" (não existe mais uma lista só,
+    // compartilhada entre etapas).
+    await this.repository.initializeStepTargets(input.tenantId, broadcast.id);
 
     const [summary, targets] = await Promise.all([
       this.repository.summarizeTargets(input.tenantId, broadcast.id),
@@ -209,7 +248,7 @@ export class GroupBroadcastService {
       groups: summary.total,
       pending: summary.pending,
       skipped: summary.skipped,
-      recurrenceIntervalHours: broadcast.recurrenceIntervalHours,
+      steps: steps.length,
     });
     this.logger.info('Disparo em grupos criado', {
       tenantId: input.tenantId,
@@ -218,9 +257,10 @@ export class GroupBroadcastService {
       total: summary.total,
       pending: summary.pending,
       skipped: summary.skipped,
+      steps: steps.length,
     });
 
-    return { broadcast, summary, targets };
+    return { broadcast, steps, summary, targets };
   }
 
   async listBroadcasts(tenantId: string, sessionName: string): Promise<GroupBroadcastListItem[]> {
@@ -239,21 +279,31 @@ export class GroupBroadcastService {
   async getBroadcast(tenantId: string, broadcastId: string): Promise<GroupBroadcastDetail> {
     await this.assertTenantExists(tenantId);
     const broadcast = await this.requireBroadcast(tenantId, broadcastId);
-    const [summary, targets] = await Promise.all([
+    const [steps, summary, targets] = await Promise.all([
+      this.repository.listSteps(tenantId, broadcastId),
       this.repository.summarizeTargets(tenantId, broadcastId),
       this.repository.listTargets(tenantId, broadcastId),
     ]);
-    return { broadcast, summary, targets };
+    return { broadcast, steps, summary, targets };
   }
 
   /**
    * Inicia (ou RETOMA, após pausa) — só `draft`/`paused`. Nenhuma checagem
    * contra outros disparos da mesma sessão (2026-09-12): rodar vários em
-   * paralelo é permitido, decisão explícita do fundador. Reagenda TODO alvo
-   * ainda `pending` com delay FRESCO, contado a partir de agora (mesmo
-   * racional de `CampaignService.startCampaign`: um job que disparou durante a
-   * pausa viu `status !== 'running'` e não enviou; o alvo ficou `pending`,
-   * órfão, até este método rodar de novo).
+   * paralelo é permitido, decisão explícita do fundador.
+   *
+   * Desde a "cadência entre publicações" (2026-09-14), CADA etapa ainda não
+   * `finishedAt` é agendada independentemente:
+   *
+   * - se já tem grupos `pending` NESTE ciclo (foi pausada no meio de um
+   *   envio) → retoma-os com delay FRESCO, contado a partir de agora (mesmo
+   *   racional de `CampaignService.startCampaign`: um job que disparou
+   *   durante a pausa viu `status !== 'running'` e não enviou);
+   * - senão → agenda um "run" (via `GroupBroadcastRunJobProcessor`, que checa
+   *   a janela de horário) — com o escalonamento inicial
+   *   (`order × stepLaunchOffsetMinutes`) se a etapa NUNCA rodou, ou de
+   *   imediato se está só esperando entre um ciclo e o próximo (retomar não
+   *   espera o resto do temporizador antigo).
    */
   async startBroadcast(
     tenantId: string,
@@ -270,37 +320,116 @@ export class GroupBroadcastService {
       throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'start');
     }
 
-    const pendingTargets = await this.repository.listPendingTargets(tenantId, broadcastId);
-    if (pendingTargets.length === 0) {
+    const steps = await this.repository.listSteps(tenantId, broadcastId);
+    const activeSteps = steps.filter((step) => !step.finishedAt);
+    if (activeSteps.length === 0) {
       const completed = await this.repository.updateStatus(tenantId, broadcastId, 'completed');
       return completed!;
     }
 
     const now = new Date();
-    for (const [index, target] of pendingTargets.entries()) {
-      // Sequencial (não `Promise.all`) de propósito: são no máximo 30 alvos, e
-      // uma falha de Redis no meio deixa o estado fácil de raciocinar — o
-      // disparo não chega a virar `running` e pode ser iniciado de novo (o
-      // dispatcher remove o job antigo antes de reagendar).
+    const offsetMs = clampStepLaunchOffsetMinutes(broadcast.stepLaunchOffsetMinutes) * 60 * 1000;
+
+    // FASE 1 — só leitura/decisão, NENHUM agendamento ainda. Um job de
+    // delay 0 pode ser processado pelo worker em menos de 10ms; se
+    // agendássemos antes de gravar `status: 'running'`, o job correria
+    // contra essa escrita e podia ler `draft` (bug real, 2026-09-14: a
+    // etapa 0, sem escalonamento, "sumia" — o job via `draft`, desistia
+    // pra sempre, e nada mais a reagendava). Por isso TODA decisão é
+    // tomada e gravada (inclusive `markStepFinished`/`markStepStarted`)
+    // ANTES de qualquer chamada ao dispatcher.
+    type StepPlan =
+      | { kind: 'resume_pending'; step: GroupBroadcastStep; pending: GroupBroadcastStepTarget[] }
+      | { kind: 'run'; step: GroupBroadcastStep; delayMs: number };
+    const plans: StepPlan[] = [];
+    for (const step of activeSteps) {
+      // "Nunca rodou" — marcado explicitamente em `startedAt` (nem
+      // `runsCompleted` nem `nextRunAt` bastam sozinhos: os dois ficam
+      // "vazios" tanto antes do 1º ciclo quanto no meio de um ciclo em
+      // andamento).
+      const neverStarted = !step.startedAt;
       // eslint-disable-next-line no-await-in-loop
-      await this.sendDispatcher.scheduleTarget(
-        tenantId,
-        broadcastId,
-        target.id,
-        computeGroupSendDelayMs(index, broadcast.intervalSeconds, now),
-      );
+      const pendingStepTargets = await this.repository.listPendingStepTargets(tenantId, step.id);
+
+      if (neverStarted && pendingStepTargets.length === 0) {
+        // Todos os grupos nasceram suprimidos — esta etapa nunca teria o que
+        // publicar; encerra direto, sem sequer agendar um "run" (mesmo
+        // racional de sempre: repetir o vazio não tem valor).
+        // eslint-disable-next-line no-await-in-loop
+        await this.repository.markStepFinished(tenantId, step.id, step.runsCompleted);
+        continue;
+      }
+
+      if (neverStarted) {
+        // SEMPRE passa pelo "run" (que checa a janela de horário), com o
+        // escalonamento inicial — nunca dispara envios direto no 1º ciclo.
+        // eslint-disable-next-line no-await-in-loop
+        await this.repository.markStepStarted(tenantId, step.id, now);
+        plans.push({ kind: 'run', step, delayMs: step.order * offsetMs });
+        continue;
+      }
+
+      if (pendingStepTargets.length > 0) {
+        // Ciclo em andamento (pausado no meio de um envio): retoma os grupos
+        // que faltam, com delay FRESCO a partir de agora.
+        plans.push({ kind: 'resume_pending', step, pending: pendingStepTargets });
+        continue;
+      }
+
+      // Sem pendentes: está entre um ciclo e o próximo — retoma na hora, sem
+      // esperar o resto do temporizador antigo.
+      plans.push({ kind: 'run', step, delayMs: 0 });
     }
 
+    if (plans.length === 0) {
+      const completed = await this.repository.updateStatus(tenantId, broadcastId, 'completed');
+      return completed!;
+    }
+
+    // FASE 2 — grava `running` PRIMEIRO, e só então agenda. Depois deste
+    // ponto, qualquer job (mesmo delay 0) sempre lê o status já commitado.
+    const wasPaused = broadcast.status === 'paused';
     const updated = await this.repository.updateStatus(tenantId, broadcastId, 'running');
+
+    let scheduledCount = 0;
+    for (const plan of plans) {
+      if (plan.kind === 'run') {
+        // eslint-disable-next-line no-await-in-loop
+        await this.sendDispatcher.scheduleRun(
+          tenantId,
+          broadcastId,
+          plan.step.id,
+          plan.step.runsCompleted + 1,
+          plan.delayMs,
+        );
+        scheduledCount += 1;
+        continue;
+      }
+      // Sequencial (não `Promise.all`) de propósito: no máximo 30 alvos por
+      // etapa, e uma falha de Redis no meio deixa o estado fácil de
+      // raciocinar.
+      for (const [index, stepTarget] of plan.pending.entries()) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.sendDispatcher.scheduleStepTarget(
+          tenantId,
+          broadcastId,
+          plan.step.id,
+          stepTarget.id,
+          computeGroupSendDelayMs(index, broadcast.intervalSeconds, now),
+        );
+      }
+      scheduledCount += plan.pending.length;
+    }
+
     await this.audit(tenantId, actor, 'group_broadcast.started', broadcastId, {
       sessionName: broadcast.sessionName,
-      scheduled: pendingTargets.length,
-      resumed: broadcast.status === 'paused',
+      scheduled: scheduledCount,
+      resumed: wasPaused,
     });
     this.logger.info('Disparo em grupos iniciado/retomado', {
       tenantId,
       broadcastId,
-      scheduled: pendingTargets.length,
+      scheduled: scheduledCount,
     });
     return updated!;
   }
@@ -354,21 +483,25 @@ export class GroupBroadcastService {
   }
 
   /**
-   * Anexa (ou substitui) a imagem/vídeo — só em `draft` (depois de iniciado,
-   * o conteúdo não pode mudar no meio: grupos já publicados receberiam uma
-   * coisa, os seguintes outra). Teto por tipo + checagem de assinatura binária
-   * (a mesma do envio de mídia pelo operador, F1.10).
+   * Anexa (ou substitui) a imagem/vídeo de UMA ETAPA — só em `draft` (depois
+   * de iniciado, o conteúdo não pode mudar no meio: grupos já publicados
+   * receberiam uma coisa, os seguintes outra). Teto por tipo + checagem de
+   * assinatura binária (a mesma do envio de mídia pelo operador, F1.10).
+   * Referenciada por `stepId` — NUNCA por posição/ordem — porque reordenar
+   * etapas em rascunho não pode deixar uma mídia "grudada" na posição errada.
    */
   async attachMedia(
     tenantId: string,
     broadcastId: string,
+    stepId: string,
     media: GroupBroadcastMediaContent,
-  ): Promise<GroupBroadcast> {
+  ): Promise<GroupBroadcastStep> {
     await this.assertTenantExists(tenantId);
     const broadcast = await this.requireBroadcast(tenantId, broadcastId);
     if (broadcast.status !== 'draft') {
       throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'attach_media');
     }
+    const step = await this.requireStep(tenantId, broadcastId, stepId);
     const maxBytes = MAX_GROUP_MEDIA_BYTES[media.contentType];
     if (media.buffer.byteLength > maxBytes) {
       throw new GroupBroadcastMediaTooLargeError(media.buffer.byteLength, maxBytes);
@@ -377,31 +510,42 @@ export class GroupBroadcastService {
       const detected = sniffMediaCategory(media.buffer) ?? 'desconhecida';
       throw new GroupBroadcastMediaTypeMismatchError(media.contentType, detected);
     }
-    const updated = await this.repository.attachMedia(tenantId, broadcastId, media);
-    this.logger.info('Mídia anexada ao disparo em grupos', {
+    const updated = await this.repository.attachStepMedia(tenantId, step.id, media);
+    this.logger.info('Mídia anexada a uma etapa do disparo em grupos', {
       tenantId,
       broadcastId,
+      stepId,
       contentType: media.contentType,
       bytes: media.buffer.byteLength,
     });
     return updated!;
   }
 
-  async removeMedia(tenantId: string, broadcastId: string): Promise<GroupBroadcast> {
+  async removeMedia(
+    tenantId: string,
+    broadcastId: string,
+    stepId: string,
+  ): Promise<GroupBroadcastStep> {
     await this.assertTenantExists(tenantId);
     const broadcast = await this.requireBroadcast(tenantId, broadcastId);
     if (broadcast.status !== 'draft') {
       throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'attach_media');
     }
-    const updated = await this.repository.removeMedia(tenantId, broadcastId);
+    const step = await this.requireStep(tenantId, broadcastId, stepId);
+    const updated = await this.repository.removeStepMedia(tenantId, step.id);
     return updated!;
   }
 
-  async getMedia(tenantId: string, broadcastId: string): Promise<GroupBroadcastMediaContent> {
+  async getMedia(
+    tenantId: string,
+    broadcastId: string,
+    stepId: string,
+  ): Promise<GroupBroadcastMediaContent> {
     await this.assertTenantExists(tenantId);
-    const media = await this.repository.getMediaContent(tenantId, broadcastId);
+    await this.requireStep(tenantId, broadcastId, stepId);
+    const media = await this.repository.getStepMediaContent(tenantId, stepId);
     if (!media) {
-      throw new GroupBroadcastMediaNotFoundError(broadcastId);
+      throw new GroupBroadcastMediaNotFoundError(stepId);
     }
     return media;
   }
@@ -412,6 +556,18 @@ export class GroupBroadcastService {
       throw new GroupBroadcastNotFoundError(broadcastId);
     }
     return broadcast;
+  }
+
+  private async requireStep(
+    tenantId: string,
+    broadcastId: string,
+    stepId: string,
+  ): Promise<GroupBroadcastStep> {
+    const step = await this.repository.findStepById(tenantId, stepId);
+    if (!step || step.broadcastId !== broadcastId) {
+      throw new GroupBroadcastStepNotFoundError(stepId);
+    }
+    return step;
   }
 
   private async assertTenantExists(tenantId: string): Promise<Tenant> {

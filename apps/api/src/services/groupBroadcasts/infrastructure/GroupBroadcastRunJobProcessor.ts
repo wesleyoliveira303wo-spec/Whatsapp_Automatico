@@ -17,18 +17,27 @@ export type GroupBroadcastRunOutcome =
   | 'completed_without_targets';
 
 /**
- * Inicia uma REPETIÇÃO de um disparo recorrente (2026-09-11).
+ * Inicia uma REPETIÇÃO (ou o lançamento inicial) de UMA ETAPA de um disparo em
+ * grupos (2026-09-11, estendido em 2026-09-14 para "cadência entre
+ * publicações" — cada etapa roda em PARALELO, com seu próprio ciclo, agendada
+ * independente das demais — ver
+ * `docs/superpowers/specs/2026-09-14-group-broadcast-etapas-design.md`).
  *
- * Quem agenda este job é o processador de envio, quando a repetição anterior
- * termina — ver `GroupBroadcastSendJobProcessor`. Aqui só se reabre o disparo:
+ * Quem agenda este job: `GroupBroadcastService.startBroadcast` (lançamento
+ * inicial ou retomada, um por etapa) e o próprio processador de envio
+ * (`GroupBroadcastSendJobProcessor`, para repetir a MESMA etapa depois de um
+ * ciclo). Não existe mais "avançar para a próxima etapa" — cada etapa só se
+ * repete (ou encerra sua própria recorrência), nunca dispara outra.
  *
  * 1. relê o disparo; segue apenas se ainda estiver `running` — pausar ou
  *    cancelar não precisa mexer na fila, o job dispara, vê o status e encerra
  *    (mesmo padrão de `shouldAutoRespond` ser re-checado no processamento);
- * 2. fora da janela de horário, o ciclo é REAGENDADO para o próximo horário
+ * 2. relê a ETAPA (por `stepId`, nunca mais por índice) — é dela que vem a
+ *    mensagem/mídia/recorrência;
+ * 3. fora da janela de horário, o ciclo é REAGENDADO para o próximo horário
  *    permitido em vez de publicar de madrugada — nunca descartado;
- * 3. devolve os alvos a `pending` (`skipped` continua fora) e agenda os envios
- *    com o mesmo ritmo do primeiro disparo.
+ * 4. devolve os alvos DESTA ETAPA a `pending` (`skipped` continua fora) e
+ *    agenda os envios com o mesmo ritmo do primeiro disparo.
  */
 export class GroupBroadcastRunJobProcessor {
   constructor(
@@ -38,79 +47,99 @@ export class GroupBroadcastRunJobProcessor {
   ) {}
 
   async process(data: GroupBroadcastRunJobData): Promise<GroupBroadcastRunOutcome> {
-    const { tenantId, broadcastId, runNumber } = data;
+    const { tenantId, broadcastId, stepId, runNumber } = data;
 
     const broadcast = await this.repository.findById(tenantId, broadcastId);
     if (!broadcast || broadcast.status !== 'running') {
       this.logger.info('Repetição de disparo em grupos ignorada: disparo não está em execução', {
         tenantId,
         broadcastId,
+        stepId,
         runNumber,
         status: broadcast?.status,
       });
       return 'skipped';
     }
 
+    const step = await this.repository.findStepById(tenantId, stepId);
+    if (!step || step.broadcastId !== broadcastId) {
+      this.logger.error('Repetição de disparo em grupos sem etapa correspondente — ignorando', {
+        tenantId,
+        broadcastId,
+        stepId,
+      });
+      return 'completed_without_targets';
+    }
+
     const now = new Date();
     const window = buildSendWindow(broadcast.sendWindowStart, broadcast.sendWindowEnd);
     if (!isWithinSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE)) {
       const postponedTo = shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE);
-      await this.repository.markRunFinished(
-        tenantId,
-        broadcastId,
-        broadcast.runsCompleted,
-        postponedTo,
-      );
+      await this.repository.markStepRunFinished(tenantId, step.id, step.runsCompleted, postponedTo);
       await this.sendDispatcher.scheduleRun(
         tenantId,
         broadcastId,
+        step.id,
         runNumber,
         Math.max(0, postponedTo.getTime() - now.getTime()),
       );
       this.logger.info('Repetição adiada para dentro da janela de horário', {
         tenantId,
         broadcastId,
+        stepId,
         runNumber,
         postponedTo,
       });
       return 'postponed';
     }
 
-    const reopened = await this.repository.resetTargetsForNextRun(tenantId, broadcastId);
-    const pendingTargets = await this.repository.listPendingTargets(tenantId, broadcastId);
-    if (pendingTargets.length === 0) {
+    const reopened = await this.repository.resetStepTargetsForNextRun(tenantId, step.id);
+    const pendingStepTargets = await this.repository.listPendingStepTargets(tenantId, step.id);
+    if (pendingStepTargets.length === 0) {
       // Todos os grupos viraram `skipped` (saímos deles, ou viraram só-admin):
-      // não há o que repetir, e repetir "nada" para sempre seria pior que
-      // encerrar.
-      await this.repository.markRunFinished(tenantId, broadcastId, broadcast.runsCompleted, null);
-      await this.repository.updateStatus(tenantId, broadcastId, 'completed');
-      this.logger.warn('Recorrência encerrada: nenhum grupo elegível restou', {
+      // não há o que repetir NESTA etapa — mas as demais etapas do disparo
+      // seguem seu próprio ciclo independente, então a campanha só termina se
+      // TODAS chegarem nesse estado.
+      await this.repository.markStepFinished(tenantId, step.id, step.runsCompleted);
+      this.logger.warn('Recorrência desta etapa encerrada: nenhum grupo elegível restou', {
         tenantId,
         broadcastId,
+        stepId,
         runNumber,
       });
+      if (await this.repository.areAllStepsFinished(tenantId, broadcastId)) {
+        await this.repository.updateStatus(tenantId, broadcastId, 'completed');
+        this.logger.info('Disparo em grupos concluído (todas as etapas encerradas)', {
+          tenantId,
+          broadcastId,
+        });
+      }
       return 'completed_without_targets';
     }
 
-    for (const [index, target] of pendingTargets.entries()) {
+    for (const [index, stepTarget] of pendingStepTargets.entries()) {
       // Sequencial pelo mesmo motivo de `startBroadcast`: no máximo 30 alvos, e
       // uma falha de Redis no meio deixa o estado simples de raciocinar.
       // eslint-disable-next-line no-await-in-loop
-      await this.sendDispatcher.scheduleTarget(
+      await this.sendDispatcher.scheduleStepTarget(
         tenantId,
         broadcastId,
-        target.id,
+        step.id,
+        stepTarget.id,
         computeGroupSendDelayMs(index, broadcast.intervalSeconds, now),
       );
     }
 
-    await this.repository.markRunFinished(tenantId, broadcastId, broadcast.runsCompleted, null);
+    // Ciclo em andamento: `nextRunAt` fica null até o envio fechar o ciclo e
+    // decidir o próximo horário (ou marcar a etapa como encerrada de vez).
+    await this.repository.markStepRunFinished(tenantId, step.id, step.runsCompleted, null);
     this.logger.info('Repetição de disparo em grupos iniciada', {
       tenantId,
       broadcastId,
+      stepId,
       runNumber,
       reopened,
-      scheduled: pendingTargets.length,
+      scheduled: pendingStepTargets.length,
     });
     return 'started';
   }

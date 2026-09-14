@@ -17,7 +17,8 @@ import {
 import { GroupDirectoryUnavailableError } from '../../../../src/services/groupBroadcasts/domain/errors/groupBroadcastErrors';
 
 /**
- * Testes do `groupBroadcastsRouter` — Disparos em grupos (2026-09-11): RBAC
+ * Testes do `groupBroadcastsRouter` — Disparos em grupos (2026-09-11,
+ * estendido em 2026-09-14 para campanhas com múltiplas publicações): RBAC
  * por rota (GET→`campaign:read`, escrita→`campaign:manage`) + IDOR entre
  * tenants. Mesmo padrão de `campaignsRouter.test.ts`.
  */
@@ -77,6 +78,17 @@ const MACHINE: Principal = { kind: 'machine', tenantId: 'tenant-1' };
 
 function basePath(tenantId: string): string {
   return `/api/tenants/${tenantId}/group-broadcasts`;
+}
+
+/** Corpo de criação mínimo válido — 1 etapa, 1 grupo. */
+function baseBody(over: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    sessionName: 'sessao',
+    name: 'Disparo',
+    groupJids: ['111@g.us'],
+    steps: [{ messageTemplate: 'Oi' }],
+    ...over,
+  };
 }
 
 describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
@@ -139,33 +151,23 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       const { app, directory } = buildApp(person('operator'));
       directory.entries = [{ jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true }];
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['111@g.us'],
-        });
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody());
 
       expect(response.status).toBe(403);
     });
 
-    it('administrator cria o disparo e recebe o resumo (201)', async () => {
+    it('administrator cria o disparo e recebe o resumo + etapas (201)', async () => {
       const { app, directory } = buildApp(person('administrator'));
       directory.entries = [{ jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true }];
 
       const response = await request(app)
         .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi pessoal',
-          groupJids: ['111@g.us'],
-        });
+        .send(baseBody({ steps: [{ messageTemplate: 'Oi pessoal' }] }));
 
       expect(response.status).toBe(201);
       expect(response.body.broadcast).toMatchObject({ name: 'Disparo', status: 'draft' });
+      expect(response.body.steps).toHaveLength(1);
+      expect(response.body.steps[0].messageTemplate).toBe('Oi pessoal');
       expect(response.body.summary).toEqual({
         total: 1,
         pending: 1,
@@ -182,14 +184,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
         { jid: '111@g.us', name: 'Grupo Admin', participantCount: 5, canSend: false },
       ];
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['111@g.us'],
-        });
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody());
 
       expect(response.status).toBe(201);
       expect(response.body.summary).toEqual({
@@ -206,14 +201,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
     it('grupo que não está na lista ao vivo vira skipped/group_not_found', async () => {
       const { app } = buildApp(person('administrator'));
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['111@g.us'],
-        });
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody());
 
       expect(response.status).toBe(201);
       expect(response.body.targets[0].skipReason).toBe('group_not_found');
@@ -222,19 +210,16 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
     it('sem groupJids: 400 (validação de corpo)', async () => {
       const { app } = buildApp(person('administrator'));
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({ sessionName: 'sessao', name: 'Disparo', messageTemplate: 'Oi', groupJids: [] });
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody({ groupJids: [] }));
 
       expect(response.status).toBe(400);
     });
 
     it('sem sessionName: 400', async () => {
       const { app } = buildApp(person('administrator'));
+      const { sessionName: _sessionName, ...rest } = baseBody();
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({ name: 'Disparo', messageTemplate: 'Oi', groupJids: ['111@g.us'] });
+      const response = await request(app).post(basePath('tenant-1')).send(rest);
 
       expect(response.status).toBe(400);
     });
@@ -244,12 +229,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       const response = await request(app)
         .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['5511999999999@s.whatsapp.net'],
-        });
+        .send(baseBody({ groupJids: ['5511999999999@s.whatsapp.net'] }));
 
       expect(response.status).toBe(400);
     });
@@ -259,28 +239,69 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       const response = await request(app)
         .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: Array.from({ length: 31 }, (_, i) => `${i}@g.us`),
-        });
+        .send(baseBody({ groupJids: Array.from({ length: 31 }, (_, i) => `${i}@g.us`) }));
 
       expect(response.status).toBe(400);
+    });
+
+    it('array de etapas vazio: 400', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody({ steps: [] }));
+
+      expect(response.status).toBe(400);
+    });
+
+    it('mais de 20 etapas: 400', async () => {
+      const { app } = buildApp(person('administrator'));
+      const steps = Array.from({ length: 21 }, (_, i) => ({ messageTemplate: `Post ${i}` }));
+
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody({ steps }));
+
+      expect(response.status).toBe(400);
+    });
+
+    it('recorrência inválida numa etapa específica: 400', async () => {
+      const { app } = buildApp(person('administrator'));
+
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send(
+          baseBody({
+            steps: [{ messageTemplate: 'ok' }, { messageTemplate: 'ruim', recurrenceIntervalHours: 48 }],
+          }),
+        );
+
+      expect(response.status).toBe(400);
+    });
+
+    it('payload válido com múltiplas etapas: 201, etapas na ordem enviada', async () => {
+      const { app, directory } = buildApp(person('administrator'));
+      directory.entries = [{ jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true }];
+
+      const response = await request(app)
+        .post(basePath('tenant-1'))
+        .send(
+          baseBody({
+            steps: [
+              { messageTemplate: 'Post 1' },
+              { messageTemplate: 'Post 2', recurrenceIntervalHours: 24, recurrenceMaxRuns: 3 },
+            ],
+          }),
+        );
+
+      expect(response.status).toBe(201);
+      expect(response.body.steps.map((s: { messageTemplate: string }) => s.messageTemplate)).toEqual([
+        'Post 1',
+        'Post 2',
+      ]);
     });
 
     it('WhatsApp desconectado: 409 whatsapp_not_connected', async () => {
       const { app, directory } = buildApp(person('administrator'));
       directory.nextError = new GroupDirectoryUnavailableError('not_connected');
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['111@g.us'],
-        });
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody());
 
       expect(response.status).toBe(409);
       expect(response.body.error).toBe('whatsapp_not_connected');
@@ -290,14 +311,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       const { app, directory } = buildApp(person('administrator'));
       directory.nextError = new GroupDirectoryUnavailableError('timeout');
 
-      const response = await request(app)
-        .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['111@g.us'],
-        });
+      const response = await request(app).post(basePath('tenant-1')).send(baseBody());
 
       expect(response.status).toBe(504);
       expect(response.body.error).toBe('groups_fetch_timeout');
@@ -307,14 +321,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       const { app, directory, auditLog } = buildApp(person('administrator'));
       directory.entries = [{ jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true }];
 
-      await request(app)
-        .post(basePath('tenant-1'))
-        .send({
-          sessionName: 'sessao',
-          name: 'Disparo',
-          messageTemplate: 'Oi',
-          groupJids: ['111@g.us'],
-        });
+      await request(app).post(basePath('tenant-1')).send(baseBody());
 
       expect(auditLog.entries).toHaveLength(1);
       expect(auditLog.entries[0].action).toBe('group_broadcast.created');
@@ -322,7 +329,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
   });
 
   describe('GET /:broadcastId (campaign:read)', () => {
-    it('devolve o disparo, resumo e alvos', async () => {
+    it('devolve o disparo, etapas, resumo e alvos', async () => {
       const { app, repository } = buildApp(person('operator'));
       const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
@@ -330,6 +337,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.broadcast.id).toBe(broadcastId);
+      expect(response.body.steps).toHaveLength(1);
       expect(response.body.targets).toHaveLength(1);
     });
 
@@ -411,7 +419,9 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.broadcast.status).toBe('running');
-      expect(dispatcher!.scheduled).toHaveLength(1);
+      // 1º início: agenda um "run" (que checa a janela de horário), nunca
+      // envia direto — ver `GroupBroadcastService.startBroadcast`.
+      expect(dispatcher!.runs).toHaveLength(1);
     });
 
     it('tenant no Plano Grátis: 403 group_broadcast_requires_paid_plan', async () => {
@@ -544,22 +554,22 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
     });
   });
 
-  // --- Mídia (imagem/vídeo) ---
+  // --- Mídia por etapa (imagem/vídeo) — path `/steps/:stepId/media` desde 2026-09-14 ---
 
-  describe('POST /:broadcastId/media (campaign:manage)', () => {
-    it('administrator anexa mídia a um disparo DRAFT (200)', async () => {
+  describe('POST /:broadcastId/steps/:stepId/media (campaign:manage)', () => {
+    it('administrator anexa mídia a uma etapa de disparo DRAFT (200)', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
         .set('content-type', 'image/jpeg')
         .set('x-media-content-type', 'image')
         .set('x-media-filename', 'promo.jpg')
         .send(Buffer.from('bytes-da-imagem'));
 
       expect(response.status).toBe(200);
-      expect(response.body.broadcast.media).toEqual({
+      expect(response.body.step.media).toEqual({
         contentType: 'image',
         mimeType: 'image/jpeg',
         fileName: 'promo.jpg',
@@ -568,10 +578,10 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
     it('operator NÃO pode anexar mídia (403)', async () => {
       const { app, repository } = buildApp(person('operator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
         .set('content-type', 'image/jpeg')
         .set('x-media-content-type', 'image')
         .send(Buffer.from('bytes'));
@@ -581,10 +591,10 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
     it('sem x-media-content-type: 400', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
         .set('content-type', 'image/jpeg')
         .send(Buffer.from('bytes'));
 
@@ -593,10 +603,10 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
     it('corpo vazio: 400 empty_body', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
         .set('content-type', 'image/jpeg')
         .set('x-media-content-type', 'image')
         .send(Buffer.alloc(0));
@@ -607,10 +617,10 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
     it('assinatura binária não bate com a categoria declarada: 400', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
         .set('content-type', 'video/mp4')
         .set('x-media-content-type', 'video')
         // Assinatura de PNG, declarado como vídeo.
@@ -622,10 +632,13 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
     it('disparo RUNNING: 400 (só DRAFT pode ter mídia anexada)', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'running' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'running',
+      });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
         .set('content-type', 'image/jpeg')
         .set('x-media-content-type', 'image')
         .send(Buffer.from('bytes'));
@@ -635,10 +648,24 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
     it('IDOR: disparo de OUTRO tenant devolve 404, não anexa', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-2' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-2' });
 
       const response = await request(app)
-        .post(`${basePath('tenant-1')}/${broadcastId}/media`)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes'));
+
+      expect(response.status).toBe(404);
+    });
+
+    it('etapa que não pertence a esta campanha: 404', async () => {
+      const { app, repository } = buildApp(person('administrator'));
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const other = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${other.stepIds[0]}/media`)
         .set('content-type', 'image/jpeg')
         .set('x-media-content-type', 'image')
         .send(Buffer.from('bytes'));
@@ -647,90 +674,94 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
     });
   });
 
-  describe('DELETE /:broadcastId/media (campaign:manage)', () => {
+  describe('DELETE /:broadcastId/steps/:stepId/media (campaign:manage)', () => {
     it('administrator remove a mídia anexada (200)', async () => {
       const { app, repository } = buildApp(person('administrator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
-      await repository.attachMedia('tenant-1', broadcastId, {
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      await repository.attachStepMedia('tenant-1', stepIds[0], {
         contentType: 'image',
         buffer: Buffer.from('bytes'),
         mimeType: 'image/jpeg',
       });
 
-      const response = await request(app).delete(`${basePath('tenant-1')}/${broadcastId}/media`);
+      const response = await request(app).delete(
+        `${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`,
+      );
 
       expect(response.status).toBe(200);
-      expect(response.body.broadcast.media).toBeUndefined();
+      expect(response.body.step.media).toBeUndefined();
     });
 
     it('operator NÃO pode remover mídia (403)', async () => {
       const { app, repository } = buildApp(person('operator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
-      const response = await request(app).delete(`${basePath('tenant-1')}/${broadcastId}/media`);
+      const response = await request(app).delete(
+        `${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`,
+      );
 
       expect(response.status).toBe(403);
     });
   });
 
-  describe('GET /:broadcastId/media (campaign:read)', () => {
+  describe('GET /:broadcastId/steps/:stepId/media (campaign:read)', () => {
     it('operator lê o binário anexado (200, Content-Type do arquivo)', async () => {
       const { app, repository } = buildApp(person('operator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
-      await repository.attachMedia('tenant-1', broadcastId, {
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      await repository.attachStepMedia('tenant-1', stepIds[0], {
         contentType: 'image',
         buffer: Buffer.from('bytes-da-imagem'),
         mimeType: 'image/jpeg',
         fileName: 'promo.jpg',
       });
 
-      const response = await request(app).get(`${basePath('tenant-1')}/${broadcastId}/media`);
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`,
+      );
 
       expect(response.status).toBe(200);
       expect(response.headers['content-type']).toBe('image/jpeg');
       expect(response.body).toEqual(Buffer.from('bytes-da-imagem'));
     });
 
-    it('disparo sem mídia: 404', async () => {
+    it('etapa sem mídia: 404', async () => {
       const { app, repository } = buildApp(person('operator'));
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
-      const response = await request(app).get(`${basePath('tenant-1')}/${broadcastId}/media`);
+      const response = await request(app).get(
+        `${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`,
+      );
 
       expect(response.status).toBe(404);
     });
   });
 
-  describe('POST / — recorrência (2026-09-11)', () => {
+  describe('POST / — recorrência por etapa (2026-09-11, estendido em 2026-09-14)', () => {
     const grupo = { jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true };
-    const corpoBase = {
-      sessionName: 'sessao',
-      name: 'Disparo',
-      messageTemplate: 'Oi',
-      groupJids: ['111@g.us'],
-    };
 
-    it('aceita e persiste a configuração de repetição', async () => {
+    it('aceita e persiste a configuração de repetição da etapa + janela da campanha', async () => {
       const { app, directory } = buildApp(person('administrator'));
       directory.entries = [grupo];
 
       const response = await request(app)
         .post(basePath('tenant-1'))
-        .send({
-          ...corpoBase,
-          recurrenceIntervalHours: 3,
-          recurrenceMaxRuns: 4,
-          sendWindowStart: '09:00',
-          sendWindowEnd: '18:00',
-        });
+        .send(
+          baseBody({
+            steps: [{ messageTemplate: 'Oi', recurrenceIntervalHours: 3, recurrenceMaxRuns: 4 }],
+            sendWindowStart: '09:00',
+            sendWindowEnd: '18:00',
+          }),
+        );
 
       expect(response.status).toBe(201);
-      expect(response.body.broadcast).toMatchObject({
+      expect(response.body.steps[0]).toMatchObject({
         recurrenceIntervalHours: 3,
         recurrenceMaxRuns: 4,
+        runsCompleted: 0,
+      });
+      expect(response.body.broadcast).toMatchObject({
         sendWindowStart: '09:00',
         sendWindowEnd: '18:00',
-        runsCompleted: 0,
       });
     });
 
@@ -740,13 +771,22 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       const intervalo = await request(app)
         .post(basePath('tenant-1'))
-        .send({ ...corpoBase, recurrenceIntervalHours: 48 });
+        .send(baseBody({ steps: [{ messageTemplate: 'Oi', recurrenceIntervalHours: 48 }] }));
       const horario = await request(app)
         .post(basePath('tenant-1'))
-        .send({ ...corpoBase, recurrenceIntervalHours: 2, sendWindowStart: '9h' });
+        .send(
+          baseBody({
+            steps: [{ messageTemplate: 'Oi', recurrenceIntervalHours: 2 }],
+            sendWindowStart: '9h',
+          }),
+        );
       const repeticoes = await request(app)
         .post(basePath('tenant-1'))
-        .send({ ...corpoBase, recurrenceIntervalHours: 2, recurrenceMaxRuns: 1 });
+        .send(
+          baseBody({
+            steps: [{ messageTemplate: 'Oi', recurrenceIntervalHours: 2, recurrenceMaxRuns: 1 }],
+          }),
+        );
 
       expect(intervalo.status).toBe(400);
       expect(horario.status).toBe(400);
@@ -759,15 +799,20 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
 
       const response = await request(app)
         .post(basePath('tenant-1'))
-        .send({
-          ...corpoBase,
-          recurrenceIntervalHours: 2,
-          recurrenceEndsAt: new Date(Date.now() - 60000).toISOString(),
-        });
+        .send(
+          baseBody({
+            steps: [
+              {
+                messageTemplate: 'Oi',
+                recurrenceIntervalHours: 2,
+                recurrenceEndsAt: new Date(Date.now() - 60000).toISOString(),
+              },
+            ],
+          }),
+        );
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('invalid_recurrence');
     });
   });
-
 });

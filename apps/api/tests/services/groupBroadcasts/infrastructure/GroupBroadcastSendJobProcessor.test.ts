@@ -16,10 +16,10 @@ function buildSut(): {
   return { processor, repository, sender };
 }
 
-describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () => {
-  it('envia e marca o alvo como sent', async () => {
+describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11, etapas em paralelo 2026-09-14)', () => {
+  it('envia e marca o progresso da etapa como sent', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       sessionName: 'sessao',
       status: 'running',
@@ -27,11 +27,16 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () =
       messageTemplate: 'Promoção!',
     });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
-    const target = await repository.findTargetById('tenant-1', targetIds[0]);
-    expect(target?.status).toBe('sent');
-    expect(target?.attemptedAt).toBeInstanceOf(Date);
+    const stepTarget = await repository.findStepTargetById('tenant-1', stepTargetIds[0][0]);
+    expect(stepTarget?.status).toBe('sent');
+    expect(stepTarget?.attemptedAt).toBeInstanceOf(Date);
     expect(sender.calls).toEqual([
       {
         tenantId: 'tenant-1',
@@ -45,20 +50,25 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () =
 
   it('disparo com mídia anexada: busca o binário e repassa ao sender', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       sessionName: 'sessao',
       status: 'running',
       groupJids: ['111@g.us'],
     });
-    await repository.attachMedia('tenant-1', broadcastId, {
+    await repository.attachStepMedia('tenant-1', stepIds[0], {
       contentType: 'image',
       buffer: Buffer.from('bytes-da-imagem'),
       mimeType: 'image/jpeg',
       fileName: 'promo.jpg',
     });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
     expect(sender.calls[0].media).toEqual({
       contentType: 'image',
@@ -70,30 +80,40 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () =
 
   it('disparo SEM mídia: sender recebe media=undefined', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
       groupJids: ['111@g.us'],
     });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
     expect(sender.calls[0].media).toBeUndefined();
   });
 
-  it('disparo não RUNNING: não envia nada, alvo continua pending', async () => {
+  it('disparo não RUNNING: não envia nada, progresso continua pending', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'paused',
       groupJids: ['111@g.us'],
     });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
     expect(sender.calls).toHaveLength(0);
-    const target = await repository.findTargetById('tenant-1', targetIds[0]);
-    expect(target?.status).toBe('pending');
+    const stepTarget = await repository.findStepTargetById('tenant-1', stepTargetIds[0][0]);
+    expect(stepTarget?.status).toBe('pending');
   });
 
   it('disparo inexistente: não lança, só não envia', async () => {
@@ -103,7 +123,8 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () =
       processor.process({
         tenantId: 'tenant-1',
         broadcastId: 'disparo-fantasma',
-        targetId: 'alvo-fantasma',
+        stepId: 'etapa-fantasma',
+        stepTargetId: 'alvo-fantasma',
       }),
     ).resolves.toBeUndefined();
     expect(sender.calls).toHaveLength(0);
@@ -111,51 +132,71 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () =
 
   it('alvo já processado (SENT): idempotência — não reenvia', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
       groupJids: ['111@g.us'],
     });
-    repository.forceTarget(targetIds[0], { status: 'sent', sentAt: new Date() });
+    repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', sentAt: new Date() });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
     expect(sender.calls).toHaveLength(0);
   });
 
   it('falha no envio: marca failed com o motivo, não sent', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
       groupJids: ['111@g.us'],
     });
     sender.results.push({ ok: false, failureReason: 'erro_ao_enviar' });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
-    const target = await repository.findTargetById('tenant-1', targetIds[0]);
-    expect(target?.status).toBe('failed');
-    expect(target?.errorMessage).toBe('erro_ao_enviar');
-    expect(target?.sentAt).toBeUndefined();
+    const stepTarget = await repository.findStepTargetById('tenant-1', stepTargetIds[0][0]);
+    expect(stepTarget?.status).toBe('failed');
+    expect(stepTarget?.errorMessage).toBe('erro_ao_enviar');
+    expect(stepTarget?.sentAt).toBeUndefined();
   });
 
-  it('disjuntor: as DUAS últimas tentativas falharam → pausa automaticamente (mais sensível que o motor 1:1)', async () => {
+  it('disjuntor: as DUAS últimas tentativas falharam → pausa automaticamente a CAMPANHA (atravessa etapas)', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
       groupJids: ['111@g.us', '222@g.us', '333@g.us'],
     });
     // Primeira tentativa falha.
     sender.results.push({ ok: false, failureReason: 'erro' });
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
     let broadcast = await repository.findById('tenant-1', broadcastId);
     expect(broadcast?.status).toBe('running'); // 1 de 1 falha, mas amostra mínima é 2.
 
     // Segunda tentativa TAMBÉM falha → dispara o disjuntor.
     sender.results.push({ ok: false, failureReason: 'erro' });
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[1] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][1],
+    });
 
     broadcast = await repository.findById('tenant-1', broadcastId);
     expect(broadcast?.status).toBe('paused');
@@ -166,45 +207,142 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11)', () =
 
   it('uma falha isolada seguida de sucesso NÃO dispara o disjuntor', async () => {
     const { processor, repository, sender } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    // Um 3º alvo fica pendente de propósito — sem ele a etapa esgotaria e a
+    // campanha completaria, confundindo "não pausou pelo disjuntor" com
+    // "ainda não terminou".
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
-      groupJids: ['111@g.us', '222@g.us'],
+      groupJids: ['111@g.us', '222@g.us', '333@g.us'],
     });
     sender.results.push({ ok: false, failureReason: 'erro' });
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
     sender.results.push({ ok: true });
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[1] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][1],
+    });
 
     const broadcast = await repository.findById('tenant-1', broadcastId);
-    expect(broadcast?.status).toBe('completed');
+    expect(broadcast?.status).toBe('running');
   });
 
-  it('sem mais pendentes após o envio: disparo vira completed', async () => {
+  it('sem mais pendentes nesta etapa, e SEM recorrência: a etapa encerra (finishedAt) e a campanha vira completed (etapa única)', async () => {
     const { processor, repository } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
       groupJids: ['111@g.us'],
     });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
     const broadcast = await repository.findById('tenant-1', broadcastId);
     expect(broadcast?.status).toBe('completed');
+    const step = (await repository.listSteps('tenant-1', broadcastId))[0];
+    expect(step.finishedAt).toBeInstanceOf(Date);
   });
 
-  it('ainda há pendentes após o envio: disparo continua running', async () => {
+  it('ainda há pendentes nesta etapa: campanha continua running, etapa não encerra', async () => {
     const { processor, repository } = buildSut();
-    const { broadcastId, targetIds } = repository.seedBroadcast({
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
       tenantId: 'tenant-1',
       status: 'running',
       groupJids: ['111@g.us', '222@g.us'],
     });
 
-    await processor.process({ tenantId: 'tenant-1', broadcastId, targetId: targetIds[0] });
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
 
     const broadcast = await repository.findById('tenant-1', broadcastId);
     expect(broadcast?.status).toBe('running');
+    const step = (await repository.listSteps('tenant-1', broadcastId))[0];
+    expect(step.finishedAt).toBeUndefined();
+  });
+
+  it('etapa recorrente: ao esgotar os pendentes do ciclo, agenda a PRÓPRIA etapa de novo (nunca "avança")', async () => {
+    const { repository } = buildSut();
+    const dispatcher = { scheduleStepTarget: jest.fn(), scheduleRun: jest.fn() };
+    const sut = new GroupBroadcastSendJobProcessor(
+      repository,
+      new FakeGroupMessageSender(),
+      new NoopLogger(),
+      dispatcher as never,
+    );
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      recurrenceIntervalHours: 2,
+    });
+
+    await sut.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
+
+    const broadcast = await repository.findById('tenant-1', broadcastId);
+    expect(broadcast?.status).toBe('running'); // ainda repetindo, nunca completa sozinha.
+    expect(dispatcher.scheduleRun).toHaveBeenCalledWith(
+      'tenant-1',
+      broadcastId,
+      stepIds[0],
+      2,
+      expect.any(Number),
+    );
+    const step = (await repository.listSteps('tenant-1', broadcastId))[0];
+    expect(step.finishedAt).toBeUndefined();
+  });
+
+  it('duas etapas em paralelo: uma etapa encerrando NÃO completa a campanha enquanto a outra segue ativa', async () => {
+    const { processor, repository } = buildSut();
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      extraSteps: [{ messageTemplate: 'Segunda publicação' }],
+    });
+
+    // Só a etapa 0 recebe seu envio — a etapa 1 (extra) ainda nem começou.
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
+
+    const broadcast = await repository.findById('tenant-1', broadcastId);
+    expect(broadcast?.status).toBe('running'); // a etapa 1 ainda não terminou.
+    const steps = await repository.listSteps('tenant-1', broadcastId);
+    expect(steps[0].finishedAt).toBeInstanceOf(Date);
+    expect(steps[1].finishedAt).toBeUndefined();
+
+    // Agora a etapa 1 também termina — só então a campanha completa.
+    await processor.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[1],
+      stepTargetId: stepTargetIds[1][0],
+    });
+    const finalBroadcast = await repository.findById('tenant-1', broadcastId);
+    expect(finalBroadcast?.status).toBe('completed');
   });
 });

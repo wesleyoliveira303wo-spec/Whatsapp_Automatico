@@ -8,12 +8,15 @@ import {
   GroupBroadcast,
   GroupBroadcastMediaContentType,
   GroupBroadcastStatus,
+  GroupBroadcastStep,
+  GroupBroadcastStepTarget,
   GroupBroadcastSummary,
   GroupBroadcastTarget,
   GroupBroadcastTargetStatus,
 } from '../../domain/entities/GroupBroadcast';
 import {
   CreateGroupBroadcastData,
+  CreateGroupBroadcastStepData,
   GroupBroadcastMediaContent,
   GroupBroadcastRepository,
   GroupBroadcastTargetDraft,
@@ -63,32 +66,22 @@ const MEDIA_TYPE_FROM_PRISMA: Record<string, GroupBroadcastMediaContentType> = {
 };
 
 /**
- * `select` EXPLÍCITO — a diferença para "todas as colunas" é exatamente
- * `mediaContent`. O binário (até 16MB num vídeo) nunca pode entrar numa
- * resposta JSON de lista/detalhe; só `getMediaContent` o lê. Mesma decisão e
- * mesma razão de `CAMPAIGN_SELECT` (Bloco L8) — provado contra Postgres real
- * em `groupBroadcasts.integration.test.ts`.
+ * `select` EXPLÍCITO — nenhum campo de mídia (não há mais nenhum na campanha,
+ * 2026-09-14 — mídia agora é por etapa). Mesma decisão de sempre: nunca
+ * confiar em "todas as colunas" numa entidade que pode crescer.
  */
 const GROUP_BROADCAST_SELECT = {
   id: true,
   tenantId: true,
   sessionName: true,
   name: true,
-  messageTemplate: true,
   status: true,
   intervalSeconds: true,
-  recurrenceIntervalHours: true,
-  recurrenceMaxRuns: true,
-  recurrenceEndsAt: true,
   sendWindowStart: true,
   sendWindowEnd: true,
-  runsCompleted: true,
-  nextRunAt: true,
+  stepLaunchOffsetMinutes: true,
   pausedReason: true,
   createdByUserId: true,
-  mediaMimeType: true,
-  mediaFileName: true,
-  mediaContentType: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -98,23 +91,58 @@ interface GroupBroadcastRow {
   tenantId: string;
   sessionName: string;
   name: string;
-  messageTemplate: string;
   status: string;
   intervalSeconds: number;
-  recurrenceIntervalHours: number | null;
-  recurrenceMaxRuns: number | null;
-  recurrenceEndsAt: Date | null;
   sendWindowStart: string | null;
   sendWindowEnd: string | null;
-  runsCompleted: number;
-  nextRunAt: Date | null;
+  stepLaunchOffsetMinutes: number | null;
   pausedReason: string | null;
   createdByUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * `select` da etapa — o binário (até 16MB num vídeo) nunca pode entrar numa
+ * resposta JSON de lista/detalhe; só `getStepMediaContent` o lê. Mesma
+ * decisão e mesma razão de `GROUP_BROADCAST_SELECT`/`CAMPAIGN_SELECT`.
+ */
+const GROUP_BROADCAST_STEP_SELECT = {
+  id: true,
+  tenantId: true,
+  broadcastId: true,
+  order: true,
+  messageTemplate: true,
+  mediaMimeType: true,
+  mediaFileName: true,
+  mediaContentType: true,
+  recurrenceIntervalHours: true,
+  recurrenceMaxRuns: true,
+  recurrenceEndsAt: true,
+  runsCompleted: true,
+  nextRunAt: true,
+  startedAt: true,
+  finishedAt: true,
+  createdAt: true,
+} as const;
+
+interface GroupBroadcastStepRow {
+  id: string;
+  tenantId: string;
+  broadcastId: string;
+  order: number;
+  messageTemplate: string;
   mediaMimeType: string | null;
   mediaFileName: string | null;
   mediaContentType: string | null;
+  recurrenceIntervalHours: number | null;
+  recurrenceMaxRuns: number | null;
+  recurrenceEndsAt: Date | null;
+  runsCompleted: number;
+  nextRunAt: Date | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
   createdAt: Date;
-  updatedAt: Date;
 }
 
 interface GroupBroadcastTargetRow {
@@ -125,35 +153,53 @@ interface GroupBroadcastTargetRow {
   groupName: string;
   status: string;
   skipReason: string | null;
+  createdAt: Date;
+}
+
+/** Linha de `GroupBroadcastStepTarget` já com `groupJid`/`groupName`/`skipReason` resolvidos via `include`. */
+interface GroupBroadcastStepTargetRow {
+  id: string;
+  tenantId: string;
+  broadcastId: string;
+  stepId: string;
+  targetId: string;
+  status: string;
   errorMessage: string | null;
   sentAt: Date | null;
   attemptedAt: Date | null;
   sentCount: number;
   createdAt: Date;
+  target: { groupJid: string; groupName: string; skipReason: string | null };
 }
 
 function toDomain(row: GroupBroadcastRow): GroupBroadcast {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    sessionName: row.sessionName,
+    name: row.name,
+    status: STATUS_FROM_PRISMA[row.status] ?? 'draft',
+    intervalSeconds: row.intervalSeconds,
+    sendWindowStart: row.sendWindowStart ?? undefined,
+    sendWindowEnd: row.sendWindowEnd ?? undefined,
+    stepLaunchOffsetMinutes: row.stepLaunchOffsetMinutes ?? undefined,
+    pausedReason: row.pausedReason ?? undefined,
+    createdByUserId: row.createdByUserId ?? undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function stepToDomain(row: GroupBroadcastStepRow): GroupBroadcastStep {
   const mediaContentType = row.mediaContentType
     ? MEDIA_TYPE_FROM_PRISMA[row.mediaContentType]
     : undefined;
   return {
     id: row.id,
     tenantId: row.tenantId,
-    sessionName: row.sessionName,
-    name: row.name,
+    broadcastId: row.broadcastId,
+    order: row.order,
     messageTemplate: row.messageTemplate,
-    status: STATUS_FROM_PRISMA[row.status] ?? 'draft',
-    intervalSeconds: row.intervalSeconds,
-    recurrenceIntervalHours: row.recurrenceIntervalHours ?? undefined,
-    recurrenceMaxRuns: row.recurrenceMaxRuns ?? undefined,
-    recurrenceEndsAt: row.recurrenceEndsAt ?? undefined,
-    sendWindowStart: row.sendWindowStart ?? undefined,
-    sendWindowEnd: row.sendWindowEnd ?? undefined,
-    runsCompleted: row.runsCompleted,
-    nextRunAt: row.nextRunAt ?? undefined,
-    pausedReason: row.pausedReason ?? undefined,
-    createdByUserId: row.createdByUserId ?? undefined,
-    // As colunas de mídia nascem/são limpas juntas (`attachMedia`/`removeMedia`).
     media: mediaContentType
       ? {
           contentType: mediaContentType,
@@ -161,8 +207,14 @@ function toDomain(row: GroupBroadcastRow): GroupBroadcast {
           fileName: row.mediaFileName ?? undefined,
         }
       : undefined,
+    recurrenceIntervalHours: row.recurrenceIntervalHours ?? undefined,
+    recurrenceMaxRuns: row.recurrenceMaxRuns ?? undefined,
+    recurrenceEndsAt: row.recurrenceEndsAt ?? undefined,
+    runsCompleted: row.runsCompleted,
+    nextRunAt: row.nextRunAt ?? undefined,
+    startedAt: row.startedAt ?? undefined,
+    finishedAt: row.finishedAt ?? undefined,
     createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
   };
 }
 
@@ -175,6 +227,21 @@ function targetToDomain(row: GroupBroadcastTargetRow): GroupBroadcastTarget {
     groupName: row.groupName,
     status: TARGET_STATUS_FROM_PRISMA[row.status] ?? 'pending',
     skipReason: row.skipReason ?? undefined,
+    createdAt: row.createdAt,
+  };
+}
+
+function stepTargetToDomain(row: GroupBroadcastStepTargetRow): GroupBroadcastStepTarget {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    broadcastId: row.broadcastId,
+    stepId: row.stepId,
+    targetId: row.targetId,
+    groupJid: row.target.groupJid,
+    groupName: row.target.groupName,
+    status: TARGET_STATUS_FROM_PRISMA[row.status] ?? 'pending',
+    skipReason: row.target.skipReason ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
     sentAt: row.sentAt ?? undefined,
     attemptedAt: row.attemptedAt ?? undefined,
@@ -194,6 +261,10 @@ function addToSummary(summary: GroupBroadcastSummary, status: string, count: num
   summary.total += count;
 }
 
+const STEP_TARGET_INCLUDE = {
+  target: { select: { groupJid: true, groupName: true, skipReason: true } },
+} as const;
+
 /** Implementação Postgres de `GroupBroadcastRepository` — toda consulta escopada por `tenantId`. */
 export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -204,13 +275,10 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
         tenantId: data.tenantId,
         sessionName: data.sessionName,
         name: data.name,
-        messageTemplate: data.messageTemplate,
         intervalSeconds: data.intervalSeconds,
-        recurrenceIntervalHours: data.recurrenceIntervalHours ?? null,
-        recurrenceMaxRuns: data.recurrenceMaxRuns ?? null,
-        recurrenceEndsAt: data.recurrenceEndsAt ?? null,
         sendWindowStart: data.sendWindowStart ?? null,
         sendWindowEnd: data.sendWindowEnd ?? null,
+        stepLaunchOffsetMinutes: data.stepLaunchOffsetMinutes ?? null,
         createdByUserId: data.createdByUserId ?? null,
       },
       select: GROUP_BROADCAST_SELECT,
@@ -235,6 +303,73 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
       })),
       skipDuplicates: true,
     });
+  }
+
+  async createSteps(
+    tenantId: string,
+    broadcastId: string,
+    steps: CreateGroupBroadcastStepData[],
+  ): Promise<GroupBroadcastStep[]> {
+    if (steps.length === 0) return [];
+    await this.prisma.groupBroadcastStep.createMany({
+      data: steps.map((step) => ({
+        tenantId,
+        broadcastId,
+        order: step.order,
+        messageTemplate: step.messageTemplate,
+        recurrenceIntervalHours: step.recurrenceIntervalHours ?? null,
+        recurrenceMaxRuns: step.recurrenceMaxRuns ?? null,
+        recurrenceEndsAt: step.recurrenceEndsAt ?? null,
+      })),
+    });
+    return this.listSteps(tenantId, broadcastId);
+  }
+
+  async listSteps(tenantId: string, broadcastId: string): Promise<GroupBroadcastStep[]> {
+    const rows = await this.prisma.groupBroadcastStep.findMany({
+      where: { tenantId, broadcastId },
+      orderBy: { order: 'asc' },
+      select: GROUP_BROADCAST_STEP_SELECT,
+    });
+    return rows.map(stepToDomain);
+  }
+
+  async findStepById(tenantId: string, stepId: string): Promise<GroupBroadcastStep | undefined> {
+    const row = await this.prisma.groupBroadcastStep.findFirst({
+      where: { id: stepId, tenantId },
+      select: GROUP_BROADCAST_STEP_SELECT,
+    });
+    return row ? stepToDomain(row) : undefined;
+  }
+
+  /**
+   * Materializa o progresso de TODAS as etapas × TODOS os alvos de uma vez —
+   * um `GroupBroadcastStepTarget` por par, espelhando a elegibilidade
+   * (`pending`/`skipped`) já decidida em `GroupBroadcastTarget`. Chamado uma
+   * única vez, logo após `createSteps`/`createTargets`.
+   */
+  async initializeStepTargets(tenantId: string, broadcastId: string): Promise<void> {
+    const [steps, targets] = await Promise.all([
+      this.prisma.groupBroadcastStep.findMany({
+        where: { tenantId, broadcastId },
+        select: { id: true },
+      }),
+      this.prisma.groupBroadcastTarget.findMany({
+        where: { tenantId, broadcastId },
+        select: { id: true, status: true },
+      }),
+    ]);
+    if (steps.length === 0 || targets.length === 0) return;
+    const rows = steps.flatMap((step) =>
+      targets.map((target) => ({
+        tenantId,
+        broadcastId,
+        stepId: step.id,
+        targetId: target.id,
+        status: target.status,
+      })),
+    );
+    await this.prisma.groupBroadcastStepTarget.createMany({ data: rows, skipDuplicates: true });
   }
 
   async findById(tenantId: string, broadcastId: string): Promise<GroupBroadcast | undefined> {
@@ -267,36 +402,126 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     return rows.map(targetToDomain);
   }
 
-  async findTargetById(
-    tenantId: string,
-    targetId: string,
-  ): Promise<GroupBroadcastTarget | undefined> {
-    const row = await this.prisma.groupBroadcastTarget.findFirst({
-      where: { id: targetId, tenantId },
+  async listStepTargets(tenantId: string, stepId: string): Promise<GroupBroadcastStepTarget[]> {
+    const rows = await this.prisma.groupBroadcastStepTarget.findMany({
+      where: { tenantId, stepId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      include: STEP_TARGET_INCLUDE,
     });
-    return row ? targetToDomain(row) : undefined;
+    return rows.map(stepTargetToDomain);
   }
 
-  async listPendingTargets(
+  async findStepTargetById(
     tenantId: string,
-    broadcastId: string,
-  ): Promise<GroupBroadcastTarget[]> {
-    const rows = await this.prisma.groupBroadcastTarget.findMany({
-      where: { tenantId, broadcastId, status: 'PENDING' },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    stepTargetId: string,
+  ): Promise<GroupBroadcastStepTarget | undefined> {
+    const row = await this.prisma.groupBroadcastStepTarget.findFirst({
+      where: { id: stepTargetId, tenantId },
+      include: STEP_TARGET_INCLUDE,
     });
-    return rows.map(targetToDomain);
+    return row ? stepTargetToDomain(row) : undefined;
+  }
+
+  async listPendingStepTargets(
+    tenantId: string,
+    stepId: string,
+  ): Promise<GroupBroadcastStepTarget[]> {
+    const rows = await this.prisma.groupBroadcastStepTarget.findMany({
+      where: { tenantId, stepId, status: 'PENDING' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      include: STEP_TARGET_INCLUDE,
+    });
+    return rows.map(stepTargetToDomain);
   }
 
   async summarizeTargets(tenantId: string, broadcastId: string): Promise<GroupBroadcastSummary> {
-    const [groups, sentCountAgg] = await Promise.all([
-      this.prisma.groupBroadcastTarget.groupBy({
+    const [groups, sentCountAgg, skippedCount, totalCount] = await Promise.all([
+      this.prisma.groupBroadcastStepTarget.groupBy({
         by: ['status'],
         where: { tenantId, broadcastId },
         _count: { _all: true },
       }),
-      this.prisma.groupBroadcastTarget.aggregate({
+      this.prisma.groupBroadcastStepTarget.aggregate({
         where: { tenantId, broadcastId },
+        _sum: { sentCount: true },
+      }),
+      this.prisma.groupBroadcastTarget.count({ where: { tenantId, broadcastId, status: 'SKIPPED' } }),
+      this.prisma.groupBroadcastTarget.count({ where: { tenantId, broadcastId } }),
+    ]);
+    const summary = emptySummary();
+    for (const group of groups) {
+      // `skipped` vem da elegibilidade (campanha-wide), não somado por etapa
+      // — senão um disparo de 4 etapas contaria cada grupo suprimido 4 vezes.
+      if (group.status === 'SKIPPED') continue;
+      addToSummary(summary, group.status, group._count._all);
+    }
+    summary.totalSent = sentCountAgg._sum.sentCount ?? 0;
+    summary.skipped = skippedCount;
+    summary.total = totalCount;
+    return summary;
+  }
+
+  async summarizeTargetsForBroadcasts(
+    tenantId: string,
+    broadcastIds: string[],
+  ): Promise<Map<string, GroupBroadcastSummary>> {
+    const result = new Map<string, GroupBroadcastSummary>();
+    if (broadcastIds.length === 0) return result;
+    const [groups, sentCountGroups, skippedGroups, totalGroups] = await Promise.all([
+      this.prisma.groupBroadcastStepTarget.groupBy({
+        by: ['broadcastId', 'status'],
+        where: { tenantId, broadcastId: { in: broadcastIds } },
+        _count: { _all: true },
+      }),
+      this.prisma.groupBroadcastStepTarget.groupBy({
+        by: ['broadcastId'],
+        where: { tenantId, broadcastId: { in: broadcastIds } },
+        _sum: { sentCount: true },
+      }),
+      this.prisma.groupBroadcastTarget.groupBy({
+        by: ['broadcastId'],
+        where: { tenantId, broadcastId: { in: broadcastIds }, status: 'SKIPPED' },
+        _count: { _all: true },
+      }),
+      this.prisma.groupBroadcastTarget.groupBy({
+        by: ['broadcastId'],
+        where: { tenantId, broadcastId: { in: broadcastIds } },
+        _count: { _all: true },
+      }),
+    ]);
+    for (const group of groups) {
+      if (group.status === 'SKIPPED') continue;
+      const summary = result.get(group.broadcastId) ?? emptySummary();
+      addToSummary(summary, group.status, group._count._all);
+      result.set(group.broadcastId, summary);
+    }
+    for (const group of sentCountGroups) {
+      const summary = result.get(group.broadcastId) ?? emptySummary();
+      summary.totalSent = group._sum.sentCount ?? 0;
+      result.set(group.broadcastId, summary);
+    }
+    for (const group of skippedGroups) {
+      const summary = result.get(group.broadcastId) ?? emptySummary();
+      summary.skipped = group._count._all;
+      result.set(group.broadcastId, summary);
+    }
+    for (const group of totalGroups) {
+      const summary = result.get(group.broadcastId) ?? emptySummary();
+      summary.total = group._count._all;
+      result.set(group.broadcastId, summary);
+    }
+    return result;
+  }
+
+  async summarizeStepTargets(tenantId: string, stepId: string): Promise<GroupBroadcastSummary> {
+    const [groups, sentCountAgg] = await Promise.all([
+      this.prisma.groupBroadcastStepTarget.groupBy({
+        by: ['status'],
+        where: { tenantId, stepId },
+        _count: { _all: true },
+      }),
+      this.prisma.groupBroadcastStepTarget.aggregate({
+        where: { tenantId, stepId },
         _sum: { sentCount: true },
       }),
     ]);
@@ -308,40 +533,13 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     return summary;
   }
 
-  async summarizeTargetsForBroadcasts(
+  async markStepTargetSent(
     tenantId: string,
-    broadcastIds: string[],
-  ): Promise<Map<string, GroupBroadcastSummary>> {
-    const result = new Map<string, GroupBroadcastSummary>();
-    if (broadcastIds.length === 0) return result;
-    const [groups, sentCountGroups] = await Promise.all([
-      this.prisma.groupBroadcastTarget.groupBy({
-        by: ['broadcastId', 'status'],
-        where: { tenantId, broadcastId: { in: broadcastIds } },
-        _count: { _all: true },
-      }),
-      this.prisma.groupBroadcastTarget.groupBy({
-        by: ['broadcastId'],
-        where: { tenantId, broadcastId: { in: broadcastIds } },
-        _sum: { sentCount: true },
-      }),
-    ]);
-    for (const group of groups) {
-      const summary = result.get(group.broadcastId) ?? emptySummary();
-      addToSummary(summary, group.status, group._count._all);
-      result.set(group.broadcastId, summary);
-    }
-    for (const group of sentCountGroups) {
-      const summary = result.get(group.broadcastId) ?? emptySummary();
-      summary.totalSent = group._sum.sentCount ?? 0;
-      result.set(group.broadcastId, summary);
-    }
-    return result;
-  }
-
-  async markTargetSent(tenantId: string, targetId: string, attemptedAt: Date): Promise<void> {
-    await this.prisma.groupBroadcastTarget.updateMany({
-      where: { id: targetId, tenantId, status: 'PENDING' },
+    stepTargetId: string,
+    attemptedAt: Date,
+  ): Promise<void> {
+    await this.prisma.groupBroadcastStepTarget.updateMany({
+      where: { id: stepTargetId, tenantId, status: 'PENDING' },
       data: {
         status: 'SENT',
         sentAt: attemptedAt,
@@ -352,14 +550,14 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     });
   }
 
-  async markTargetFailed(
+  async markStepTargetFailed(
     tenantId: string,
-    targetId: string,
+    stepTargetId: string,
     attemptedAt: Date,
     errorMessage: string,
   ): Promise<void> {
-    await this.prisma.groupBroadcastTarget.updateMany({
-      where: { id: targetId, tenantId, status: 'PENDING' },
+    await this.prisma.groupBroadcastStepTarget.updateMany({
+      where: { id: stepTargetId, tenantId, status: 'PENDING' },
       data: { status: 'FAILED', attemptedAt, errorMessage },
     });
   }
@@ -369,7 +567,7 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     broadcastId: string,
     limit: number,
   ): Promise<Array<'sent' | 'failed'>> {
-    const rows = await this.prisma.groupBroadcastTarget.findMany({
+    const rows = await this.prisma.groupBroadcastStepTarget.findMany({
       where: {
         tenantId,
         broadcastId,
@@ -383,31 +581,54 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     return rows.map((row) => (row.status === 'SENT' ? 'sent' : 'failed'));
   }
 
-  async countPending(tenantId: string, broadcastId: string): Promise<number> {
-    return this.prisma.groupBroadcastTarget.count({
-      where: { tenantId, broadcastId, status: 'PENDING' },
+  async countPendingStepTargets(tenantId: string, stepId: string): Promise<number> {
+    return this.prisma.groupBroadcastStepTarget.count({
+      where: { tenantId, stepId, status: 'PENDING' },
     });
   }
 
-  async resetTargetsForNextRun(tenantId: string, broadcastId: string): Promise<number> {
+  async resetStepTargetsForNextRun(tenantId: string, stepId: string): Promise<number> {
     // `skipped` fica de fora de propósito: grupo só-admin ou do qual o número
     // saiu continua fora até o disparo ser recriado (ver o port).
-    const { count } = await this.prisma.groupBroadcastTarget.updateMany({
-      where: { tenantId, broadcastId, status: { in: ['SENT', 'FAILED'] } },
+    const { count } = await this.prisma.groupBroadcastStepTarget.updateMany({
+      where: { tenantId, stepId, status: { in: ['SENT', 'FAILED'] } },
       data: { status: 'PENDING', errorMessage: null, attemptedAt: null },
     });
     return count;
   }
 
-  async markRunFinished(
+  async markStepRunFinished(
     tenantId: string,
-    broadcastId: string,
+    stepId: string,
     runsCompleted: number,
     nextRunAt: Date | null,
   ): Promise<void> {
-    await this.prisma.groupBroadcast.updateMany({
-      where: { id: broadcastId, tenantId },
+    await this.prisma.groupBroadcastStep.updateMany({
+      where: { id: stepId, tenantId },
       data: { runsCompleted, nextRunAt },
+    });
+  }
+
+  async markStepFinished(tenantId: string, stepId: string, runsCompleted: number): Promise<void> {
+    await this.prisma.groupBroadcastStep.updateMany({
+      where: { id: stepId, tenantId },
+      data: { runsCompleted, nextRunAt: null, finishedAt: new Date() },
+    });
+  }
+
+  async areAllStepsFinished(tenantId: string, broadcastId: string): Promise<boolean> {
+    const pendingCount = await this.prisma.groupBroadcastStep.count({
+      where: { tenantId, broadcastId, finishedAt: null },
+    });
+    return pendingCount === 0;
+  }
+
+  async markStepStarted(tenantId: string, stepId: string, startedAt: Date): Promise<void> {
+    // `startedAt: null` no `where` — idempotente: uma 2ª chamada (ex.: retry)
+    // nunca reescreve o timestamp original.
+    await this.prisma.groupBroadcastStep.updateMany({
+      where: { id: stepId, tenantId, startedAt: null },
+      data: { startedAt },
     });
   }
 
@@ -451,13 +672,13 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     return count > 0;
   }
 
-  async attachMedia(
+  async attachStepMedia(
     tenantId: string,
-    broadcastId: string,
+    stepId: string,
     media: GroupBroadcastMediaContent,
-  ): Promise<GroupBroadcast | undefined> {
-    const { count } = await this.prisma.groupBroadcast.updateMany({
-      where: { id: broadcastId, tenantId },
+  ): Promise<GroupBroadcastStep | undefined> {
+    const { count } = await this.prisma.groupBroadcastStep.updateMany({
+      where: { id: stepId, tenantId },
       data: {
         mediaContent: media.buffer,
         mediaMimeType: media.mimeType,
@@ -466,35 +687,25 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
       },
     });
     if (count === 0) return undefined;
-    return this.findById(tenantId, broadcastId);
+    return this.findStepById(tenantId, stepId);
   }
 
-  async removeMedia(tenantId: string, broadcastId: string): Promise<GroupBroadcast | undefined> {
-    const { count } = await this.prisma.groupBroadcast.updateMany({
-      where: { id: broadcastId, tenantId },
-      data: {
-        mediaContent: null,
-        mediaMimeType: null,
-        mediaFileName: null,
-        mediaContentType: null,
-      },
+  async removeStepMedia(tenantId: string, stepId: string): Promise<GroupBroadcastStep | undefined> {
+    const { count } = await this.prisma.groupBroadcastStep.updateMany({
+      where: { id: stepId, tenantId },
+      data: { mediaContent: null, mediaMimeType: null, mediaFileName: null, mediaContentType: null },
     });
     if (count === 0) return undefined;
-    return this.findById(tenantId, broadcastId);
+    return this.findStepById(tenantId, stepId);
   }
 
-  async getMediaContent(
+  async getStepMediaContent(
     tenantId: string,
-    broadcastId: string,
+    stepId: string,
   ): Promise<GroupBroadcastMediaContent | undefined> {
-    const row = await this.prisma.groupBroadcast.findFirst({
-      where: { id: broadcastId, tenantId },
-      select: {
-        mediaContent: true,
-        mediaMimeType: true,
-        mediaFileName: true,
-        mediaContentType: true,
-      },
+    const row = await this.prisma.groupBroadcastStep.findFirst({
+      where: { id: stepId, tenantId },
+      select: { mediaContent: true, mediaMimeType: true, mediaFileName: true, mediaContentType: true },
     });
     if (!row || !row.mediaContent || !row.mediaContentType) return undefined;
     const contentType = MEDIA_TYPE_FROM_PRISMA[row.mediaContentType];

@@ -219,8 +219,10 @@ model Tenant {
   // Disparos em grupos de WhatsApp (2026-09-11) — publicação única de uma
   // mensagem (texto/imagem/vídeo) em grupos da sessão. Entidade própria, não
   // `Campaign` (ver docstring de `GroupBroadcast`).
-  groupBroadcasts       GroupBroadcast[]
-  groupBroadcastTargets GroupBroadcastTarget[]
+  groupBroadcasts           GroupBroadcast[]
+  groupBroadcastSteps       GroupBroadcastStep[]
+  groupBroadcastTargets     GroupBroadcastTarget[]
+  groupBroadcastStepTargets GroupBroadcastStepTarget[]
 
   @@map("tenants")
 }
@@ -537,46 +539,87 @@ model GroupBroadcast {
   tenantId         String                      @map("tenant_id")
   sessionName      String                      @map("session_name")
   name             String
-  messageTemplate  String                      @db.Text @map("message_template")
   status           CampaignStatus              @default(DRAFT)
   /// Espaçamento-base entre um grupo e o seguinte. Default 60s, piso de 30s
   /// imposto pela aplicação (`clampGroupIntervalSeconds`).
   intervalSeconds  Int                         @default(60) @map("interval_seconds")
-  /// Recorrência (2026-09-11, pedido do fundador): de quantas em quantas horas
-  /// o MESMO disparo se repete. Nulo = publicação única (comportamento
-  /// original). Faixa validada no Domain (1h a 24h).
-  recurrenceIntervalHours Int?                  @map("recurrence_interval_hours")
-  /// Fim por CONTAGEM: para depois de N publicações concluídas. Nulo = sem
-  /// limite por contagem.
-  recurrenceMaxRuns       Int?                  @map("recurrence_max_runs")
-  /// Fim por DATA: não inicia nenhuma publicação depois deste instante. Nulo =
-  /// sem limite por data. Os dois limites convivem — vale o que vier primeiro;
-  /// ambos nulos = repete até alguém cancelar.
-  recurrenceEndsAt        DateTime?             @map("recurrence_ends_at")
-  /// Janela diária permitida ("HH:MM", fuso do SERVIDOR — mesma simplificação
-  /// já registrada em `AiBusinessProfile`/`workingHours.ts`). Uma repetição
-  /// que cairia fora dela é empurrada para o próximo horário permitido, nunca
-  /// descartada.
-  sendWindowStart         String?               @map("send_window_start")
-  sendWindowEnd           String?               @map("send_window_end")
-  /// Quantas publicações já foram CONCLUÍDAS (todos os grupos processados).
-  runsCompleted           Int                   @default(0) @map("runs_completed")
-  /// Quando a próxima repetição começa. Nulo em disparo único, e quando acabou.
-  nextRunAt               DateTime?             @map("next_run_at")
+  /// Janela diária permitida ("HH:MM", fuso `America/Sao_Paulo` desde a
+  /// correção de 2026-09-13) — vale para a CAMPANHA inteira, atravessando
+  /// etapas. Uma repetição ou transição de etapa que cairia fora dela é
+  /// empurrada para o próximo horário permitido, nunca descartada.
+  sendWindowStart  String?                     @map("send_window_start")
+  sendWindowEnd    String?                     @map("send_window_end")
+  /// Escalonamento inicial (2026-09-14, "cadência entre publicações"): minutos
+  /// de espera entre o INÍCIO de uma publicação e o início da seguinte, na
+  /// primeira vez que cada uma dispara. Nulo/0 = todas começam juntas. Depois
+  /// do lançamento inicial, cada etapa repete sozinha no seu próprio intervalo
+  /// (`GroupBroadcastStep.recurrenceIntervalHours`), de forma independente —
+  /// não existe mais "etapa atual" da campanha, todas correm em paralelo.
+  stepLaunchOffsetMinutes Int?                @map("step_launch_offset_minutes")
   pausedReason     String?                     @map("paused_reason")
   createdByUserId  String?                     @map("created_by_user_id")
-  mediaContent     Bytes?                      @map("media_content")
-  mediaMimeType    String?                     @map("media_mime_type")
-  mediaFileName    String?                     @map("media_file_name")
-  mediaContentType WhatsAppMessageContentType? @map("media_content_type")
   createdAt        DateTime                    @default(now()) @map("created_at")
   updatedAt        DateTime                    @updatedAt @map("updated_at")
 
   tenant  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  steps   GroupBroadcastStep[]
   targets GroupBroadcastTarget[]
 
   @@index([tenantId, sessionName, status])
   @@map("group_broadcasts")
+}
+
+/// Uma publicação da sequência de um disparo em grupos (2026-09-14). Campos
+/// de conteúdo/recorrência IDÊNTICOS aos que `GroupBroadcast` tinha antes —
+/// só mudaram de dono (agora são por etapa, não pela campanha inteira).
+model GroupBroadcastStep {
+  id               String                      @id @default(uuid())
+  tenantId         String                      @map("tenant_id")
+  broadcastId      String                      @map("broadcast_id")
+  /// Ordem de execução (0, 1, 2...) — única dentro da campanha.
+  order            Int
+  /// Texto publicado; com mídia, vira a LEGENDA (uma mensagem só, nunca duas).
+  messageTemplate  String                      @db.Text @map("message_template")
+  mediaContent     Bytes?                      @map("media_content")
+  mediaMimeType    String?                     @map("media_mime_type")
+  mediaFileName    String?                     @map("media_file_name")
+  mediaContentType WhatsAppMessageContentType? @map("media_content_type")
+  /// Recorrência DESTA etapa: de quantas em quantas horas repete. Nulo =
+  /// publica uma vez e não repete mais (etapas rodam em paralelo, 2026-09-14 —
+  /// não existe mais "avançar para a próxima etapa": cada uma é independente).
+  recurrenceIntervalHours Int?                 @map("recurrence_interval_hours")
+  /// Fim por CONTAGEM: encerra a recorrência DESTA etapa depois de N publicações.
+  recurrenceMaxRuns       Int?                 @map("recurrence_max_runs")
+  /// Fim por DATA: não inicia publicação desta etapa depois deste instante.
+  /// Os dois limites convivem — vale o que vier primeiro; ambos nulos =
+  /// repete até a campanha ser cancelada.
+  recurrenceEndsAt        DateTime?            @map("recurrence_ends_at")
+  /// Publicações desta etapa já CONCLUÍDAS (todos os grupos processados).
+  runsCompleted           Int                  @default(0) @map("runs_completed")
+  /// Quando a PRÓXIMA publicação desta etapa começa — seja o lançamento
+  /// inicial (escalonado por `GroupBroadcast.stepLaunchOffsetMinutes`) ou uma
+  /// repetição. Nulo se a etapa ainda não foi iniciada, ou se sua recorrência
+  /// já se esgotou.
+  nextRunAt               DateTime?            @map("next_run_at")
+  /// Preenchido UMA VEZ, na primeira vez que `startBroadcast` agenda esta
+  /// etapa — distingue "nunca rodou" (agenda com o escalonamento inicial) de
+  /// "já rodou, está entre um ciclo e o próximo" (`nextRunAt`/`runsCompleted`
+  /// sozinhos não bastam: ambos ficam "vazios" nos dois casos).
+  startedAt               DateTime?            @map("started_at")
+  /// Preenchido UMA VEZ, quando a recorrência desta etapa encerra para sempre
+  /// (publicação única já feita, `recurrenceMaxRuns`/`recurrenceEndsAt`
+  /// atingidos, ou nenhum grupo elegível restou). A campanha só vira
+  /// `completed` quando TODAS as etapas têm isto preenchido.
+  finishedAt              DateTime?            @map("finished_at")
+  createdAt               DateTime             @default(now()) @map("created_at")
+
+  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  broadcast   GroupBroadcast             @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  stepTargets GroupBroadcastStepTarget[]
+
+  @@unique([broadcastId, order])
+  @@index([tenantId, broadcastId])
+  @@map("group_broadcast_steps")
 }
 
 /// Status de UM grupo dentro de um disparo em grupos.
@@ -614,14 +657,51 @@ model GroupBroadcastTarget {
   sentCount    Int                        @default(0) @map("sent_count")
   createdAt    DateTime                   @default(now()) @map("created_at")
 
-  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  broadcast GroupBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  broadcast   GroupBroadcast             @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  stepTargets GroupBroadcastStepTarget[]
 
   /// O mesmo grupo nunca entra duas vezes no mesmo disparo.
   @@unique([broadcastId, groupJid])
   @@index([tenantId, broadcastId, status])
   @@index([tenantId, broadcastId, attemptedAt])
   @@map("group_broadcast_targets")
+}
+
+/// Progresso de UM grupo em UMA etapa específica (2026-09-14, "cadência entre
+/// publicações"). Antes só existia `GroupBroadcastTarget` (progresso por
+/// campanha) porque só uma etapa rodava por vez; agora todas as etapas rodam
+/// em PARALELO, cada uma no seu próprio ritmo, então cada etapa precisa da
+/// SUA PRÓPRIA lista de "quem já recebeu" — uma etapa pode estar na 3ª
+/// repetição enquanto outra ainda não publicou a 1ª. Elegibilidade (existe o
+/// grupo? só admins publicam?) é decidida UMA VEZ em `GroupBroadcastTarget` e
+/// só espelhada aqui (nunca reavaliada por etapa).
+model GroupBroadcastStepTarget {
+  id           String                     @id @default(uuid())
+  tenantId     String                     @map("tenant_id")
+  /// Denormalizado — permite somar/filtrar por CAMPANHA (resumo geral, disjuntor)
+  /// sem fazer join por `stepId` toda vez.
+  broadcastId  String                     @map("broadcast_id")
+  stepId       String                     @map("step_id")
+  targetId     String                     @map("target_id")
+  status       GroupBroadcastTargetStatus @default(PENDING)
+  errorMessage String?                    @db.Text @map("error_message")
+  sentAt       DateTime?                  @map("sent_at")
+  attemptedAt  DateTime?                  @map("attempted_at")
+  /// Quantas vezes ESTA etapa já publicou neste grupo (cresce a cada repetição
+  /// da etapa). `status` descreve só o ciclo atual, reiniciado a cada repetição.
+  sentCount    Int                        @default(0) @map("sent_count")
+  createdAt    DateTime                   @default(now()) @map("created_at")
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  step      GroupBroadcastStep   @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  target    GroupBroadcastTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([stepId, targetId])
+  @@index([tenantId, broadcastId, status])
+  @@index([tenantId, broadcastId, attemptedAt])
+  @@index([tenantId, stepId, status])
+  @@map("group_broadcast_step_targets")
 }
 
 /// Espelha apps/api/src/services/whatsapp/domain/entities/WhatsAppSession.ts

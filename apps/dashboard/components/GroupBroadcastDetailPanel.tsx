@@ -7,10 +7,11 @@ import {
   startGroupBroadcast,
   pauseGroupBroadcast,
   cancelGroupBroadcast,
-  removeGroupBroadcastMedia,
-  groupBroadcastMediaUrl,
+  removeGroupBroadcastStepMedia,
+  groupBroadcastStepMediaUrl,
   ClientApiError,
   type GroupBroadcast,
+  type GroupBroadcastStep,
   type GroupBroadcastStatus,
   type GroupBroadcastTarget,
   type GroupBroadcastSummary,
@@ -113,6 +114,7 @@ export default function GroupBroadcastDetailPanel({
   broadcastId,
 }: GroupBroadcastDetailPanelProps): JSX.Element {
   const [broadcast, setBroadcast] = useState<GroupBroadcast | null>(null);
+  const [steps, setSteps] = useState<GroupBroadcastStep[]>([]);
   const [summary, setSummary] = useState<GroupBroadcastSummary | null>(null);
   const [targets, setTargets] = useState<GroupBroadcastTarget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,6 +137,7 @@ export default function GroupBroadcastDetailPanel({
         .then((detail) => {
           statusRef.current = detail.broadcast.status;
           setBroadcast(detail.broadcast);
+          setSteps(detail.steps);
           setSummary(detail.summary);
           setTargets(detail.targets);
         })
@@ -186,11 +189,11 @@ export default function GroupBroadcastDetailPanel({
     }
   }
 
-  async function handleRemoveMedia(): Promise<void> {
+  async function handleRemoveStepMedia(stepId: string): Promise<void> {
     setActionPending(true);
     try {
-      const result = await removeGroupBroadcastMedia(broadcastId);
-      setBroadcast(result.broadcast);
+      const result = await removeGroupBroadcastStepMedia(broadcastId, stepId);
+      setSteps((current) => current.map((step) => (step.id === stepId ? result.step : step)));
       toast({ variant: 'success', title: 'Anexo removido' });
     } catch (error) {
       toast({
@@ -220,6 +223,12 @@ export default function GroupBroadcastDetailPanel({
   const canPause = broadcast.status === 'running';
   const canCancel =
     broadcast.status === 'draft' || broadcast.status === 'running' || broadcast.status === 'paused';
+  // Mais de uma etapa, ou a etapa atual repete — "quanto falta desta rodada" difere de "quanto já saiu no total".
+  const hasMultipleRuns = steps.length > 1 || steps.some((step) => step.recurrenceIntervalHours);
+  // Grupos DISTINTOS elegíveis — nunca `summary.pending` cru, que soma o
+  // progresso de TODAS as etapas em paralelo (2026-09-14): com N
+  // publicações, o mesmo grupo entra N vezes nesse total.
+  const eligibleGroupCount = summary.total - summary.skipped;
 
   return (
     <div>
@@ -244,76 +253,127 @@ export default function GroupBroadcastDetailPanel({
         {broadcast.pausedReason === 'consecutive_failures' &&
           ' · pausado automaticamente: as duas últimas tentativas falharam (disjuntor de segurança)'}
       </p>
-      <p className="mb-2 max-w-2xl whitespace-pre-wrap rounded-lg border border-dashed border-border bg-card p-3 text-[13px] text-foreground">
-        {broadcast.messageTemplate}
-      </p>
-
-      {broadcast.recurrenceIntervalHours && (
-        <div className="mb-3 flex max-w-2xl items-start gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-[13px]">
-          <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="font-medium text-foreground">
-              Repete a cada{' '}
-              {broadcast.recurrenceIntervalHours === 1
-                ? '1 hora'
-                : broadcast.recurrenceIntervalHours + ' horas'}
-              {broadcast.recurrenceMaxRuns
-                ? ' · ' + broadcast.runsCompleted + ' de ' + broadcast.recurrenceMaxRuns
-                : ' · ' + broadcast.runsCompleted + ' publicada(s)'}
-            </p>
-            <p className="text-muted-foreground">
-              {broadcast.nextRunAt
-                ? 'Próxima publicação em ' + formatDateTime(broadcast.nextRunAt)
-                : broadcast.status === 'running'
-                  ? 'Publicando agora nos grupos selecionados.'
-                  : 'Sem próxima publicação agendada.'}
-              {broadcast.recurrenceEndsAt &&
-                ' · termina em ' + formatDateTime(broadcast.recurrenceEndsAt)}
-              {broadcast.sendWindowStart &&
-                broadcast.sendWindowEnd &&
-                ' · só entre ' + broadcast.sendWindowStart + ' e ' + broadcast.sendWindowEnd}
-              {!broadcast.recurrenceMaxRuns &&
-                !broadcast.recurrenceEndsAt &&
-                ' · sem prazo para acabar: cancele quando quiser parar'}
-            </p>
-          </div>
-        </div>
+      {broadcast.sendWindowStart && broadcast.sendWindowEnd && (
+        <p className="mb-2 text-[12.5px] text-muted-foreground">
+          Só publica entre {broadcast.sendWindowStart} e {broadcast.sendWindowEnd} (vale para a
+          campanha inteira, atravessando publicações).
+        </p>
       )}
 
-      {broadcast.media && (
-        <div className="mb-4 flex max-w-2xl items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            {broadcast.media.contentType === 'image' ? (
-              // eslint-disable-next-line @next/next/no-img-element -- proxy do BFF, não um asset estático local.
-              <img
-                src={groupBroadcastMediaUrl(broadcastId)}
-                alt="Anexo do disparo"
-                className="h-10 w-10 shrink-0 rounded object-cover"
-              />
-            ) : (
-              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium text-foreground">
-                {broadcast.media.fileName ?? broadcast.media.contentType}
-              </p>
-              <p className="text-[12px] text-muted-foreground">{broadcast.media.contentType}</p>
-            </div>
-          </div>
-          {broadcast.status === 'draft' && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label="Remover anexo"
-              disabled={actionPending}
-              onClick={() => void handleRemoveMedia()}
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </Button>
-          )}
+      {broadcast.stepLaunchOffsetMinutes ? (
+        <p className="mb-2 text-[12.5px] text-muted-foreground">
+          Publicações escalonadas: cada uma começa{' '}
+          {broadcast.stepLaunchOffsetMinutes === 1 ? '1 minuto' : broadcast.stepLaunchOffsetMinutes + ' minutos'}{' '}
+          depois da anterior, na primeira vez. Depois disso, cada uma repete no seu próprio ritmo.
+        </p>
+      ) : null}
+
+      <div className="mb-4 max-w-2xl">
+        <h2 className="mb-2 text-[14px] font-semibold text-foreground">
+          Publicações desta campanha{' '}
+          <span className="font-normal text-muted-foreground">
+            ({steps.length} no total, rodando em paralelo)
+          </span>
+        </h2>
+        <div className="space-y-2">
+          {steps.map((step, index) => {
+            // Etapas rodam em PARALELO (2026-09-14) — cada uma tem seu
+            // próprio status, não existe mais "a etapa atual" da campanha.
+            const isRunning = Boolean(step.startedAt) && !step.finishedAt;
+            const isFinished = Boolean(step.finishedAt);
+            const stepStatusLabel = isFinished
+              ? 'Concluída'
+              : isRunning
+                ? 'Em execução'
+                : 'Aguardando início';
+            const stepStatusVariant = isFinished ? 'default' : isRunning ? 'success' : 'secondary';
+            return (
+              <div
+                key={step.id}
+                className={`rounded-lg border p-3 ${
+                  isRunning ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12.5px] font-medium text-foreground">
+                    Publicação {index + 1} de {steps.length}
+                  </span>
+                  <Badge variant={stepStatusVariant}>{stepStatusLabel}</Badge>
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-foreground">
+                  {step.messageTemplate}
+                </p>
+
+                {step.recurrenceIntervalHours && (
+                  <div className="mt-2 flex items-start gap-2 text-[12.5px] text-muted-foreground">
+                    <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <p>
+                        Repete a cada{' '}
+                        {step.recurrenceIntervalHours === 1
+                          ? '1 hora'
+                          : step.recurrenceIntervalHours + ' horas'}
+                        {step.recurrenceMaxRuns
+                          ? ' · ' + step.runsCompleted + ' de ' + step.recurrenceMaxRuns + ' repetições'
+                          : ' · ' + step.runsCompleted + ' repetição(ões) já feita(s)'}
+                      </p>
+                      {isRunning && (
+                        <p>
+                          {step.nextRunAt
+                            ? 'Próxima publicação em ' + formatDateTime(step.nextRunAt)
+                            : 'Publicando agora nos grupos selecionados.'}
+                          {step.recurrenceEndsAt &&
+                            ' · termina em ' + formatDateTime(step.recurrenceEndsAt)}
+                          {!step.recurrenceMaxRuns &&
+                            !step.recurrenceEndsAt &&
+                            ' · sem prazo para acabar'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {step.media && (
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {step.media.contentType === 'image' ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- proxy do BFF, não um asset estático local.
+                        <img
+                          src={groupBroadcastStepMediaUrl(broadcastId, step.id)}
+                          alt="Anexo da publicação"
+                          className="h-8 w-8 shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      )}
+                      <span className="truncate text-[12.5px] text-foreground">
+                        {step.media.fileName ?? step.media.contentType}
+                      </span>
+                    </div>
+                    {broadcast.status === 'draft' && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Remover anexo da publicação ${index + 1}`}
+                        disabled={actionPending}
+                        onClick={() => void handleRemoveStepMedia(step.id)}
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
+        {broadcast.status !== 'draft' && (
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            Disparo já iniciado — a lista de publicações é somente leitura.
+          </p>
+        )}
+      </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>
@@ -330,14 +390,15 @@ export default function GroupBroadcastDetailPanel({
             <DialogHeader>
               <DialogTitle>
                 {broadcast.status === 'paused' ? 'Retomar' : 'Iniciar'} publicação em{' '}
-                {summary.pending} grupo{summary.pending === 1 ? '' : 's'}?
+                {eligibleGroupCount} grupo{eligibleGroupCount === 1 ? '' : 's'}?
               </DialogTitle>
               <DialogDescription>
                 Isto vai publicar mensagens de WhatsApp reais em até{' '}
-                <strong>{summary.pending}</strong> grupo(s) pendente(s), com ritmo bem mais espaçado
-                que um disparo individual — publicar em grupo é o padrão que o WhatsApp mais associa
-                a spam, e o número pode ser banido em caso de abuso. Você poderá pausar a qualquer
-                momento, mas mensagens já publicadas não podem ser desfeitas.
+                <strong>{eligibleGroupCount}</strong> grupo(s) elegível(is)
+                {steps.length > 1 ? ', em cada uma das ' + steps.length + ' publicações' : ''}, com
+                ritmo bem mais espaçado que um disparo individual — publicar em grupo é o padrão que
+                o WhatsApp mais associa a spam, e o número pode ser banido em caso de abuso. Você
+                poderá pausar a qualquer momento, mas mensagens já publicadas não podem ser desfeitas.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -419,12 +480,12 @@ export default function GroupBroadcastDetailPanel({
         </span>
         <span>
           <strong className="text-foreground">{summary.sent}</strong>{' '}
-          {broadcast.recurrenceIntervalHours ? 'publicado(s) nesta repetição' : 'publicado(s)'}
+          {hasMultipleRuns ? 'publicado(s) nesta rodada' : 'publicado(s)'}
         </span>
-        {Boolean(broadcast.recurrenceIntervalHours) && (
+        {hasMultipleRuns && (
           <span>
             <strong className="text-foreground">{summary.totalSent}</strong> publicação(ões) no
-            total (todas as repetições)
+            total (todas as etapas/repetições)
           </span>
         )}
         <span>

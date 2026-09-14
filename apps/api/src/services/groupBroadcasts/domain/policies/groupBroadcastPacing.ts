@@ -33,6 +33,31 @@ export const GROUP_JITTER_MAX_MS = 30_000;
 /** Quantos grupos um único disparo pode atingir. */
 export const MAX_GROUPS_PER_BROADCAST = 30;
 
+/** Teto de etapas (publicações) por disparo — mesmo espírito do teto de grupos: um número que dá pra revisar visualmente antes de disparar (2026-09-14). */
+export const MAX_STEPS_PER_BROADCAST = 20;
+
+/**
+ * Escalonamento inicial entre publicações (2026-09-14, "cadência entre
+ * publicações") — minutos entre o início de uma etapa e o início da seguinte,
+ * na primeira vez que cada uma dispara. Teto de 6h: um escalonamento maior
+ * que isso não tem ganho real e faria a última publicação de um disparo de 20
+ * etapas esperar dias para sequer começar.
+ */
+export const MIN_STEP_LAUNCH_OFFSET_MINUTES = 0;
+export const MAX_STEP_LAUNCH_OFFSET_MINUTES = 360;
+
+/** Normaliza o escalonamento pedido: ausente vira 0 (todas juntas); fora da faixa é trazido para dentro dela. */
+export function clampStepLaunchOffsetMinutes(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) {
+    return MIN_STEP_LAUNCH_OFFSET_MINUTES;
+  }
+  const rounded = Math.round(requested);
+  return Math.min(
+    MAX_STEP_LAUNCH_OFFSET_MINUTES,
+    Math.max(MIN_STEP_LAUNCH_OFFSET_MINUTES, rounded),
+  );
+}
+
 /**
  * Tetos de tamanho do anexo por tipo. Imagem segue o teto de campanha
  * (`MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES`, 5MB); vídeo sobe para 16MB — o mesmo

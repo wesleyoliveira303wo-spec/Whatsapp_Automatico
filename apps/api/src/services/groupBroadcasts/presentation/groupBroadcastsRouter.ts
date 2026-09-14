@@ -17,7 +17,10 @@ import {
   MAX_GROUP_INTERVAL_SECONDS,
   MAX_GROUP_MEDIA_UPLOAD_BYTES,
   MAX_GROUPS_PER_BROADCAST,
+  MAX_STEP_LAUNCH_OFFSET_MINUTES,
+  MAX_STEPS_PER_BROADCAST,
   MIN_GROUP_INTERVAL_SECONDS,
+  MIN_STEP_LAUNCH_OFFSET_MINUTES,
 } from '../domain/policies/groupBroadcastPacing';
 
 const tenantIdParamSchema = z.object({
@@ -28,8 +31,32 @@ const broadcastIdParamSchema = z.object({
   broadcastId: z.string().trim().min(1, 'broadcastId não pode ser vazio'),
 });
 
+/** Path das rotas de mídia (2026-09-14) — sempre por `stepId`, nunca por posição/ordem. */
+const broadcastStepIdParamSchema = z.object({
+  broadcastId: z.string().trim().min(1, 'broadcastId não pode ser vazio'),
+  stepId: z.string().trim().min(1, 'stepId não pode ser vazio'),
+});
+
 const listQuerySchema = z.object({
   sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio'),
+});
+
+/**
+ * Uma publicação da sequência (2026-09-14) — cada etapa valida sua PRÓPRIA
+ * recorrência, independente das demais.
+ */
+const stepSchema = z.object({
+  messageTemplate: z.string().trim().min(1, 'messageTemplate não pode ser vazio').max(4000),
+  recurrenceIntervalHours: z
+    .number()
+    .int()
+    .min(MIN_RECURRENCE_INTERVAL_HOURS)
+    .max(MAX_RECURRENCE_INTERVAL_HOURS)
+    .optional(),
+  /** Fim por contagem: mínimo 2 (1 repetição seria a publicação única). */
+  recurrenceMaxRuns: z.number().int().min(2).max(MAX_RECURRENCE_RUNS).optional(),
+  /** Fim por data: ISO-8601; o Service recusa data no passado. */
+  recurrenceEndsAt: z.coerce.date().optional(),
 });
 
 /**
@@ -41,7 +68,6 @@ const listQuerySchema = z.object({
 const createBodySchema = z.object({
   sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio'),
   name: z.string().trim().min(1, 'name não pode ser vazio').max(200),
-  messageTemplate: z.string().trim().min(1, 'messageTemplate não pode ser vazio').max(4000),
   groupJids: z
     .array(
       z
@@ -57,17 +83,6 @@ const createBodySchema = z.object({
     .min(MIN_GROUP_INTERVAL_SECONDS)
     .max(MAX_GROUP_INTERVAL_SECONDS)
     .optional(),
-  // Recorrência (2026-09-11). Ausente = publicação única, como sempre foi.
-  recurrenceIntervalHours: z
-    .number()
-    .int()
-    .min(MIN_RECURRENCE_INTERVAL_HOURS)
-    .max(MAX_RECURRENCE_INTERVAL_HOURS)
-    .optional(),
-  /** Fim por contagem: mínimo 2 (1 repetição seria a publicação única). */
-  recurrenceMaxRuns: z.number().int().min(2).max(MAX_RECURRENCE_RUNS).optional(),
-  /** Fim por data: ISO-8601; o Service recusa data no passado. */
-  recurrenceEndsAt: z.coerce.date().optional(),
   sendWindowStart: z
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário precisa ser "HH:MM".')
@@ -76,6 +91,19 @@ const createBodySchema = z.object({
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário precisa ser "HH:MM".')
     .optional(),
+  /** Escalonamento inicial (2026-09-14) — minutos entre o início de uma publicação e o da seguinte. */
+  stepLaunchOffsetMinutes: z
+    .number()
+    .int()
+    .min(MIN_STEP_LAUNCH_OFFSET_MINUTES)
+    .max(MAX_STEP_LAUNCH_OFFSET_MINUTES)
+    .optional(),
+  // A sequência de publicações (2026-09-14). Um disparo "simples" (o modelo
+  // antigo) é só uma campanha com UMA etapa — não existe segundo conceito.
+  steps: z
+    .array(stepSchema)
+    .min(1, 'Adicione pelo menos uma publicação.')
+    .max(MAX_STEPS_PER_BROADCAST, `No máximo ${MAX_STEPS_PER_BROADCAST} publicações por campanha.`),
 });
 
 /** Mesmo contrato do upload de mídia de campanha (L8): corpo é o arquivo cru, categoria/nome em headers. */
@@ -141,14 +169,12 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
           tenantId: params.tenantId,
           sessionName: body.sessionName,
           name: body.name,
-          messageTemplate: body.messageTemplate,
           groupJids: body.groupJids,
           intervalSeconds: body.intervalSeconds,
-          recurrenceIntervalHours: body.recurrenceIntervalHours,
-          recurrenceMaxRuns: body.recurrenceMaxRuns,
-          recurrenceEndsAt: body.recurrenceEndsAt,
           sendWindowStart: body.sendWindowStart,
           sendWindowEnd: body.sendWindowEnd,
+          stepLaunchOffsetMinutes: body.stepLaunchOffsetMinutes,
+          steps: body.steps,
           createdByUserId: actor.userId,
         },
         actor,
@@ -248,15 +274,17 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
   /**
    * `raw()` só nesta rota (substitui `express.json()`), mesmo padrão de
    * `POST .../campaigns/:id/media`: o corpo é o ARQUIVO. O limite do corpo é
-   * o maior teto (vídeo); o teto por tipo é conferido no serviço.
+   * o maior teto (vídeo); o teto por tipo é conferido no serviço. Path por
+   * `stepId` (2026-09-14) — nunca por posição/ordem, para reordenar etapas
+   * em rascunho não perder a mídia já anexada.
    */
   router.post(
-    '/:broadcastId/media',
+    '/:broadcastId/steps/:stepId/media',
     requirePermission('campaign:manage'),
     raw({ type: () => true, limit: MAX_GROUP_MEDIA_UPLOAD_BYTES }),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(
-        tenantIdParamSchema.merge(broadcastIdParamSchema),
+        tenantIdParamSchema.merge(broadcastStepIdParamSchema),
         req.params,
         res,
       );
@@ -271,45 +299,45 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
         return;
       }
 
-      const broadcast = await service.attachMedia(params.tenantId, params.broadcastId, {
+      const step = await service.attachMedia(params.tenantId, params.broadcastId, params.stepId, {
         contentType: headers['x-media-content-type'],
         buffer: req.body,
         mimeType: headers['content-type'],
         fileName: headers['x-media-filename'],
       });
-      res.status(200).json({ broadcast });
+      res.status(200).json({ step });
     }),
   );
 
   router.delete(
-    '/:broadcastId/media',
+    '/:broadcastId/steps/:stepId/media',
     requirePermission('campaign:manage'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(
-        tenantIdParamSchema.merge(broadcastIdParamSchema),
+        tenantIdParamSchema.merge(broadcastStepIdParamSchema),
         req.params,
         res,
       );
       if (!params) return;
 
-      const broadcast = await service.removeMedia(params.tenantId, params.broadcastId);
-      res.status(200).json({ broadcast });
+      const step = await service.removeMedia(params.tenantId, params.broadcastId, params.stepId);
+      res.status(200).json({ step });
     }),
   );
 
   /** Streaming do anexo para preview — leitura (`campaign:read`), mesmo padrão de `GET .../campaigns/:id/media`. */
   router.get(
-    '/:broadcastId/media',
+    '/:broadcastId/steps/:stepId/media',
     requirePermission('campaign:read'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(
-        tenantIdParamSchema.merge(broadcastIdParamSchema),
+        tenantIdParamSchema.merge(broadcastStepIdParamSchema),
         req.params,
         res,
       );
       if (!params) return;
 
-      const media = await service.getMedia(params.tenantId, params.broadcastId);
+      const media = await service.getMedia(params.tenantId, params.broadcastId, params.stepId);
       res.setHeader('Content-Type', media.mimeType);
       if (media.fileName) {
         res.setHeader(

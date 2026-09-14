@@ -1,4 +1,4 @@
-import { GroupBroadcast } from '../entities/GroupBroadcast';
+import { GroupBroadcastStep } from '../entities/GroupBroadcast';
 
 /**
  * Recorrência do disparo em grupos (2026-09-11, pedido do fundador: "repetir a
@@ -209,11 +209,9 @@ export function clampRecurrenceIntervalHours(requested?: number | null): number 
   return Math.min(MAX_RECURRENCE_INTERVAL_HOURS, Math.max(MIN_RECURRENCE_INTERVAL_HOURS, rounded));
 }
 
-/** `true` quando o disparo foi criado para se repetir (ausente = publicação única). */
-export function isRecurring(broadcast: Pick<GroupBroadcast, 'recurrenceIntervalHours'>): boolean {
-  return (
-    broadcast.recurrenceIntervalHours !== undefined && broadcast.recurrenceIntervalHours !== null
-  );
+/** `true` quando a ETAPA foi criada para se repetir (ausente = publica uma vez, depois avança/encerra). */
+export function isRecurring(step: Pick<GroupBroadcastStep, 'recurrenceIntervalHours'>): boolean {
+  return step.recurrenceIntervalHours !== undefined && step.recurrenceIntervalHours !== null;
 }
 
 /**
@@ -237,41 +235,43 @@ export type RecurrenceDecision =
   | { shouldRepeat: false; reason: RecurrenceStopReason };
 
 /**
- * Decide o destino do disparo depois de uma repetição terminar.
+ * Decide o destino de UMA ETAPA depois de uma repetição terminar.
  *
  * As TRÊS formas de término do fundador convivem e são independentes: teto de
  * repetições, data/hora limite, e "até eu cancelar" (nenhum dos dois
  * preenchido). Quando os dois limites existem, vale o que vier primeiro — a
- * checagem é feita sobre o instante da PRÓXIMA publicação, não sobre agora: um
- * disparo cuja próxima repetição cairia depois do limite simplesmente encerra,
- * em vez de publicar uma vez a mais fora do combinado.
+ * checagem é feita sobre o instante da PRÓXIMA publicação, não sobre agora:
+ * uma etapa cuja próxima repetição cairia depois do limite simplesmente
+ * encerra (o processador de fila decide então se avança para a próxima etapa
+ * ou completa a campanha), em vez de publicar uma vez a mais fora do
+ * combinado.
  *
- * Cancelar ou pausar não passa por aqui: aquilo muda o `status`, e o
- * processador nem chega a perguntar.
+ * Cancelar ou pausar não passa por aqui: aquilo muda o `status` da campanha,
+ * e o processador nem chega a perguntar.
  */
 export function decideNextRun(
-  broadcast: Pick<
-    GroupBroadcast,
+  step: Pick<
+    GroupBroadcastStep,
     'recurrenceIntervalHours' | 'recurrenceMaxRuns' | 'recurrenceEndsAt' | 'runsCompleted'
   >,
   window: SendWindow | undefined,
   finishedAt: Date,
   timeZone?: string,
 ): RecurrenceDecision {
-  const runsCompleted = broadcast.runsCompleted + 1;
-  const maxRuns = broadcast.recurrenceMaxRuns;
+  const runsCompleted = step.runsCompleted + 1;
+  const maxRuns = step.recurrenceMaxRuns;
   if (maxRuns !== undefined && maxRuns !== null && runsCompleted >= maxRuns) {
     return { shouldRepeat: false, reason: 'max_runs_reached' };
   }
 
   const nextRunAt = computeNextRunAt(
     finishedAt,
-    broadcast.recurrenceIntervalHours ?? MIN_RECURRENCE_INTERVAL_HOURS,
+    step.recurrenceIntervalHours ?? MIN_RECURRENCE_INTERVAL_HOURS,
     window,
     timeZone,
   );
 
-  const endsAt = broadcast.recurrenceEndsAt;
+  const endsAt = step.recurrenceEndsAt;
   if (endsAt && nextRunAt.getTime() > endsAt.getTime()) {
     return { shouldRepeat: false, reason: 'end_date_reached' };
   }

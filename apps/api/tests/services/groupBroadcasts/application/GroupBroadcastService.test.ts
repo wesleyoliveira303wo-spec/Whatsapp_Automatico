@@ -7,10 +7,13 @@ import {
   GroupBroadcastMediaTypeMismatchError,
   GroupBroadcastNotFoundError,
   GroupBroadcastRequiresPaidPlanError,
+  GroupBroadcastStepNotFoundError,
   GroupDirectoryUnavailableError,
   InvalidGroupBroadcastTransitionError,
   NoGroupsSelectedError,
+  NoStepsProvidedError,
   TooManyGroupsSelectedError,
+  TooManyStepsError,
 } from '../../../../src/services/groupBroadcasts/domain/errors/groupBroadcastErrors';
 import { TenantNotFoundError } from '../../../../src/shared/tenant/domain/errors/TenantNotFoundError';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
@@ -61,7 +64,7 @@ const baseInput = {
   tenantId: 'tenant-1',
   sessionName: 'sessao',
   name: 'Promo de setembro',
-  messageTemplate: 'Confira a promoção!',
+  steps: [{ messageTemplate: 'Confira a promoção!' }],
 };
 
 describe('GroupBroadcastService (Disparos em grupos)', () => {
@@ -182,6 +185,43 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
     });
   });
 
+  describe('createBroadcast() com múltiplas etapas (2026-09-14)', () => {
+    it('cria a campanha com N etapas, na ordem enviada, cada uma com sua própria recorrência', async () => {
+      const { service } = buildSut();
+
+      const result = await service.createBroadcast({
+        ...baseInput,
+        groupJids: ['aberto@g.us'],
+        steps: [
+          { messageTemplate: 'Post 1' },
+          { messageTemplate: 'Post 2', recurrenceIntervalHours: 24, recurrenceMaxRuns: 2 },
+          { messageTemplate: 'Post 3' },
+        ],
+      });
+
+      expect(result.steps).toHaveLength(3);
+      expect(result.steps.map((s) => s.messageTemplate)).toEqual(['Post 1', 'Post 2', 'Post 3']);
+      expect(result.steps[1].recurrenceIntervalHours).toBe(24);
+    });
+
+    it('recusa campanha sem nenhuma etapa', async () => {
+      const { service } = buildSut();
+
+      await expect(
+        service.createBroadcast({ ...baseInput, groupJids: ['aberto@g.us'], steps: [] }),
+      ).rejects.toBeInstanceOf(NoStepsProvidedError);
+    });
+
+    it('recusa campanha com mais de 20 etapas', async () => {
+      const { service } = buildSut();
+      const steps = Array.from({ length: 21 }, (_, i) => ({ messageTemplate: `Post ${i}` }));
+
+      await expect(
+        service.createBroadcast({ ...baseInput, groupJids: ['aberto@g.us'], steps }),
+      ).rejects.toBeInstanceOf(TooManyStepsError);
+    });
+  });
+
   describe('listBroadcasts() / getBroadcast()', () => {
     it('lista só a sessão pedida, com resumo por disparo', async () => {
       const { service, repository } = buildSut();
@@ -194,6 +234,19 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       expect(list[0].summary).toMatchObject({ total: 2, pending: 2 });
     });
 
+    it('devolve as etapas junto com o detalhe', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        messageTemplate: 'Post único',
+      });
+
+      const detail = await service.getBroadcast('tenant-1', broadcastId);
+
+      expect(detail.steps).toHaveLength(1);
+      expect(detail.steps[0].messageTemplate).toBe('Post único');
+    });
+
     it('IDOR: disparo de outro tenant não é encontrado', async () => {
       const { service, repository } = buildSut();
       const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-2' });
@@ -204,9 +257,9 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
   });
 
   describe('startBroadcast()', () => {
-    it('agenda cada grupo pendente com espaçamento crescente e move para running', async () => {
+    it('1º início: agenda um "run" por etapa (nunca envia direto — a janela é checada no run) e move para running', async () => {
       const { service, repository, dispatcher, audit } = buildSut();
-      const { broadcastId, targetIds } = repository.seedBroadcast({
+      const { broadcastId, stepIds } = repository.seedBroadcast({
         tenantId: 'tenant-1',
         groupJids: ['a@g.us', 'b@g.us', 'c@g.us'],
         intervalSeconds: 60,
@@ -215,12 +268,70 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       const broadcast = await service.startBroadcast('tenant-1', broadcastId, { userId: 'u1' });
 
       expect(broadcast.status).toBe('running');
-      expect(dispatcher.scheduled.map((s) => s.targetId)).toEqual(targetIds);
-      const [first, second, third] = dispatcher.scheduled.map((s) => s.delayMs);
-      expect(first).toBeLessThan(30_000 + 1);
-      expect(second).toBeGreaterThanOrEqual(60_000);
-      expect(third).toBeGreaterThanOrEqual(120_000);
+      expect(dispatcher.scheduled).toHaveLength(0);
+      expect(dispatcher.runs).toEqual([
+        { tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 1, delayMs: 0 },
+      ]);
+      const [step] = await repository.listSteps('tenant-1', broadcastId);
+      expect(step.startedAt).toBeInstanceOf(Date);
       expect(audit.entries.map((e) => e.action)).toEqual(['group_broadcast.started']);
+    });
+
+    // Trava de regressão (2026-09-14): um job de delay 0 pode rodar em menos
+    // de 10ms — mais rápido que a escrita de `status: 'running'`. Se
+    // `scheduleRun` for chamado ANTES dessa escrita, o job lê `draft`,
+    // desiste pra sempre, e a publicação "some" (bug real reportado pelo
+    // fundador: a etapa 0, sem escalonamento, nunca saiu). O teste finge
+    // ser esse job: ele espia `dispatcher.scheduleRun` e, no MOMENTO da
+    // chamada, confere no repositório que o status já é `running`.
+    it('grava status=running ANTES de agendar qualquer etapa (nunca depois) — evita a corrida do delay 0', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const statusSeenAtScheduleTime: string[] = [];
+      const originalScheduleRun = dispatcher.scheduleRun.bind(dispatcher);
+      dispatcher.scheduleRun = async (...args) => {
+        const broadcast = await repository.findById('tenant-1', broadcastId);
+        statusSeenAtScheduleTime.push(broadcast!.status);
+        return originalScheduleRun(...args);
+      };
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      expect(statusSeenAtScheduleTime).toEqual(['running']);
+    });
+
+    it('N publicações, sem escalonamento configurado: todas agendam com delay 0 (começam juntas)', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        groupJids: ['a@g.us'],
+        extraSteps: [{ messageTemplate: 'Post 2' }, { messageTemplate: 'Post 3' }],
+      });
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      expect(dispatcher.runs.map((r) => ({ stepId: r.stepId, delayMs: r.delayMs }))).toEqual([
+        { stepId: stepIds[0], delayMs: 0 },
+        { stepId: stepIds[1], delayMs: 0 },
+        { stepId: stepIds[2], delayMs: 0 },
+      ]);
+    });
+
+    it('N publicações COM escalonamento: cada etapa espera order × minutos além da anterior', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        groupJids: ['a@g.us'],
+        stepLaunchOffsetMinutes: 10,
+        extraSteps: [{ messageTemplate: 'Post 2' }, { messageTemplate: 'Post 3' }],
+      });
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      const delaysByStep = new Map(dispatcher.runs.map((r) => [r.stepId, r.delayMs]));
+      expect(delaysByStep.get(stepIds[0])).toBe(0);
+      expect(delaysByStep.get(stepIds[1])).toBe(10 * 60 * 1000);
+      expect(delaysByStep.get(stepIds[2])).toBe(20 * 60 * 1000);
     });
 
     it('Plano Grátis não dispara (mesma trava de campanha)', async () => {
@@ -247,7 +358,7 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       await expect(service.startBroadcast('tenant-1', broadcastId)).resolves.toMatchObject({
         status: 'running',
       });
-      expect(dispatcher.scheduled.length).toBeGreaterThan(0);
+      expect(dispatcher.runs.length).toBeGreaterThan(0);
     });
 
     it('outro disparo rodando em OUTRA sessão também não bloqueia', async () => {
@@ -259,29 +370,57 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       });
     });
 
-    it('retomar (paused → running) reagenda só os pendentes', async () => {
+    it('retomar UMA ETAPA já iniciada, pausada no meio de um envio: reagenda só os pendentes DELA', async () => {
       const { service, repository, dispatcher } = buildSut();
-      const { broadcastId, targetIds } = repository.seedBroadcast({
+      const { broadcastId, stepTargetIds } = repository.seedBroadcast({
         tenantId: 'tenant-1',
         status: 'paused',
         groupJids: ['a@g.us', 'b@g.us'],
+        startedAt: new Date(), // já rodou antes — não é mais o 1º start
       });
-      repository.forceTarget(targetIds[0], { status: 'sent', attemptedAt: new Date() });
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
 
       await service.startBroadcast('tenant-1', broadcastId);
 
-      expect(dispatcher.scheduled.map((s) => s.targetId)).toEqual([targetIds[1]]);
+      expect(dispatcher.scheduled.map((s) => s.stepTargetId)).toEqual([stepTargetIds[0][1]]);
+      expect(dispatcher.runs).toHaveLength(0);
     });
 
-    it('sem nenhum pendente (todos suprimidos): conclui direto', async () => {
+    it('retomar uma etapa já iniciada, mas ENTRE ciclos (nada pendente agora): agenda o próximo run de imediato', async () => {
       const { service, repository, dispatcher } = buildSut();
-      const { broadcastId, targetIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
-      repository.forceTarget(targetIds[0], { status: 'skipped', skipReason: 'admin_only_group' });
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        startedAt: new Date(),
+        runsCompleted: 1,
+      });
+      // O ciclo anterior já terminou (todo alvo `sent`), aguardando a
+      // próxima repetição — nada `pending` agora, mas a etapa NÃO é nova.
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      expect(dispatcher.runs).toEqual([
+        { tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2, delayMs: 0 },
+      ]);
+      expect(dispatcher.scheduled).toHaveLength(0);
+    });
+
+    it('1º início, todos os grupos suprimidos: encerra a etapa direto (sem agendar run) e completa a campanha', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepTargetIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      repository.forceStepTarget(stepTargetIds[0][0], {
+        status: 'skipped',
+      });
 
       const broadcast = await service.startBroadcast('tenant-1', broadcastId);
 
       expect(broadcast.status).toBe('completed');
       expect(dispatcher.scheduled).toHaveLength(0);
+      expect(dispatcher.runs).toHaveLength(0);
+      const [step] = await repository.listSteps('tenant-1', broadcastId);
+      expect(step.finishedAt).toBeInstanceOf(Date);
     });
 
     it('status terminal não pode ser iniciado', async () => {
@@ -330,34 +469,69 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
     });
   });
 
-  describe('mídia', () => {
+  describe('mídia por etapa (2026-09-14)', () => {
     it('anexa imagem em rascunho', async () => {
       const { service, repository } = buildSut();
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
 
-      const broadcast = await service.attachMedia('tenant-1', broadcastId, {
+      const step = await service.attachMedia('tenant-1', broadcastId, stepIds[0], {
         contentType: 'image',
         buffer: PNG_BYTES,
         mimeType: 'image/png',
         fileName: 'promo.png',
       });
 
-      expect(broadcast.media).toEqual({
+      expect(step.media).toEqual({
         contentType: 'image',
         mimeType: 'image/png',
         fileName: 'promo.png',
       });
-      const media = await service.getMedia('tenant-1', broadcastId);
+      const media = await service.getMedia('tenant-1', broadcastId, stepIds[0]);
       expect(media.buffer.equals(PNG_BYTES)).toBe(true);
+    });
+
+    it('anexa mídia à etapa certa, sem afetar as demais', async () => {
+      const { service } = buildSut();
+      const created = await service.createBroadcast({
+        ...baseInput,
+        groupJids: ['aberto@g.us'],
+        steps: [{ messageTemplate: 'Post 1' }, { messageTemplate: 'Post 2' }],
+      });
+      const [step0, step1] = created.steps;
+
+      const updatedStep = await service.attachMedia('tenant-1', created.broadcast.id, step0.id, {
+        contentType: 'image',
+        buffer: PNG_BYTES,
+        mimeType: 'image/png',
+        fileName: 'a.png',
+      });
+
+      expect(updatedStep.media?.mimeType).toBe('image/png');
+      const reloaded = await service.getBroadcast('tenant-1', created.broadcast.id);
+      expect(reloaded.steps.find((s) => s.id === step1.id)?.media).toBeUndefined();
+    });
+
+    it('etapa de outra campanha (ou inexistente): GroupBroadcastStepNotFoundError', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const other = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      await expect(
+        service.attachMedia('tenant-1', broadcastId, other.stepIds[0], {
+          contentType: 'image',
+          buffer: PNG_BYTES,
+          mimeType: 'image/png',
+        }),
+      ).rejects.toBeInstanceOf(GroupBroadcastStepNotFoundError);
     });
 
     it('vídeo aceita até 16MB; imagem acima de 5MB é recusada', async () => {
       const { service, repository } = buildSut();
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
       const sixMb = Buffer.concat([MP4_BYTES, Buffer.alloc(6 * 1024 * 1024)]);
 
       await expect(
-        service.attachMedia('tenant-1', broadcastId, {
+        service.attachMedia('tenant-1', broadcastId, stepIds[0], {
           contentType: 'video',
           buffer: sixMb,
           mimeType: 'video/mp4',
@@ -366,7 +540,7 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
 
       const bigImage = Buffer.concat([PNG_BYTES, Buffer.alloc(6 * 1024 * 1024)]);
       await expect(
-        service.attachMedia('tenant-1', broadcastId, {
+        service.attachMedia('tenant-1', broadcastId, stepIds[0], {
           contentType: 'image',
           buffer: bigImage,
           mimeType: 'image/png',
@@ -376,9 +550,9 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
 
     it('recusa arquivo cuja assinatura contradiz a categoria declarada', async () => {
       const { service, repository } = buildSut();
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
       await expect(
-        service.attachMedia('tenant-1', broadcastId, {
+        service.attachMedia('tenant-1', broadcastId, stepIds[0], {
           contentType: 'video',
           buffer: PNG_BYTES,
           mimeType: 'video/mp4',
@@ -388,9 +562,12 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
 
     it('só em rascunho: disparo já iniciado não troca de conteúdo', async () => {
       const { service, repository } = buildSut();
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'running' });
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'running',
+      });
       await expect(
-        service.attachMedia('tenant-1', broadcastId, {
+        service.attachMedia('tenant-1', broadcastId, stepIds[0], {
           contentType: 'image',
           buffer: PNG_BYTES,
           mimeType: 'image/png',
@@ -400,70 +577,78 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
 
     it('sem mídia: getMedia lança GroupBroadcastMediaNotFoundError', async () => {
       const { service, repository } = buildSut();
-      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
-      await expect(service.getMedia('tenant-1', broadcastId)).rejects.toBeInstanceOf(
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+      await expect(service.getMedia('tenant-1', broadcastId, stepIds[0])).rejects.toBeInstanceOf(
         GroupBroadcastMediaNotFoundError,
       );
     });
   });
 });
 
-describe('GroupBroadcastService — recorrência (2026-09-11)', () => {
+describe('GroupBroadcastService — recorrência por etapa (2026-09-11, estendido em 2026-09-14)', () => {
   const recorrente = {
     ...baseInput,
     groupJids: ['aberto@g.us'],
-    recurrenceIntervalHours: 2,
+    steps: [{ messageTemplate: 'Confira a promoção!', recurrenceIntervalHours: 2 }],
   };
 
   it('sem recorrência, os campos ficam vazios (publicação única)', async () => {
     const { service } = buildSut();
 
-    const { broadcast } = await service.createBroadcast({
+    const { steps } = await service.createBroadcast({
       ...baseInput,
       groupJids: ['aberto@g.us'],
     });
 
-    expect(broadcast.recurrenceIntervalHours).toBeUndefined();
-    expect(broadcast.runsCompleted).toBe(0);
+    expect(steps[0].recurrenceIntervalHours).toBeUndefined();
+    expect(steps[0].runsCompleted).toBe(0);
   });
 
   it('grava intervalo, teto de repetições e janela', async () => {
     const { service } = buildSut();
 
-    const { broadcast } = await service.createBroadcast({
-      ...recorrente,
-      recurrenceMaxRuns: 4,
+    const { steps, broadcast } = await service.createBroadcast({
+      ...baseInput,
+      groupJids: ['aberto@g.us'],
       sendWindowStart: '08:00',
       sendWindowEnd: '20:00',
+      steps: [
+        { messageTemplate: 'Confira a promoção!', recurrenceIntervalHours: 2, recurrenceMaxRuns: 4 },
+      ],
     });
 
-    expect(broadcast).toMatchObject({
-      recurrenceIntervalHours: 2,
-      recurrenceMaxRuns: 4,
-      sendWindowStart: '08:00',
-      sendWindowEnd: '20:00',
-    });
+    expect(steps[0]).toMatchObject({ recurrenceIntervalHours: 2, recurrenceMaxRuns: 4 });
+    expect(broadcast).toMatchObject({ sendWindowStart: '08:00', sendWindowEnd: '20:00' });
   });
 
   it('intervalo fora da faixa é trazido para dentro dela (1h a 24h)', async () => {
     const { service } = buildSut();
 
-    const { broadcast } = await service.createBroadcast({
-      ...recorrente,
-      recurrenceIntervalHours: 99,
+    const { steps } = await service.createBroadcast({
+      ...baseInput,
+      groupJids: ['aberto@g.us'],
+      steps: [{ messageTemplate: 'Confira a promoção!', recurrenceIntervalHours: 99 }],
     });
 
-    expect(broadcast.recurrenceIntervalHours).toBe(24);
+    expect(steps[0].recurrenceIntervalHours).toBe(24);
   });
 
   it('recusa número de repetições fora da faixa', async () => {
     const { service } = buildSut();
 
     await expect(
-      service.createBroadcast({ ...recorrente, recurrenceMaxRuns: 1 }),
+      service.createBroadcast({
+        ...baseInput,
+        groupJids: ['aberto@g.us'],
+        steps: [{ messageTemplate: 'x', recurrenceIntervalHours: 2, recurrenceMaxRuns: 1 }],
+      }),
     ).rejects.toThrow(InvalidRecurrenceError);
     await expect(
-      service.createBroadcast({ ...recorrente, recurrenceMaxRuns: 500 }),
+      service.createBroadcast({
+        ...baseInput,
+        groupJids: ['aberto@g.us'],
+        steps: [{ messageTemplate: 'x', recurrenceIntervalHours: 2, recurrenceMaxRuns: 500 }],
+      }),
     ).rejects.toThrow(InvalidRecurrenceError);
   });
 
@@ -472,8 +657,15 @@ describe('GroupBroadcastService — recorrência (2026-09-11)', () => {
 
     await expect(
       service.createBroadcast({
-        ...recorrente,
-        recurrenceEndsAt: new Date(Date.now() - 60000),
+        ...baseInput,
+        groupJids: ['aberto@g.us'],
+        steps: [
+          {
+            messageTemplate: 'x',
+            recurrenceIntervalHours: 2,
+            recurrenceEndsAt: new Date(Date.now() - 60000),
+          },
+        ],
       }),
     ).rejects.toThrow(InvalidRecurrenceError);
   });

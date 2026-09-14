@@ -1,10 +1,12 @@
 /**
- * `GroupBroadcastCreateForm` — Disparos em grupos (2026-09-11): lista de
- * grupos ao vivo (busca + checkbox, "só admins" desabilita quem não pode
- * enviar), mensagem, anexo opcional, e um resultado explícito (nunca envia
- * nada — só cria e calcula).
+ * `GroupBroadcastCreateForm` — Disparos em grupos (2026-09-11), estendido em
+ * 2026-09-14 para campanhas com múltiplas publicações em sequência
+ * ("etapas"): lista de grupos ao vivo (busca + checkbox, "só admins"
+ * desabilita quem não pode enviar), seção "Publicações" (adicionar/remover/
+ * reordenar, mínimo 1 máximo 20, cada uma com sua mensagem/anexo/recorrência
+ * própria), e um resultado explícito (nunca envia nada — só cria e calcula).
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import GroupBroadcastCreateForm from '../../components/GroupBroadcastCreateForm';
 import * as clientApi from '../../lib/clientApi';
@@ -13,7 +15,7 @@ jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   fetchWhatsAppGroups: jest.fn(),
   createGroupBroadcast: jest.fn(),
-  attachGroupBroadcastMedia: jest.fn(),
+  attachGroupBroadcastStepMedia: jest.fn(),
 }));
 
 jest.mock('../../components/ui/use-toast', () => ({
@@ -32,17 +34,46 @@ function group(over: Partial<clientApi.WhatsAppGroupSummary> = {}): clientApi.Wh
   };
 }
 
+function mockGroups(groups: clientApi.WhatsAppGroupSummary[] = [group()]): void {
+  (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
+    groups,
+    fetchedAt: '2026-09-11T10:00:00.000Z',
+  });
+}
+
+function mockCreateSuccess(stepCount = 1): void {
+  (clientApi.createGroupBroadcast as jest.Mock).mockResolvedValue({
+    broadcast: {
+      id: 'broadcast-1',
+      tenantId: 't1',
+      sessionName: 'vendas',
+      name: 'Disparo teste',
+      status: 'draft',
+      intervalSeconds: 60,
+      currentStepIndex: 0,
+      createdAt: '2026-09-11T10:00:00.000Z',
+      updatedAt: '2026-09-11T10:00:00.000Z',
+    },
+    steps: Array.from({ length: stepCount }, (_, index) => ({
+      id: `step-${index + 1}`,
+      broadcastId: 'broadcast-1',
+      order: index,
+      messageTemplate: `Publicação ${index + 1}`,
+      runsCompleted: 0,
+      createdAt: '2026-09-11T10:00:00.000Z',
+    })),
+    summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0 },
+    targets: [],
+  });
+}
+
 describe('GroupBroadcastCreateForm', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('carrega e lista os grupos, com participantes', async () => {
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group()],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
-
+    mockGroups();
     render(<GroupBroadcastCreateForm sessionName="vendas" />);
 
     await waitFor(() => expect(screen.getByText('Grupo de clientes')).toBeInTheDocument());
@@ -50,11 +81,7 @@ describe('GroupBroadcastCreateForm', () => {
   });
 
   it('grupo "só admins" onde o número NÃO é admin: checkbox desabilitado', async () => {
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group({ announce: true, isAdmin: false, canSend: false })],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
-
+    mockGroups([group({ announce: true, isAdmin: false, canSend: false })]);
     render(<GroupBroadcastCreateForm sessionName="vendas" />);
 
     await waitFor(() => expect(screen.getByText('Grupo de clientes')).toBeInTheDocument());
@@ -63,10 +90,10 @@ describe('GroupBroadcastCreateForm', () => {
   });
 
   it('busca filtra os grupos pelo nome', async () => {
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group({ jid: '1@g.us', name: 'Clientes VIP' }), group({ jid: '2@g.us', name: 'Fornecedores' })],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
+    mockGroups([
+      group({ jid: '1@g.us', name: 'Clientes VIP' }),
+      group({ jid: '2@g.us', name: 'Fornecedores' }),
+    ]);
 
     render(<GroupBroadcastCreateForm sessionName="vendas" />);
     await waitFor(() => expect(screen.getByText('Clientes VIP')).toBeInTheDocument());
@@ -93,12 +120,8 @@ describe('GroupBroadcastCreateForm', () => {
     );
   });
 
-  it('exige nome, mensagem e ao menos um grupo para habilitar o botão de criar', async () => {
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group()],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
-
+  it('exige nome, mensagem da publicação e ao menos um grupo para habilitar o botão de criar', async () => {
+    mockGroups();
     render(<GroupBroadcastCreateForm sessionName="vendas" />);
     await waitFor(() => expect(screen.getByText('Grupo de clientes')).toBeInTheDocument());
 
@@ -114,26 +137,9 @@ describe('GroupBroadcastCreateForm', () => {
     expect(submit).not.toBeDisabled();
   });
 
-  it('cria o disparo e mostra o resultado (pendentes/suprimidos), sem enviar nada', async () => {
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group()],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
-    (clientApi.createGroupBroadcast as jest.Mock).mockResolvedValue({
-      broadcast: {
-        id: 'broadcast-1',
-        tenantId: 't1',
-        sessionName: 'vendas',
-        name: 'Disparo teste',
-        messageTemplate: 'Olá!',
-        status: 'draft',
-        intervalSeconds: 60,
-        createdAt: '2026-09-11T10:00:00.000Z',
-        updatedAt: '2026-09-11T10:00:00.000Z',
-      },
-      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0 },
-      targets: [],
-    });
+  it('cria o disparo (com 1 publicação) e mostra o resultado, sem enviar nada', async () => {
+    mockGroups();
+    mockCreateSuccess();
     const onCreated = jest.fn();
 
     render(<GroupBroadcastCreateForm sessionName="vendas" onCreated={onCreated} />);
@@ -151,17 +157,14 @@ describe('GroupBroadcastCreateForm', () => {
     expect(clientApi.createGroupBroadcast).toHaveBeenCalledWith({
       sessionName: 'vendas',
       name: 'Disparo teste',
-      messageTemplate: 'Olá!',
       groupJids: ['111@g.us'],
+      steps: [{ messageTemplate: 'Olá!' }],
     });
     expect(onCreated).toHaveBeenCalled();
   });
 
   it('mostra o motivo de erro ao falhar a criação', async () => {
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group()],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
+    mockGroups();
     (clientApi.createGroupBroadcast as jest.Mock).mockRejectedValue(
       new clientApi.ClientApiError(403, {}),
     );
@@ -182,74 +185,117 @@ describe('GroupBroadcastCreateForm', () => {
   });
 });
 
-describe('GroupBroadcastCreateForm — repetição (2026-09-11)', () => {
+describe('GroupBroadcastCreateForm — múltiplas publicações (2026-09-14)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({
-      groups: [group()],
-      fetchedAt: '2026-09-11T10:00:00.000Z',
-    });
-    (clientApi.createGroupBroadcast as jest.Mock).mockResolvedValue({
-      broadcast: { id: 'b1', status: 'draft' },
-      summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0 },
-      targets: [],
-    });
+    mockGroups();
   });
 
   async function preencherBasico(): Promise<void> {
     render(<GroupBroadcastCreateForm sessionName="vendas" />);
     await waitFor(() => expect(screen.getByText('Grupo de clientes')).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText('Nome do disparo'), { target: { value: 'Disparo' } });
-    fireEvent.change(screen.getByLabelText('Mensagem'), { target: { value: 'Olá!' } });
+    fireEvent.change(screen.getByLabelText('Mensagem'), { target: { value: 'Primeira' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /Grupo/ }));
   }
 
-  it('desligada por padrão: nenhum campo de repetição aparece', async () => {
+  it('começa com 1 publicação, e "Remover" fica desabilitado (mínimo 1)', async () => {
     await preencherBasico();
 
-    expect(screen.queryByLabelText('Repetir a cada')).not.toBeInTheDocument();
+    expect(screen.getByText('Publicação 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remover publicação 1' })).toBeDisabled();
   });
 
-  it('ligada: publicação única deixa de ser enviada e a configuração vai no pedido', async () => {
+  it('"Adicionar publicação" cria uma segunda etapa, cada uma com sua própria mensagem', async () => {
     await preencherBasico();
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
-    fireEvent.change(screen.getByLabelText('Repetir a cada'), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText('Quantas repetições'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+
+    expect(screen.getByText('Publicação 2')).toBeInTheDocument();
+    const messageInputs = screen.getAllByLabelText('Mensagem');
+    expect(messageInputs).toHaveLength(2);
+    fireEvent.change(messageInputs[1], { target: { value: 'Segunda' } });
+
+    mockCreateSuccess(2);
     fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
 
-    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
-    expect(clientApi.createGroupBroadcast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        recurrenceIntervalHours: 3,
-        recurrenceMaxRuns: 4,
-        sendWindowStart: '08:00',
-        sendWindowEnd: '20:00',
-      }),
-    );
-  });
-
-  it('"até eu cancelar": nenhum limite viaja no pedido, e o aviso aparece', async () => {
-    await preencherBasico();
-
-    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Até eu cancelar' }));
-
-    expect(screen.getByText(/continua publicando até você pausar ou cancelar/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
     await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
     const payload = (clientApi.createGroupBroadcast as jest.Mock).mock.calls[0][0];
-    expect(payload.recurrenceMaxRuns).toBeUndefined();
-    expect(payload.recurrenceEndsAt).toBeUndefined();
-    expect(payload.recurrenceIntervalHours).toBe(2);
+    expect(payload.steps).toEqual([
+      { messageTemplate: 'Primeira' },
+      { messageTemplate: 'Segunda' },
+    ]);
+  });
+
+  it('teto de 20 publicações: o botão "Adicionar publicação" desabilita ao chegar no limite', async () => {
+    await preencherBasico();
+
+    for (let i = 0; i < 19; i += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+    }
+
+    expect(screen.getByText('(20 de 20)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Adicionar publicação' })).toBeDisabled();
+  });
+
+  it('"Remover publicação" some com a etapa correspondente', async () => {
+    await preencherBasico();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+    const messageInputs = screen.getAllByLabelText('Mensagem');
+    fireEvent.change(messageInputs[1], { target: { value: 'Segunda' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remover publicação 1' }));
+
+    expect(screen.getAllByLabelText('Mensagem')).toHaveLength(1);
+    expect(screen.getByDisplayValue('Segunda')).toBeInTheDocument();
+  });
+
+  it('reordenar com as setas troca a ordem das publicações no pedido de criação', async () => {
+    await preencherBasico();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+    fireEvent.change(screen.getAllByLabelText('Mensagem')[1], { target: { value: 'Segunda' } });
+
+    // Move a 2ª publicação (índice 1) para cima — vira a 1ª.
+    fireEvent.click(screen.getByRole('button', { name: 'Mover publicação 2 para cima' }));
+
+    mockCreateSuccess(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    const payload = (clientApi.createGroupBroadcast as jest.Mock).mock.calls[0][0];
+    expect(payload.steps).toEqual([
+      { messageTemplate: 'Segunda' },
+      { messageTemplate: 'Primeira' },
+    ]);
+  });
+
+  it('cada publicação tem sua própria recorrência, independente das demais', async () => {
+    await preencherBasico();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+    fireEvent.change(screen.getAllByLabelText('Mensagem')[1], { target: { value: 'Segunda' } });
+
+    const cards = screen.getAllByText(/^Publicação \d$/).map((el) => el.closest('div')!.parentElement!);
+    // Liga a recorrência só na 1ª publicação.
+    fireEvent.click(within(cards[0]).getByRole('checkbox', { name: /Repetir esta publicação/ }));
+    fireEvent.change(within(cards[0]).getByLabelText('Repetir a cada'), { target: { value: '3' } });
+    fireEvent.change(within(cards[0]).getByLabelText('Quantas repetições'), {
+      target: { value: '4' },
+    });
+
+    mockCreateSuccess(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    const payload = (clientApi.createGroupBroadcast as jest.Mock).mock.calls[0][0];
+    expect(payload.steps).toEqual([
+      { messageTemplate: 'Primeira', recurrenceIntervalHours: 3, recurrenceMaxRuns: 4 },
+      { messageTemplate: 'Segunda' },
+    ]);
   });
 
   it('sem horário permitido marcado, a janela não é enviada', async () => {
     await preencherBasico();
-
-    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Só publicar dentro de um horário' }));
+    mockCreateSuccess();
     fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
 
     await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
@@ -257,13 +303,79 @@ describe('GroupBroadcastCreateForm — repetição (2026-09-11)', () => {
     expect(payload.sendWindowStart).toBeUndefined();
   });
 
+  it('horário permitido marcado: a janela vai no pedido, vale para a campanha inteira', async () => {
+    await preencherBasico();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Só publicar dentro de um horário' }));
+    mockCreateSuccess();
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    expect(clientApi.createGroupBroadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ sendWindowStart: '08:00', sendWindowEnd: '20:00' }),
+    );
+  });
+
   it('término por data sem data preenchida: não deixa criar', async () => {
     await preencherBasico();
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir automaticamente/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Repetir esta publicação/ }));
     fireEvent.click(screen.getByRole('radio', { name: 'Uma data e hora de término' }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
 
     expect(clientApi.createGroupBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('campo de cadência entre publicações fica DESABILITADO com só 1 publicação, e o valor vai no pedido ao ativar', async () => {
+    await preencherBasico();
+    expect(screen.getByLabelText('Cadência entre publicações')).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+    fireEvent.change(screen.getAllByLabelText('Mensagem')[1], { target: { value: 'Segunda' } });
+    fireEvent.change(screen.getByLabelText('Cadência entre publicações'), { target: { value: '15' } });
+
+    mockCreateSuccess(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    expect(clientApi.createGroupBroadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ stepLaunchOffsetMinutes: 15 }),
+    );
+  });
+
+  it('sem cadência preenchida (0/padrão): o campo não vai no pedido', async () => {
+    await preencherBasico();
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar publicação' }));
+    fireEvent.change(screen.getAllByLabelText('Mensagem')[1], { target: { value: 'Segunda' } });
+
+    mockCreateSuccess(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() => expect(clientApi.createGroupBroadcast).toHaveBeenCalled());
+    const payload = (clientApi.createGroupBroadcast as jest.Mock).mock.calls[0][0];
+    expect(payload.stepLaunchOffsetMinutes).toBeUndefined();
+  });
+
+  it('anexo de mídia é enviado por etapa, após a criação (usando o id real da etapa criada)', async () => {
+    await preencherBasico();
+    mockCreateSuccess();
+    (clientApi.attachGroupBroadcastStepMedia as jest.Mock).mockResolvedValue({
+      step: { id: 'step-1' },
+    });
+
+    const file = new File(['conteudo'], 'promo.png', { type: 'image/png' });
+    fireEvent.click(screen.getByRole('button', { name: 'Anexar arquivo' }));
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar disparo (rascunho)' }));
+
+    await waitFor(() =>
+      expect(clientApi.attachGroupBroadcastStepMedia).toHaveBeenCalledWith(
+        'broadcast-1',
+        'step-1',
+        file,
+        'image',
+      ),
+    );
   });
 });

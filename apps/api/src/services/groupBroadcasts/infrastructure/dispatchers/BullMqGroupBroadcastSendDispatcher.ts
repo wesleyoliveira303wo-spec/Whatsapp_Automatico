@@ -10,13 +10,16 @@ import {
 
 /**
  * Produtor real da fila `group-broadcast-send` — Disparos em grupos
- * (2026-09-11). Carrega as DUAS lições já pagas pelo motor de campanhas:
+ * (2026-09-11), estendido em 2026-09-14 para etapas em PARALELO ("cadência
+ * entre publicações" — cada etapa tem seu próprio ciclo, agendado
+ * independente das demais). Carrega as DUAS lições já pagas pelo motor de
+ * campanhas:
  *
  * 1. **`jobId` sem `:`.** O BullMQ recusa `jobId` com `:` a menos que tenha
  *    exatamente 3 partes (`Custom Id cannot contain :`), e a exceção derrubou
  *    em silêncio o 2º parágrafo de toda resposta da IA por semanas (ver
- *    CLAUDE.md §18, "balão único"). `jobId = targetId` (UUID puro, só `-`) —
- *    e a checagem abaixo nomeia o culpado se isso um dia mudar.
+ *    CLAUDE.md §18, "balão único"). `jobId = stepTargetId` (UUID puro, só `-`)
+ *    — e a checagem abaixo nomeia o culpado se isso um dia mudar.
  * 2. **Remover antes de adicionar.** Um job já concluído/falho com o mesmo
  *    `jobId` faz o `add()` seguinte ser ignorado sem erro — retomar um
  *    disparo pausado não reagendaria nada (bug real de 2026-08-18 em
@@ -27,39 +30,41 @@ export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDis
     private readonly queue: Queue<GroupBroadcastSendJobData | GroupBroadcastRunJobData>,
   ) {}
 
-  async scheduleTarget(
+  async scheduleStepTarget(
     tenantId: string,
     broadcastId: string,
-    targetId: string,
+    stepId: string,
+    stepTargetId: string,
     delayMs: number,
   ): Promise<void> {
-    if (targetId.includes(':')) {
+    if (stepTargetId.includes(':')) {
       throw new Error(
-        `jobId inválido para o BullMQ ("${targetId}"): não pode conter ':' — use o id do alvo (UUID).`,
+        `jobId inválido para o BullMQ ("${stepTargetId}"): não pode conter ':' — use o id do alvo (UUID).`,
       );
     }
-    await this.queue.remove(targetId);
+    await this.queue.remove(stepTargetId);
     await this.queue.add(
       GROUP_BROADCAST_SEND_JOB_NAME,
-      { tenantId, broadcastId, targetId },
-      { jobId: targetId, delay: delayMs },
+      { tenantId, broadcastId, stepId, stepTargetId },
+      { jobId: stepTargetId, delay: delayMs },
     );
   }
 
   async scheduleRun(
     tenantId: string,
     broadcastId: string,
+    stepId: string,
     runNumber: number,
     delayMs: number,
   ): Promise<void> {
     // Mesma regra do `jobId` de envio: sem ':' (o BullMQ recusa). O número da
     // repetição entra na chave para um ciclo novo nunca ser engolido como
     // duplicata de um ciclo antigo que ainda esteja retido em Redis.
-    const jobId = `${broadcastId}-run-${runNumber}`;
+    const jobId = `${stepId}-run-${runNumber}`;
     await this.queue.remove(jobId);
     await this.queue.add(
       GROUP_BROADCAST_RUN_JOB_NAME,
-      { tenantId, broadcastId, runNumber },
+      { tenantId, broadcastId, stepId, runNumber },
       { jobId, delay: delayMs },
     );
   }

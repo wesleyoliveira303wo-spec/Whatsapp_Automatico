@@ -107,9 +107,35 @@ export class GroupBroadcastMediaTypeMismatchError extends Error {
 }
 
 export class GroupBroadcastMediaNotFoundError extends Error {
-  constructor(broadcastId: string) {
-    super(`Este disparo em grupos não tem mídia anexada: ${broadcastId}`);
+  constructor(stepId: string) {
+    super(`Esta publicação não tem mídia anexada: ${stepId}`);
     this.name = 'GroupBroadcastMediaNotFoundError';
+  }
+}
+
+/** Uma campanha precisa de pelo menos uma publicação (2026-09-14, disparo com múltiplas etapas). */
+export class NoStepsProvidedError extends Error {
+  constructor() {
+    super('Adicione pelo menos uma publicação à campanha.');
+    this.name = 'NoStepsProvidedError';
+  }
+}
+
+export class TooManyStepsError extends Error {
+  constructor(
+    public readonly provided: number,
+    public readonly max: number,
+  ) {
+    super(`No máximo ${max} publicações por campanha (foram enviadas ${provided}).`);
+    this.name = 'TooManyStepsError';
+  }
+}
+
+/** A etapa referenciada não existe, ou não pertence a este disparo (IDOR-safe: 404, nunca 403). */
+export class GroupBroadcastStepNotFoundError extends Error {
+  constructor(stepId: string) {
+    super(`Publicação não encontrada nesta campanha: ${stepId}`);
+    this.name = 'GroupBroadcastStepNotFoundError';
   }
 }
 

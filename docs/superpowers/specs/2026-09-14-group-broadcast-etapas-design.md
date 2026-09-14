@@ -1,7 +1,20 @@
 # Disparo em grupos com múltiplas etapas (publicações em sequência)
 
 **Data:** 2026-09-14
-**Status:** aprovado pelo fundador, pronto para plano de implementação
+**Status:** implementado — **modelo revisado no mesmo dia** (ver nota abaixo)
+
+> **Nota de revisão (2026-09-14, mesmo dia):** esta spec descreve etapas
+> SEQUENCIAIS ("avança para a próxima etapa" quando a anterior esgota sua
+> recorrência). Na validação real, o fundador encontrou o problema exato que
+> essa spec não previu: uma etapa com recorrência "até eu cancelar" nunca
+> esgota, então as etapas seguintes nunca avançavam — travadas para sempre.
+> O fundador pediu explicitamente um modelo diferente: todas as etapas rodam
+> em PARALELO desde o início, cada uma com seu próprio ciclo de recorrência
+> independente, com um atraso configurável só no LANÇAMENTO inicial de cada
+> uma (`GroupBroadcast.stepLaunchOffsetMinutes`). O que foi implementado e
+> validado ao vivo é esse modelo paralelo, não o sequencial descrito abaixo —
+> ver `CLAUDE.md` §18, entrada "cadência entre publicações" (2026-09-14) para
+> o desenho real. Mantida aqui como registro histórico da primeira iteração.
 
 ## Contexto
 

@@ -1,10 +1,10 @@
 import { EventEmitter } from 'events';
 import type { NextApiRequest } from 'next';
-import handler from '../../../../pages/api/group-broadcasts/[broadcastId]/media';
-import { createFakeRes } from '../../../testDoubles';
-import { requireSession } from '../../../../lib/dashboardSession';
+import handler from '../../../../../pages/api/group-broadcasts/[broadcastId]/steps/[stepId]/media';
+import { createFakeRes } from '../../../../testDoubles';
+import { requireSession } from '../../../../../lib/dashboardSession';
 
-jest.mock('../../../../lib/dashboardSession');
+jest.mock('../../../../../lib/dashboardSession');
 
 const SESSION = { tenantId: 'tenant-1', apiKey: 'chave' };
 
@@ -16,7 +16,7 @@ function createFakeStreamReq(overrides: {
 }): NextApiRequest & { destroy: jest.Mock } {
   const emitter = new EventEmitter() as unknown as NextApiRequest & { destroy: jest.Mock };
   emitter.method = overrides.method ?? 'POST';
-  emitter.query = overrides.query ?? { broadcastId: 'b1' };
+  emitter.query = overrides.query ?? { broadcastId: 'b1', stepId: 's1' };
   emitter.headers = overrides.headers ?? {};
   (emitter as unknown as { destroy: jest.Mock }).destroy = jest.fn();
   return emitter;
@@ -27,7 +27,7 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
-describe('proxy /api/group-broadcasts/[broadcastId]/media', () => {
+describe('proxy /api/group-broadcasts/[broadcastId]/steps/[stepId]/media', () => {
   const originalFetch = global.fetch;
   const originalApiBaseUrl = process.env.API_BASE_URL;
 
@@ -42,10 +42,10 @@ describe('proxy /api/group-broadcasts/[broadcastId]/media', () => {
     process.env.API_BASE_URL = originalApiBaseUrl;
   });
 
-  it('POST dentro do limite: repassa à API e devolve a resposta upstream', async () => {
+  it('POST dentro do limite: repassa à API (com stepId no caminho) e devolve a resposta upstream', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       status: 200,
-      text: async () => JSON.stringify({ broadcast: { id: 'b1', media: { contentType: 'image' } } }),
+      text: async () => JSON.stringify({ step: { id: 's1', media: { contentType: 'image' } } }),
     }) as unknown as typeof fetch;
 
     const req = createFakeStreamReq({
@@ -62,7 +62,7 @@ describe('proxy /api/group-broadcasts/[broadcastId]/media', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
     expect(String(url)).toBe(
-      'http://api-de-teste:4000/api/tenants/tenant-1/group-broadcasts/b1/media',
+      'http://api-de-teste:4000/api/tenants/tenant-1/group-broadcasts/b1/steps/s1/media',
     );
     expect(res._status).toBe(200);
   });
@@ -110,12 +110,17 @@ describe('proxy /api/group-broadcasts/[broadcastId]/media', () => {
     expect(res._status).toBe(200);
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
     expect(res._sent).toEqual(Buffer.from([1, 2, 3]));
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(String(url)).toBe(
+      'http://api-de-teste:4000/api/tenants/tenant-1/group-broadcasts/b1/steps/s1/media',
+    );
   });
 
-  it('DELETE repassa via callGroupBroadcastsApi', async () => {
+  it('DELETE repassa via callGroupBroadcastsApi, com stepId no caminho', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       status: 200,
-      text: async () => JSON.stringify({ broadcast: { id: 'b1' } }),
+      text: async () => JSON.stringify({ step: { id: 's1' } }),
     }) as unknown as typeof fetch;
     const req = createFakeStreamReq({ method: 'DELETE' });
     const res = createFakeRes();
@@ -123,5 +128,7 @@ describe('proxy /api/group-broadcasts/[broadcastId]/media', () => {
     await handler(req, res);
 
     expect(res._status).toBe(200);
+    const [url] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(String(url)).toContain('/group-broadcasts/b1/steps/s1/media');
   });
 });

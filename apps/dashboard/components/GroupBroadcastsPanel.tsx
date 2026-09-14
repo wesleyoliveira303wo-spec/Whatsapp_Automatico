@@ -379,7 +379,7 @@ export default function GroupBroadcastsPanel({
                       {summary.total}
                     </TableCell>
                     <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
-                      {broadcast.recurrenceIntervalHours ? summary.totalSent : summary.sent}
+                      {summary.totalSent}
                       {summary.failed > 0 && (
                         <span className="ml-1 text-[12px] text-destructive">
                           ({summary.failed} falha{summary.failed === 1 ? '' : 's'})

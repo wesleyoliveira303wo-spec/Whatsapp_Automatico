@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireSession } from '../../../../lib/dashboardSession';
-import { getApiBaseUrl, callGroupBroadcastsApi } from '../../../../lib/apiClient';
-import { requireStringParam } from '../../../../lib/routeParams';
+import { requireSession } from '../../../../../../lib/dashboardSession';
+import { getApiBaseUrl, callGroupBroadcastsApi } from '../../../../../../lib/apiClient';
+import { requireStringParam } from '../../../../../../lib/routeParams';
 
 /**
  * `bodyParser: false` (mesmo motivo de `campaigns/[campaignId]/media.ts`) —
@@ -59,8 +59,9 @@ function credentialHeaderFor(session: {
 }
 
 /**
- * Proxy de mídia de disparo em grupos (2026-09-11) — três métodos, mesmo
- * padrão de `campaigns/[campaignId]/media.ts`:
+ * Proxy de mídia de UMA ETAPA do disparo (2026-09-14) — path por `stepId`,
+ * nunca por posição/ordem (reordenar etapas em rascunho não pode perder a
+ * mídia já anexada). Três métodos, mesmo padrão de `campaigns/[campaignId]/media.ts`:
  *
  * `POST` — upload binário (corpo cru, categoria/nome em headers `x-media-*`).
  * `GET` — streaming binário (repassa Content-Type/Content-Disposition).
@@ -71,11 +72,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session) return;
   const broadcastId = requireStringParam(req.query.broadcastId, 'broadcastId', res);
   if (!broadcastId) return;
+  const stepId = requireStringParam(req.query.stepId, 'stepId', res);
+  if (!stepId) return;
 
   if (req.method === 'DELETE') {
     const { status, body } = await callGroupBroadcastsApi(
       session,
-      `/${encodeURIComponent(broadcastId)}/media`,
+      `/${encodeURIComponent(broadcastId)}/steps/${encodeURIComponent(stepId)}/media`,
       { method: 'DELETE' },
     );
     res.status(status).json(body);
@@ -85,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const baseUrl = getApiBaseUrl();
     const url = new URL(
-      `/api/tenants/${encodeURIComponent(session.tenantId)}/group-broadcasts/${encodeURIComponent(broadcastId)}/media`,
+      `/api/tenants/${encodeURIComponent(session.tenantId)}/group-broadcasts/${encodeURIComponent(broadcastId)}/steps/${encodeURIComponent(stepId)}/media`,
       baseUrl,
     );
     const upstream = await fetch(url, { headers: credentialHeaderFor(session) });
@@ -142,7 +145,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const baseUrl = getApiBaseUrl();
     const url = new URL(
-      `/api/tenants/${encodeURIComponent(session.tenantId)}/group-broadcasts/${encodeURIComponent(broadcastId)}/media`,
+      `/api/tenants/${encodeURIComponent(session.tenantId)}/group-broadcasts/${encodeURIComponent(broadcastId)}/steps/${encodeURIComponent(stepId)}/media`,
       baseUrl,
     );
     const upstream = await fetch(url, {

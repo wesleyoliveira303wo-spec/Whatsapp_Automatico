@@ -1219,33 +1219,54 @@ export type GroupBroadcastStatus =
 
 export type GroupBroadcastMediaContentType = 'image' | 'video';
 
+/**
+ * Envelope da campanha (2026-09-14) — mensagem, mídia e recorrência não moram
+ * mais aqui, e sim em cada `GroupBroadcastStep`. `currentStepIndex` diz qual
+ * etapa está em execução agora.
+ */
 export interface GroupBroadcast {
   id: string;
   tenantId: string;
   sessionName: string;
   name: string;
-  /** Texto publicado; com mídia, vira a LEGENDA (uma mensagem só, nunca duas). */
-  messageTemplate: string;
   status: GroupBroadcastStatus;
   intervalSeconds: number;
-  /** Recorrência (2026-09-11): de quantas em quantas horas repete. Ausente = publicação única. */
-  recurrenceIntervalHours?: number;
-  recurrenceMaxRuns?: number;
-  /** ISO-8601. */
-  recurrenceEndsAt?: string;
   sendWindowStart?: string;
   sendWindowEnd?: string;
-  runsCompleted: number;
-  /** ISO-8601; ausente em disparo único ou já encerrado. */
-  nextRunAt?: string;
+  /** Escalonamento inicial (2026-09-14) — minutos entre o início de uma publicação e o da seguinte, na 1ª vez que cada uma dispara. Ausente/0 = todas começam juntas. */
+  stepLaunchOffsetMinutes?: number;
   pausedReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Uma publicação da sequência (2026-09-14) — texto, mídia e recorrência próprias. */
+export interface GroupBroadcastStep {
+  id: string;
+  broadcastId: string;
+  /** Ordem de execução (0, 1, 2...) — única dentro da campanha. */
+  order: number;
+  /** Texto publicado; com mídia, vira a LEGENDA (uma mensagem só, nunca duas). */
+  messageTemplate: string;
   media?: {
     contentType: GroupBroadcastMediaContentType;
     mimeType: string;
     fileName?: string;
   };
+  /** Recorrência DESTA etapa: de quantas em quantas horas repete. Ausente = publica uma vez, depois avança/encerra. */
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  /** ISO-8601. */
+  recurrenceEndsAt?: string;
+  /** Publicações desta etapa já concluídas. */
+  runsCompleted: number;
+  /** ISO-8601; ausente se um ciclo está em andamento, ou se a etapa já terminou de vez. */
+  nextRunAt?: string;
+  /** ISO-8601; preenchido na 1ª vez que o disparo foi iniciado — ausente = etapa ainda não começou. */
+  startedAt?: string;
+  /** ISO-8601; preenchido quando a recorrência desta etapa termina para sempre (nunca mais repete). */
+  finishedAt?: string;
   createdAt: string;
-  updatedAt: string;
 }
 
 export type GroupBroadcastTargetStatus = 'pending' | 'sent' | 'failed' | 'skipped';
@@ -1284,6 +1305,16 @@ export interface GroupBroadcastListItem {
   summary: GroupBroadcastSummary;
 }
 
+/** Uma publicação da sequência, como enviada na criação (2026-09-14). */
+export interface CreateGroupBroadcastStepInput {
+  messageTemplate: string;
+  /** Recorrência DESTA etapa. Ausente = publica uma vez, depois avança/encerra. */
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  /** ISO-8601, precisa ser futuro. */
+  recurrenceEndsAt?: string;
+}
+
 /** Lista disparos em grupos de uma sessão. Exige `campaign:read`. */
 export function fetchGroupBroadcasts(
   sessionName: string,
@@ -1296,29 +1327,32 @@ export function fetchGroupBroadcasts(
  * nunca confia no que a tela diz sobre um grupo): quem não existe mais vira
  * `group_not_found`; quem é "só admins" e o número não é admin vira
  * `admin_only_group` — ambos nascem `skipped`, sem tentativa de envio.
- * Exige `campaign:manage` (administrator+).
+ * `steps` é a sequência de publicações (1-20) — um disparo "simples" (uma
+ * mensagem só) é apenas uma campanha com UMA etapa. Exige `campaign:manage`.
  */
 export function createGroupBroadcast(input: {
   sessionName: string;
   name: string;
-  messageTemplate: string;
   groupJids: string[];
+  steps: CreateGroupBroadcastStepInput[];
   intervalSeconds?: number;
-  /** Recorrência: ausente = publica uma vez só. */
-  recurrenceIntervalHours?: number;
-  /** Fim por contagem (mín. 2). Sem isto e sem `recurrenceEndsAt`, repete até alguém cancelar. */
-  recurrenceMaxRuns?: number;
-  /** Fim por data — ISO-8601, precisa ser futuro. */
-  recurrenceEndsAt?: string;
   sendWindowStart?: string;
   sendWindowEnd?: string;
-}): Promise<{ broadcast: GroupBroadcast; summary: GroupBroadcastSummary; targets: GroupBroadcastTarget[] }> {
+  /** Escalonamento inicial (2026-09-14) — minutos entre o início de uma publicação e o da seguinte. Ausente = todas juntas. */
+  stepLaunchOffsetMinutes?: number;
+}): Promise<{
+  broadcast: GroupBroadcast;
+  steps: GroupBroadcastStep[];
+  summary: GroupBroadcastSummary;
+  targets: GroupBroadcastTarget[];
+}> {
   return request('/api/group-broadcasts', { method: 'POST', body: JSON.stringify(input) });
 }
 
-/** Detalhe de um disparo (disparo + resumo + alvos). Exige `campaign:read`. */
+/** Detalhe de um disparo (disparo + etapas + resumo + alvos). Exige `campaign:read`. */
 export function fetchGroupBroadcast(broadcastId: string): Promise<{
   broadcast: GroupBroadcast;
+  steps: GroupBroadcastStep[];
   summary: GroupBroadcastSummary;
   targets: GroupBroadcastTarget[];
 }> {
@@ -1351,43 +1385,45 @@ export async function deleteGroupBroadcast(broadcastId: string): Promise<void> {
   await request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`, { method: 'DELETE' });
 }
 
-/** Anexa (ou substitui) a mídia de um disparo `draft`. Mesmo padrão de `attachCampaignMedia`. Exige `campaign:manage`. */
-export async function attachGroupBroadcastMedia(
+/** Anexa (ou substitui) a mídia de UMA ETAPA de um disparo `draft`. Path por `stepId` (2026-09-14) — nunca por posição/ordem. Exige `campaign:manage`. */
+export async function attachGroupBroadcastStepMedia(
   broadcastId: string,
+  stepId: string,
   file: File,
   contentType: GroupBroadcastMediaContentType,
-): Promise<{ broadcast: GroupBroadcast }> {
+): Promise<{ step: GroupBroadcastStep }> {
   const headers: Record<string, string> = {
     'content-type': file.type || 'application/octet-stream',
     'x-media-content-type': contentType,
     'x-media-filename': file.name,
     ...csrfHeader(),
   };
-  const response = await fetch(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/media`, {
-    method: 'POST',
-    headers,
-    body: file,
-  });
+  const response = await fetch(
+    `/api/group-broadcasts/${encodeURIComponent(broadcastId)}/steps/${encodeURIComponent(stepId)}/media`,
+    { method: 'POST', headers, body: file },
+  );
   const text = await response.text();
   const body = text ? JSON.parse(text) : undefined;
   if (!response.ok) {
     throw new ClientApiError(response.status, body);
   }
-  return body as { broadcast: GroupBroadcast };
+  return body as { step: GroupBroadcastStep };
 }
 
-/** Remove a mídia anexada a um disparo `draft`. Exige `campaign:manage`. */
-export function removeGroupBroadcastMedia(
+/** Remove a mídia anexada a uma etapa de disparo `draft`. Exige `campaign:manage`. */
+export function removeGroupBroadcastStepMedia(
   broadcastId: string,
-): Promise<{ broadcast: GroupBroadcast }> {
-  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/media`, {
-    method: 'DELETE',
-  });
+  stepId: string,
+): Promise<{ step: GroupBroadcastStep }> {
+  return request(
+    `/api/group-broadcasts/${encodeURIComponent(broadcastId)}/steps/${encodeURIComponent(stepId)}/media`,
+    { method: 'DELETE' },
+  );
 }
 
-/** URL de preview/download do anexo — usada direto como `src` de `<img>`. */
-export function groupBroadcastMediaUrl(broadcastId: string): string {
-  return `/api/group-broadcasts/${encodeURIComponent(broadcastId)}/media`;
+/** URL de preview/download do anexo de uma etapa — usada direto como `src` de `<img>`. */
+export function groupBroadcastStepMediaUrl(broadcastId: string, stepId: string): string {
+  return `/api/group-broadcasts/${encodeURIComponent(broadcastId)}/steps/${encodeURIComponent(stepId)}/media`;
 }
 
 export function fetchSessions(): Promise<{ sessions: WhatsAppSessionSummary[] }> {

@@ -9,11 +9,14 @@ import {
   GroupBroadcastMediaTypeMismatchError,
   GroupBroadcastNotFoundError,
   GroupBroadcastRequiresPaidPlanError,
+  GroupBroadcastStepNotFoundError,
   GroupDirectoryUnavailableError,
   InvalidGroupBroadcastTransitionError,
   InvalidRecurrenceError,
   NoGroupsSelectedError,
+  NoStepsProvidedError,
   TooManyGroupsSelectedError,
+  TooManyStepsError,
 } from '../domain/errors/groupBroadcastErrors';
 
 function isEntityTooLarge(error: unknown): boolean {
@@ -48,6 +51,23 @@ export function createGroupBroadcastsErrorHandler(logger: Logger): ErrorRequestH
     }
     if (error instanceof GroupBroadcastMediaNotFoundError) {
       res.status(404).json({ error: 'group_broadcast_media_not_found', message: error.message });
+      return;
+    }
+    if (error instanceof GroupBroadcastStepNotFoundError) {
+      res.status(404).json({ error: 'group_broadcast_step_not_found', message: error.message });
+      return;
+    }
+    if (error instanceof NoStepsProvidedError) {
+      res.status(400).json({ error: 'no_steps_provided', message: error.message });
+      return;
+    }
+    if (error instanceof TooManyStepsError) {
+      res.status(400).json({
+        error: 'too_many_steps',
+        message: error.message,
+        provided: error.provided,
+        max: error.max,
+      });
       return;
     }
     if (error instanceof NoGroupsSelectedError) {
