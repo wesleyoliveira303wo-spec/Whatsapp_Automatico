@@ -38,4 +38,16 @@ describe('extractStage (pipeline de CRM, Milestone 6, Bloco M6H-5)', () => {
     expect(result.content).toContain('Início');
     expect(result.content).toContain('fim');
   });
+
+  // Regressão (2026-09-14): mesma classe de bug medida em produção para
+  // `[[ESCALAR_HUMANO...` (ver `escalationSignal.test.ts`) — uma resposta
+  // cortada por `finishReason === 'MAX_TOKENS'` pode truncar ESTE marcador
+  // também, já que os dois vivem no fim absoluto do prompt/resposta.
+  it('marcador CORTADO no meio (resposta truncada por MAX_TOKENS): remove o fragmento, sem stage', () => {
+    const raw = 'Beleza, te aviso quando resolver.\n\n[[ESTAGIO:CONTACT';
+    const result = extractStage(raw);
+    expect(result.stage).toBeUndefined();
+    expect(result.content).toBe('Beleza, te aviso quando resolver.');
+    expect(result.content).not.toContain('[[ESTAGIO');
+  });
 });

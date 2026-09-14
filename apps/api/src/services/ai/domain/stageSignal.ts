@@ -56,14 +56,26 @@ export interface StageExtraction {
 export function extractStage(content: string): StageExtraction {
   const pattern = /\[\[ESTAGIO:([A-Z_]+)\]\]/;
   const match = content.match(pattern);
-  if (!match) {
-    return { content };
+  if (match) {
+    const cleaned = content
+      .replace(pattern, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    const stage = MARKER_VALUE_TO_STAGE[match[1]];
+    return { stage, content: cleaned };
   }
 
-  const cleaned = content
-    .replace(pattern, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  const stage = MARKER_VALUE_TO_STAGE[match[1]];
-  return { stage, content: cleaned };
+  // Defesa contra resposta CORTADA por `finishReason === 'MAX_TOKENS'` (ver
+  // `GeminiAiProvider`) bem no meio deste marcador — mesmo risco medido em
+  // produção para `[[ESCALAR_HUMANO...` (ver `escalationSignal.ts`). O
+  // regex acima exige o `]]` de fechamento; um "[[ESTAGIO:CONTACT" cortado
+  // nunca bate e vazaria literalmente pro cliente sem esta rede. Sem valor
+  // completo para extrair, só remove o lixo — não há estágio a sinalizar.
+  const truncatedMarkerIndex = content.indexOf(STAGE_MARKER_PREFIX);
+  if (truncatedMarkerIndex !== -1) {
+    const cleaned = content.slice(0, truncatedMarkerIndex).replace(/\n{3,}/g, '\n\n').trim();
+    return { content: cleaned };
+  }
+
+  return { content };
 }

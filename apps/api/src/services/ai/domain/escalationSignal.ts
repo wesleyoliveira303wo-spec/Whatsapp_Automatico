@@ -34,6 +34,9 @@ export type EscalationReason = 'unknown_answer' | 'requested_human';
 export const ESCALATION_MARKER_UNKNOWN_ANSWER = '[[ESCALAR_HUMANO:NAO_SEI]]';
 export const ESCALATION_MARKER_REQUESTED_HUMAN = '[[ESCALAR_HUMANO:PEDIU_ATENDENTE]]';
 
+/** Prefixo comum aos dois marcadores — nunca aparece numa resposta natural; usado para detectar um marcador CORTADO (ver `extractEscalation`). */
+const ESCALATION_MARKER_PREFIX = '[[ESCALAR_HUMANO';
+
 const MARKERS_BY_REASON: Record<EscalationReason, string> = {
   unknown_answer: ESCALATION_MARKER_UNKNOWN_ANSWER,
   requested_human: ESCALATION_MARKER_REQUESTED_HUMAN,
@@ -67,21 +70,38 @@ export function extractEscalation(content: string): EscalationExtraction {
   const hasUnknownAnswer = content.includes(ESCALATION_MARKER_UNKNOWN_ANSWER);
   const hasRequestedHuman = content.includes(ESCALATION_MARKER_REQUESTED_HUMAN);
 
-  if (!hasUnknownAnswer && !hasRequestedHuman) {
-    return { escalationReason: undefined, content };
+  if (hasUnknownAnswer || hasRequestedHuman) {
+    const escalationReason: EscalationReason = hasUnknownAnswer
+      ? 'unknown_answer'
+      : 'requested_human';
+    const cleaned = content
+      .split(ESCALATION_MARKER_UNKNOWN_ANSWER)
+      .join('')
+      .split(ESCALATION_MARKER_REQUESTED_HUMAN)
+      .join('')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return { escalationReason, content: cleaned };
   }
 
-  const escalationReason: EscalationReason = hasUnknownAnswer
-    ? 'unknown_answer'
-    : 'requested_human';
-  const cleaned = content
-    .split(ESCALATION_MARKER_UNKNOWN_ANSWER)
-    .join('')
-    .split(ESCALATION_MARKER_REQUESTED_HUMAN)
-    .join('')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  return { escalationReason, content: cleaned };
+  // Defesa contra resposta CORTADA (`finishReason === 'MAX_TOKENS'`, ver
+  // `GeminiAiProvider`) bem no meio do marcador — medido em produção
+  // (2026-09-14): o modelo gastou quase todo o orçamento de tokens
+  // "pensando" e a resposta visível saiu truncada em "[[ESCALAR_HUMANO:NAO",
+  // sem o "_SEI]]" final. O `.includes()` acima nunca bate com um marcador
+  // incompleto, e sem esta rede o fragmento vazava LITERALMENTE pro
+  // cliente. O prefixo comum aos dois marcadores nunca aparece numa resposta
+  // natural — qualquer ocorrência dele sem o marcador completo correspondente
+  // só pode ser um corte. Trata como `unknown_answer` (nunca `undefined`):
+  // é o desfecho mais seguro — sinaliza um humano em vez de arriscar o
+  // silêncio, e o texto cortado é lixo de qualquer forma.
+  const truncatedMarkerIndex = content.indexOf(ESCALATION_MARKER_PREFIX);
+  if (truncatedMarkerIndex !== -1) {
+    const cleaned = content.slice(0, truncatedMarkerIndex).replace(/\n{3,}/g, '\n\n').trim();
+    return { escalationReason: 'unknown_answer', content: cleaned };
+  }
+
+  return { escalationReason: undefined, content };
 }
 
 /** Devolve o marcador de texto correspondente a um `EscalationReason` — usado só por `PromptVersion.ts` (instrução ao modelo). */

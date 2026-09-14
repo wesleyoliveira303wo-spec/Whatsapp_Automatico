@@ -42,6 +42,30 @@ describe('extractEscalation', () => {
     expect(result.content).not.toContain(ESCALATION_MARKER_UNKNOWN_ANSWER);
     expect(result.content).not.toContain(ESCALATION_MARKER_REQUESTED_HUMAN);
   });
+  // Regressão (2026-09-14): medido em produção — o Gemini gastou quase todo
+  // o orçamento de tokens "pensando" (ver `GeminiAiProvider`,
+  // `finishReason === 'MAX_TOKENS'`) e a resposta visível saiu cortada bem
+  // no meio do marcador. O `.includes()` do caminho feliz nunca bate com um
+  // marcador incompleto — sem esta defesa, o fragmento vazava LITERALMENTE
+  // pro cliente (reportado pelo fundador com print real da conversa).
+  it('marcador CORTADO no meio (resposta truncada por MAX_TOKENS): remove o fragmento e escala como unknown_answer', () => {
+    // Fragmento real observado em produção: "[[ESCALAR_HUMANO:NAO" (faltando "_SEI]]").
+    const raw =
+      'Mas relaxa que o pessoal de verdade já vai assumir aqui pra resolver esse rolo do Pix e o acesso com você, beleza? É só um minutinho.\n\n[[ESCALAR_HUMANO:NAO';
+    const result = extractEscalation(raw);
+    expect(result.escalationReason).toBe('unknown_answer');
+    expect(result.content).toBe(
+      'Mas relaxa que o pessoal de verdade já vai assumir aqui pra resolver esse rolo do Pix e o acesso com você, beleza? É só um minutinho.',
+    );
+    expect(result.content).not.toContain('[[ESCALAR_HUMANO');
+  });
+
+  it('marcador cortado logo após o prefixo (sem nem os dois-pontos): também é detectado e removido', () => {
+    const raw = 'Um segundo, por favor.\n\n[[ESCALAR_HUMANO';
+    const result = extractEscalation(raw);
+    expect(result.escalationReason).toBe('unknown_answer');
+    expect(result.content).toBe('Um segundo, por favor.');
+  });
 });
 
 describe('escalationMarkerFor', () => {
