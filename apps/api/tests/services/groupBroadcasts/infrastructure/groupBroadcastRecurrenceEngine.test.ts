@@ -296,9 +296,78 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
       runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2 }),
     ).resolves.toBe('postponed');
     expect(dispatcher.scheduled).toHaveLength(0);
-    expect(dispatcher.runs).toHaveLength(1);
+    // Regressão (2026-09-15): NUNCA via `scheduleRun` — reusar o jobId do
+    // próprio job em execução (`${stepId}-run-${runNumber}`) faz tanto o
+    // remove quanto o add do BullMQ não fazerem nada, e o reagendamento
+    // nunca chega a existir no Redis (achado real de produção).
+    expect(dispatcher.runs).toHaveLength(0);
+    expect(dispatcher.postponedRuns).toHaveLength(1);
+    expect(dispatcher.postponedRuns[0]).toMatchObject({ stepId: stepIds[0], runNumber: 2 });
+    expect(dispatcher.postponedRuns[0].postponedTo).toBeInstanceOf(Date);
     const [step] = await repository.listSteps('tenant-1', broadcastId);
     expect(step.nextRunAt).toBeInstanceOf(Date);
+  });
+
+  // Achado real de produção (2026-09-15): quando várias etapas escalonadas
+  // caem fora da janela (ex.: todas iniciadas de madrugada), reagendar cada
+  // uma para o MESMO horário de abertura colapsava a cadência configurada
+  // entre publicações — exatamente o momento em que ela mais importa (a 1ª
+  // publicação de cada etapa). `initialLaunchOffsetMs` soma o escalonamento
+  // por cima do horário de abertura, e some sozinho assim que a etapa já
+  // tiver concluído 1 ciclo de verdade.
+  it('fora da janela, com escalonamento configurado (1º ciclo de cada etapa): soma o escalonamento por cima da abertura da janela', async () => {
+    const { runProcessor, repository, dispatcher } = buildSut();
+    const agora = new Date();
+    const fim = pad(agora.getHours()) + ':' + pad(agora.getMinutes());
+    const inicio = pad((agora.getHours() + 23) % 24) + ':' + pad(agora.getMinutes());
+    const { broadcastId, stepIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      stepLaunchOffsetMinutes: 10,
+      sendWindowStart: inicio,
+      sendWindowEnd: fim,
+      extraSteps: [{ messageTemplate: 'Post 2' }],
+    });
+
+    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 1 });
+    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[1], runNumber: 1 });
+
+    const postponedByStep = new Map(
+      dispatcher.postponedRuns.map((r) => [r.stepId, r.postponedTo.getTime()]),
+    );
+    // Etapa 1 (order 1) reabre exatamente 10 minutos depois da etapa 0 (order 0).
+    expect(postponedByStep.get(stepIds[1])! - postponedByStep.get(stepIds[0])!).toBe(10 * 60 * 1000);
+  });
+
+  // Não-regressão: uma etapa RECORRENTE, já com pelo menos 1 ciclo
+  // concluído, que caia fora da janela numa repetição futura NUNCA deve
+  // sofrer o escalonamento inicial de novo — ele é só para a 1ª publicação.
+  it('fora da janela, mas a etapa JÁ publicou antes (runsCompleted > 0): não soma escalonamento nenhum', async () => {
+    const { runProcessor, repository, dispatcher } = buildSut();
+    const agora = new Date();
+    const fim = pad(agora.getHours()) + ':' + pad(agora.getMinutes());
+    const inicio = pad((agora.getHours() + 23) % 24) + ':' + pad(agora.getMinutes());
+    const { broadcastId, stepIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      stepLaunchOffsetMinutes: 10,
+      recurrenceIntervalHours: 2,
+      runsCompleted: 3,
+      sendWindowStart: inicio,
+      sendWindowEnd: fim,
+    });
+
+    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 4 });
+
+    const [step] = await repository.listSteps('tenant-1', broadcastId);
+    // Sem casa decimal de escalonamento: exatamente a abertura da janela.
+    const windowOpen = new Date();
+    windowOpen.setHours((agora.getHours() + 23) % 24, agora.getMinutes(), 0, 0);
+    if (windowOpen.getTime() <= agora.getTime()) windowOpen.setDate(windowOpen.getDate() + 1);
+    expect(step.nextRunAt?.getTime()).toBe(windowOpen.getTime());
+    expect(dispatcher.postponedRuns[0].postponedTo.getTime()).toBe(windowOpen.getTime());
   });
 
   it('nenhum grupo elegível restou NESTA ETAPA: encerra ela (finishedAt), sem tocar outras etapas', async () => {

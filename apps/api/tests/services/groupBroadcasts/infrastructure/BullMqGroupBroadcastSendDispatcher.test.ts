@@ -116,3 +116,65 @@ describe('scheduleRun (recorrência por etapa, 2026-09-11/2026-09-14)', () => {
     expect(new Set(jobIds).size).toBe(2);
   });
 });
+
+describe('reschedulePostponedRun (achado real de produção, 2026-09-15)', () => {
+  // Causa raiz medida em produção: `GroupBroadcastRunJobProcessor`, ao
+  // descobrir que está fora da janela de horário, tentava reagendar a SI
+  // MESMO chamando `scheduleRun` com o MESMO `runNumber` — ou seja, o MESMO
+  // jobId (`${stepId}-run-${runNumber}`) do job que, naquele exato instante,
+  // ainda está `active` (o worker o está processando). `Queue.remove()` do
+  // BullMQ devolve 0 (sem lançar) quando o job está travado, e `Queue.add()`
+  // com um jobId já existente cai no caminho de "job duplicado" do Lua e
+  // devolve o job existente SEM criar nada no `delayed` set. As duas
+  // chamadas silenciosamente não faziam nada, e o disparo nunca era
+  // reagendado — a campanha ficava muda até uma pausa/retomada manual.
+  it('NUNCA usa o mesmo jobId de scheduleRun para o mesmo runNumber (evita colidir com o job em execução)', async () => {
+    const queue = { add: jest.fn(), remove: jest.fn() };
+    const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
+    const postponedTo = new Date('2026-09-15T10:00:00.000Z');
+
+    await dispatcher.reschedulePostponedRun(
+      'tenant-1',
+      'broadcast-1',
+      'step-1',
+      1,
+      postponedTo,
+      7200000,
+    );
+
+    const jobId = queue.add.mock.calls[0][2].jobId;
+    expect(jobId).not.toBe('step-1-run-1'); // o jobId do job em execução
+    expect(jobId).not.toContain(':');
+    expect(queue.remove).toHaveBeenCalledWith(jobId);
+    expect(queue.add).toHaveBeenCalledWith(
+      'start-group-broadcast-run',
+      { tenantId: 'tenant-1', broadcastId: 'broadcast-1', stepId: 'step-1', runNumber: 1 },
+      { jobId, delay: 7200000 },
+    );
+  });
+
+  it('duas postergações da MESMA etapa/repetição para instantes diferentes nunca colidem no mesmo jobId', async () => {
+    const queue = { add: jest.fn(), remove: jest.fn() };
+    const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
+
+    await dispatcher.reschedulePostponedRun(
+      'tenant-1',
+      'broadcast-1',
+      'step-1',
+      1,
+      new Date('2026-09-15T10:00:00.000Z'),
+      0,
+    );
+    await dispatcher.reschedulePostponedRun(
+      'tenant-1',
+      'broadcast-1',
+      'step-1',
+      1,
+      new Date('2026-09-16T10:00:00.000Z'),
+      0,
+    );
+
+    const jobIds = queue.add.mock.calls.map((call) => call[2].jobId);
+    expect(new Set(jobIds).size).toBe(2);
+  });
+});

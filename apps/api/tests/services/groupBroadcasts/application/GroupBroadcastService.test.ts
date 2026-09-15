@@ -386,6 +386,40 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       expect(dispatcher.runs).toHaveLength(0);
     });
 
+    // Achado real de produção (2026-09-15): uma etapa cujo 1º ciclo nunca
+    // chegou a rodar de verdade (caiu fora da janela, ou o fundador pausou
+    // antes dela sair) — ao ser retomada manualmente, precisa AINDA respeitar
+    // a cadência configurada entre publicações. Antes desta correção, o
+    // "resume_pending" ignorava por completo `stepLaunchOffsetMinutes`.
+    it('retomar uma etapa cujo 1º ciclo NUNCA saiu (runsCompleted=0): ainda aplica o escalonamento inicial dela', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        stepLaunchOffsetMinutes: 10,
+        startedAt: new Date(), // já foi tentada uma vez (postergada) — não é mais "nunca iniciada"
+        runsCompleted: 0, // mas nunca publicou de fato
+        extraSteps: [{ messageTemplate: 'Post 2' }],
+      });
+      // A 2ª etapa (order 1) também nunca publicou — mesmo cenário.
+      await repository.markStepStarted('tenant-1', stepIds[1], new Date());
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      const scheduledByStep = new Map(dispatcher.scheduled.map((s) => [s.stepId, s.delayMs]));
+      // Etapa 0 (order 0): sem escalonamento a esperar, só o jitter do envio.
+      expect(scheduledByStep.get(stepIds[0])).toBeGreaterThanOrEqual(0);
+      expect(scheduledByStep.get(stepIds[0])).toBeLessThan(30_000);
+      // Etapa 1 (order 1): 10 minutos de escalonamento SOMADOS ao jitter.
+      expect(scheduledByStep.get(stepIds[1])).toBeGreaterThanOrEqual(10 * 60 * 1000);
+      expect(scheduledByStep.get(stepIds[1])).toBeLessThan(10 * 60 * 1000 + 30_000);
+      expect(dispatcher.scheduled.map((s) => s.stepTargetId).sort()).toEqual(
+        [stepTargetIds[0][0], stepTargetIds[1][0]].sort(),
+      );
+      expect(dispatcher.runs).toHaveLength(0); // já tinha pendente — não passa pelo "run"
+    });
+
     it('retomar uma etapa já iniciada, mas ENTRE ciclos (nada pendente agora): agenda o próximo run de imediato', async () => {
       const { service, repository, dispatcher } = buildSut();
       const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({

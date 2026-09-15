@@ -649,6 +649,15 @@ export class FakeGroupBroadcastSendDispatcher implements GroupBroadcastSendDispa
     delayMs: number;
   }> = [];
 
+  public postponedRuns: Array<{
+    tenantId: string;
+    broadcastId: string;
+    stepId: string;
+    runNumber: number;
+    postponedTo: Date;
+    delayMs: number;
+  }> = [];
+
   async scheduleStepTarget(
     tenantId: string,
     broadcastId: string,
@@ -667,6 +676,17 @@ export class FakeGroupBroadcastSendDispatcher implements GroupBroadcastSendDispa
     delayMs: number,
   ): Promise<void> {
     this.runs.push({ tenantId, broadcastId, stepId, runNumber, delayMs });
+  }
+
+  async reschedulePostponedRun(
+    tenantId: string,
+    broadcastId: string,
+    stepId: string,
+    runNumber: number,
+    postponedTo: Date,
+    delayMs: number,
+  ): Promise<void> {
+    this.postponedRuns.push({ tenantId, broadcastId, stepId, runNumber, postponedTo, delayMs });
   }
 }
 

@@ -40,6 +40,7 @@ import {
   clampStepLaunchOffsetMinutes,
   computeGroupSendDelayMs,
   determineGroupTargetSkipReason,
+  initialLaunchOffsetMs,
   MAX_GROUP_MEDIA_BYTES,
   MAX_GROUPS_PER_BROADCAST,
   MAX_STEPS_PER_BROADCAST,
@@ -328,7 +329,6 @@ export class GroupBroadcastService {
     }
 
     const now = new Date();
-    const offsetMs = clampStepLaunchOffsetMinutes(broadcast.stepLaunchOffsetMinutes) * 60 * 1000;
 
     // FASE 1 — só leitura/decisão, NENHUM agendamento ainda. Um job de
     // delay 0 pode ser processado pelo worker em menos de 10ms; se
@@ -339,7 +339,12 @@ export class GroupBroadcastService {
     // tomada e gravada (inclusive `markStepFinished`/`markStepStarted`)
     // ANTES de qualquer chamada ao dispatcher.
     type StepPlan =
-      | { kind: 'resume_pending'; step: GroupBroadcastStep; pending: GroupBroadcastStepTarget[] }
+      | {
+          kind: 'resume_pending';
+          step: GroupBroadcastStep;
+          pending: GroupBroadcastStepTarget[];
+          stepOffsetMs: number;
+        }
       | { kind: 'run'; step: GroupBroadcastStep; delayMs: number };
     const plans: StepPlan[] = [];
     for (const step of activeSteps) {
@@ -350,6 +355,14 @@ export class GroupBroadcastService {
       const neverStarted = !step.startedAt;
       // eslint-disable-next-line no-await-in-loop
       const pendingStepTargets = await this.repository.listPendingStepTargets(tenantId, step.id);
+      // Achado real de produção (2026-09-15): a cadência configurada entre
+      // publicações precisa valer para a PRIMEIRA publicação de cada etapa
+      // não importa por que ela ainda não saiu — nunca foi tentada, caiu
+      // fora da janela e está esperando a fila, ou o fundador pausou e
+      // reiniciou manualmente antes dela sair. `initialLaunchOffsetMs` zera
+      // sozinho assim que a etapa concluir seu primeiro ciclo de verdade —
+      // dali em diante cada uma segue seu próprio relógio, como já era.
+      const stepOffsetMs = initialLaunchOffsetMs(step, broadcast.stepLaunchOffsetMinutes);
 
       if (neverStarted && pendingStepTargets.length === 0) {
         // Todos os grupos nasceram suprimidos — esta etapa nunca teria o que
@@ -365,20 +378,24 @@ export class GroupBroadcastService {
         // escalonamento inicial — nunca dispara envios direto no 1º ciclo.
         // eslint-disable-next-line no-await-in-loop
         await this.repository.markStepStarted(tenantId, step.id, now);
-        plans.push({ kind: 'run', step, delayMs: step.order * offsetMs });
+        plans.push({ kind: 'run', step, delayMs: stepOffsetMs });
         continue;
       }
 
       if (pendingStepTargets.length > 0) {
-        // Ciclo em andamento (pausado no meio de um envio): retoma os grupos
-        // que faltam, com delay FRESCO a partir de agora.
-        plans.push({ kind: 'resume_pending', step, pending: pendingStepTargets });
+        // Ciclo em andamento (pausado no meio de um envio, ou o 1º ciclo
+        // nunca chegou a rodar de verdade): retoma os grupos que faltam, com
+        // delay FRESCO a partir de agora — mais o escalonamento inicial que
+        // ainda restar para esta etapa (0 se ela já publicou ao menos uma
+        // vez antes).
+        plans.push({ kind: 'resume_pending', step, pending: pendingStepTargets, stepOffsetMs });
         continue;
       }
 
-      // Sem pendentes: está entre um ciclo e o próximo — retoma na hora, sem
-      // esperar o resto do temporizador antigo.
-      plans.push({ kind: 'run', step, delayMs: 0 });
+      // Sem pendentes: está entre um ciclo e o próximo (ou o 1º ciclo ainda
+      // não rodou — só está aguardando na fila) — retoma na hora, mais o
+      // escalonamento inicial que ainda restar.
+      plans.push({ kind: 'run', step, delayMs: stepOffsetMs });
     }
 
     if (plans.length === 0) {
@@ -415,7 +432,7 @@ export class GroupBroadcastService {
           broadcastId,
           plan.step.id,
           stepTarget.id,
-          computeGroupSendDelayMs(index, broadcast.intervalSeconds, now),
+          plan.stepOffsetMs + computeGroupSendDelayMs(index, broadcast.intervalSeconds, now),
         );
       }
       scheduledCount += plan.pending.length;

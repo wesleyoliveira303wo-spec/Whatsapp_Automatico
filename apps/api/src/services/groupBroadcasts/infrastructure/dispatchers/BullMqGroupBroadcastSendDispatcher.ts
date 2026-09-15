@@ -68,4 +68,34 @@ export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDis
       { jobId, delay: delayMs },
     );
   }
+
+  /**
+   * Achado real de produção (2026-09-15): NUNCA reusar `${stepId}-run-${runNumber}`
+   * aqui — é exatamente o `jobId` do job que está chamando este método, ainda
+   * `active` no momento da chamada. `queue.remove()` sobre um job travado
+   * devolve `0` sem remover nada (o BullMQ só lança em `Job.remove()`, não em
+   * `Queue.remove()`); `queue.add()` com um `jobId` que já existe (mesmo
+   * travado) cai no caminho de "job duplicado" do Lua e devolve o job
+   * existente SEM criar nenhum registro novo no `delayed` set. As duas
+   * chamadas silenciosamente não fazem nada — o reagendamento nunca era
+   * persistido, e a campanha ficava muda até uma pausa/retomada manual. O
+   * `jobId` aqui embute o instante-alvo (`postponedTo`), então nunca colide
+   * com o job em execução.
+   */
+  async reschedulePostponedRun(
+    tenantId: string,
+    broadcastId: string,
+    stepId: string,
+    runNumber: number,
+    postponedTo: Date,
+    delayMs: number,
+  ): Promise<void> {
+    const jobId = `${stepId}-run-${runNumber}-postponed-${postponedTo.getTime()}`;
+    await this.queue.remove(jobId);
+    await this.queue.add(
+      GROUP_BROADCAST_RUN_JOB_NAME,
+      { tenantId, broadcastId, stepId, runNumber },
+      { jobId, delay: delayMs },
+    );
+  }
 }

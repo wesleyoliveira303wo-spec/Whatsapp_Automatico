@@ -59,6 +59,27 @@ export function clampStepLaunchOffsetMinutes(requested?: number): number {
 }
 
 /**
+ * Quanto ainda falta do escalonamento inicial (`stepLaunchOffsetMinutes`)
+ * para ESTA etapa — só existe enquanto ela nunca tiver concluído nenhum
+ * ciclo de verdade (`runsCompleted === 0`). Achado real de produção
+ * (2026-09-15): a PRIMEIRA publicação de uma campanha precisa respeitar a
+ * cadência configurada entre etapas não importa o motivo pelo qual ela
+ * ainda não saiu — caiu fora da janela de horário e foi reagendada, ou o
+ * fundador pausou e reiniciou manualmente antes dela sair —, porque em
+ * nenhum desses casos a etapa chegou a publicar de verdade. Só a partir da
+ * 2ª publicação em diante cada etapa passa a seguir seu próprio relógio,
+ * independente das demais (2026-09-14, "cadência entre publicações") —
+ * daí a etapa já ter concluído pelo menos 1 ciclo zerar este valor.
+ */
+export function initialLaunchOffsetMs(
+  step: { order: number; runsCompleted: number },
+  requestedOffsetMinutes?: number,
+): number {
+  if (step.runsCompleted > 0) return 0;
+  return step.order * clampStepLaunchOffsetMinutes(requestedOffsetMinutes) * 60 * 1000;
+}
+
+/**
  * Tetos de tamanho do anexo por tipo. Imagem segue o teto de campanha
  * (`MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES`, 5MB); vídeo sobe para 16MB — o mesmo
  * teto do envio de mídia pelo operador (F1.3) — porque um vídeo curto de

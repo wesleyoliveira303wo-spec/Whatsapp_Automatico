@@ -1,7 +1,10 @@
 import { Logger } from '../../../shared/domain/Logger';
 import { GroupBroadcastSendDispatcher } from '../domain/dispatchers/GroupBroadcastSendDispatcher';
 import { GroupBroadcastRepository } from '../domain/repositories/GroupBroadcastRepository';
-import { computeGroupSendDelayMs } from '../domain/policies/groupBroadcastPacing';
+import {
+  computeGroupSendDelayMs,
+  initialLaunchOffsetMs,
+} from '../domain/policies/groupBroadcastPacing';
 import {
   buildSendWindow,
   DEFAULT_GROUP_BROADCAST_TIMEZONE,
@@ -74,13 +77,31 @@ export class GroupBroadcastRunJobProcessor {
     const now = new Date();
     const window = buildSendWindow(broadcast.sendWindowStart, broadcast.sendWindowEnd);
     if (!isWithinSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE)) {
-      const postponedTo = shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE);
+      // Achado real de produção (2026-09-15): sem somar o escalonamento
+      // aqui, TODAS as etapas postergadas na mesma madrugada convergiam pro
+      // MESMO horário de abertura da janela — a cadência configurada entre
+      // publicações se perdia justamente no caso em que ela mais importa (a
+      // 1ª publicação de cada uma). `initialLaunchOffsetMs` já degrada pra 0
+      // sozinho assim que a etapa concluir seu primeiro ciclo de verdade —
+      // uma postergação de uma etapa recorrente mais adiante nunca é afetada.
+      const postponedTo = new Date(
+        shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE).getTime() +
+          initialLaunchOffsetMs(step, broadcast.stepLaunchOffsetMinutes),
+      );
       await this.repository.markStepRunFinished(tenantId, step.id, step.runsCompleted, postponedTo);
-      await this.sendDispatcher.scheduleRun(
+      // `reschedulePostponedRun`, NUNCA `scheduleRun` aqui — ver a docstring
+      // do método no port. Este job (`${stepId}-run-${runNumber}`) ainda
+      // está `active` neste exato instante; usar o MESMO jobId faria tanto o
+      // `remove()` quanto o `add()` internos não fazerem nada, e o
+      // reagendamento nunca chegaria a existir no Redis (achado real de
+      // produção, 2026-09-15 — a campanha ficava muda até uma pausa/retomada
+      // manual).
+      await this.sendDispatcher.reschedulePostponedRun(
         tenantId,
         broadcastId,
         step.id,
         runNumber,
+        postponedTo,
         Math.max(0, postponedTo.getTime() - now.getTime()),
       );
       this.logger.info('Repetição adiada para dentro da janela de horário', {
