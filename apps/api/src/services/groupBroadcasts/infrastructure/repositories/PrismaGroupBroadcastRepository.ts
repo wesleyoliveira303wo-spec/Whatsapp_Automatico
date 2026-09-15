@@ -717,4 +717,120 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
       fileName: row.mediaFileName ?? undefined,
     };
   }
+
+  async updateBroadcastSettings(
+    tenantId: string,
+    broadcastId: string,
+    data: {
+      name: string;
+      intervalSeconds: number;
+      sendWindowStart?: string;
+      sendWindowEnd?: string;
+      stepLaunchOffsetMinutes?: number;
+    },
+  ): Promise<GroupBroadcast | undefined> {
+    // SUBSTITUI por completo — o cliente sempre envia o estado final
+    // desejado, então um campo ausente vira `null` (mesma semântica de
+    // `create`), nunca "deixa como estava".
+    const { count } = await this.prisma.groupBroadcast.updateMany({
+      where: { id: broadcastId, tenantId },
+      data: {
+        name: data.name,
+        intervalSeconds: data.intervalSeconds,
+        sendWindowStart: data.sendWindowStart ?? null,
+        sendWindowEnd: data.sendWindowEnd ?? null,
+        stepLaunchOffsetMinutes: data.stepLaunchOffsetMinutes ?? null,
+      },
+    });
+    if (count === 0) return undefined;
+    return this.findById(tenantId, broadcastId);
+  }
+
+  async updateStep(
+    tenantId: string,
+    stepId: string,
+    data: {
+      messageTemplate: string;
+      recurrenceIntervalHours?: number;
+      recurrenceMaxRuns?: number;
+      recurrenceEndsAt?: Date;
+    },
+  ): Promise<GroupBroadcastStep | undefined> {
+    // Nunca toca `order` (jamais reatribuída) nem `runsCompleted`/`nextRunAt`/
+    // `startedAt`/`finishedAt` — histórico de execução, intocado pela edição.
+    const { count } = await this.prisma.groupBroadcastStep.updateMany({
+      where: { id: stepId, tenantId },
+      data: {
+        messageTemplate: data.messageTemplate,
+        recurrenceIntervalHours: data.recurrenceIntervalHours ?? null,
+        recurrenceMaxRuns: data.recurrenceMaxRuns ?? null,
+        recurrenceEndsAt: data.recurrenceEndsAt ?? null,
+      },
+    });
+    if (count === 0) return undefined;
+    return this.findStepById(tenantId, stepId);
+  }
+
+  async deleteSteps(tenantId: string, stepIds: string[]): Promise<number> {
+    if (stepIds.length === 0) return 0;
+    // `onDelete: Cascade` em `GroupBroadcastStepTarget.step` limpa o
+    // progresso daquela etapa sozinho — nunca chamado para etapa com
+    // histórico (essa é encerrada via `markStepFinished`, nunca apagada).
+    const { count } = await this.prisma.groupBroadcastStep.deleteMany({
+      where: { id: { in: stepIds }, tenantId },
+    });
+    return count;
+  }
+
+  async deleteTargets(tenantId: string, targetIds: string[]): Promise<number> {
+    if (targetIds.length === 0) return 0;
+    // `onDelete: Cascade` em `GroupBroadcastStepTarget.target` limpa o
+    // progresso daquele grupo em toda etapa — só chamado para grupo SEM
+    // histórico (com histórico, é `suppressTargets`, nunca `deleteTargets`).
+    const { count } = await this.prisma.groupBroadcastTarget.deleteMany({
+      where: { id: { in: targetIds }, tenantId },
+    });
+    return count;
+  }
+
+  async suppressTargets(
+    tenantId: string,
+    targetIds: string[],
+    skipReason: string,
+  ): Promise<number> {
+    if (targetIds.length === 0) return 0;
+    // As DUAS escritas (alvo + progresso de cada etapa) precisam acontecer
+    // juntas — se marcar só uma, a próxima repetição republica no grupo que
+    // deveria ter sido removido. `sentCount` é preservado nas duas tabelas:
+    // o relatório que o operador manda ao cliente continua verdadeiro.
+    const [{ count }] = await this.prisma.$transaction([
+      this.prisma.groupBroadcastTarget.updateMany({
+        where: { id: { in: targetIds }, tenantId },
+        data: { status: 'SKIPPED', skipReason },
+      }),
+      this.prisma.groupBroadcastStepTarget.updateMany({
+        where: { targetId: { in: targetIds }, tenantId },
+        data: { status: 'SKIPPED' },
+      }),
+    ]);
+    return count;
+  }
+
+  async countStepTargetsWithHistory(
+    tenantId: string,
+    broadcastId: string,
+  ): Promise<Map<string, number>> {
+    // Agregação no banco (`groupBy` + `_sum`) — nunca carrega linha a linha
+    // para somar em JavaScript.
+    const groups = await this.prisma.groupBroadcastStepTarget.groupBy({
+      by: ['targetId'],
+      where: { tenantId, broadcastId },
+      _sum: { sentCount: true },
+    });
+    const result = new Map<string, number>();
+    for (const group of groups) {
+      result.set(group.targetId, group._sum.sentCount ?? 0);
+    }
+    return result;
+  }
 }

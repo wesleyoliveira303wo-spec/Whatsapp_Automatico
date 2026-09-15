@@ -583,6 +583,123 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
     return { broadcastId: id, targetIds, stepIds, stepTargetIds };
   }
 
+  async updateBroadcastSettings(
+    tenantId: string,
+    broadcastId: string,
+    data: {
+      name: string;
+      intervalSeconds: number;
+      sendWindowStart?: string;
+      sendWindowEnd?: string;
+      stepLaunchOffsetMinutes?: number;
+    },
+  ): Promise<GroupBroadcast | undefined> {
+    const broadcast = this.broadcasts.get(broadcastId);
+    if (!broadcast || broadcast.tenantId !== tenantId) return undefined;
+    // SUBSTITUI por completo — campo ausente vira `undefined`, mesma
+    // semântica de `null` no Prisma real (nunca "deixa como estava").
+    const updated: GroupBroadcast = {
+      ...broadcast,
+      name: data.name,
+      intervalSeconds: data.intervalSeconds,
+      sendWindowStart: data.sendWindowStart,
+      sendWindowEnd: data.sendWindowEnd,
+      stepLaunchOffsetMinutes: data.stepLaunchOffsetMinutes,
+      updatedAt: new Date(),
+    };
+    this.broadcasts.set(broadcastId, updated);
+    return { ...updated };
+  }
+
+  async updateStep(
+    tenantId: string,
+    stepId: string,
+    data: {
+      messageTemplate: string;
+      recurrenceIntervalHours?: number;
+      recurrenceMaxRuns?: number;
+      recurrenceEndsAt?: Date;
+    },
+  ): Promise<GroupBroadcastStep | undefined> {
+    const step = this.steps.get(stepId);
+    if (!step || step.tenantId !== tenantId) return undefined;
+    // Nunca toca `order`/`runsCompleted`/`nextRunAt`/`startedAt`/`finishedAt`
+    // — histórico de execução, intocado pela edição.
+    const updated: GroupBroadcastStep = {
+      ...step,
+      messageTemplate: data.messageTemplate,
+      recurrenceIntervalHours: data.recurrenceIntervalHours,
+      recurrenceMaxRuns: data.recurrenceMaxRuns,
+      recurrenceEndsAt: data.recurrenceEndsAt,
+    };
+    this.steps.set(stepId, updated);
+    return { ...updated };
+  }
+
+  async deleteSteps(tenantId: string, stepIds: string[]): Promise<number> {
+    if (stepIds.length === 0) return 0;
+    let count = 0;
+    for (const stepId of stepIds) {
+      const step = this.steps.get(stepId);
+      if (!step || step.tenantId !== tenantId) continue;
+      this.steps.delete(stepId);
+      this.stepMedia.delete(stepId);
+      for (const [id, row] of this.stepTargets) {
+        if (row.stepId === stepId) this.stepTargets.delete(id);
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  async deleteTargets(tenantId: string, targetIds: string[]): Promise<number> {
+    if (targetIds.length === 0) return 0;
+    let count = 0;
+    for (const targetId of targetIds) {
+      const target = this.targets.get(targetId);
+      if (!target || target.tenantId !== tenantId) continue;
+      this.targets.delete(targetId);
+      for (const [id, row] of this.stepTargets) {
+        if (row.targetId === targetId) this.stepTargets.delete(id);
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  async suppressTargets(
+    tenantId: string,
+    targetIds: string[],
+    skipReason: string,
+  ): Promise<number> {
+    if (targetIds.length === 0) return 0;
+    let count = 0;
+    for (const targetId of targetIds) {
+      const target = this.targets.get(targetId);
+      if (!target || target.tenantId !== tenantId) continue;
+      this.targets.set(targetId, { ...target, status: 'skipped', skipReason });
+      for (const [id, row] of this.stepTargets) {
+        if (row.targetId === targetId && row.tenantId === tenantId) {
+          this.stepTargets.set(id, { ...row, status: 'skipped' });
+        }
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  async countStepTargetsWithHistory(
+    tenantId: string,
+    broadcastId: string,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    for (const row of this.stepTargets.values()) {
+      if (row.tenantId !== tenantId || row.broadcastId !== broadcastId) continue;
+      result.set(row.targetId, (result.get(row.targetId) ?? 0) + row.sentCount);
+    }
+    return result;
+  }
+
   /** Helper de teste: força o estado do PROGRESSO de um grupo numa etapa (ex.: simular tentativas anteriores). */
   forceStepTarget(stepTargetId: string, changes: Partial<GroupBroadcastStepTarget>): void {
     const row = this.stepTargets.get(stepTargetId);

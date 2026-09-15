@@ -180,4 +180,72 @@ export interface GroupBroadcastRepository {
     tenantId: string,
     stepId: string,
   ): Promise<GroupBroadcastMediaContent | undefined>;
+
+  // --- Edição de disparo já criado (2026-09-15) -----------------------------
+  // Salvar uma edição NUNCA agenda nada na fila — só reconcilia o estado
+  // desejado com o persistido. Quem agenda continua sendo start/retomar.
+
+  /**
+   * Atualiza o "envelope" da campanha (nome, ritmo, janela, escalonamento) —
+   * SUBSTITUI por completo, mesma semântica de `create`: campo ausente vira
+   * `null` (nunca "deixa como estava"), porque o cliente sempre envia o
+   * estado final desejado inteiro.
+   */
+  updateBroadcastSettings(
+    tenantId: string,
+    broadcastId: string,
+    data: {
+      name: string;
+      intervalSeconds: number;
+      sendWindowStart?: string;
+      sendWindowEnd?: string;
+      stepLaunchOffsetMinutes?: number;
+    },
+  ): Promise<GroupBroadcast | undefined>;
+
+  /**
+   * Atualiza o CONTEÚDO de uma etapa já existente (texto/recorrência) — nunca
+   * mexe em `order` (nunca reatribuída) nem em `runsCompleted`/`nextRunAt`/
+   * `startedAt`/`finishedAt` (histórico de execução, intocado pela edição).
+   */
+  updateStep(
+    tenantId: string,
+    stepId: string,
+    data: {
+      messageTemplate: string;
+      recurrenceIntervalHours?: number;
+      recurrenceMaxRuns?: number;
+      recurrenceEndsAt?: Date;
+    },
+  ): Promise<GroupBroadcastStep | undefined>;
+
+  /**
+   * Apaga etapas SEM HISTÓRICO (nunca chamado para uma etapa que já publicou
+   * — essa é encerrada via `markStepFinished`, nunca apagada). Array vazio
+   * devolve 0 sem tocar o banco.
+   */
+  deleteSteps(tenantId: string, stepIds: string[]): Promise<number>;
+  /**
+   * Apaga alvos (grupos) SEM HISTÓRICO — remoção de verdade, o grupo nunca
+   * recebeu nenhuma publicação. Array vazio devolve 0 sem tocar o banco.
+   */
+  deleteTargets(tenantId: string, targetIds: string[]): Promise<number>;
+  /**
+   * Remove um grupo COM HISTÓRICO da edição sem apagar nada: marca o
+   * `GroupBroadcastTarget` **e** todo `GroupBroadcastStepTarget` daquele alvo
+   * como `SKIPPED`, numa única transação — as duas escritas precisam
+   * acontecer juntas, senão a próxima repetição republica no grupo removido
+   * (`resetStepTargetsForNextRun` nunca reabre `skipped`, então é isso que
+   * torna a supressão permanente). `sentCount` é preservado — o relatório que
+   * o operador manda ao cliente continua verdadeiro. Array vazio devolve 0
+   * sem tocar o banco.
+   */
+  suppressTargets(tenantId: string, targetIds: string[], skipReason: string): Promise<number>;
+  /**
+   * Soma de `sentCount` por `targetId`, através de TODAS as etapas da
+   * campanha — é o `hasHistory` que a reconciliação de edição consome
+   * (`sentCount > 0` nalguma etapa = já publicou, nunca pode ser apagado).
+   * Agregação no banco (`groupBy` + `_sum`), nunca carregando linha a linha.
+   */
+  countStepTargetsWithHistory(tenantId: string, broadcastId: string): Promise<Map<string, number>>;
 }

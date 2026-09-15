@@ -514,6 +514,295 @@ describe('Integração real — Disparos em grupos (2026-09-11, etapas em parale
 });
 
 /**
+ * Métodos de edição de um disparo já criado (2026-09-15). O caso crítico:
+ * remover um grupo que JÁ recebeu publicação nunca pode apagar o histórico —
+ * ele é suprimido (`skipped`), preservando `sentCount`, para que o relatório
+ * que o operador manda ao cliente continue verdadeiro.
+ */
+describe('Integração real — edição de um disparo já criado (2026-09-15)', () => {
+  let prisma: PrismaClient;
+  let repository: PrismaGroupBroadcastRepository;
+  let databaseAvailable = true;
+  const tenantId = `test-tenant-group-broadcast-edit-${Date.now()}`;
+
+  beforeAll(async () => {
+    prisma = new PrismaClient();
+    try {
+      await prisma.$connect();
+      await prisma.tenant.create({ data: { id: tenantId, name: 'Tenant de teste — edição de disparos' } });
+    } catch {
+      databaseAvailable = false;
+    }
+    repository = new PrismaGroupBroadcastRepository(prisma);
+  });
+
+  afterAll(async () => {
+    if (databaseAvailable) {
+      await prisma.tenant.deleteMany({ where: { id: tenantId } });
+    }
+    await prisma.$disconnect();
+  });
+
+  it('suppressTargets marca alvo E stepTargets como SKIPPED numa transação, preserva sentCount, e resetStepTargetsForNextRun nunca reabre', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const broadcast = await repository.create({
+      tenantId,
+      sessionName: 'sessao-edicao',
+      name: 'Disparo com histórico',
+      intervalSeconds: 60,
+    });
+    const [step] = await repository.createSteps(tenantId, broadcast.id, [
+      { order: 0, messageTemplate: 'Promoção!' },
+    ]);
+    await repository.createTargets(tenantId, broadcast.id, [
+      { groupJid: 'ja-enviou@g.us', groupName: 'Já recebeu', status: 'pending' },
+      { groupJid: 'nunca-enviou@g.us', groupName: 'Nunca recebeu', status: 'pending' },
+    ]);
+    await repository.initializeStepTargets(tenantId, broadcast.id);
+    const [targets, stepTargets] = await Promise.all([
+      repository.listTargets(tenantId, broadcast.id),
+      repository.listStepTargets(tenantId, step.id),
+    ]);
+    const sentTarget = targets.find((t) => t.groupJid === 'ja-enviou@g.us')!;
+    const sentStepTarget = stepTargets.find((t) => t.groupJid === 'ja-enviou@g.us')!;
+    // Marca o grupo como já tendo recebido a publicação (sentCount = 1).
+    await repository.markStepTargetSent(tenantId, sentStepTarget.id, new Date());
+
+    const suppressedCount = await repository.suppressTargets(
+      tenantId,
+      [sentTarget.id],
+      'removed_by_operator',
+    );
+
+    expect(suppressedCount).toBe(1);
+    // (a) o alvo e seu stepTarget ficaram SKIPPED.
+    const reloadedTargets = await repository.listTargets(tenantId, broadcast.id);
+    const reloadedTarget = reloadedTargets.find((t) => t.id === sentTarget.id)!;
+    expect(reloadedTarget.status).toBe('skipped');
+    expect(reloadedTarget.skipReason).toBe('removed_by_operator');
+    const reloadedStepTargets = await repository.listStepTargets(tenantId, step.id);
+    const reloadedStepTarget = reloadedStepTargets.find((t) => t.targetId === sentTarget.id)!;
+    expect(reloadedStepTarget.status).toBe('skipped');
+    // (b) sentCount continua 1 — o histórico não é apagado, só suprimido.
+    expect(reloadedStepTarget.sentCount).toBe(1);
+
+    // (c) uma próxima repetição (resetStepTargetsForNextRun) NUNCA o reabre.
+    const reopened = await repository.resetStepTargetsForNextRun(tenantId, step.id);
+    expect(reopened).toBe(0);
+    const afterReset = await repository.findStepTargetById(tenantId, sentStepTarget.id);
+    expect(afterReset?.status).toBe('skipped');
+    expect(afterReset?.sentCount).toBe(1);
+  });
+
+  it('suppressTargets com array vazio devolve 0 sem tocar o banco', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    expect(await repository.suppressTargets(tenantId, [], 'removed_by_operator')).toBe(0);
+  });
+
+  it('countStepTargetsWithHistory soma sentCount por targetId através de TODAS as etapas', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const broadcast = await repository.create({
+      tenantId,
+      sessionName: 'sessao-edicao',
+      name: 'Disparo de 2 etapas para contagem',
+      intervalSeconds: 60,
+    });
+    const [step0, step1] = await repository.createSteps(tenantId, broadcast.id, [
+      { order: 0, messageTemplate: 'Etapa 0' },
+      { order: 1, messageTemplate: 'Etapa 1' },
+    ]);
+    await repository.createTargets(tenantId, broadcast.id, [
+      { groupJid: 'historico@g.us', groupName: 'Com histórico', status: 'pending' },
+      { groupJid: 'sem-historico@g.us', groupName: 'Sem histórico', status: 'pending' },
+    ]);
+    await repository.initializeStepTargets(tenantId, broadcast.id);
+    const targets = await repository.listTargets(tenantId, broadcast.id);
+    const historicoTarget = targets.find((t) => t.groupJid === 'historico@g.us')!;
+    const step0Targets = await repository.listStepTargets(tenantId, step0.id);
+    const step1Targets = await repository.listStepTargets(tenantId, step1.id);
+    const historicoOnStep0 = step0Targets.find((t) => t.targetId === historicoTarget.id)!;
+    const historicoOnStep1 = step1Targets.find((t) => t.targetId === historicoTarget.id)!;
+    // Publicou 1x na etapa 0 e 1x na etapa 1 — soma através das etapas = 2.
+    await repository.markStepTargetSent(tenantId, historicoOnStep0.id, new Date());
+    await repository.markStepTargetSent(tenantId, historicoOnStep1.id, new Date());
+
+    const history = await repository.countStepTargetsWithHistory(tenantId, broadcast.id);
+
+    expect(history.get(historicoTarget.id)).toBe(2);
+    const semHistoricoTarget = targets.find((t) => t.groupJid === 'sem-historico@g.us')!;
+    expect(history.get(semHistoricoTarget.id) ?? 0).toBe(0);
+  });
+
+  it('updateBroadcastSettings substitui o envelope da campanha; devolve undefined para outro tenant (IDOR)', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const broadcast = await repository.create({
+      tenantId,
+      sessionName: 'sessao-edicao',
+      name: 'Nome original',
+      intervalSeconds: 60,
+      sendWindowStart: '06:00',
+      sendWindowEnd: '22:00',
+    });
+
+    const updated = await repository.updateBroadcastSettings(tenantId, broadcast.id, {
+      name: 'Nome editado',
+      intervalSeconds: 90,
+      sendWindowStart: '08:00',
+      sendWindowEnd: '20:00',
+      stepLaunchOffsetMinutes: 15,
+    });
+
+    expect(updated?.name).toBe('Nome editado');
+    expect(updated?.intervalSeconds).toBe(90);
+    expect(updated?.sendWindowStart).toBe('08:00');
+    expect(updated?.sendWindowEnd).toBe('20:00');
+    expect(updated?.stepLaunchOffsetMinutes).toBe(15);
+
+    // Campo ausente vira `null` (substitui por completo, não faz merge parcial).
+    const cleared = await repository.updateBroadcastSettings(tenantId, broadcast.id, {
+      name: 'Nome editado de novo',
+      intervalSeconds: 90,
+    });
+    expect(cleared?.sendWindowStart).toBeUndefined();
+    expect(cleared?.sendWindowEnd).toBeUndefined();
+    expect(cleared?.stepLaunchOffsetMinutes).toBeUndefined();
+
+    const otherTenantResult = await repository.updateBroadcastSettings(
+      `${tenantId}-outro`,
+      broadcast.id,
+      { name: 'Não deveria aplicar', intervalSeconds: 60 },
+    );
+    expect(otherTenantResult).toBeUndefined();
+  });
+
+  it('updateStep substitui o conteúdo da etapa sem tocar order/runsCompleted/startedAt; devolve undefined para outro tenant (IDOR)', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const broadcast = await repository.create({
+      tenantId,
+      sessionName: 'sessao-edicao',
+      name: 'Disparo para editar etapa',
+      intervalSeconds: 60,
+    });
+    const [step] = await repository.createSteps(tenantId, broadcast.id, [
+      { order: 3, messageTemplate: 'texto antigo', recurrenceIntervalHours: 2, recurrenceMaxRuns: 5 },
+    ]);
+    await repository.markStepStarted(tenantId, step.id, new Date());
+    const startedAtBefore = (await repository.findStepById(tenantId, step.id))?.startedAt;
+
+    const updated = await repository.updateStep(tenantId, step.id, {
+      messageTemplate: 'texto novo',
+      recurrenceIntervalHours: 4,
+    });
+
+    expect(updated?.messageTemplate).toBe('texto novo');
+    expect(updated?.recurrenceIntervalHours).toBe(4);
+    // Campo ausente (recurrenceMaxRuns) vira undefined — substitui por completo.
+    expect(updated?.recurrenceMaxRuns).toBeUndefined();
+    // `order` nunca é reatribuída pela edição.
+    expect(updated?.order).toBe(3);
+    // Histórico de execução intocado.
+    expect(updated?.startedAt?.getTime()).toBe(startedAtBefore?.getTime());
+    expect(updated?.runsCompleted).toBe(0);
+
+    const otherTenantResult = await repository.updateStep(`${tenantId}-outro`, step.id, {
+      messageTemplate: 'não deveria aplicar',
+    });
+    expect(otherTenantResult).toBeUndefined();
+  });
+
+  it('deleteSteps apaga etapas sem histórico em cascata (stepTargets somem); array vazio devolve 0 sem tocar o banco', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const broadcast = await repository.create({
+      tenantId,
+      sessionName: 'sessao-edicao',
+      name: 'Disparo para apagar etapa',
+      intervalSeconds: 60,
+    });
+    const [step0, step1] = await repository.createSteps(tenantId, broadcast.id, [
+      { order: 0, messageTemplate: 'Etapa 0' },
+      { order: 1, messageTemplate: 'Etapa 1' },
+    ]);
+    await repository.createTargets(tenantId, broadcast.id, [
+      { groupJid: 'del-step@g.us', groupName: 'Grupo', status: 'pending' },
+    ]);
+    await repository.initializeStepTargets(tenantId, broadcast.id);
+
+    expect(await repository.deleteSteps(tenantId, [])).toBe(0);
+    const untouched = await repository.listSteps(tenantId, broadcast.id);
+    expect(untouched).toHaveLength(2);
+
+    const deletedCount = await repository.deleteSteps(tenantId, [step1.id]);
+
+    expect(deletedCount).toBe(1);
+    const remaining = await repository.listSteps(tenantId, broadcast.id);
+    expect(remaining.map((s) => s.id)).toEqual([step0.id]);
+    const orphanStepTargets = await prisma.groupBroadcastStepTarget.findMany({
+      where: { stepId: step1.id },
+    });
+    expect(orphanStepTargets).toHaveLength(0);
+  });
+
+  it('deleteTargets apaga grupos sem histórico em cascata (stepTargets somem); array vazio devolve 0 sem tocar o banco', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+
+    const broadcast = await repository.create({
+      tenantId,
+      sessionName: 'sessao-edicao',
+      name: 'Disparo para apagar grupo',
+      intervalSeconds: 60,
+    });
+    await repository.createSteps(tenantId, broadcast.id, [{ order: 0, messageTemplate: 'Oi' }]);
+    await repository.createTargets(tenantId, broadcast.id, [
+      { groupJid: 'del-target-1@g.us', groupName: 'Grupo 1', status: 'pending' },
+      { groupJid: 'del-target-2@g.us', groupName: 'Grupo 2', status: 'pending' },
+    ]);
+    await repository.initializeStepTargets(tenantId, broadcast.id);
+    const targets = await repository.listTargets(tenantId, broadcast.id);
+    const toDelete = targets.find((t) => t.groupJid === 'del-target-2@g.us')!;
+
+    expect(await repository.deleteTargets(tenantId, [])).toBe(0);
+    expect(await repository.listTargets(tenantId, broadcast.id)).toHaveLength(2);
+
+    const deletedCount = await repository.deleteTargets(tenantId, [toDelete.id]);
+
+    expect(deletedCount).toBe(1);
+    const remaining = await repository.listTargets(tenantId, broadcast.id);
+    expect(remaining.map((t) => t.groupJid)).toEqual(['del-target-1@g.us']);
+    const orphanStepTargets = await prisma.groupBroadcastStepTarget.findMany({
+      where: { targetId: toDelete.id },
+    });
+    expect(orphanStepTargets).toHaveLength(0);
+  });
+});
+
+/**
  * Migração de dados legados (2026-09-14) — prova, contra Postgres REAL, que
  * um `GroupBroadcast` do formato ANTIGO (mensagem/mídia/recorrência direto na
  * campanha) vira, depois da migration `20260914120000_add_group_broadcast_steps`,
