@@ -284,4 +284,34 @@ export interface CampaignRepository {
     | { contentType: CampaignMediaContentType; buffer: Buffer; mimeType: string; fileName?: string }
     | undefined
   >;
+
+  // --- Edição de campanha já criada (2026-09-15) ---------------------------
+  // Salvar uma edição NUNCA agenda nada na fila — só reconcilia o estado
+  // desejado com o persistido. Quem agenda continua sendo start/reopen.
+
+  /**
+   * Suprime destinatários COM HISTÓRICO (`SENT`/`FAILED`/`REPLIED`) removidos
+   * na edição: `status = SKIPPED`, preservando `sentAt`/`repliedAt`/
+   * `conversationId` — as métricas (`getMetrics`) continuam corretas. Array
+   * vazio devolve 0 sem tocar o banco.
+   */
+  suppressRecipients(tenantId: string, recipientIds: string[], skipReason: string): Promise<number>;
+
+  /**
+   * Apaga destinatários SEM HISTÓRICO (`PENDING`/`SKIPPED`) removidos na
+   * edição — remoção de verdade, nunca foi tentado nenhum envio. Array vazio
+   * devolve 0 sem tocar o banco.
+   */
+  deleteRecipients(tenantId: string, recipientIds: string[]): Promise<number>;
+
+  /**
+   * Atualiza o CONTEÚDO da campanha (nome/descrição/texto) — SUBSTITUI por
+   * completo, mesma semântica de `create`: `description` ausente vira `null`.
+   * Nunca toca `status`/ritmo/mídia/destinatários.
+   */
+  updateCampaignContent(
+    tenantId: string,
+    campaignId: string,
+    data: { name: string; description?: string; messageTemplate: string },
+  ): Promise<Campaign | undefined>;
 }

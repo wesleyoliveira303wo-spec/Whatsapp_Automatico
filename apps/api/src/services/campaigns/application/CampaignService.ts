@@ -23,6 +23,10 @@ import {
   sniffMediaCategory,
 } from '../../conversations/domain/mediaMagicBytes';
 import { determineSkipReason } from '../domain/policies/determineSkipReason';
+import {
+  ExistingRecipient,
+  reconcileRecipients,
+} from '../domain/policies/reconcileCampaignRecipients';
 import { computeSendDelayMs } from '../domain/policies/computeSendDelayMs';
 import {
   parseRecipientsCsv,
@@ -70,6 +74,23 @@ export interface CreateCampaignInput {
 export interface CreateCampaignResult {
   campaign: Campaign;
   summary: CampaignRecipientSummary;
+}
+
+/**
+ * Edição de uma campanha já criada (2026-09-15) — mesma forma de
+ * `CreateCampaignInput`, sem `sessionName` (uma edição nunca migra a
+ * campanha de sessão) e sem `createdByUserId` (autoria não muda). O cliente
+ * manda o estado final desejado por completo — `contactIds`/`phoneRecipients`
+ * não são "só o que mudou".
+ */
+export interface UpdateCampaignInput {
+  tenantId: string;
+  campaignId: string;
+  name: string;
+  description?: string;
+  messageTemplate: string;
+  contactIds: string[];
+  phoneRecipients?: RawPhoneRecipient[];
 }
 
 /**
@@ -247,6 +268,145 @@ export class CampaignService {
     });
 
     return { campaign, summary };
+  }
+
+  /**
+   * Edita uma campanha já criada (`draft`/`paused` apenas) — 2026-09-15.
+   * NUNCA agenda nada: quem envia continua sendo `startCampaign`/
+   * `reopenCampaign`. O cliente manda o estado final desejado por inteiro; a
+   * diferença contra o que já existe é calculada por `reconcileRecipients`
+   * (Domain, pura) — a mesma resolução de telefone→Contato e a mesma régua
+   * de elegibilidade (`fetchEligibility`/`determineSkipReason`) de
+   * `createCampaign` valem para todo destinatário NOVO.
+   */
+  async updateCampaign(input: UpdateCampaignInput): Promise<CreateCampaignResult> {
+    await this.assertTenantExists(input.tenantId);
+    const campaign = await this.campaignRepository.findById(input.tenantId, input.campaignId);
+    if (!campaign) {
+      throw new CampaignNotFoundError(input.campaignId);
+    }
+    if (campaign.status !== 'draft' && campaign.status !== 'paused') {
+      throw new InvalidCampaignTransitionError(campaign.status, 'edit');
+    }
+
+    // Resolve o desejado — mesma lógica de `createCampaign` (telefone que já
+    // é um Contato conhecido "vira" origem A, nunca cria um Contato novo).
+    const contactIds = new Set(input.contactIds);
+    const phoneToName = new Map<string, string | undefined>();
+    const phoneToPersonalizedMessage = new Map<string, string | undefined>();
+    for (const recipient of input.phoneRecipients ?? []) {
+      const phoneE164 = normalizePhoneToE164(recipient.rawPhone);
+      if (!phoneE164 || phoneToName.has(phoneE164)) continue;
+      phoneToName.set(phoneE164, recipient.name);
+      phoneToPersonalizedMessage.set(phoneE164, recipient.personalizedMessage);
+    }
+
+    const phones = Array.from(phoneToName.keys());
+    const resolvedContactIds =
+      phones.length > 0 && this.contactLookup
+        ? await this.contactLookup.findContactIdsByPhones(input.tenantId, phones)
+        : new Map<string, string>();
+
+    const looseRecipients: { phoneE164: string; name?: string }[] = [];
+    const contactPersonalizedMessages = new Map<string, string>();
+    for (const phone of phones) {
+      const existingContactId = resolvedContactIds.get(phone);
+      if (existingContactId) {
+        contactIds.add(existingContactId);
+        const personalizedMessage = phoneToPersonalizedMessage.get(phone);
+        if (personalizedMessage) {
+          contactPersonalizedMessages.set(existingContactId, personalizedMessage);
+        }
+      } else {
+        looseRecipients.push({ phoneE164: phone, name: phoneToName.get(phone) });
+      }
+    }
+
+    const desiredContactIdList = Array.from(contactIds);
+    const desiredPhoneList = looseRecipients.map((recipient) => recipient.phoneE164);
+    if (desiredContactIdList.length === 0 && desiredPhoneList.length === 0) {
+      throw new NoRecipientsSelectedError();
+    }
+
+    // Todos os destinatários existentes — o teto de 5.000 já vale desde a
+    // criação (validação de corpo do router), então uma única página cobre.
+    const existingPage = await this.campaignRepository.listRecipients(
+      input.tenantId,
+      input.campaignId,
+      { limit: 5000 },
+    );
+    const existingRecipients: ExistingRecipient[] = existingPage.recipients.map((recipient) => ({
+      id: recipient.id,
+      contactId: recipient.contactId,
+      phoneE164: recipient.contactId ? undefined : recipient.phoneE164,
+      hasHistory:
+        recipient.status === 'sent' || recipient.status === 'failed' || recipient.status === 'replied',
+    }));
+
+    const plan = reconcileRecipients(existingRecipients, desiredContactIdList, desiredPhoneList);
+
+    // Destinatários de contato NOVOS passam pela mesma régua de supressão da
+    // criação — opt-out, conversa ativa com humano, contatado recentemente.
+    const eligibilityByContactId =
+      plan.toCreateContactIds.length > 0
+        ? await this.campaignRepository.fetchEligibility(
+            input.tenantId,
+            campaign.sessionName,
+            plan.toCreateContactIds,
+          )
+        : new Map();
+
+    const newContactDrafts: CampaignRecipientDraft[] = plan.toCreateContactIds
+      .filter((contactId) => eligibilityByContactId.has(contactId))
+      .map((contactId) => {
+        const eligibility = eligibilityByContactId.get(contactId)!;
+        const skipReason = determineSkipReason(eligibility);
+        const personalizedMessage = contactPersonalizedMessages.get(contactId);
+        return skipReason
+          ? { contactId, status: 'skipped' as const, skipReason }
+          : { contactId, status: 'pending' as const, personalizedMessage };
+      });
+
+    const phoneToNameFinal = new Map(looseRecipients.map((recipient) => [recipient.phoneE164, recipient.name]));
+    const newLooseDrafts: CampaignRecipientDraft[] = plan.toCreatePhones.map((phone) => ({
+      phoneE164: phone,
+      name: phoneToNameFinal.get(phone),
+      personalizedMessage: phoneToPersonalizedMessage.get(phone),
+      status: 'pending' as const,
+    }));
+
+    // --- Aplicar, nesta ordem — NUNCA chama o dispatcher -------------------
+    await this.campaignRepository.updateCampaignContent(input.tenantId, input.campaignId, {
+      name: input.name,
+      description: input.description,
+      messageTemplate: input.messageTemplate,
+    });
+
+    const newDrafts = [...newContactDrafts, ...newLooseDrafts];
+    if (newDrafts.length > 0) {
+      await this.campaignRepository.createRecipients(input.tenantId, input.campaignId, newDrafts);
+    }
+    await this.campaignRepository.deleteRecipients(input.tenantId, plan.toDelete);
+    await this.campaignRepository.suppressRecipients(
+      input.tenantId,
+      plan.toSuppress,
+      'removed_by_operator',
+    );
+
+    const [summary, updatedCampaign] = await Promise.all([
+      this.campaignRepository.summarizeRecipients(input.tenantId, input.campaignId),
+      this.campaignRepository.findById(input.tenantId, input.campaignId),
+    ]);
+
+    this.logger.info('Campanha editada', {
+      tenantId: input.tenantId,
+      campaignId: input.campaignId,
+      created: newDrafts.length,
+      deleted: plan.toDelete.length,
+      suppressed: plan.toSuppress.length,
+    });
+
+    return { campaign: updatedCampaign!, summary };
   }
 
   async listCampaigns(tenantId: string, options: ListCampaignsOptions): Promise<CampaignPage> {

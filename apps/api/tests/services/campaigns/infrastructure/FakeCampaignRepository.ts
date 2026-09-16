@@ -626,4 +626,52 @@ export class FakeCampaignRepository implements CampaignRepository {
     if (!buffer) return undefined;
     return { ...row.media, buffer };
   }
+
+  // --- Edição de campanha já criada (2026-09-15) ---------------------------
+
+  async suppressRecipients(
+    tenantId: string,
+    recipientIds: string[],
+    skipReason: string,
+  ): Promise<number> {
+    if (recipientIds.length === 0) return 0;
+    let count = 0;
+    for (const id of recipientIds) {
+      const row = this.recipients.get(id);
+      if (!row || row.tenantId !== tenantId) continue;
+      this.recipients.set(id, { ...row, status: 'skipped', skipReason });
+      count += 1;
+    }
+    return count;
+  }
+
+  async deleteRecipients(tenantId: string, recipientIds: string[]): Promise<number> {
+    if (recipientIds.length === 0) return 0;
+    let count = 0;
+    for (const id of recipientIds) {
+      const row = this.recipients.get(id);
+      if (!row || row.tenantId !== tenantId) continue;
+      this.recipients.delete(id);
+      count += 1;
+    }
+    return count;
+  }
+
+  async updateCampaignContent(
+    tenantId: string,
+    campaignId: string,
+    data: { name: string; description?: string; messageTemplate: string },
+  ): Promise<Campaign | undefined> {
+    const row = this.campaigns.get(campaignId);
+    if (!row || row.tenantId !== tenantId) return undefined;
+    const updated: Campaign = {
+      ...row,
+      name: data.name,
+      description: data.description,
+      messageTemplate: data.messageTemplate,
+      updatedAt: FIXED_NOW,
+    };
+    this.campaigns.set(campaignId, updated);
+    return updated;
+  }
 }

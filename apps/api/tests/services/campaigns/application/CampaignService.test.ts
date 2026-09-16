@@ -361,6 +361,165 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
     });
   });
 
+  describe('updateCampaign() — editar campanha já criada (2026-09-15)', () => {
+    it('atualiza nome/descrição/texto e adiciona um contato novo elegível', async () => {
+      const { service, campaigns } = buildSut();
+      campaigns.seedEligibility('contact-1', neutral);
+      campaigns.seedEligibility('contact-2', neutral);
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao-principal',
+        status: 'draft',
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      const result = await service.updateCampaign({
+        tenantId: 'tenant-1',
+        campaignId,
+        name: 'Nome novo',
+        messageTemplate: 'Texto novo',
+        contactIds: ['contact-1', 'contact-2'],
+      });
+
+      expect(result.campaign).toMatchObject({ name: 'Nome novo', messageTemplate: 'Texto novo' });
+      expect(result.summary.total).toBe(2);
+    });
+
+    it('remover do payload um destinatário que já recebeu SUPRIME (nunca apaga), preservando sentAt/repliedAt', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao-principal',
+        status: 'paused',
+      });
+      const sentAt = new Date('2026-09-01T00:00:00.000Z');
+      const repliedAt = new Date('2026-09-02T00:00:00.000Z');
+      const recipientId = campaigns.seedRecipient({
+        tenantId: 'tenant-1',
+        campaignId,
+        contactId: 'contact-1',
+        status: 'replied',
+        sentAt,
+        repliedAt,
+      });
+      campaigns.seedEligibility('contact-2', neutral);
+
+      const result = await service.updateCampaign({
+        tenantId: 'tenant-1',
+        campaignId,
+        name: 'Campanha',
+        messageTemplate: 'Oi',
+        contactIds: ['contact-2'], // contact-1 sai do desejado
+      });
+
+      const page = await service.listRecipients('tenant-1', campaignId, { limit: 100 });
+      const suppressed = page.recipients.find((r) => r.id === recipientId);
+      expect(suppressed).toMatchObject({ status: 'skipped', skipReason: 'removed_by_operator' });
+      expect(suppressed?.sentAt).toEqual(sentAt);
+      expect(suppressed?.repliedAt).toEqual(repliedAt);
+      expect(result.campaign).toBeDefined();
+    });
+
+    it('remover do payload um destinatário PENDING (nunca tentado) apaga de vez', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao-principal',
+        status: 'draft',
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+      campaigns.seedEligibility('contact-2', neutral);
+
+      await service.updateCampaign({
+        tenantId: 'tenant-1',
+        campaignId,
+        name: 'Campanha',
+        messageTemplate: 'Oi',
+        contactIds: ['contact-2'],
+      });
+
+      const page = await service.listRecipients('tenant-1', campaignId, { limit: 100 });
+      expect(page.recipients.map((r) => r.contactId)).toEqual(['contact-2']);
+    });
+
+    it('campanha running: recusa a edição (InvalidCampaignTransitionError, ação "edit")', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao-principal',
+        status: 'running',
+      });
+
+      const error = await service
+        .updateCampaign({
+          tenantId: 'tenant-1',
+          campaignId,
+          name: 'Campanha',
+          messageTemplate: 'Oi',
+          contactIds: ['contact-1'],
+        })
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(InvalidCampaignTransitionError);
+      expect(error.attemptedAction).toBe('edit');
+    });
+
+    it('payload sem nenhum destinatário: NoRecipientsSelectedError', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao-principal',
+        status: 'draft',
+      });
+
+      await expect(
+        service.updateCampaign({
+          tenantId: 'tenant-1',
+          campaignId,
+          name: 'Campanha',
+          messageTemplate: 'Oi',
+          contactIds: [],
+        }),
+      ).rejects.toBeInstanceOf(NoRecipientsSelectedError);
+    });
+
+    it('o dispatcher NUNCA é chamado — salvar uma edição não agenda nada', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      campaigns.seedEligibility('contact-2', neutral);
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao-principal',
+        status: 'paused',
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      await service.updateCampaign({
+        tenantId: 'tenant-1',
+        campaignId,
+        name: 'Campanha renomeada',
+        messageTemplate: 'Novo texto',
+        contactIds: ['contact-2'],
+      });
+
+      expect(dispatcher.scheduled).toHaveLength(0);
+    });
+
+    it('IDOR: campanha de outro tenant não é encontrada', async () => {
+      const { service, campaigns } = buildSut();
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+
+      await expect(
+        service.updateCampaign({
+          tenantId: 'tenant-1',
+          campaignId,
+          name: 'Campanha',
+          messageTemplate: 'Oi',
+          contactIds: ['contact-1'],
+        }),
+      ).rejects.toBeInstanceOf(CampaignNotFoundError);
+    });
+  });
+
   describe('getCampaign()', () => {
     it('devolve a campanha e o resumo de destinatários', async () => {
       const { service, campaigns } = buildSut();

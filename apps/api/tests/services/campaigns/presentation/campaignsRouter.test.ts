@@ -307,6 +307,77 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
     });
   });
 
+  describe('PUT /:campaignId (campaign:manage) — editar (2026-09-15)', () => {
+    it('administrator edita uma campanha DRAFT (200) e recebe o detalhe recarregado', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      campaigns.seedEligibility('contact-1', neutral);
+      const created = await request(app)
+        .post(basePath('tenant-1'))
+        .send({
+          sessionName: 'sessao',
+          name: 'Nome antigo',
+          messageTemplate: 'Texto antigo',
+          contactIds: ['contact-1'],
+        });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${created.body.campaign.id}`)
+        .send({ name: 'Nome novo', messageTemplate: 'Texto novo', contactIds: ['contact-1'] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.campaign).toMatchObject({ name: 'Nome novo', messageTemplate: 'Texto novo' });
+    });
+
+    it('operator NÃO pode editar (403)', async () => {
+      const { app, campaigns } = buildApp(person('operator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${campaignId}`)
+        .send({ name: 'Campanha', messageTemplate: 'Oi', contactIds: ['contact-1'] });
+
+      expect(response.status).toBe(403);
+    });
+
+    it('IDOR: campanha de OUTRO tenant devolve 404, não edita', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-2', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${campaignId}`)
+        .send({ name: 'Campanha', messageTemplate: 'Oi', contactIds: ['contact-1'] });
+
+      expect(response.status).toBe(404);
+    });
+
+    it('campanha RUNNING: 400 invalid_campaign_transition', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'running',
+      });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${campaignId}`)
+        .send({ name: 'Campanha', messageTemplate: 'Oi', contactIds: ['contact-1'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_campaign_transition');
+    });
+
+    it('corpo sem nenhum destinatário: 400', async () => {
+      const { app, campaigns } = buildApp(person('administrator'));
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${campaignId}`)
+        .send({ name: 'Campanha', messageTemplate: 'Oi', contactIds: [], phoneRecipients: [] });
+
+      expect(response.status).toBe(400);
+    });
+  });
+
   describe('GET /:campaignId/metrics (Fase L, Bloco L7 — campaign:read)', () => {
     it('devolve as métricas calculadas', async () => {
       const { app, campaigns } = buildApp(person('administrator'));

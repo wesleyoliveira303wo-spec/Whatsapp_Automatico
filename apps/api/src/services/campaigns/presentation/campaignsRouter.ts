@@ -109,6 +109,26 @@ const createCampaignBodySchema = z
   });
 
 /**
+ * Corpo do `PUT` de edição (2026-09-15) — mesma forma de
+ * `createCampaignBodySchema`, SEM `sessionName` (uma edição nunca migra a
+ * campanha de sessão).
+ */
+const updateCampaignBodySchema = z
+  .object({
+    name: z.string().trim().min(1, 'name não pode ser vazio').max(200),
+    description: z.string().trim().max(1000).optional(),
+    messageTemplate: z.string().trim().min(1, 'messageTemplate não pode ser vazio').max(4000),
+    contactIds: z.array(z.string().trim().min(1)).max(5000).default([]),
+    phoneRecipients: z.array(rawPhoneRecipientSchema).max(5000).default([]),
+  })
+  .refine((data) => data.contactIds.length + data.phoneRecipients.length > 0, {
+    message: 'Selecione pelo menos um destinatário (contato salvo, planilha ou número manual).',
+  })
+  .refine((data) => data.contactIds.length + data.phoneRecipients.length <= 5000, {
+    message: 'No máximo 5.000 destinatários por campanha (somando todas as origens).',
+  });
+
+/**
  * Headers do `POST .../media` (Fase L, Bloco L8) — mesmo padrão de
  * `sendMediaHeadersSchema` (`conversationsRouter.ts`, F1.3): o corpo é o
  * ARQUIVO BRUTO (sem multipart), então categoria/nome de arquivo viajam em
@@ -305,6 +325,38 @@ export function createCampaignsRouter(
       if (!params) return;
 
       const result = await campaignService.getCampaign(params.tenantId, params.campaignId);
+      res.status(200).json(result);
+    }),
+  );
+
+  /**
+   * `PUT /:campaignId` — edição (2026-09-15). Só `draft`/`paused` (o serviço
+   * recusa com `InvalidCampaignTransitionError`, 400, fora disso). Corpo é o
+   * ESTADO FINAL DESEJADO por inteiro; a diferença contra o que já existe é
+   * calculada e aplicada no serviço, que nunca chama o dispatcher ao salvar.
+   */
+  router.put(
+    '/:campaignId',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(campaignIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(updateCampaignBodySchema, req.body, res);
+      if (!body) return;
+
+      const result = await campaignService.updateCampaign({
+        tenantId: params.tenantId,
+        campaignId: params.campaignId,
+        name: body.name,
+        description: body.description,
+        messageTemplate: body.messageTemplate,
+        contactIds: body.contactIds,
+        phoneRecipients: body.phoneRecipients,
+      });
       res.status(200).json(result);
     }),
   );

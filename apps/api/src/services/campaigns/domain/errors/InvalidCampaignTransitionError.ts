@@ -5,7 +5,7 @@ export class InvalidCampaignTransitionError extends Error {
   constructor(
     public readonly currentStatus: CampaignStatus,
     public readonly attemptedAction:
-      'start' | 'pause' | 'cancel' | 'delete' | 'reopen' | 'attach_media',
+      'start' | 'pause' | 'cancel' | 'delete' | 'reopen' | 'attach_media' | 'edit',
   ) {
     super(`Não é possível "${attemptedAction}" uma campanha com status "${currentStatus}".`);
     this.name = 'InvalidCampaignTransitionError';

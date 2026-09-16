@@ -927,6 +927,48 @@ export class PrismaCampaignRepository implements CampaignRepository {
       fileName: row.mediaFileName ?? undefined,
     };
   }
+
+  // --- Edição de campanha já criada (2026-09-15) ---------------------------
+
+  async suppressRecipients(
+    tenantId: string,
+    recipientIds: string[],
+    skipReason: string,
+  ): Promise<number> {
+    if (recipientIds.length === 0) return 0;
+    const { count } = await this.prisma.campaignRecipient.updateMany({
+      where: { id: { in: recipientIds }, tenantId },
+      data: { status: 'SKIPPED', skipReason },
+    });
+    return count;
+  }
+
+  async deleteRecipients(tenantId: string, recipientIds: string[]): Promise<number> {
+    if (recipientIds.length === 0) return 0;
+    const { count } = await this.prisma.campaignRecipient.deleteMany({
+      where: { id: { in: recipientIds }, tenantId },
+    });
+    return count;
+  }
+
+  async updateCampaignContent(
+    tenantId: string,
+    campaignId: string,
+    data: { name: string; description?: string; messageTemplate: string },
+  ): Promise<Campaign | undefined> {
+    const { count } = await this.prisma.campaign.updateMany({
+      where: { id: campaignId, tenantId },
+      data: {
+        name: data.name,
+        description: data.description ?? null,
+        messageTemplate: data.messageTemplate,
+      },
+    });
+    if (count === 0) {
+      return undefined;
+    }
+    return this.findById(tenantId, campaignId);
+  }
 }
 
 /**
