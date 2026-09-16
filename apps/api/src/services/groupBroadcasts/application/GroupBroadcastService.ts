@@ -734,12 +734,16 @@ export class GroupBroadcastService {
   }
 
   /**
-   * Anexa (ou substitui) a imagem/vídeo de UMA ETAPA — só em `draft` (depois
-   * de iniciado, o conteúdo não pode mudar no meio: grupos já publicados
-   * receberiam uma coisa, os seguintes outra). Teto por tipo + checagem de
-   * assinatura binária (a mesma do envio de mídia pelo operador, F1.10).
-   * Referenciada por `stepId` — NUNCA por posição/ordem — porque reordenar
-   * etapas em rascunho não pode deixar uma mídia "grudada" na posição errada.
+   * Anexa (ou substitui) a imagem/vídeo de UMA ETAPA — `draft` OU `paused`
+   * (2026-09-15: a edição de campanhas passou a permitir mudar mídia também
+   * com o disparo pausado — quem já recebeu ficou com o conteúdo antigo, as
+   * próximas publicações usam o novo; a trava original, "grupos já
+   * publicados receberiam uma coisa, os seguintes outra", vira o
+   * comportamento DESEJADO em vez de um problema). `running` continua
+   * recusado — nunca troca conteúdo com envios em voo. Teto por tipo +
+   * checagem de assinatura binária (a mesma do envio de mídia pelo operador,
+   * F1.10). Referenciada por `stepId` — NUNCA por posição/ordem — porque
+   * reordenar etapas não pode deixar uma mídia "grudada" na posição errada.
    */
   async attachMedia(
     tenantId: string,
@@ -749,7 +753,7 @@ export class GroupBroadcastService {
   ): Promise<GroupBroadcastStep> {
     await this.assertTenantExists(tenantId);
     const broadcast = await this.requireBroadcast(tenantId, broadcastId);
-    if (broadcast.status !== 'draft') {
+    if (broadcast.status !== 'draft' && broadcast.status !== 'paused') {
       throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'attach_media');
     }
     const step = await this.requireStep(tenantId, broadcastId, stepId);
@@ -779,7 +783,7 @@ export class GroupBroadcastService {
   ): Promise<GroupBroadcastStep> {
     await this.assertTenantExists(tenantId);
     const broadcast = await this.requireBroadcast(tenantId, broadcastId);
-    if (broadcast.status !== 'draft') {
+    if (broadcast.status !== 'draft' && broadcast.status !== 'paused') {
       throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'attach_media');
     }
     const step = await this.requireStep(tenantId, broadcastId, stepId);

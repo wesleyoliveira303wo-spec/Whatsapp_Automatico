@@ -818,14 +818,20 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       ).rejects.toBeInstanceOf(GroupBroadcastMediaTypeMismatchError);
     });
 
-    it('só em rascunho: disparo já iniciado não troca de conteúdo', async () => {
+    it('draft e paused aceitam mídia; running não troca de conteúdo (2026-09-15)', async () => {
       const { service, repository } = buildSut();
-      const { broadcastId, stepIds } = repository.seedBroadcast({
-        tenantId: 'tenant-1',
-        status: 'running',
-      });
+      const paused = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'paused' });
       await expect(
-        service.attachMedia('tenant-1', broadcastId, stepIds[0], {
+        service.attachMedia('tenant-1', paused.broadcastId, paused.stepIds[0], {
+          contentType: 'image',
+          buffer: PNG_BYTES,
+          mimeType: 'image/png',
+        }),
+      ).resolves.toBeDefined();
+
+      const running = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'running' });
+      await expect(
+        service.attachMedia('tenant-1', running.broadcastId, running.stepIds[0], {
           contentType: 'image',
           buffer: PNG_BYTES,
           mimeType: 'image/png',

@@ -106,6 +106,54 @@ const createBodySchema = z.object({
     .max(MAX_STEPS_PER_BROADCAST, `No máximo ${MAX_STEPS_PER_BROADCAST} publicações por campanha.`),
 });
 
+/**
+ * Corpo do `PUT` de edição (2026-09-15) — mesma forma de `createBodySchema`,
+ * SEM `sessionName` (uma edição nunca migra o disparo de sessão) e com
+ * `steps[].id` opcional: presente e batendo com uma etapa real desta
+ * campanha → a etapa continua, só o conteúdo muda; ausente/sem match →
+ * tratada como etapa nova (`reconcileSteps`, Domain).
+ */
+const editStepSchema = stepSchema.extend({
+  id: z.string().trim().min(1).optional(),
+});
+
+const editBodySchema = z.object({
+  name: z.string().trim().min(1, 'name não pode ser vazio').max(200),
+  groupJids: z
+    .array(
+      z
+        .string()
+        .trim()
+        .regex(/^[^@\s]+@g\.us$/, 'Cada destino precisa ser um grupo (…@g.us).'),
+    )
+    .min(1, 'Selecione pelo menos um grupo.')
+    .max(MAX_GROUPS_PER_BROADCAST, `No máximo ${MAX_GROUPS_PER_BROADCAST} grupos por disparo.`),
+  intervalSeconds: z
+    .number()
+    .int()
+    .min(MIN_GROUP_INTERVAL_SECONDS)
+    .max(MAX_GROUP_INTERVAL_SECONDS)
+    .optional(),
+  sendWindowStart: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário precisa ser "HH:MM".')
+    .optional(),
+  sendWindowEnd: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário precisa ser "HH:MM".')
+    .optional(),
+  stepLaunchOffsetMinutes: z
+    .number()
+    .int()
+    .min(MIN_STEP_LAUNCH_OFFSET_MINUTES)
+    .max(MAX_STEP_LAUNCH_OFFSET_MINUTES)
+    .optional(),
+  steps: z
+    .array(editStepSchema)
+    .min(1, 'Adicione pelo menos uma publicação.')
+    .max(MAX_STEPS_PER_BROADCAST, `No máximo ${MAX_STEPS_PER_BROADCAST} publicações por campanha.`),
+});
+
 /** Mesmo contrato do upload de mídia de campanha (L8): corpo é o arquivo cru, categoria/nome em headers. */
 const mediaHeadersSchema = z.object({
   'x-media-content-type': z.enum(['image', 'video']),
@@ -195,6 +243,43 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
       if (!params) return;
 
       const detail = await service.getBroadcast(params.tenantId, params.broadcastId);
+      res.status(200).json(detail);
+    }),
+  );
+
+  /**
+   * Edição (2026-09-15) — só `draft`/`paused` (o serviço recusa com 409 fora
+   * disso). Corpo é o ESTADO FINAL DESEJADO por inteiro; a diferença contra o
+   * que já existe é calculada e aplicada no serviço, que nunca chama o
+   * dispatcher ao salvar.
+   */
+  router.put(
+    '/:broadcastId',
+    requirePermission('campaign:manage'),
+    asyncHandler(async (req, res) => {
+      const params = validateOrRespond(
+        tenantIdParamSchema.merge(broadcastIdParamSchema),
+        req.params,
+        res,
+      );
+      if (!params) return;
+      const body = validateOrRespond(editBodySchema, req.body, res);
+      if (!body) return;
+
+      const detail = await service.updateBroadcast(
+        {
+          tenantId: params.tenantId,
+          broadcastId: params.broadcastId,
+          name: body.name,
+          groupJids: body.groupJids,
+          intervalSeconds: body.intervalSeconds,
+          sendWindowStart: body.sendWindowStart,
+          sendWindowEnd: body.sendWindowEnd,
+          stepLaunchOffsetMinutes: body.stepLaunchOffsetMinutes,
+          steps: body.steps,
+        },
+        toActor(req),
+      );
       res.status(200).json(detail);
     }),
   );

@@ -3,6 +3,7 @@ import { ErrorRequestHandler } from 'express';
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import {
+  DuplicateStepIdError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
   GroupBroadcastMediaTooLargeError,
@@ -79,6 +80,14 @@ export function createGroupBroadcastsErrorHandler(logger: Logger): ErrorRequestH
         error: 'too_many_groups_selected',
         message: error.message,
         max: error.max,
+      });
+      return;
+    }
+    if (error instanceof DuplicateStepIdError) {
+      res.status(400).json({
+        error: 'duplicate_step_id',
+        message: error.message,
+        stepId: error.stepId,
       });
       return;
     }

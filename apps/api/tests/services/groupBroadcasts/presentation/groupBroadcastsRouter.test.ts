@@ -359,6 +359,124 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
     });
   });
 
+  describe('PUT /:broadcastId (campaign:manage) — editar (2026-09-15)', () => {
+    it('administrator edita um disparo DRAFT (200) e recebe o detalhe recarregado', async () => {
+      const { app, repository, directory } = buildApp(person('administrator'));
+      directory.entries = [{ jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true }];
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({
+          name: 'Nome novo',
+          groupJids: ['111@g.us'],
+          steps: [{ id: stepIds[0], messageTemplate: 'Texto novo' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.broadcast).toMatchObject({ id: broadcastId, name: 'Nome novo' });
+      expect(response.body.steps[0].messageTemplate).toBe('Texto novo');
+    });
+
+    it('administrator edita um disparo PAUSED (200)', async () => {
+      const { app, repository, directory } = buildApp(person('administrator'));
+      directory.entries = [{ jid: '111@g.us', name: 'Grupo 1', participantCount: 5, canSend: true }];
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+      });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({
+          name: 'Disparo',
+          groupJids: ['111@g.us'],
+          steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+        });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('operator NÃO pode editar (403)', async () => {
+      const { app, repository } = buildApp(person('operator'));
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({
+          name: 'Disparo',
+          groupJids: ['111@g.us'],
+          steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+        });
+
+      expect(response.status).toBe(403);
+    });
+
+    it('IDOR: disparo de OUTRO tenant devolve 404, não edita', async () => {
+      const { app, repository } = buildApp(person('administrator'));
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-2' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({
+          name: 'Disparo',
+          groupJids: ['111@g.us'],
+          steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+        });
+
+      expect(response.status).toBe(404);
+    });
+
+    it('disparo RUNNING: 400 invalid_group_broadcast_transition (só draft/paused aceitam edição)', async () => {
+      const { app, repository } = buildApp(person('administrator'));
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'running',
+      });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({
+          name: 'Disparo',
+          groupJids: ['111@g.us'],
+          steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_group_broadcast_transition');
+    });
+
+    it('corpo inválido (sem groupJids): 400', async () => {
+      const { app, repository } = buildApp(person('administrator'));
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({ name: 'Disparo', groupJids: [], steps: [{ id: stepIds[0], messageTemplate: 'x' }] });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('id de etapa duplicado: 400 duplicate_step_id', async () => {
+      const { app, repository } = buildApp(person('administrator'));
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      const response = await request(app)
+        .put(`${basePath('tenant-1')}/${broadcastId}`)
+        .send({
+          name: 'Disparo',
+          groupJids: ['111@g.us'],
+          steps: [
+            { id: stepIds[0], messageTemplate: 'A' },
+            { id: stepIds[0], messageTemplate: 'B' },
+          ],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('duplicate_step_id');
+    });
+  });
+
   describe('DELETE /:broadcastId (campaign:manage)', () => {
     it('administrator apaga um disparo DRAFT (204)', async () => {
       const { app, repository } = buildApp(person('administrator'));
@@ -630,7 +748,7 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       expect(response.body.error).toBe('group_broadcast_media_type_mismatch');
     });
 
-    it('disparo RUNNING: 400 (só DRAFT pode ter mídia anexada)', async () => {
+    it('disparo RUNNING: 400 (só draft/paused podem ter mídia anexada)', async () => {
       const { app, repository } = buildApp(person('administrator'));
       const { broadcastId, stepIds } = repository.seedBroadcast({
         tenantId: 'tenant-1',
@@ -644,6 +762,22 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
         .send(Buffer.from('bytes'));
 
       expect(response.status).toBe(400);
+    });
+
+    it('disparo PAUSED: 200 (2026-09-15 — edição de campanhas passou a permitir mídia com o disparo pausado)', async () => {
+      const { app, repository } = buildApp(person('administrator'));
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+      });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${broadcastId}/steps/${stepIds[0]}/media`)
+        .set('content-type', 'image/jpeg')
+        .set('x-media-content-type', 'image')
+        .send(Buffer.from('bytes-da-imagem'));
+
+      expect(response.status).toBe(200);
     });
 
     it('IDOR: disparo de OUTRO tenant devolve 404, não anexa', async () => {
