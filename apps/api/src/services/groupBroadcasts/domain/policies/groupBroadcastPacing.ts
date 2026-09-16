@@ -59,23 +59,31 @@ export function clampStepLaunchOffsetMinutes(requested?: number): number {
 }
 
 /**
- * Quanto ainda falta do escalonamento inicial (`stepLaunchOffsetMinutes`)
- * para ESTA etapa — só existe enquanto ela nunca tiver concluído nenhum
- * ciclo de verdade (`runsCompleted === 0`). Achado real de produção
- * (2026-09-15): a PRIMEIRA publicação de uma campanha precisa respeitar a
- * cadência configurada entre etapas não importa o motivo pelo qual ela
- * ainda não saiu — caiu fora da janela de horário e foi reagendada, ou o
- * fundador pausou e reiniciou manualmente antes dela sair —, porque em
- * nenhum desses casos a etapa chegou a publicar de verdade. Só a partir da
- * 2ª publicação em diante cada etapa passa a seguir seu próprio relógio,
- * independente das demais (2026-09-14, "cadência entre publicações") —
- * daí a etapa já ter concluído pelo menos 1 ciclo zerar este valor.
+ * Escalonamento (`stepLaunchOffsetMinutes`) desta etapa em relação à etapa 0
+ * — `order × offset`, SEMPRE aplicado, não importa se é a 1ª publicação ou a
+ * enésima repetição. Até 2026-09-16 isto só valia enquanto a etapa nunca
+ * tivesse concluído um ciclo (`runsCompleted === 0`) — a ideia era que, uma
+ * vez publicando, cada etapa "segue seu próprio relógio". Na prática isso
+ * reintroduzia exatamente o bug que este escalonamento existe para evitar:
+ * quando várias etapas JÁ recorrentes (`runsCompleted > 0`) convergem para o
+ * MESMO instante — a abertura da janela de horário depois de uma noite fora
+ * dela, ou uma retomada manual depois de a campanha "sumir"/dar erro —, elas
+ * saíam todas de uma vez, coladas, porque o escalonamento zerava sozinho.
+ * Achado real de produção (2026-09-16): 4 publicações que tinham ficado sem
+ * enviar durante a madrugada (fora da janela) saíram juntas às 07h quando a
+ * janela abriu, e de novo juntas às 11h na repetição seguinte. O fundador
+ * pediu explicitamente que o intervalo entre publicações valha SEMPRE que
+ * elas convergirem para o mesmo momento, "independente das condições" —
+ * esquecida, resetada, iniciada, ou só esperando a janela. Como o valor é
+ * `order × offset` (nunca cumulativo — a mesma etapa sempre recebe o mesmo
+ * deslocamento fixo em relação à etapa 0), reaplicá-lo a cada convergência
+ * não causa deriva: só garante que etapas que caem no mesmo instante saem
+ * espaçadas, sempre.
  */
-export function initialLaunchOffsetMs(
-  step: { order: number; runsCompleted: number },
+export function launchOffsetMs(
+  step: { order: number },
   requestedOffsetMinutes?: number,
 ): number {
-  if (step.runsCompleted > 0) return 0;
   return step.order * clampStepLaunchOffsetMinutes(requestedOffsetMinutes) * 60 * 1000;
 }
 

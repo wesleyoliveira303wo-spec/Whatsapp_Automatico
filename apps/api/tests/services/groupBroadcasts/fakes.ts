@@ -490,6 +490,7 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
       recurrenceIntervalHours?: number;
       recurrenceMaxRuns?: number;
       recurrenceEndsAt?: Date;
+      runsCompleted?: number;
     }>;
   }): {
     broadcastId: string;
@@ -542,7 +543,7 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
         recurrenceIntervalHours: extra.recurrenceIntervalHours,
         recurrenceMaxRuns: extra.recurrenceMaxRuns,
         recurrenceEndsAt: extra.recurrenceEndsAt,
-        runsCompleted: 0,
+        runsCompleted: extra.runsCompleted ?? 0,
         createdAt: new Date(Date.now() + this.sequence),
       });
       stepIds.push(stepId);

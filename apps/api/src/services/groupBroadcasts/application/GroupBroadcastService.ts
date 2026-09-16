@@ -48,7 +48,7 @@ import {
   clampStepLaunchOffsetMinutes,
   computeGroupSendDelayMs,
   determineGroupTargetSkipReason,
-  initialLaunchOffsetMs,
+  launchOffsetMs,
   MAX_GROUP_MEDIA_BYTES,
   MAX_GROUPS_PER_BROADCAST,
   MAX_STEPS_PER_BROADCAST,
@@ -612,14 +612,14 @@ export class GroupBroadcastService {
       const neverStarted = !step.startedAt;
       // eslint-disable-next-line no-await-in-loop
       const pendingStepTargets = await this.repository.listPendingStepTargets(tenantId, step.id);
-      // Achado real de produção (2026-09-15): a cadência configurada entre
-      // publicações precisa valer para a PRIMEIRA publicação de cada etapa
-      // não importa por que ela ainda não saiu — nunca foi tentada, caiu
-      // fora da janela e está esperando a fila, ou o fundador pausou e
-      // reiniciou manualmente antes dela sair. `initialLaunchOffsetMs` zera
-      // sozinho assim que a etapa concluir seu primeiro ciclo de verdade —
-      // dali em diante cada uma segue seu próprio relógio, como já era.
-      const stepOffsetMs = initialLaunchOffsetMs(step, broadcast.stepLaunchOffsetMinutes);
+      // Achado real de produção (2026-09-15, reforçado em 2026-09-16): a
+      // cadência configurada entre publicações precisa valer sempre que
+      // várias etapas forem (re)agendadas para o mesmo instante — não
+      // importa se é a 1ª publicação, uma retomada manual depois de a
+      // campanha "sumir"/dar erro, ou uma repetição qualquer. `launchOffsetMs`
+      // é sempre `order × offset`, então reaplicá-lo aqui nunca causa deriva
+      // — só garante o espaçamento entre etapas.
+      const stepOffsetMs = launchOffsetMs(step, broadcast.stepLaunchOffsetMinutes);
 
       if (neverStarted && pendingStepTargets.length === 0) {
         // Todos os grupos nasceram suprimidos — esta etapa nunca teria o que

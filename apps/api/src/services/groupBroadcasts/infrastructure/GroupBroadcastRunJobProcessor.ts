@@ -3,7 +3,7 @@ import { GroupBroadcastSendDispatcher } from '../domain/dispatchers/GroupBroadca
 import { GroupBroadcastRepository } from '../domain/repositories/GroupBroadcastRepository';
 import {
   computeGroupSendDelayMs,
-  initialLaunchOffsetMs,
+  launchOffsetMs,
 } from '../domain/policies/groupBroadcastPacing';
 import {
   buildSendWindow,
@@ -77,16 +77,14 @@ export class GroupBroadcastRunJobProcessor {
     const now = new Date();
     const window = buildSendWindow(broadcast.sendWindowStart, broadcast.sendWindowEnd);
     if (!isWithinSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE)) {
-      // Achado real de produção (2026-09-15): sem somar o escalonamento
-      // aqui, TODAS as etapas postergadas na mesma madrugada convergiam pro
-      // MESMO horário de abertura da janela — a cadência configurada entre
-      // publicações se perdia justamente no caso em que ela mais importa (a
-      // 1ª publicação de cada uma). `initialLaunchOffsetMs` já degrada pra 0
-      // sozinho assim que a etapa concluir seu primeiro ciclo de verdade —
-      // uma postergação de uma etapa recorrente mais adiante nunca é afetada.
+      // Achado real de produção (2026-09-15, reforçado em 2026-09-16): sem
+      // somar o escalonamento aqui, TODAS as etapas postergadas para o mesmo
+      // horário de abertura da janela convergiam e saíam coladas — e isso
+      // vale toda vez que a janela reabre, não só na 1ª publicação de cada
+      // etapa (`launchOffsetMs` aplica sempre, ver a docstring dela).
       const postponedTo = new Date(
         shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE).getTime() +
-          initialLaunchOffsetMs(step, broadcast.stepLaunchOffsetMinutes),
+          launchOffsetMs(step, broadcast.stepLaunchOffsetMinutes),
       );
       await this.repository.markStepRunFinished(tenantId, step.id, step.runsCompleted, postponedTo);
       // `reschedulePostponedRun`, NUNCA `scheduleRun` aqui — ver a docstring

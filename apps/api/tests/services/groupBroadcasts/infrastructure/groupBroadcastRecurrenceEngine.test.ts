@@ -312,9 +312,8 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
   // caem fora da janela (ex.: todas iniciadas de madrugada), reagendar cada
   // uma para o MESMO horário de abertura colapsava a cadência configurada
   // entre publicações — exatamente o momento em que ela mais importa (a 1ª
-  // publicação de cada etapa). `initialLaunchOffsetMs` soma o escalonamento
-  // por cima do horário de abertura, e some sozinho assim que a etapa já
-  // tiver concluído 1 ciclo de verdade.
+  // publicação de cada etapa). `launchOffsetMs` soma o escalonamento por
+  // cima do horário de abertura.
   it('fora da janela, com escalonamento configurado (1º ciclo de cada etapa): soma o escalonamento por cima da abertura da janela', async () => {
     const { runProcessor, repository, dispatcher } = buildSut();
     const agora = new Date();
@@ -340,10 +339,10 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
     expect(postponedByStep.get(stepIds[1])! - postponedByStep.get(stepIds[0])!).toBe(10 * 60 * 1000);
   });
 
-  // Não-regressão: uma etapa RECORRENTE, já com pelo menos 1 ciclo
-  // concluído, que caia fora da janela numa repetição futura NUNCA deve
-  // sofrer o escalonamento inicial de novo — ele é só para a 1ª publicação.
-  it('fora da janela, mas a etapa JÁ publicou antes (runsCompleted > 0): não soma escalonamento nenhum', async () => {
+  // Etapa 0 (order 0), JÁ recorrente (runsCompleted > 0): o escalonamento é
+  // `order × offset` = 0 para ela mesma, então continua reabrindo exatamente
+  // na abertura da janela — nada muda para a PRIMEIRA etapa.
+  it('fora da janela, etapa 0 JÁ recorrente (runsCompleted > 0): reabre exatamente na abertura da janela (escalonamento dela mesma é 0)', async () => {
     const { runProcessor, repository, dispatcher } = buildSut();
     const agora = new Date();
     const fim = pad(agora.getHours()) + ':' + pad(agora.getMinutes());
@@ -368,6 +367,41 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
     if (windowOpen.getTime() <= agora.getTime()) windowOpen.setDate(windowOpen.getDate() + 1);
     expect(step.nextRunAt?.getTime()).toBe(windowOpen.getTime());
     expect(dispatcher.postponedRuns[0].postponedTo.getTime()).toBe(windowOpen.getTime());
+  });
+
+  // Reprodução do incidente real de produção (2026-09-16): uma campanha de
+  // várias publicações recorrentes JÁ RODANDO (runsCompleted > 0 em todas)
+  // fica fora da janela durante a madrugada — ao reabrir, as etapas seguintes
+  // (order > 0) devem sair ESPAÇADAS pela cadência configurada, nunca todas
+  // coladas no mesmo instante da abertura. Antes desta correção, o
+  // escalonamento zerava sozinho assim que `runsCompleted > 0`, e as 4
+  // publicações do fundador saíram de uma vez, duas vezes seguidas (07h e
+  // 11h) — exatamente o cenário aqui.
+  it('fora da janela, com VÁRIAS etapas JÁ recorrentes (runsCompleted > 0): reabrem ESPAÇADAS pela cadência, nunca coladas', async () => {
+    const { runProcessor, repository, dispatcher } = buildSut();
+    const agora = new Date();
+    const fim = pad(agora.getHours()) + ':' + pad(agora.getMinutes());
+    const inicio = pad((agora.getHours() + 23) % 24) + ':' + pad(agora.getMinutes());
+    const { broadcastId, stepIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      stepLaunchOffsetMinutes: 10,
+      recurrenceIntervalHours: 2,
+      runsCompleted: 3,
+      sendWindowStart: inicio,
+      sendWindowEnd: fim,
+      extraSteps: [{ messageTemplate: 'Post 2', recurrenceIntervalHours: 2, runsCompleted: 3 }],
+    });
+
+    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 4 });
+    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[1], runNumber: 4 });
+
+    const postponedByStep = new Map(
+      dispatcher.postponedRuns.map((r) => [r.stepId, r.postponedTo.getTime()]),
+    );
+    // Etapa 1 (order 1) reabre exatamente 10 minutos depois da etapa 0 (order 0) — não coladas.
+    expect(postponedByStep.get(stepIds[1])! - postponedByStep.get(stepIds[0])!).toBe(10 * 60 * 1000);
   });
 
   it('nenhum grupo elegível restou NESTA ETAPA: encerra ela (finishedAt), sem tocar outras etapas', async () => {
