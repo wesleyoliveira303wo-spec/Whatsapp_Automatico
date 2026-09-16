@@ -5,9 +5,12 @@ import { Upload, X, CheckCircle2, XCircle, Paperclip, FileText } from 'lucide-re
 import {
   ClientApiError,
   createCampaign,
+  updateCampaign,
   attachCampaignMedia,
   fetchContacts,
   parseRecipientsCsv,
+  type Campaign,
+  type CampaignRecipient,
   type Contact,
   type RawPhoneRecipient,
   type CampaignRecipientSummary,
@@ -33,6 +36,16 @@ interface CampaignCreateFormProps {
    */
   onCreated?: () => void;
   onClose?: () => void;
+  /**
+   * Modo edição (2026-09-15) — presente = a tela nasce preenchida com a
+   * campanha já existente e o submit chama `updateCampaign` em vez de
+   * `createCampaign`. Só `draft`/`paused` chegam aqui (a API recusa o resto;
+   * quem decide se mostra o botão de editar é a tela de detalhe).
+   */
+  editing?: {
+    campaign: Campaign;
+    recipients: CampaignRecipient[];
+  };
 }
 
 const SKIP_REASON_LABELS: Record<CampaignSkipReason, string> = {
@@ -52,16 +65,30 @@ function mediaContentTypeFor(file: File): CampaignMediaContentType {
   return 'document';
 }
 
-function errorMessageFor(error: unknown): string {
+function errorMessageFor(error: unknown, editing = false): string {
   if (error instanceof ClientApiError) {
-    if (error.status === 403) return 'Seu cargo não permite criar disparos.';
+    if (error.status === 403) return `Seu cargo não permite ${editing ? 'editar' : 'criar'} disparos.`;
     if (error.status === 401) return 'Sessão expirada — faça login novamente.';
     if (error.status === 400) {
       const message = (error.body as { message?: string } | undefined)?.message;
       return message ?? 'Dados inválidos.';
     }
   }
-  return 'Não foi possível criar o disparo. Tente novamente.';
+  return `Não foi possível ${editing ? 'salvar as alterações' : 'criar o disparo'}. Tente novamente.`;
+}
+
+/** Modo edição (2026-09-15) — placeholder mínimo de `Contact` a partir do que `CampaignRecipient.contact` já resolveu em lote, sem uma segunda busca. */
+function placeholderContactFromRecipient(recipient: CampaignRecipient): Contact {
+  return {
+    id: recipient.contactId!,
+    tenantId: '',
+    phoneE164: recipient.contact?.phoneE164 ?? recipient.phoneE164 ?? '',
+    name: recipient.contact?.name,
+    source: 'manual',
+    createdAt: recipient.createdAt,
+    updatedAt: recipient.createdAt,
+    lastConversationContactName: recipient.contact?.nickname,
+  };
 }
 
 function mediaErrorMessageFor(error: unknown): string {
@@ -125,16 +152,24 @@ export default function CampaignCreateForm({
   sessionName,
   onCreated,
   onClose,
+  editing,
 }: CampaignCreateFormProps): JSX.Element {
   // Seção 1
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(editing?.campaign.name ?? '');
+  const [description, setDescription] = useState(editing?.campaign.description ?? '');
 
-  // Seção 2 — Origem A: contatos salvos
+  // Seção 2 — Origem A: contatos salvos (modo edição: pré-seleciona quem já tem `contactId`)
   const [contactSearch, setContactSearch] = useState('');
   const [contactResults, setContactResults] = useState<Contact[]>([]);
   const [searchingContacts, setSearchingContacts] = useState(false);
-  const [selectedContacts, setSelectedContacts] = useState<Map<string, Contact>>(new Map());
+  const [selectedContacts, setSelectedContacts] = useState<Map<string, Contact>>(
+    () =>
+      new Map(
+        (editing?.recipients ?? [])
+          .filter((recipient) => recipient.contactId)
+          .map((recipient) => [recipient.contactId!, placeholderContactFromRecipient(recipient)]),
+      ),
+  );
 
   // Seção 2 — Origem B: planilha
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -144,18 +179,27 @@ export default function CampaignCreateForm({
   const [csvTotalRows, setCsvTotalRows] = useState(0);
   const [parsingCsv, setParsingCsv] = useState(false);
 
-  // Seção 2 — Origem C: colar manualmente
-  const [manualText, setManualText] = useState('');
+  // Seção 2 — Origem C: colar manualmente. Modo edição: destinatários
+  // "soltos" (sem `contactId`) já existentes não têm mais como distinguir de
+  // qual origem (B ou C) vieram — reentram aqui, uma linha por pessoa, para
+  // continuarem fazendo parte do estado desejado ao salvar.
+  const [manualText, setManualText] = useState(() =>
+    (editing?.recipients ?? [])
+      .filter((recipient) => !recipient.contactId && recipient.phoneE164)
+      .map((recipient) => (recipient.name ? `${recipient.phoneE164}, ${recipient.name}` : recipient.phoneE164))
+      .join('\n'),
+  );
   const manualRecipients = splitManualLines(manualText);
 
   // Seção 3 — conteúdo
-  const [messageTemplate, setMessageTemplate] = useState('');
+  const [messageTemplate, setMessageTemplate] = useState(editing?.campaign.messageTemplate ?? '');
   // Fase L, Bloco L8 — mídia opcional anexada ao disparo. Upload real só
   // acontece DEPOIS do disparo existir (POST /:campaignId/media) — aqui só
   // guardamos a seleção local, mesmo racional de `csvFileName`/`csvRecipients`.
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const hadMedia = Boolean(editing?.campaign.media);
 
   // Seção 4 — criação
   const [submitting, setSubmitting] = useState(false);
@@ -254,14 +298,16 @@ export default function CampaignCreateForm({
     setMediaError(null);
     try {
       const combinedPhoneRecipients: RawPhoneRecipient[] = [...csvRecipients, ...manualRecipients];
-      const response = await createCampaign({
-        sessionName,
+      const envelope = {
         name: name.trim(),
         description: description.trim() || undefined,
         messageTemplate: messageTemplate.trim(),
         contactIds: Array.from(selectedContacts.keys()),
         phoneRecipients: combinedPhoneRecipients,
-      });
+      };
+      const response = editing
+        ? await updateCampaign(editing.campaign.id, envelope)
+        : await createCampaign({ sessionName, ...envelope });
 
       // O disparo já existe (sempre DRAFT) — anexar mídia é um SEGUNDO
       // request. Se falhar, o disparo continua criada normalmente (o
@@ -282,7 +328,7 @@ export default function CampaignCreateForm({
       setResult({ campaignId: response.campaign.id, summary: response.summary });
       onCreated?.();
     } catch (error) {
-      setErrorMessage(errorMessageFor(error));
+      setErrorMessage(errorMessageFor(error, Boolean(editing)));
     } finally {
       setSubmitting(false);
     }
@@ -291,17 +337,29 @@ export default function CampaignCreateForm({
   if (result) {
     return (
       <Card className="p-6">
-        <h2 className="text-[16px] font-semibold text-foreground">Disparo criada</h2>
+        <h2 className="text-[16px] font-semibold text-foreground">
+          {editing ? 'Alterações salvas' : 'Disparo criada'}
+        </h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          O disparo foi calculada — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
-          disparar de verdade, abra o disparo e use &quot;Iniciar envio&quot; (que pede confirmação
-          separada).
+          {editing ? (
+            <>
+              A edição foi salva — <strong>nenhuma mensagem foi enviada</strong> por causa dela.
+              Para disparar de verdade, use &quot;Iniciar envio&quot;/&quot;Retomar&quot; na tela de
+              detalhe (que pede confirmação separada).
+            </>
+          ) : (
+            <>
+              O disparo foi calculada — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
+              disparar de verdade, abra o disparo e use &quot;Iniciar envio&quot; (que pede
+              confirmação separada).
+            </>
+          )}
         </p>
 
         {mediaError && (
           <p className="mt-2 text-[12.5px] text-destructive">
-            O disparo foi criada, mas o anexo de mídia falhou: {mediaError} Você pode tentar de
-            novo pela tela de detalhe.
+            {editing ? 'A edição foi salva' : 'O disparo foi criada'}, mas o anexo de mídia falhou:{' '}
+            {mediaError} Você pode tentar de novo pela tela de detalhe.
           </p>
         )}
 
@@ -541,6 +599,11 @@ export default function CampaignCreateForm({
             className="hidden"
             onChange={handleMediaSelected}
           />
+          {hadMedia && !mediaFile && (
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              Já tem um arquivo anexado — anexar outro aqui o substitui.
+            </p>
+          )}
           {mediaFile ? (
             <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -621,7 +684,13 @@ export default function CampaignCreateForm({
             onClick={() => void handleSubmit()}
             disabled={!canSubmit || submitting}
           >
-            {submitting ? 'Criando…' : 'Criar disparo (rascunho)'}
+            {editing
+              ? submitting
+                ? 'Salvando…'
+                : 'Salvar alterações'
+              : submitting
+                ? 'Criando…'
+                : 'Criar disparo (rascunho)'}
           </Button>
           {onClose && (
             <button

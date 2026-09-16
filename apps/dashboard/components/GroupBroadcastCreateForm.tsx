@@ -18,9 +18,13 @@ import {
 import {
   ClientApiError,
   createGroupBroadcast,
+  updateGroupBroadcast,
   attachGroupBroadcastStepMedia,
   fetchWhatsAppGroups,
   type WhatsAppGroupSummary,
+  type GroupBroadcast,
+  type GroupBroadcastStep,
+  type GroupBroadcastTarget,
   type GroupBroadcastSummary,
   type GroupBroadcastMediaContentType,
 } from '@/lib/clientApi';
@@ -36,6 +40,17 @@ interface GroupBroadcastCreateFormProps {
   sessionName: string;
   onCreated?: () => void;
   onClose?: () => void;
+  /**
+   * Modo edição (2026-09-15) — presente = a tela nasce preenchida com o
+   * disparo já existente e o submit chama `updateGroupBroadcast` em vez de
+   * `createGroupBroadcast`. Só `draft`/`paused` chegam aqui (a API recusa o
+   * resto; quem decide se mostra o botão de editar é a tela de detalhe).
+   */
+  editing?: {
+    broadcast: GroupBroadcast;
+    steps: GroupBroadcastStep[];
+    targets: GroupBroadcastTarget[];
+  };
 }
 
 /** Teto do lado do CLIENTE — puramente UX (falha rápido); a API impõe o teto de verdade (413). Espelha `MAX_GROUP_MEDIA_BYTES.video` (o maior dos dois). */
@@ -59,6 +74,12 @@ type StopMode = 'runs' | 'date' | 'manual';
 
 interface StepDraft {
   key: string;
+  /** Presente = etapa já existente (modo edição); ausente = etapa nova. */
+  id?: string;
+  /** Só em modo edição — quantas vezes esta etapa já publicou (2026-09-15). */
+  runsCompleted?: number;
+  /** Só em modo edição — a etapa já tem mídia anexada (não reenviada automaticamente ao salvar). */
+  hadMedia: boolean;
   messageTemplate: string;
   mediaFile: File | null;
   recurring: boolean;
@@ -71,6 +92,7 @@ interface StepDraft {
 function newStepDraft(): StepDraft {
   return {
     key: nextStepKey(),
+    hadMedia: false,
     messageTemplate: '',
     mediaFile: null,
     recurring: false,
@@ -81,14 +103,32 @@ function newStepDraft(): StepDraft {
   };
 }
 
+/** Modo edição (2026-09-15) — reconstrói o draft a partir de uma etapa já persistida. */
+function stepDraftFromExisting(step: GroupBroadcastStep): StepDraft {
+  return {
+    key: nextStepKey(),
+    id: step.id,
+    runsCompleted: step.runsCompleted,
+    hadMedia: Boolean(step.media),
+    messageTemplate: step.messageTemplate,
+    mediaFile: null,
+    recurring: step.recurrenceIntervalHours !== undefined,
+    intervalHours: step.recurrenceIntervalHours ?? 2,
+    stopMode: step.recurrenceEndsAt ? 'date' : step.recurrenceMaxRuns !== undefined ? 'runs' : 'manual',
+    maxRuns: step.recurrenceMaxRuns ?? 5,
+    endsAt: step.recurrenceEndsAt ? step.recurrenceEndsAt.slice(0, 16) : '',
+  };
+}
+
 /** Deriva a categoria do Domain a partir do `File.type` — mesmo padrão de `CampaignCreateForm.mediaContentTypeFor`, restrito a imagem/vídeo. */
 function mediaContentTypeFor(file: File): GroupBroadcastMediaContentType {
   return file.type.startsWith('video/') ? 'video' : 'image';
 }
 
-function errorMessageFor(error: unknown): string {
+function errorMessageFor(error: unknown, editing = false): string {
   if (error instanceof ClientApiError) {
-    if (error.status === 403) return 'Seu cargo não permite criar disparos em grupos.';
+    if (error.status === 403)
+      return `Seu cargo não permite ${editing ? 'editar' : 'criar'} disparos em grupos.`;
     if (error.status === 401) return 'Sessão expirada — faça login novamente.';
     const code = (error.body as { error?: string } | undefined)?.error;
     if (code === 'whatsapp_not_connected')
@@ -98,7 +138,7 @@ function errorMessageFor(error: unknown): string {
     const message = (error.body as { message?: string } | undefined)?.message;
     if (message) return message;
   }
-  return 'Não foi possível criar o disparo. Tente novamente.';
+  return `Não foi possível ${editing ? 'salvar as alterações' : 'criar o disparo'}. Tente novamente.`;
 }
 
 function mediaErrorMessageFor(error: unknown): string {
@@ -136,21 +176,43 @@ export default function GroupBroadcastCreateForm({
   sessionName,
   onCreated,
   onClose,
+  editing,
 }: GroupBroadcastCreateFormProps): JSX.Element {
-  const [name, setName] = useState('');
+  const [name, setName] = useState(editing?.broadcast.name ?? '');
 
   const [groups, setGroups] = useState<WhatsAppGroupSummary[] | null>(null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<Map<string, WhatsAppGroupSummary>>(new Map());
+  const [selected, setSelected] = useState<Map<string, WhatsAppGroupSummary>>(
+    () =>
+      new Map(
+        (editing?.targets ?? []).map((target) => [
+          target.groupJid,
+          {
+            jid: target.groupJid,
+            name: target.groupName,
+            participantCount: 0,
+            announce: false,
+            isAdmin: false,
+            canSend: true,
+          } satisfies WhatsAppGroupSummary,
+        ]),
+      ),
+  );
 
-  const [steps, setSteps] = useState<StepDraft[]>(() => [newStepDraft()]);
-  const [stepOffsetMinutes, setStepOffsetMinutes] = useState(0);
+  const [steps, setSteps] = useState<StepDraft[]>(() =>
+    editing ? editing.steps.map(stepDraftFromExisting) : [newStepDraft()],
+  );
+  const [stepOffsetMinutes, setStepOffsetMinutes] = useState(
+    editing?.broadcast.stepLaunchOffsetMinutes ?? 0,
+  );
 
-  const [windowEnabled, setWindowEnabled] = useState(false);
-  const [windowStart, setWindowStart] = useState('08:00');
-  const [windowEnd, setWindowEnd] = useState('20:00');
+  const [windowEnabled, setWindowEnabled] = useState(
+    Boolean(editing?.broadcast.sendWindowStart || editing?.broadcast.sendWindowEnd),
+  );
+  const [windowStart, setWindowStart] = useState(editing?.broadcast.sendWindowStart ?? '08:00');
+  const [windowEnd, setWindowEnd] = useState(editing?.broadcast.sendWindowEnd ?? '20:00');
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -249,6 +311,26 @@ export default function GroupBroadcastCreateForm({
     return groups.filter((group) => group.name.toLowerCase().includes(term));
   }, [groups, search]);
 
+  /**
+   * Modo edição (2026-09-15) — um grupo já selecionado que não aparece mais
+   * na listagem AO VIVO (saiu, ou o número foi removido) fica marcado como
+   * "indisponível", NUNCA some sozinho da seleção — só um clique explícito
+   * o remove.
+   */
+  const unavailableSelected = useMemo(() => {
+    if (!groups) return [];
+    const liveJids = new Set(groups.map((group) => group.jid));
+    return Array.from(selected.values()).filter((group) => !liveJids.has(group.jid));
+  }, [groups, selected]);
+
+  function removeSelected(jid: string): void {
+    setSelected((current) => {
+      const next = new Map(current);
+      next.delete(jid);
+      return next;
+    });
+  }
+
   const stepsIncomplete = steps.some((step) => step.messageTemplate.trim().length === 0);
   const recurrenceIncomplete = steps.some(
     (step) => step.recurring && step.stopMode === 'date' && step.endsAt.trim().length === 0,
@@ -263,30 +345,48 @@ export default function GroupBroadcastCreateForm({
     setErrorMessage(null);
     setMediaErrors([]);
     try {
-      const response = await createGroupBroadcast({
-        sessionName,
+      const stepsPayload = steps.map((step) => ({
+        ...(step.id ? { id: step.id } : {}),
+        messageTemplate: step.messageTemplate.trim(),
+        ...(step.recurring
+          ? {
+              recurrenceIntervalHours: step.intervalHours,
+              ...(step.stopMode === 'runs' ? { recurrenceMaxRuns: step.maxRuns } : {}),
+              ...(step.stopMode === 'date' && step.endsAt
+                ? { recurrenceEndsAt: new Date(step.endsAt).toISOString() }
+                : {}),
+            }
+          : {}),
+      }));
+
+      const envelope = {
         name: name.trim(),
         groupJids: Array.from(selected.keys()),
         ...(windowEnabled ? { sendWindowStart: windowStart, sendWindowEnd: windowEnd } : {}),
         ...(stepOffsetMinutes > 0 ? { stepLaunchOffsetMinutes: stepOffsetMinutes } : {}),
-        steps: steps.map((step) => ({
-          messageTemplate: step.messageTemplate.trim(),
-          ...(step.recurring
-            ? {
-                recurrenceIntervalHours: step.intervalHours,
-                ...(step.stopMode === 'runs' ? { recurrenceMaxRuns: step.maxRuns } : {}),
-                ...(step.stopMode === 'date' && step.endsAt
-                  ? { recurrenceEndsAt: new Date(step.endsAt).toISOString() }
-                  : {}),
-              }
-            : {}),
-        })),
-      });
+        steps: stepsPayload,
+      };
 
+      const response = editing
+        ? await updateGroupBroadcast(editing.broadcast.id, envelope)
+        : await createGroupBroadcast({ sessionName, ...envelope });
+
+      // Casa cada rascunho local com a etapa correspondente na resposta —
+      // por `id` para uma etapa já existente (edição); por ORDEM RELATIVA
+      // entre as etapas NOVAS para as demais (o servidor sempre acrescenta
+      // etapas novas ao final, na mesma ordem relativa em que apareceram no
+      // payload — `order` de uma etapa já existente nunca é reatribuída,
+      // então o índice puro do array local quebraria numa edição com etapas
+      // intercaladas).
+      const existingIds = new Set(steps.filter((step) => step.id).map((step) => step.id));
+      const newResponseSteps = response.steps.filter((step) => !existingIds.has(step.id));
+      let newStepCursor = 0;
       const failedUploads: string[] = [];
       for (let index = 0; index < steps.length; index += 1) {
         const draft = steps[index];
-        const createdStep = response.steps[index];
+        const createdStep = draft.id
+          ? response.steps.find((step) => step.id === draft.id)
+          : newResponseSteps[newStepCursor++];
         if (!draft.mediaFile || !createdStep) continue;
         try {
           await attachGroupBroadcastStepMedia(
@@ -306,7 +406,7 @@ export default function GroupBroadcastCreateForm({
       setResult({ broadcastId: response.broadcast.id, summary: response.summary });
       onCreated?.();
     } catch (error) {
-      setErrorMessage(errorMessageFor(error));
+      setErrorMessage(errorMessageFor(error, Boolean(editing)));
     } finally {
       setSubmitting(false);
     }
@@ -315,19 +415,31 @@ export default function GroupBroadcastCreateForm({
   if (result) {
     return (
       <Card className="p-6">
-        <h2 className="text-[16px] font-semibold text-foreground">Disparo criado</h2>
+        <h2 className="text-[16px] font-semibold text-foreground">
+          {editing ? 'Alterações salvas' : 'Disparo criado'}
+        </h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          O disparo foi calculado — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
-          publicar de verdade, abra o disparo e use &quot;Iniciar envio&quot; (que pede confirmação
-          separada).
+          {editing ? (
+            <>
+              A edição foi salva — <strong>nenhuma mensagem foi enviada</strong> por causa dela.
+              Para publicar de verdade, use &quot;Iniciar envio&quot;/&quot;Retomar&quot; na tela de
+              detalhe (que pede confirmação separada).
+            </>
+          ) : (
+            <>
+              O disparo foi calculado — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
+              publicar de verdade, abra o disparo e use &quot;Iniciar envio&quot; (que pede
+              confirmação separada).
+            </>
+          )}
         </p>
 
         {mediaErrors.length > 0 && (
           <div className="mt-2 space-y-1">
             {mediaErrors.map((message) => (
               <p key={message} className="text-[12.5px] text-destructive">
-                O disparo foi criado, mas um anexo falhou: {message} Você pode tentar de novo pela
-                tela de detalhe.
+                {editing ? 'A edição foi salva' : 'O disparo foi criado'}, mas um anexo falhou:{' '}
+                {message} Você pode tentar de novo pela tela de detalhe.
               </p>
             ))}
           </div>
@@ -423,6 +535,36 @@ export default function GroupBroadcastCreateForm({
           administradores&quot; ou que você saiu entre agora e a criação será suprimido
           automaticamente.
         </p>
+
+        {unavailableSelected.length > 0 && (
+          <div className="mt-3 space-y-1.5 rounded-lg border border-warning/40 bg-warning/10 p-2.5">
+            <p className="text-[12px] font-medium text-foreground">
+              Selecionado(s) que não aparecem mais na lista ao vivo
+            </p>
+            {unavailableSelected.map((group) => (
+              <div
+                key={group.jid}
+                className="flex items-center justify-between gap-2 rounded-md bg-card px-2.5 py-1.5"
+              >
+                <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                  {group.name}
+                </span>
+                <Badge variant="warning" className="shrink-0">
+                  Indisponível
+                </Badge>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Remover ${group.name} da seleção`}
+                  onClick={() => removeSelected(group.jid)}
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loadingGroups ? (
           <div className="mt-3 space-y-2">
@@ -540,8 +682,13 @@ export default function GroupBroadcastCreateForm({
           {steps.map((step, index) => (
             <div key={step.key} className="rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] font-semibold text-foreground">
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
                   Publicação {index + 1}
+                  {Boolean(step.runsCompleted) && (
+                    <Badge variant="secondary" className="font-normal">
+                      publicou {step.runsCompleted}x
+                    </Badge>
+                  )}
                 </span>
                 <div className="flex items-center gap-1">
                   <Button
@@ -594,6 +741,11 @@ export default function GroupBroadcastCreateForm({
                 <p className="text-[13px] font-medium text-foreground">
                   Anexo <span className="text-muted-foreground">(opcional — imagem ou vídeo)</span>
                 </p>
+                {step.hadMedia && !step.mediaFile && (
+                  <p className="mt-1.5 text-[12px] text-muted-foreground">
+                    Já tem um arquivo anexado — anexar outro aqui o substitui.
+                  </p>
+                )}
                 <StepMediaInput
                   stepKey={step.key}
                   file={step.mediaFile}
@@ -782,7 +934,13 @@ export default function GroupBroadcastCreateForm({
         {errorMessage && <p className="mt-2 text-[12.5px] text-destructive">{errorMessage}</p>}
         <div className="mt-4 flex items-center gap-2">
           <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || submitting}>
-            {submitting ? 'Criando…' : 'Criar disparo (rascunho)'}
+            {editing
+              ? submitting
+                ? 'Salvando…'
+                : 'Salvar alterações'
+              : submitting
+                ? 'Criando…'
+                : 'Criar disparo (rascunho)'}
           </Button>
           {onClose && (
             <button

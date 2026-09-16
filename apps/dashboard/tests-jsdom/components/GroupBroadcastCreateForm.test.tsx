@@ -15,6 +15,7 @@ jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   fetchWhatsAppGroups: jest.fn(),
   createGroupBroadcast: jest.fn(),
+  updateGroupBroadcast: jest.fn(),
   attachGroupBroadcastStepMedia: jest.fn(),
 }));
 
@@ -377,5 +378,100 @@ describe('GroupBroadcastCreateForm — múltiplas publicações (2026-09-14)', (
         'image',
       ),
     );
+  });
+});
+
+describe('GroupBroadcastCreateForm — modo edição (Task 8, 2026-09-15)', () => {
+  const EDITING = {
+    broadcast: {
+      id: 'broadcast-1',
+      tenantId: 't1',
+      sessionName: 'vendas',
+      name: 'Disparo existente',
+      status: 'paused' as const,
+      intervalSeconds: 60,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    },
+    steps: [
+      {
+        id: 'step-1',
+        broadcastId: 'broadcast-1',
+        order: 0,
+        messageTemplate: 'Texto já cadastrado',
+        runsCompleted: 3,
+        createdAt: '2026-09-01T00:00:00.000Z',
+      },
+    ],
+    targets: [
+      {
+        id: 'target-1',
+        broadcastId: 'broadcast-1',
+        groupJid: '111@g.us',
+        groupName: 'Grupo de clientes',
+        status: 'pending' as const,
+        sentCount: 3,
+        createdAt: '2026-09-01T00:00:00.000Z',
+      },
+      {
+        id: 'target-2',
+        broadcastId: 'broadcast-1',
+        groupJid: '999@g.us',
+        groupName: 'Grupo Que Saiu',
+        status: 'pending' as const,
+        sentCount: 0,
+        createdAt: '2026-09-01T00:00:00.000Z',
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGroups(); // só '111@g.us' está na listagem ao vivo — '999@g.us' vira indisponível.
+  });
+
+  it('nasce preenchido com nome, grupos e texto da publicação já existentes', async () => {
+    render(<GroupBroadcastCreateForm sessionName="vendas" editing={EDITING as never} />);
+
+    await waitFor(() => expect(clientApi.fetchWhatsAppGroups).toHaveBeenCalled());
+    expect(screen.getByDisplayValue('Disparo existente')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Texto já cadastrado')).toBeInTheDocument();
+  });
+
+  it('grupo selecionado que não está mais na listagem ao vivo aparece marcado como indisponível', async () => {
+    render(<GroupBroadcastCreateForm sessionName="vendas" editing={EDITING as never} />);
+
+    await waitFor(() => expect(screen.getByText('Grupo Que Saiu')).toBeInTheDocument());
+    expect(screen.getByText('Indisponível')).toBeInTheDocument();
+  });
+
+  it('mostra quantas vezes a publicação já rodou', async () => {
+    render(<GroupBroadcastCreateForm sessionName="vendas" editing={EDITING as never} />);
+
+    await waitFor(() => expect(screen.getByText('publicou 3x')).toBeInTheDocument());
+  });
+
+  it('salvar chama updateGroupBroadcast com o payload esperado (id da etapa preservado)', async () => {
+    (clientApi.updateGroupBroadcast as jest.Mock).mockResolvedValue({
+      broadcast: EDITING.broadcast,
+      steps: EDITING.steps,
+      summary: { total: 2, pending: 2, sent: 0, failed: 0, skipped: 0, totalSent: 3 },
+      targets: EDITING.targets,
+    });
+
+    render(<GroupBroadcastCreateForm sessionName="vendas" editing={EDITING as never} />);
+    await waitFor(() => expect(screen.getByText('Grupo Que Saiu')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+
+    await waitFor(() => expect(clientApi.updateGroupBroadcast).toHaveBeenCalledTimes(1));
+    const [broadcastId, payload] = (clientApi.updateGroupBroadcast as jest.Mock).mock.calls[0];
+    expect(broadcastId).toBe('broadcast-1');
+    expect(payload.name).toBe('Disparo existente');
+    expect(payload.groupJids.sort()).toEqual(['111@g.us', '999@g.us']);
+    expect(payload.steps).toEqual([{ id: 'step-1', messageTemplate: 'Texto já cadastrado' }]);
+
+    expect(clientApi.createGroupBroadcast).not.toHaveBeenCalled();
+    expect(await screen.findByText('Alterações salvas')).toBeInTheDocument();
   });
 });
