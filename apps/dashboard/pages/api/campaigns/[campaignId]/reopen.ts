@@ -3,7 +3,10 @@ import { requireSession } from '../../../../lib/dashboardSession';
 import { callCampaignsApi } from '../../../../lib/apiClient';
 import { requireStringParam } from '../../../../lib/routeParams';
 
-/** Proxy de reabertura de campanha (retrofit 2026-08-18): `POST /:campaignId/reopen`. */
+/**
+ * Proxy de reabertura de campanha (retrofit 2026-08-18): `POST /:campaignId/reopen`.
+ * Corpo opcional `{ resumeMode }` (2026-09-15, retomar-com-escolha).
+ */
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -19,7 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { status, body } = await callCampaignsApi(
     session,
     `/${encodeURIComponent(campaignId)}/reopen`,
-    { method: 'POST' },
+    { method: 'POST', body: req.body },
   );
   res.status(status).json(body);
 }

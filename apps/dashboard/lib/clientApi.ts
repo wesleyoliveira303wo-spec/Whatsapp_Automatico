@@ -1007,6 +1007,33 @@ export function fetchCampaign(
   return request(`/api/campaigns/${encodeURIComponent(campaignId)}`);
 }
 
+/**
+ * Edita uma campanha já criada (2026-09-15) — só `draft`/`paused` (409/400
+ * fora disso). O corpo é o ESTADO FINAL DESEJADO por inteiro (mesma forma de
+ * `createCampaign`, sem `sessionName` — uma edição nunca migra de sessão):
+ * um destinatário ausente do payload some (sem histórico) ou é suprimido
+ * (com histórico); um novo passa pelas mesmas regras de supressão da
+ * criação. Nunca agenda envio nenhum. Exige `campaign:manage`.
+ */
+export function updateCampaign(
+  campaignId: string,
+  input: {
+    name: string;
+    description?: string;
+    messageTemplate: string;
+    contactIds: string[];
+    phoneRecipients: RawPhoneRecipient[];
+  },
+): Promise<{ campaign: Campaign; summary: CampaignRecipientSummary }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Retomar-com-escolha (2026-09-15) — `'now'` publica de imediato; `'scheduled'` honra o horário já marcado, quando houver um no futuro. Ausente = `'now'`. */
+export type ResumeMode = 'now' | 'scheduled';
+
 // --- Fase L, Bloco L4 — motor de envio (start/pause/cancel + destinatários) ---
 
 export type CampaignRecipientStatus = 'pending' | 'sent' | 'failed' | 'skipped' | 'replied';
@@ -1061,9 +1088,19 @@ export function fetchCampaignRecipients(
   );
 }
 
-/** Inicia (ou retoma, após pausa) o envio real da campanha. Exige `campaign:manage`. */
-export function startCampaign(campaignId: string): Promise<{ campaign: Campaign }> {
-  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/start`, { method: 'POST' });
+/**
+ * Inicia (ou retoma, após pausa) o envio real da campanha. `resumeMode`
+ * (2026-09-15) — omitido/`'now'` publica de imediato; `'scheduled'` honra
+ * `Campaign.scheduledFor` quando estiver no futuro. Exige `campaign:manage`.
+ */
+export function startCampaign(
+  campaignId: string,
+  resumeMode?: ResumeMode,
+): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/start`, {
+    method: 'POST',
+    body: JSON.stringify({ resumeMode }),
+  });
 }
 
 /** Pausa uma campanha em execução — não toca os jobs já agendados, só impede novos envios. Exige `campaign:manage`. */
@@ -1082,10 +1119,17 @@ export function cancelCampaign(campaignId: string): Promise<{ campaign: Campaign
  * Devolve destinatários que FALHARAM (ex.: instabilidade momentânea da
  * conexão do WhatsApp) para pendente e reagenda o envio — nunca reenvia a
  * quem foi suprimido por opt-out/conversa ativa/contatado recentemente.
+ * `resumeMode` (2026-09-15) — mesma semântica de `startCampaign`.
  * Exige `campaign:manage`.
  */
-export function reopenCampaign(campaignId: string): Promise<{ campaign: Campaign }> {
-  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/reopen`, { method: 'POST' });
+export function reopenCampaign(
+  campaignId: string,
+  resumeMode?: ResumeMode,
+): Promise<{ campaign: Campaign }> {
+  return request(`/api/campaigns/${encodeURIComponent(campaignId)}/reopen`, {
+    method: 'POST',
+    body: JSON.stringify({ resumeMode }),
+  });
 }
 
 /**
@@ -1359,10 +1403,55 @@ export function fetchGroupBroadcast(broadcastId: string): Promise<{
   return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`);
 }
 
-/** Inicia (ou retoma, após pausa) o disparo — reagenda todo alvo `pending` com ritmo espaçado. Exige `campaign:manage`. */
-export function startGroupBroadcast(broadcastId: string): Promise<{ broadcast: GroupBroadcast }> {
+/** Uma publicação em edição (2026-09-15) — `id` presente e batendo com uma etapa real desta campanha → a etapa continua, só o conteúdo muda; ausente → tratada como etapa nova. */
+export interface UpdateGroupBroadcastStepInput extends CreateGroupBroadcastStepInput {
+  id?: string;
+}
+
+/**
+ * Edita um disparo já criado (2026-09-15) — só `draft`/`paused` (400 fora
+ * disso). O corpo é o ESTADO FINAL DESEJADO por inteiro (mesma forma de
+ * `createGroupBroadcast`, sem `sessionName` — uma edição nunca migra de
+ * sessão): grupo ausente do payload some (sem histórico) ou é suprimido
+ * (com histórico); grupo novo passa pela mesma conferência ao vivo da
+ * criação. Nunca agenda envio nenhum. Exige `campaign:manage`.
+ */
+export function updateGroupBroadcast(
+  broadcastId: string,
+  input: {
+    name: string;
+    groupJids: string[];
+    steps: UpdateGroupBroadcastStepInput[];
+    intervalSeconds?: number;
+    sendWindowStart?: string;
+    sendWindowEnd?: string;
+    stepLaunchOffsetMinutes?: number;
+  },
+): Promise<{
+  broadcast: GroupBroadcast;
+  steps: GroupBroadcastStep[];
+  summary: GroupBroadcastSummary;
+  targets: GroupBroadcastTarget[];
+}> {
+  return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Inicia (ou retoma, após pausa) o disparo — reagenda todo alvo `pending`
+ * com ritmo espaçado. `resumeMode` (2026-09-15) — omitido/`'now'` publica de
+ * imediato; `'scheduled'` honra um `nextRunAt` já marcado, quando houver um
+ * no futuro. Exige `campaign:manage`.
+ */
+export function startGroupBroadcast(
+  broadcastId: string,
+  resumeMode?: ResumeMode,
+): Promise<{ broadcast: GroupBroadcast }> {
   return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}/start`, {
     method: 'POST',
+    body: JSON.stringify({ resumeMode }),
   });
 }
 

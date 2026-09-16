@@ -5,7 +5,8 @@ import { requireStringParam } from '../../../../lib/routeParams';
 
 /**
  * Proxy do detalhe de uma campanha: `GET /:campaignId` — campanha + resumo
- * de destinatários (Fase L, Bloco L3). `DELETE /:campaignId` — remove a
+ * de destinatários (Fase L, Bloco L3). `PUT /:campaignId` — edição
+ * (2026-09-15, só `draft`/`paused`). `DELETE /:campaignId` — remove a
  * campanha definitivamente (retrofit visual 2026-08-18), sem corpo na
  * resposta (a API devolve 204).
  */
@@ -21,6 +22,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  if (req.method === 'PUT') {
+    const { status, body } = await callCampaignsApi(session, `/${encodeURIComponent(campaignId)}`, {
+      method: 'PUT',
+      body: req.body,
+    });
+    res.status(status).json(body);
+    return;
+  }
+
   if (req.method === 'DELETE') {
     const { status } = await callCampaignsApi(session, `/${encodeURIComponent(campaignId)}`, {
       method: 'DELETE',
@@ -29,6 +39,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  res.setHeader('Allow', 'GET, DELETE');
+  res.setHeader('Allow', 'GET, PUT, DELETE');
   res.status(405).json({ error: 'method_not_allowed' });
 }

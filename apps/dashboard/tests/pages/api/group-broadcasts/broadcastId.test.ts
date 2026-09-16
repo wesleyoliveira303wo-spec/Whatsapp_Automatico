@@ -63,6 +63,34 @@ describe('proxy /api/group-broadcasts/[broadcastId]', () => {
 
       expect(res.status).toHaveBeenCalledWith(405);
     });
+
+    it('PUT encaminha o corpo de edição e devolve o detalhe recarregado (2026-09-15)', async () => {
+      (callGroupBroadcastsApi as jest.Mock).mockResolvedValue({
+        status: 200,
+        body: { broadcast: { id: 'b1', name: 'Nome novo' }, steps: [], summary: {}, targets: [] },
+      });
+      const body = { name: 'Nome novo', groupJids: ['111@g.us'], steps: [{ messageTemplate: 'x' }] };
+      const req = createFakeReq({ method: 'PUT', query: { broadcastId: 'b1' }, body });
+      const res = createFakeRes();
+
+      await indexHandler(req, res);
+
+      expect(callGroupBroadcastsApi).toHaveBeenCalledWith(SESSION, '/b1', {
+        method: 'PUT',
+        body,
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('PUT repassa o status de erro da API (400) sem transformar', async () => {
+      (callGroupBroadcastsApi as jest.Mock).mockResolvedValue({ status: 400, body: { error: 'x' } });
+      const req = createFakeReq({ method: 'PUT', query: { broadcastId: 'b1' }, body: {} });
+      const res = createFakeRes();
+
+      await indexHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
   });
 
   describe('POST /:broadcastId/start', () => {
@@ -78,6 +106,26 @@ describe('proxy /api/group-broadcasts/[broadcastId]', () => {
 
       expect(callGroupBroadcastsApi).toHaveBeenCalledWith(SESSION, '/b1/start', { method: 'POST' });
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('repassa resumeMode do corpo (2026-09-15)', async () => {
+      (callGroupBroadcastsApi as jest.Mock).mockResolvedValue({
+        status: 200,
+        body: { broadcast: { id: 'b1', status: 'running' } },
+      });
+      const req = createFakeReq({
+        method: 'POST',
+        query: { broadcastId: 'b1' },
+        body: { resumeMode: 'scheduled' },
+      });
+      const res = createFakeRes();
+
+      await startHandler(req, res);
+
+      expect(callGroupBroadcastsApi).toHaveBeenCalledWith(SESSION, '/b1/start', {
+        method: 'POST',
+        body: { resumeMode: 'scheduled' },
+      });
     });
 
     it('método errado: 405, nunca chama a API', async () => {

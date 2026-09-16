@@ -5,8 +5,9 @@ import { requireStringParam } from '../../../../lib/routeParams';
 
 /**
  * Proxy do detalhe de um disparo em grupos (2026-09-11): `GET /:broadcastId`
- * (disparo + resumo + alvos) e `DELETE /:broadcastId` (exclui — a API
- * recusa `running`, precisa pausar/cancelar antes). Mesmo padrão de
+ * (disparo + resumo + alvos), `PUT /:broadcastId` (edição — 2026-09-15, só
+ * `draft`/`paused`) e `DELETE /:broadcastId` (exclui — a API recusa
+ * `running`, precisa pausar/cancelar antes). Mesmo padrão de
  * `pages/api/campaigns/[campaignId]/index.ts`.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
@@ -24,6 +25,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  if (req.method === 'PUT') {
+    const { status, body } = await callGroupBroadcastsApi(
+      session,
+      `/${encodeURIComponent(broadcastId)}`,
+      { method: 'PUT', body: req.body },
+    );
+    res.status(status).json(body);
+    return;
+  }
+
   if (req.method === 'DELETE') {
     const { status } = await callGroupBroadcastsApi(
       session,
@@ -34,6 +45,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  res.setHeader('Allow', 'GET, DELETE');
+  res.setHeader('Allow', 'GET, PUT, DELETE');
   res.status(405).json({ error: 'method_not_allowed' });
 }

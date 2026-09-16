@@ -3,7 +3,11 @@ import { requireSession } from '../../../../lib/dashboardSession';
 import { callCampaignsApi } from '../../../../lib/apiClient';
 import { requireStringParam } from '../../../../lib/routeParams';
 
-/** Proxy de início/retomada de campanha (Fase L, Bloco L4): `POST /:campaignId/start`. */
+/**
+ * Proxy de início/retomada de campanha (Fase L, Bloco L4): `POST /:campaignId/start`.
+ * Corpo opcional `{ resumeMode }` (2026-09-15, retomar-com-escolha) —
+ * repassado tal e qual para a API decidir.
+ */
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -19,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const { status, body } = await callCampaignsApi(
     session,
     `/${encodeURIComponent(campaignId)}/start`,
-    { method: 'POST' },
+    { method: 'POST', body: req.body },
   );
   res.status(status).json(body);
 }
