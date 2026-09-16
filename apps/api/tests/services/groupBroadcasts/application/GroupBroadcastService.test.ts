@@ -444,6 +444,58 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
         }),
       ).rejects.toBeInstanceOf(GroupBroadcastNotFoundError);
     });
+
+    // Achado real de revisão (2026-09-16): um grupo suprimido numa edição
+    // ANTERIOR por escolha do operador ficava permanentemente mudo, mesmo
+    // sendo re-selecionado numa edição seguinte — `resetStepTargetsForNextRun`
+    // nunca reabre `skipped`, então nada além da própria edição podia
+    // consertar isso.
+    it('grupo suprimido numa edição anterior (removed_by_operator) e re-selecionado agora REABRE, se ainda enviável ao vivo', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, targetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['aberto@g.us'],
+      });
+      await repository.suppressTargets('tenant-1', [targetIds[0]], 'removed_by_operator');
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['aberto@g.us'], // re-selecionado
+        steps: [{ messageTemplate: 'Promoção!' }],
+      });
+
+      const target = detail.targets.find((t) => t.groupJid === 'aberto@g.us');
+      expect(target?.status).toBe('pending');
+      expect(target?.skipReason).toBeUndefined();
+    });
+
+    // Reconferido AO VIVO antes de reabrir: se o grupo virou "só admins" (ou
+    // saiu de vez) desde que foi removido, a edição NUNCA reabre baseada num
+    // estado velho — o motivo é atualizado para refletir a realidade agora.
+    it('grupo suprimido antes e re-selecionado, mas ainda NÃO enviável ao vivo: continua suprimido, com o motivo atualizado', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, targetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['admin@g.us'], // canSend: false no FakeGroupDirectory
+      });
+      await repository.suppressTargets('tenant-1', [targetIds[0]], 'removed_by_operator');
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['admin@g.us'],
+        steps: [{ messageTemplate: 'Promoção!' }],
+      });
+
+      const target = detail.targets.find((t) => t.groupJid === 'admin@g.us');
+      expect(target?.status).toBe('skipped');
+      expect(target?.skipReason).toBe('admin_only_group');
+    });
   });
 
   describe('listBroadcasts() / getBroadcast()', () => {

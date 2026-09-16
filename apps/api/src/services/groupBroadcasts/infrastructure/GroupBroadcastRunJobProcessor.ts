@@ -7,6 +7,7 @@ import {
 } from '../domain/policies/groupBroadcastPacing';
 import {
   buildSendWindow,
+  capOffsetWithinWindow,
   DEFAULT_GROUP_BROADCAST_TIMEZONE,
   isWithinSendWindow,
   shiftIntoSendWindow,
@@ -82,9 +83,17 @@ export class GroupBroadcastRunJobProcessor {
       // horário de abertura da janela convergiam e saíam coladas — e isso
       // vale toda vez que a janela reabre, não só na 1ª publicação de cada
       // etapa (`launchOffsetMs` aplica sempre, ver a docstring dela).
+      // `capOffsetWithinWindow` evita o efeito colateral disso: sem ela, um
+      // offset maior que a própria janela empurraria a repetição pra FORA
+      // dela, e a próxima tentativa cairia no mesmo loop de "fora da janela"
+      // pra sempre — a etapa nunca publicaria.
+      const windowOpen = shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE);
       const postponedTo = new Date(
-        shiftIntoSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE).getTime() +
-          launchOffsetMs(step, broadcast.stepLaunchOffsetMinutes),
+        windowOpen.getTime() +
+          capOffsetWithinWindow(
+            launchOffsetMs(step, broadcast.stepLaunchOffsetMinutes),
+            window,
+          ),
       );
       await this.repository.markStepRunFinished(tenantId, step.id, step.runsCompleted, postponedTo);
       // `reschedulePostponedRun`, NUNCA `scheduleRun` aqui — ver a docstring

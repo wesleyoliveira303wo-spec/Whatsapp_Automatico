@@ -200,6 +200,33 @@ export function shiftIntoSendWindow(at: Date, window?: SendWindow, timeZone?: st
   }
 }
 
+/**
+ * Duração da janela em minutos — suporta a janela que vira a noite (ex.:
+ * 22:00–06:00, onde `endMinute < startMinute`).
+ */
+function windowDurationMinutes(window: SendWindow): number {
+  if (window.startMinute < window.endMinute) return window.endMinute - window.startMinute;
+  return 24 * 60 - window.startMinute + window.endMinute;
+}
+
+/**
+ * Trava o escalonamento entre publicações (`launchOffsetMs`) para nunca
+ * empurrar uma repetição para FORA da janela que acabou de abri-la — sem
+ * isso, uma etapa de `order` alto (ou um escalonamento largo) somado à
+ * abertura da janela podia cair depois do fechamento dela; a repetição
+ * seguinte veria "fora da janela" de novo, seria reagendada para a MESMA
+ * abertura + o MESMO offset, e nunca publicaria — presa num loop diário
+ * silencioso (achado real de produção, 2026-09-16, ao ampliar o
+ * escalonamento para valer mesmo com `runsCompleted > 0`: campanhas com
+ * várias etapas + janela estreita ficariam mudas para sempre). Sem janela
+ * definida, não há teto — não existe "fora" para cair.
+ */
+export function capOffsetWithinWindow(offsetMs: number, window?: SendWindow): number {
+  if (!window || offsetMs <= 0) return offsetMs;
+  const maxOffsetMs = Math.max(0, windowDurationMinutes(window) - 1) * 60 * 1000;
+  return Math.min(offsetMs, maxOffsetMs);
+}
+
 /** Ausente/inválido vira o mínimo; fora da faixa é trazido para dentro dela. */
 export function clampRecurrenceIntervalHours(requested?: number | null): number {
   if (requested === undefined || requested === null || !Number.isFinite(requested)) {

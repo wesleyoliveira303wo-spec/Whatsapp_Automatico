@@ -253,8 +253,10 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
   );
 
   /**
-   * Edição (2026-09-15) — só `draft`/`paused` (o serviço recusa com 409 fora
-   * disso). Corpo é o ESTADO FINAL DESEJADO por inteiro; a diferença contra o
+   * Edição (2026-09-15) — só `draft`/`paused` (o serviço recusa com 400 fora
+   * disso — convenção real do projeto para toda transição inválida deste
+   * bounded context, não 409 como o plano original previa). Corpo é o
+   * ESTADO FINAL DESEJADO por inteiro; a diferença contra o
    * que já existe é calculada e aplicada no serviço, que nunca chama o
    * dispatcher ao salvar.
    */

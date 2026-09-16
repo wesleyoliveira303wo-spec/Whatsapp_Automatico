@@ -689,6 +689,23 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
     return count;
   }
 
+  async reopenTargets(tenantId: string, targetIds: string[]): Promise<number> {
+    if (targetIds.length === 0) return 0;
+    let count = 0;
+    for (const targetId of targetIds) {
+      const target = this.targets.get(targetId);
+      if (!target || target.tenantId !== tenantId) continue;
+      this.targets.set(targetId, { ...target, status: 'pending', skipReason: undefined });
+      for (const [id, row] of this.stepTargets) {
+        if (row.targetId === targetId && row.tenantId === tenantId) {
+          this.stepTargets.set(id, { ...row, status: 'pending' });
+        }
+      }
+      count += 1;
+    }
+    return count;
+  }
+
   async countStepTargetsWithHistory(
     tenantId: string,
     broadcastId: string,

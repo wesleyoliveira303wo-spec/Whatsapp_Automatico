@@ -397,8 +397,12 @@ export class GroupBroadcastService {
       throw new TooManyGroupsSelectedError(groupJids.length, MAX_GROUPS_PER_BROADCAST);
     }
 
-    // Confere os grupos desejados AO VIVO, mesma régua da criação — inclusive
-    // os que já eram alvo antes (podem ter virado "só admins" nesse meio-tempo).
+    // Confere os grupos desejados AO VIVO, mesma régua da criação — usado
+    // para grupos NOVOS (`targetsToCreate`) e para os que estavam suprimidos
+    // por uma edição anterior e voltam a ser desejados (`targetsToReopen`/
+    // `targetsToReSuppress`, abaixo). Um grupo já ATIVO (`pending`) hoje não
+    // é reavaliado — se ele virar "só admins" enquanto ativo, quem descobre
+    // isso é a tentativa de envio de verdade, não a edição.
     const directory = await this.groupDirectory.listGroups(input.tenantId, broadcast.sessionName);
     const byJid = new Map(directory.map((entry) => [entry.jid, entry]));
 
@@ -419,6 +423,8 @@ export class GroupBroadcastService {
       id: target.id,
       groupJid: target.groupJid,
       hasHistory: (historyByTarget.get(target.id) ?? 0) > 0,
+      status: target.status === 'skipped' ? 'skipped' : 'pending',
+      skipReason: target.skipReason,
     }));
 
     const stepPlan = reconcileSteps(existingStepsWithHistory, desiredSteps);
@@ -432,6 +438,24 @@ export class GroupBroadcastService {
         ? { groupJid, groupName, status: 'skipped', skipReason }
         : { groupJid, groupName, status: 'pending' };
     });
+
+    // `toReopen` (2026-09-16): um grupo suprimido numa edição anterior
+    // (`removed_by_operator`) e re-selecionado agora — reconferido AO VIVO
+    // (mesma régua de um grupo novo) antes de voltar a `pending`. Ainda
+    // "só admins" ou o número já saiu dele? Continua suprimido, com o
+    // motivo atualizado — nunca reabre baseado num estado velho.
+    const targetsToReopen: string[] = [];
+    const targetsToReSuppress: Array<{ id: string; skipReason: string }> = [];
+    for (const targetId of targetPlan.toReopen) {
+      const target = existingTargetsWithHistory.find((t) => t.id === targetId)!;
+      const entry = byJid.get(target.groupJid);
+      const skipReason = determineGroupTargetSkipReason(entry);
+      if (skipReason) {
+        targetsToReSuppress.push({ id: targetId, skipReason });
+      } else {
+        targetsToReopen.push(targetId);
+      }
+    }
 
     // --- Aplicar, nesta ordem — NUNCA chama o dispatcher -------------------
     await this.repository.updateBroadcastSettings(input.tenantId, input.broadcastId, {
@@ -473,6 +497,11 @@ export class GroupBroadcastService {
     await this.repository.deleteSteps(input.tenantId, stepPlan.toDelete);
     await this.repository.deleteTargets(input.tenantId, targetPlan.toDelete);
     await this.repository.suppressTargets(input.tenantId, targetPlan.toSuppress, 'removed_by_operator');
+    await this.repository.reopenTargets(input.tenantId, targetsToReopen);
+    for (const { id, skipReason } of targetsToReSuppress) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.repository.suppressTargets(input.tenantId, [id], skipReason);
+    }
 
     for (const stepId of stepPlan.toFinish) {
       const finishing = existingStepsWithHistory.find((step) => step.id === stepId);
@@ -498,7 +527,8 @@ export class GroupBroadcastService {
       stepsFinished: stepPlan.toFinish.length,
       groupsCreated: targetPlan.toCreate.length,
       groupsDeleted: targetPlan.toDelete.length,
-      groupsSuppressed: targetPlan.toSuppress.length,
+      groupsSuppressed: targetPlan.toSuppress.length + targetsToReSuppress.length,
+      groupsReopened: targetsToReopen.length,
     });
     this.logger.info('Disparo em grupos editado', {
       tenantId: input.tenantId,

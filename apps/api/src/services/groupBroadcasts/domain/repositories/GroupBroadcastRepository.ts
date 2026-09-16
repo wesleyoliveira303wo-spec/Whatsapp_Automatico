@@ -242,6 +242,19 @@ export interface GroupBroadcastRepository {
    */
   suppressTargets(tenantId: string, targetIds: string[], skipReason: string): Promise<number>;
   /**
+   * Reabre um grupo que tinha sido suprimido NUMA EDIÇÃO ANTERIOR
+   * (`skipReason: 'removed_by_operator'`) e que o operador re-selecionou
+   * agora — o oposto simétrico de `suppressTargets`: volta `GroupBroadcastTarget`
+   * **e** todo `GroupBroadcastStepTarget` daquele alvo para `pending`, limpando
+   * `skipReason`, numa única transação. Só o SERVIÇO decide chamar isto, e só
+   * depois de reconferir o grupo AO VIVO (2026-09-16) — reabrir sem essa
+   * checagem devolveria à fila um grupo que virou "só admins" ou de onde o
+   * número saiu nesse meio-tempo. `sentCount` é preservado (não é zerado —
+   * é histórico de publicações passadas, não do ciclo atual). Array vazio
+   * devolve 0 sem tocar o banco.
+   */
+  reopenTargets(tenantId: string, targetIds: string[]): Promise<number>;
+  /**
    * Soma de `sentCount` por `targetId`, através de TODAS as etapas da
    * campanha — é o `hasHistory` que a reconciliação de edição consome
    * (`sentCount > 0` nalguma etapa = já publicou, nunca pode ser apagado).

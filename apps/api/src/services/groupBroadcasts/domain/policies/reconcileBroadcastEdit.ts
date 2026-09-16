@@ -79,12 +79,30 @@ export interface ExistingTarget {
   id: string;
   groupJid: string;
   hasHistory: boolean;
+  /**
+   * `status`/`skipReason` do alvo hoje — necessários para `toReopen`
+   * (2026-09-16): um grupo suprimido numa edição ANTERIOR
+   * (`skipReason: 'removed_by_operator'`) que o operador re-seleciona agora
+   * precisa voltar a `pending`, senão fica permanentemente mudo mesmo depois
+   * de "readicionado" — bug real encontrado em revisão, já alcançável pela
+   * UI de edição (`GroupBroadcastCreateForm` pré-marca `editing.targets`
+   * inteiros, inclusive os `skipped`).
+   */
+  status: 'pending' | 'skipped';
+  skipReason?: string;
 }
 
 export interface TargetReconciliation {
   toCreate: string[];
   toDelete: string[];
   toSuppress: string[];
+  /**
+   * Ids de alvos EXISTENTES, suprimidos numa edição anterior
+   * (`removed_by_operator`) e desejados de novo — o SERVIÇO ainda precisa
+   * reconferir cada um ao vivo antes de reabrir (o grupo pode ter virado
+   * "só admins", ou o número pode ter saído dele, nesse meio-tempo).
+   */
+  toReopen: string[];
 }
 
 /** Deduplica `desiredJids` preservando a ordem de chegada. */
@@ -103,14 +121,20 @@ export function reconcileTargets(existing: ExistingTarget[], desiredJids: string
 
   const toDelete: string[] = [];
   const toSuppress: string[] = [];
+  const toReopen: string[] = [];
   for (const target of existing) {
-    if (desiredSet.has(target.groupJid)) continue;
-    if (target.hasHistory) {
-      toSuppress.push(target.id);
-    } else {
-      toDelete.push(target.id);
+    if (!desiredSet.has(target.groupJid)) {
+      if (target.hasHistory) {
+        toSuppress.push(target.id);
+      } else {
+        toDelete.push(target.id);
+      }
+      continue;
+    }
+    if (target.status === 'skipped' && target.skipReason === 'removed_by_operator') {
+      toReopen.push(target.id);
     }
   }
 
-  return { toCreate, toDelete, toSuppress };
+  return { toCreate, toDelete, toSuppress, toReopen };
 }

@@ -187,17 +187,24 @@ export default function GroupBroadcastCreateForm({
   const [selected, setSelected] = useState<Map<string, WhatsAppGroupSummary>>(
     () =>
       new Map(
-        (editing?.targets ?? []).map((target) => [
-          target.groupJid,
-          {
-            jid: target.groupJid,
-            name: target.groupName,
-            participantCount: 0,
-            announce: false,
-            isAdmin: false,
-            canSend: true,
-          } satisfies WhatsAppGroupSummary,
-        ]),
+        (editing?.targets ?? [])
+          // Um grupo suprimido numa edição ANTERIOR por escolha explícita do
+          // operador (`removed_by_operator`) não deve reaparecer pré-marcado
+          // — ele foi removido de propósito; achado real (2026-09-16):
+          // reabri-lo silenciosamente é diferente de um grupo indisponível
+          // (que a seção "Indisponível" abaixo já trata à parte).
+          .filter((target) => target.skipReason !== 'removed_by_operator')
+          .map((target) => [
+            target.groupJid,
+            {
+              jid: target.groupJid,
+              name: target.groupName,
+              participantCount: 0,
+              announce: false,
+              isAdmin: false,
+              canSend: true,
+            } satisfies WhatsAppGroupSummary,
+          ]),
       ),
   );
 

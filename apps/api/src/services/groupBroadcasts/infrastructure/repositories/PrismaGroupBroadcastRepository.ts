@@ -816,6 +816,24 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     return count;
   }
 
+  async reopenTargets(tenantId: string, targetIds: string[]): Promise<number> {
+    if (targetIds.length === 0) return 0;
+    // Simétrico a `suppressTargets` — as DUAS escritas juntas, mesma
+    // transação. `sentCount` nunca é tocado (histórico de publicações
+    // passadas, não do ciclo atual).
+    const [{ count }] = await this.prisma.$transaction([
+      this.prisma.groupBroadcastTarget.updateMany({
+        where: { id: { in: targetIds }, tenantId },
+        data: { status: 'PENDING', skipReason: null },
+      }),
+      this.prisma.groupBroadcastStepTarget.updateMany({
+        where: { targetId: { in: targetIds }, tenantId },
+        data: { status: 'PENDING' },
+      }),
+    ]);
+    return count;
+  }
+
   async countStepTargetsWithHistory(
     tenantId: string,
     broadcastId: string,
