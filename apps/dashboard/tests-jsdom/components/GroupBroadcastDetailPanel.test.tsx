@@ -5,7 +5,7 @@
  * de envio. "Iniciar" pede confirmação explícita nomeando quantos grupos e
  * o risco.
  */
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import GroupBroadcastDetailPanel from '../../components/GroupBroadcastDetailPanel';
 import * as clientApi from '../../lib/clientApi';
@@ -17,10 +17,25 @@ jest.mock('../../lib/clientApi', () => ({
   pauseGroupBroadcast: jest.fn(),
   cancelGroupBroadcast: jest.fn(),
   removeGroupBroadcastStepMedia: jest.fn(),
+  fetchWhatsAppGroups: jest.fn(),
+  updateGroupBroadcast: jest.fn(),
 }));
 
 jest.mock('../../components/ui/use-toast', () => ({
   toast: jest.fn(),
+}));
+
+// Task 9 (2026-09-15) — o botão "Editar" lê `router.query.edit`/`router.replace`.
+// Mesmo padrão de `SessionRail.test.tsx`: `next/router` não tem contexto real
+// em teste, então o mock é explícito.
+const mockRouterReplace = jest.fn();
+let mockRouterQuery: Record<string, string> = {};
+jest.mock('next/router', () => ({
+  useRouter: () => ({
+    query: mockRouterQuery,
+    pathname: '/sessions/[sessionName]/campaigns/groups/[broadcastId]',
+    replace: mockRouterReplace,
+  }),
 }));
 
 // `usePollingRefresh` dispara em intervalo real — irrelevante para estes
@@ -82,14 +97,24 @@ function mockDetail(over: {
   });
 }
 
+afterEach(() => {
+  cleanup();
+});
+
 async function renderPanel(): Promise<void> {
-  render(<GroupBroadcastDetailPanel sessionName="vendas" broadcastId="broadcast-1" />);
-  await waitFor(() => expect(screen.getByText('Aviso de promoção')).toBeInTheDocument());
+  const { container } = render(
+    <GroupBroadcastDetailPanel sessionName="vendas" broadcastId="broadcast-1" />,
+  );
+  await waitFor(
+    () => expect(within(container).getByText('Aviso de promoção')).toBeInTheDocument(),
+    { timeout: 3000 },
+  );
 }
 
 describe('GroupBroadcastDetailPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRouterQuery = {};
     mockDetail();
   });
 
@@ -129,7 +154,7 @@ describe('GroupBroadcastDetailPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar e publicar' }));
 
     await waitFor(() =>
-      expect(clientApi.startGroupBroadcast).toHaveBeenCalledWith('broadcast-1'),
+      expect(clientApi.startGroupBroadcast).toHaveBeenCalledWith('broadcast-1', 'now'),
     );
   });
 
@@ -242,7 +267,10 @@ describe('GroupBroadcastDetailPanel', () => {
 });
 
 describe('GroupBroadcastDetailPanel — publicações e repetição (2026-09-14)', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRouterQuery = {};
+  });
 
   it('disparo único, sem repetição: nenhuma informação de repetição', async () => {
     mockDetail();
@@ -331,4 +359,113 @@ describe('GroupBroadcastDetailPanel — publicações e repetição (2026-09-14)
       screen.getByText('Disparo já iniciado — a lista de publicações é somente leitura.'),
     ).toBeInTheDocument();
   });
+});
+
+describe('GroupBroadcastDetailPanel — editar e retomar-com-escolha (Task 9, 2026-09-15)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRouterQuery = {};
+    (clientApi.fetchWhatsAppGroups as jest.Mock).mockResolvedValue({ groups: [] });
+  });
+
+  it('`?edit=1` na query abre o diálogo de edição sozinho e limpa a query', async () => {
+    mockRouterQuery = { edit: '1' };
+    mockDetail();
+    await renderPanel();
+
+    await waitFor(
+      () => expect(screen.getByRole('heading', { name: 'Editar disparo' })).toBeInTheDocument(),
+      { timeout: 3000 },
+    );
+    expect(mockRouterReplace).toHaveBeenCalled();
+  });
+
+  it('"Editar" abre o formulário de edição num draft/paused', async () => {
+    mockDetail();
+    await renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+
+    expect(screen.getByRole('heading', { name: 'Editar disparo' })).toBeInTheDocument();
+  });
+
+  it('num disparo RUNNING, o botão vira "Pausar e editar" e pede confirmação antes', async () => {
+    mockDetail({ broadcast: { status: 'running' } });
+    await renderPanel();
+
+    const editButton = screen.getByRole('button', { name: 'Pausar e editar' });
+    expect(screen.queryByRole('button', { name: /^editar$/i })).not.toBeInTheDocument();
+    fireEvent.click(editButton);
+
+    expect(screen.getByText('Pausar este disparo para editar?')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Editar disparo' })).not.toBeInTheDocument();
+  });
+
+  it('num disparo COMPLETED/CANCELLED, "Editar" fica desabilitado', async () => {
+    mockDetail({ broadcast: { status: 'completed' } });
+    await renderPanel();
+
+    expect(screen.getByRole('button', { name: 'Editar' })).toBeDisabled();
+  });
+
+  it('diálogo de retomada só oferece a escolha quando alguma etapa ativa tem nextRunAt futuro', async () => {
+    mockDetail({
+      broadcast: { status: 'paused' },
+      steps: [step({ nextRunAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() })],
+    });
+    await renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: /retomar envio/i }));
+
+    expect(screen.getByText('Publicar agora')).toBeInTheDocument();
+    expect(screen.getByText('Esperar o horário marcado')).toBeInTheDocument();
+  });
+
+  it('sem nenhuma etapa com nextRunAt futuro, o diálogo de retomada NÃO oferece a escolha', async () => {
+    mockDetail({ broadcast: { status: 'paused' } });
+    await renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: /retomar envio/i }));
+
+    expect(screen.queryByText('Publicar agora')).not.toBeInTheDocument();
+  });
+
+  it('escolher "Publicar agora" chama start com resumeMode "now"', async () => {
+    mockDetail({
+      broadcast: { status: 'paused' },
+      steps: [step({ nextRunAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() })],
+    });
+    await renderPanel();
+    (clientApi.startGroupBroadcast as jest.Mock).mockResolvedValue({
+      broadcast: broadcast({ status: 'running' }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /retomar envio/i }));
+    fireEvent.click(screen.getByText('Publicar agora'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e publicar' }));
+
+    await waitFor(() =>
+      expect(clientApi.startGroupBroadcast).toHaveBeenCalledWith('broadcast-1', 'now'),
+    );
+  });
+
+  it('escolher "Esperar o horário marcado" chama start com resumeMode "scheduled"', async () => {
+    mockDetail({
+      broadcast: { status: 'paused' },
+      steps: [step({ nextRunAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() })],
+    });
+    await renderPanel();
+    (clientApi.startGroupBroadcast as jest.Mock).mockResolvedValue({
+      broadcast: broadcast({ status: 'running' }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /retomar envio/i }));
+    fireEvent.click(screen.getByText('Esperar o horário marcado'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e publicar' }));
+
+    await waitFor(() =>
+      expect(clientApi.startGroupBroadcast).toHaveBeenCalledWith('broadcast-1', 'scheduled'),
+    );
+  });
+
 });

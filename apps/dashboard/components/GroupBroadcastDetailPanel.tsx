@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Play, Pause, XCircle, FileText, X, Users, Repeat } from 'lucide-react';
+import { useRouter } from 'next/router';
+import { ChevronLeft, Play, Pause, XCircle, FileText, X, Users, Repeat, Pencil } from 'lucide-react';
 
 import {
   fetchGroupBroadcast,
@@ -15,7 +16,9 @@ import {
   type GroupBroadcastStatus,
   type GroupBroadcastTarget,
   type GroupBroadcastSummary,
+  type ResumeMode,
 } from '@/lib/clientApi';
+import GroupBroadcastCreateForm from '@/components/GroupBroadcastCreateForm';
 import { usePollingRefresh } from '@/hooks/usePollingRefresh';
 import { formatDateTime } from '@/lib/formatters';
 import { toast } from '@/components/ui/use-toast';
@@ -122,6 +125,10 @@ export default function GroupBroadcastDetailPanel({
   const [actionPending, setActionPending] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [resumeMode, setResumeMode] = useState<ResumeMode>('now');
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [pauseAndEditConfirmOpen, setPauseAndEditConfirmOpen] = useState(false);
+  const router = useRouter();
 
   // Mesmo padrão de `CampaignDetailPanel`: ref (não estado) para o polling
   // silencioso ler o status ATUAL sem recriar o callback a cada mudança.
@@ -167,6 +174,20 @@ export default function GroupBroadcastDetailPanel({
   }, [load]);
 
   usePollingRefresh(silentRefresh);
+
+  // Item "Editar" no menu "⋮" da lista (2026-09-15) navega para cá com
+  // `?edit=1` — abre o diálogo de edição direto, sem um 2º clique. Só
+  // dispara se o status ainda aceitar edição (o botão "Editar" cuida do
+  // resto); a query é limpa em seguida para não reabrir num F5/voltar.
+  useEffect(() => {
+    if (!broadcast || router.query.edit !== '1') return;
+    if (broadcast.status === 'draft' || broadcast.status === 'paused') {
+      setEditDialogOpen(true);
+    }
+    const { edit: _edit, ...rest } = router.query;
+    void router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só quando o disparo carrega/a query muda.
+  }, [broadcast, router.query.edit]);
 
   async function runAction(
     action: () => Promise<{ broadcast: GroupBroadcast }>,
@@ -230,6 +251,22 @@ export default function GroupBroadcastDetailPanel({
   // publicações, o mesmo grupo entra N vezes nesse total.
   const eligibleGroupCount = summary.total - summary.skipped;
 
+  // Retomar-com-escolha (Task 9, 2026-09-15) — só oferece a escolha quando
+  // alguma etapa ATIVA (sem `finishedAt`) já tem um `nextRunAt` no futuro;
+  // sem isso, "esperar o horário marcado" não teria o que honrar.
+  const now = Date.now();
+  const hasFutureScheduledStep = steps.some(
+    (step) => !step.finishedAt && step.nextRunAt && new Date(step.nextRunAt).getTime() > now,
+  );
+
+  const canEdit = broadcast.status === 'draft' || broadcast.status === 'paused';
+  const editBlockedReason =
+    broadcast.status === 'completed'
+      ? 'Um disparo concluído não pode mais ser editado.'
+      : broadcast.status === 'cancelled'
+        ? 'Um disparo cancelado não pode mais ser editado.'
+        : undefined;
+
   return (
     <div>
       <Link
@@ -247,7 +284,78 @@ export default function GroupBroadcastDetailPanel({
         <Badge variant={STATUS_BADGE_VARIANT[broadcast.status]}>
           {STATUS_LABELS[broadcast.status]}
         </Badge>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={(!canEdit && broadcast.status !== 'running') || actionPending}
+          title={editBlockedReason}
+          onClick={() =>
+            broadcast.status === 'running'
+              ? setPauseAndEditConfirmOpen(true)
+              : setEditDialogOpen(true)
+          }
+        >
+          <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          {broadcast.status === 'running' ? 'Pausar e editar' : 'Editar'}
+        </Button>
       </div>
+
+      <Dialog open={pauseAndEditConfirmOpen} onOpenChange={setPauseAndEditConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pausar este disparo para editar?</DialogTitle>
+            <DialogDescription>
+              Editar exige pausar primeiro — o disparo vai parar de publicar até você retomá-lo de
+              novo (o que já foi publicado não muda).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Voltar
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={actionPending}
+              onClick={async () => {
+                setPauseAndEditConfirmOpen(false);
+                setActionPending(true);
+                try {
+                  const result = await pauseGroupBroadcast(broadcastId);
+                  setBroadcast(result.broadcast);
+                  setEditDialogOpen(true);
+                } catch (error) {
+                  toast({
+                    variant: 'destructive',
+                    title: 'Não foi possível pausar',
+                    description: errorMessageFor(error),
+                  });
+                } finally {
+                  setActionPending(false);
+                }
+              }}
+            >
+              Pausar e editar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar disparo</DialogTitle>
+          </DialogHeader>
+          <GroupBroadcastCreateForm
+            sessionName={sessionName}
+            editing={{ broadcast, steps, targets }}
+            onCreated={load}
+            onClose={() => setEditDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
       <p className="mb-2 text-[13px] text-muted-foreground">
         Criado em {formatDateTime(broadcast.createdAt)}
         {broadcast.pausedReason === 'consecutive_failures' &&
@@ -376,7 +484,13 @@ export default function GroupBroadcastDetailPanel({
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <Dialog open={startDialogOpen} onOpenChange={setStartDialogOpen}>
+        <Dialog
+          open={startDialogOpen}
+          onOpenChange={(open) => {
+            setStartDialogOpen(open);
+            if (open) setResumeMode('now');
+          }}
+        >
           <Button
             type="button"
             size="cta"
@@ -401,6 +515,35 @@ export default function GroupBroadcastDetailPanel({
                 poderá pausar a qualquer momento, mas mensagens já publicadas não podem ser desfeitas.
               </DialogDescription>
             </DialogHeader>
+
+            {hasFutureScheduledStep && (
+              <fieldset className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                <legend className="px-1 text-[12.5px] font-medium text-foreground">
+                  Alguma publicação já tem horário marcado
+                </legend>
+                <label className="flex items-center gap-2 text-[13px] text-foreground">
+                  <input
+                    type="radio"
+                    name="resume-mode"
+                    checked={resumeMode === 'now'}
+                    onChange={() => setResumeMode('now')}
+                    className="h-4 w-4"
+                  />
+                  Publicar agora
+                </label>
+                <label className="flex items-center gap-2 text-[13px] text-foreground">
+                  <input
+                    type="radio"
+                    name="resume-mode"
+                    checked={resumeMode === 'scheduled'}
+                    onChange={() => setResumeMode('scheduled')}
+                    className="h-4 w-4"
+                  />
+                  Esperar o horário marcado
+                </label>
+              </fieldset>
+            )}
+
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="outline">
@@ -413,7 +556,7 @@ export default function GroupBroadcastDetailPanel({
                 onClick={() => {
                   setStartDialogOpen(false);
                   void runAction(
-                    () => startGroupBroadcast(broadcastId),
+                    () => startGroupBroadcast(broadcastId, resumeMode),
                     broadcast.status === 'paused' ? 'Disparo retomado' : 'Disparo iniciado',
                   );
                 }}
