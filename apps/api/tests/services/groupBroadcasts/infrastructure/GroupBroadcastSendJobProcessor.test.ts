@@ -345,4 +345,50 @@ describe('GroupBroadcastSendJobProcessor (Disparos em grupos, 2026-09-11, etapas
     const finalBroadcast = await repository.findById('tenant-1', broadcastId);
     expect(finalBroadcast?.status).toBe('completed');
   });
+
+  it('reprodução do incidente real (2026-09-16, 2ª correção): duas etapas terminando o ciclo juntas, fora da janela, reagendam ESPAÇADAS pelo escalonamento configurado', async () => {
+    const { repository } = buildSut();
+    const dispatcher = { scheduleStepTarget: jest.fn(), scheduleRun: jest.fn() };
+    const sut = new GroupBroadcastSendJobProcessor(
+      repository,
+      new FakeGroupMessageSender(),
+      new NoopLogger(),
+      dispatcher as never,
+    );
+    const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      recurrenceIntervalHours: 1,
+      sendWindowStart: '07:00',
+      sendWindowEnd: '22:00',
+      stepLaunchOffsetMinutes: 10,
+      extraSteps: [{ messageTemplate: 'Segunda publicação', recurrenceIntervalHours: 1 }],
+    });
+
+    // 21h30 BRT (America/Sao_Paulo, UTC-3) = 00h30 UTC do dia seguinte — instante
+    // fixo, independente do fuso da máquina que roda o teste.
+    jest.useFakeTimers().setSystemTime(new Date(Date.UTC(2026, 8, 17, 0, 30, 0, 0)));
+    await sut.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[0],
+      stepTargetId: stepTargetIds[0][0],
+    });
+    await sut.process({
+      tenantId: 'tenant-1',
+      broadcastId,
+      stepId: stepIds[1],
+      stepTargetId: stepTargetIds[1][0],
+    });
+    jest.useRealTimers();
+
+    // Ambas terminam o ciclo às 21h30 + 1h = 22h30 — fora da janela (fecha às 22h) →
+    // as duas seriam empurradas pro MESMO horário de abertura (7h do dia seguinte)
+    // se o escalonamento não fosse somado aqui — é exatamente o bug relatado.
+    const steps = await repository.listSteps('tenant-1', broadcastId);
+    const step0 = steps.find((s) => s.id === stepIds[0])!;
+    const step1 = steps.find((s) => s.id === stepIds[1])!;
+    expect(step1.nextRunAt!.getTime() - step0.nextRunAt!.getTime()).toBe(10 * 60 * 1000);
+  });
 });

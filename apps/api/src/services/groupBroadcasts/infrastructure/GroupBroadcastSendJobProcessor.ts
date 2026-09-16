@@ -3,6 +3,7 @@ import { GroupBroadcastRepository } from '../domain/repositories/GroupBroadcastR
 import { GroupMessageSender } from '../domain/providers/GroupMessageSender';
 import {
   GROUP_CIRCUIT_BREAKER_SAMPLE_SIZE,
+  launchOffsetMs,
   shouldPauseGroupBroadcast,
 } from '../domain/policies/groupBroadcastPacing';
 import {
@@ -148,7 +149,13 @@ export class GroupBroadcastSendJobProcessor {
 
     if (isRecurring(freshStep) && this.sendDispatcher) {
       const window = buildSendWindow(broadcast.sendWindowStart, broadcast.sendWindowEnd);
-      const decision = decideNextRun(freshStep, window, finishedAt, DEFAULT_GROUP_BROADCAST_TIMEZONE);
+      const decision = decideNextRun(
+        freshStep,
+        window,
+        finishedAt,
+        DEFAULT_GROUP_BROADCAST_TIMEZONE,
+        launchOffsetMs(freshStep, broadcast.stepLaunchOffsetMinutes),
+      );
       if (decision.shouldRepeat) {
         await this.repository.markStepRunFinished(
           data.tenantId,

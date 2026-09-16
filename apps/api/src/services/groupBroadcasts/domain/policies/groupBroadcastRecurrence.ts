@@ -204,7 +204,7 @@ export function shiftIntoSendWindow(at: Date, window?: SendWindow, timeZone?: st
  * Duração da janela em minutos — suporta a janela que vira a noite (ex.:
  * 22:00–06:00, onde `endMinute < startMinute`).
  */
-function windowDurationMinutes(window: SendWindow): number {
+export function windowDurationMinutes(window: SendWindow): number {
   if (window.startMinute < window.endMinute) return window.endMinute - window.startMinute;
   return 24 * 60 - window.startMinute + window.endMinute;
 }
@@ -244,17 +244,33 @@ export function isRecurring(step: Pick<GroupBroadcastStep, 'recurrenceIntervalHo
 /**
  * Quando a próxima repetição deve começar: o intervalo contado a partir do fim
  * da repetição anterior, já empurrado para dentro da janela de horário.
+ *
+ * `launchOffsetMsValue` (2026-09-16, 2ª correção — achado real de produção: o
+ * fix anterior só cobria `GroupBroadcastRunJobProcessor`, que reagenda um job
+ * que ACORDOU fora da janela. Este caminho aqui — chamado pelo processador de
+ * ENVIO ao fim de todo ciclo bem-sucedido — nunca aplicava o escalonamento, e
+ * é ele quem decide o próximo horário na maioria das vezes. Quando várias
+ * etapas terminam um ciclo quase no mesmo instante e o próximo horário natural
+ * cai fora da janela, TODAS eram empurradas pro MESMO horário de abertura,
+ * coladas para sempre — mesmo com o fix anterior). Só é somado quando o
+ * horário natural (sem escalonamento) já caía FORA da janela — se já cai
+ * dentro, a etapa segue seu próprio relógio sem interferência, como sempre.
  */
 export function computeNextRunAt(
   finishedAt: Date,
   intervalHours: number,
   window?: SendWindow,
   timeZone?: string,
+  launchOffsetMsValue = 0,
 ): Date {
   const target = new Date(
     finishedAt.getTime() + clampRecurrenceIntervalHours(intervalHours) * 60 * 60 * 1000,
   );
-  return shiftIntoSendWindow(target, window, timeZone);
+  if (!window || isWithinSendWindow(target, window, timeZone)) {
+    return target;
+  }
+  const windowOpen = shiftIntoSendWindow(target, window, timeZone);
+  return new Date(windowOpen.getTime() + capOffsetWithinWindow(launchOffsetMsValue, window));
 }
 
 export type RecurrenceDecision =
@@ -284,6 +300,7 @@ export function decideNextRun(
   window: SendWindow | undefined,
   finishedAt: Date,
   timeZone?: string,
+  launchOffsetMsValue = 0,
 ): RecurrenceDecision {
   const runsCompleted = step.runsCompleted + 1;
   const maxRuns = step.recurrenceMaxRuns;
@@ -296,6 +313,7 @@ export function decideNextRun(
     step.recurrenceIntervalHours ?? MIN_RECURRENCE_INTERVAL_HOURS,
     window,
     timeZone,
+    launchOffsetMsValue,
   );
 
   const endsAt = step.recurrenceEndsAt;

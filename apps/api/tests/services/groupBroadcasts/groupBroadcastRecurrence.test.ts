@@ -139,6 +139,20 @@ describe('computeNextRunAt', () => {
     // 19h + 2h = 21h, fora da janela → abre às 8h do dia seguinte.
     expect(computeNextRunAt(at(1, 19), 2, buildSendWindow('08:00', '20:00'))).toEqual(at(2, 8));
   });
+
+  it('soma o escalonamento QUANDO empurra pra dentro da janela (achado real de 2026-09-16, 2ª correção)', () => {
+    const window = buildSendWindow('08:00', '20:00');
+    const offsetMs = 10 * 60 * 1000;
+    // Sem escalonamento: as duas cairiam juntas às 8h.
+    expect(computeNextRunAt(at(1, 19), 2, window, undefined, 0)).toEqual(at(2, 8));
+    // Com escalonamento: a etapa 1 (offset = 1×10min) abre 10 min depois da etapa 0.
+    expect(computeNextRunAt(at(1, 19), 2, window, undefined, offsetMs)).toEqual(at(2, 8, 10));
+  });
+
+  it('NÃO soma escalonamento quando o horário natural já cai dentro da janela — cada etapa segue seu próprio relógio', () => {
+    const window = buildSendWindow('08:00', '20:00');
+    expect(computeNextRunAt(at(1, 10), 2, window, undefined, 30 * 60 * 1000)).toEqual(at(1, 12));
+  });
 });
 
 describe('decideNextRun — as três formas de término convivem', () => {
@@ -180,5 +194,31 @@ describe('decideNextRun — as três formas de término convivem', () => {
         at(1, 10),
       ),
     ).toEqual({ shouldRepeat: false, reason: 'max_runs_reached' });
+  });
+
+  it('reprodução do incidente real (2026-09-16, 2ª correção): várias etapas que terminam o ciclo juntas e caem fora da janela reabrem ESPAÇADAS, não coladas', () => {
+    const window = buildSendWindow('07:00', '22:00');
+    // As 4 etapas terminam o ciclo no MESMO instante (19h) e o intervalo (3h)
+    // as levaria pra 22h — exatamente fora da janela (fecha às 22h).
+    const step = { ...base, recurrenceIntervalHours: 3 };
+    const finishedAt = at(1, 19);
+    const step0 = decideNextRun(step, window, finishedAt, undefined, 0 * 10 * 60 * 1000);
+    const step1 = decideNextRun(step, window, finishedAt, undefined, 1 * 10 * 60 * 1000);
+    const step2 = decideNextRun(step, window, finishedAt, undefined, 2 * 10 * 60 * 1000);
+    const step3 = decideNextRun(step, window, finishedAt, undefined, 3 * 10 * 60 * 1000);
+    expect(step0).toEqual({ shouldRepeat: true, nextRunAt: at(2, 7, 0) });
+    expect(step1).toEqual({ shouldRepeat: true, nextRunAt: at(2, 7, 10) });
+    expect(step2).toEqual({ shouldRepeat: true, nextRunAt: at(2, 7, 20) });
+    expect(step3).toEqual({ shouldRepeat: true, nextRunAt: at(2, 7, 30) });
+  });
+
+  it('sem escalonamento configurado (offset 0), continua reabrindo tudo junto — comportamento antigo preservado', () => {
+    const window = buildSendWindow('07:00', '22:00');
+    const step = { ...base, recurrenceIntervalHours: 3 };
+    const finishedAt = at(1, 19);
+    expect(decideNextRun(step, window, finishedAt)).toEqual({
+      shouldRepeat: true,
+      nextRunAt: at(2, 7, 0),
+    });
   });
 });
