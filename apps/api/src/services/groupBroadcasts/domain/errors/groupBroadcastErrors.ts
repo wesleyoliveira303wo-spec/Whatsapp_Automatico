@@ -17,7 +17,7 @@ export class GroupBroadcastNotFoundError extends Error {
 }
 
 export type GroupBroadcastAction =
-  'start' | 'pause' | 'cancel' | 'delete' | 'attach_media';
+  'start' | 'pause' | 'cancel' | 'delete' | 'attach_media' | 'edit';
 
 export class InvalidGroupBroadcastTransitionError extends Error {
   constructor(
@@ -148,5 +148,19 @@ export class InvalidRecurrenceError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'InvalidRecurrenceError';
+  }
+}
+
+/**
+ * Edição de disparo (2026-09-15) — o payload referenciou o mesmo `step.id`
+ * mais de uma vez. `reconcileSteps` (Domain, puro) não deduplica isso por
+ * conta própria (produziria duas entradas em `toUpdate` para o mesmo step);
+ * a validação de payload é responsabilidade do serviço, que roda antes da
+ * reconciliação.
+ */
+export class DuplicateStepIdError extends Error {
+  constructor(public readonly stepId: string) {
+    super(`A publicação "${stepId}" aparece mais de uma vez no payload.`);
+    this.name = 'DuplicateStepIdError';
   }
 }

@@ -21,6 +21,7 @@ import {
   GroupBroadcastTarget,
 } from '../domain/entities/GroupBroadcast';
 import {
+  DuplicateStepIdError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
   GroupBroadcastMediaTooLargeError,
@@ -35,6 +36,13 @@ import {
   TooManyGroupsSelectedError,
   TooManyStepsError,
 } from '../domain/errors/groupBroadcastErrors';
+import {
+  DesiredStep,
+  ExistingStep,
+  ExistingTarget,
+  reconcileSteps,
+  reconcileTargets,
+} from '../domain/policies/reconcileBroadcastEdit';
 import {
   clampGroupIntervalSeconds,
   clampStepLaunchOffsetMinutes,
@@ -88,6 +96,39 @@ export interface CreateGroupBroadcastInput {
    * publicações", todas rodam em PARALELO, cada uma com seu próprio ritmo.
    */
   steps: CreateGroupBroadcastStepInput[];
+}
+
+/**
+ * Edição de uma publicação já existente (2026-09-15) — mesmos campos de
+ * `CreateGroupBroadcastStepInput`, mais `id`: presente e batendo com uma etapa
+ * real desta campanha → a etapa CONTINUA, só o conteúdo muda; ausente (ou não
+ * batendo) → tratada como etapa NOVA pela reconciliação pura
+ * (`reconcileSteps`).
+ */
+export interface UpdateGroupBroadcastStepInput {
+  id?: string;
+  messageTemplate: string;
+  recurrenceIntervalHours?: number;
+  recurrenceMaxRuns?: number;
+  recurrenceEndsAt?: Date;
+}
+
+/**
+ * O cliente envia o ESTADO FINAL DESEJADO por completo — `groupJids`/`steps`
+ * não são "só o que mudou". O servidor calcula a diferença (`reconcileSteps`/
+ * `reconcileTargets`) e aplica; item com histórico nunca é apagado, vira
+ * "etapa encerrada" ou "grupo suprimido" (ver `updateBroadcast`).
+ */
+export interface UpdateGroupBroadcastInput {
+  tenantId: string;
+  broadcastId: string;
+  name: string;
+  groupJids: string[];
+  intervalSeconds?: number;
+  sendWindowStart?: string;
+  sendWindowEnd?: string;
+  stepLaunchOffsetMinutes?: number;
+  steps: UpdateGroupBroadcastStepInput[];
 }
 
 /** Quem executou a ação — só para a trilha de auditoria (`undefined` = plano máquina). */
@@ -262,6 +303,199 @@ export class GroupBroadcastService {
     });
 
     return { broadcast, steps, summary, targets };
+  }
+
+  /**
+   * Edita um disparo já criado (`draft`/`paused` apenas) — 2026-09-15. NUNCA
+   * chama o dispatcher: salvar uma edição só grava no Postgres, quem agenda
+   * continua sendo `startBroadcast` (invariante com teste dedicado). O
+   * cliente manda o estado final desejado por inteiro; a diferença contra o
+   * que já existe é calculada por `reconcileSteps`/`reconcileTargets`
+   * (Domain, puras) e aplicada nesta ordem: envelope da campanha → etapas
+   * atualizadas → etapas novas → grupos novos → etapas/grupos removidos →
+   * grupos suprimidos → rematerializar o progresso por etapa×grupo.
+   */
+  async updateBroadcast(
+    input: UpdateGroupBroadcastInput,
+    actor: GroupBroadcastActor = {},
+  ): Promise<GroupBroadcastDetail> {
+    await this.assertTenantExists(input.tenantId);
+    const broadcast = await this.requireBroadcast(input.tenantId, input.broadcastId);
+    if (broadcast.status !== 'draft' && broadcast.status !== 'paused') {
+      throw new InvalidGroupBroadcastTransitionError(broadcast.status, 'edit');
+    }
+
+    // --- Validação do payload — mesmas regras de `createBroadcast` --------
+    if (input.steps.length === 0) {
+      throw new NoStepsProvidedError();
+    }
+    if (input.steps.length > MAX_STEPS_PER_BROADCAST) {
+      throw new TooManyStepsError(input.steps.length, MAX_STEPS_PER_BROADCAST);
+    }
+    const seenStepIds = new Set<string>();
+    for (const step of input.steps) {
+      if (step.id === undefined) continue;
+      if (seenStepIds.has(step.id)) {
+        throw new DuplicateStepIdError(step.id);
+      }
+      seenStepIds.add(step.id);
+    }
+
+    const windowInformed = Boolean(input.sendWindowStart) || Boolean(input.sendWindowEnd);
+    if (windowInformed && !buildSendWindow(input.sendWindowStart, input.sendWindowEnd)) {
+      throw new InvalidRecurrenceError(
+        'A janela de horário precisa de início e fim válidos ("HH:MM") e diferentes entre si.',
+      );
+    }
+
+    const desiredSteps: DesiredStep[] = input.steps.map((step, order) => {
+      const recurring =
+        step.recurrenceIntervalHours !== undefined && step.recurrenceIntervalHours !== null;
+      if (recurring) {
+        if (
+          step.recurrenceMaxRuns !== undefined &&
+          (step.recurrenceMaxRuns < 2 || step.recurrenceMaxRuns > MAX_RECURRENCE_RUNS)
+        ) {
+          throw new InvalidRecurrenceError(
+            `Publicação ${order + 1}: o número de repetições precisa estar entre 2 e ${MAX_RECURRENCE_RUNS}.`,
+          );
+        }
+        if (step.recurrenceEndsAt && step.recurrenceEndsAt.getTime() <= Date.now()) {
+          throw new InvalidRecurrenceError(
+            `Publicação ${order + 1}: a data de término precisa estar no futuro.`,
+          );
+        }
+      }
+      return {
+        id: step.id,
+        messageTemplate: step.messageTemplate,
+        recurrenceIntervalHours: recurring
+          ? clampRecurrenceIntervalHours(step.recurrenceIntervalHours)
+          : undefined,
+        recurrenceMaxRuns: recurring ? step.recurrenceMaxRuns : undefined,
+        recurrenceEndsAt: recurring ? step.recurrenceEndsAt : undefined,
+      };
+    });
+
+    const groupJids = Array.from(
+      new Set(input.groupJids.map((jid) => jid.trim()).filter((jid) => jid.length > 0)),
+    );
+    if (groupJids.length === 0) {
+      throw new NoGroupsSelectedError();
+    }
+    if (groupJids.length > MAX_GROUPS_PER_BROADCAST) {
+      throw new TooManyGroupsSelectedError(groupJids.length, MAX_GROUPS_PER_BROADCAST);
+    }
+
+    // Confere os grupos desejados AO VIVO, mesma régua da criação — inclusive
+    // os que já eram alvo antes (podem ter virado "só admins" nesse meio-tempo).
+    const directory = await this.groupDirectory.listGroups(input.tenantId, broadcast.sessionName);
+    const byJid = new Map(directory.map((entry) => [entry.jid, entry]));
+
+    const [existingSteps, existingTargets, historyByTarget] = await Promise.all([
+      this.repository.listSteps(input.tenantId, input.broadcastId),
+      this.repository.listTargets(input.tenantId, input.broadcastId),
+      this.repository.countStepTargetsWithHistory(input.tenantId, input.broadcastId),
+    ]);
+
+    const existingStepsWithHistory: ExistingStep[] = await Promise.all(
+      existingSteps.map(async (step) => {
+        const stepTargets = await this.repository.listStepTargets(input.tenantId, step.id);
+        const hasHistory = step.runsCompleted > 0 || stepTargets.some((t) => t.sentCount > 0);
+        return { id: step.id, order: step.order, runsCompleted: step.runsCompleted, hasHistory };
+      }),
+    );
+    const existingTargetsWithHistory: ExistingTarget[] = existingTargets.map((target) => ({
+      id: target.id,
+      groupJid: target.groupJid,
+      hasHistory: (historyByTarget.get(target.id) ?? 0) > 0,
+    }));
+
+    const stepPlan = reconcileSteps(existingStepsWithHistory, desiredSteps);
+    const targetPlan = reconcileTargets(existingTargetsWithHistory, groupJids);
+
+    const targetsToCreate: GroupBroadcastTargetDraft[] = targetPlan.toCreate.map((groupJid) => {
+      const entry = byJid.get(groupJid);
+      const skipReason = determineGroupTargetSkipReason(entry);
+      const groupName = entry?.name ?? 'Grupo não encontrado';
+      return skipReason
+        ? { groupJid, groupName, status: 'skipped', skipReason }
+        : { groupJid, groupName, status: 'pending' };
+    });
+
+    // --- Aplicar, nesta ordem — NUNCA chama o dispatcher -------------------
+    await this.repository.updateBroadcastSettings(input.tenantId, input.broadcastId, {
+      name: input.name,
+      intervalSeconds: clampGroupIntervalSeconds(input.intervalSeconds),
+      sendWindowStart: input.sendWindowStart,
+      sendWindowEnd: input.sendWindowEnd,
+      stepLaunchOffsetMinutes: clampStepLaunchOffsetMinutes(input.stepLaunchOffsetMinutes),
+    });
+
+    for (const { id, desired } of stepPlan.toUpdate) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.repository.updateStep(input.tenantId, id, {
+        messageTemplate: desired.messageTemplate,
+        recurrenceIntervalHours: desired.recurrenceIntervalHours,
+        recurrenceMaxRuns: desired.recurrenceMaxRuns,
+        recurrenceEndsAt: desired.recurrenceEndsAt,
+      });
+    }
+
+    if (stepPlan.toCreate.length > 0) {
+      await this.repository.createSteps(
+        input.tenantId,
+        input.broadcastId,
+        stepPlan.toCreate.map(({ order, desired }) => ({
+          order,
+          messageTemplate: desired.messageTemplate,
+          recurrenceIntervalHours: desired.recurrenceIntervalHours,
+          recurrenceMaxRuns: desired.recurrenceMaxRuns,
+          recurrenceEndsAt: desired.recurrenceEndsAt,
+        })),
+      );
+    }
+
+    if (targetsToCreate.length > 0) {
+      await this.repository.createTargets(input.tenantId, input.broadcastId, targetsToCreate);
+    }
+
+    await this.repository.deleteSteps(input.tenantId, stepPlan.toDelete);
+    await this.repository.deleteTargets(input.tenantId, targetPlan.toDelete);
+    await this.repository.suppressTargets(input.tenantId, targetPlan.toSuppress, 'removed_by_operator');
+
+    for (const stepId of stepPlan.toFinish) {
+      const finishing = existingStepsWithHistory.find((step) => step.id === stepId);
+      // eslint-disable-next-line no-await-in-loop
+      await this.repository.markStepFinished(input.tenantId, stepId, finishing?.runsCompleted ?? 0);
+    }
+
+    // Idempotente — materializa só o que falta (etapas/grupos novos), nunca
+    // duplica progresso já existente.
+    await this.repository.initializeStepTargets(input.tenantId, input.broadcastId);
+
+    const [updatedBroadcast, steps, summary, targets] = await Promise.all([
+      this.repository.findById(input.tenantId, input.broadcastId),
+      this.repository.listSteps(input.tenantId, input.broadcastId),
+      this.repository.summarizeTargets(input.tenantId, input.broadcastId),
+      this.repository.listTargets(input.tenantId, input.broadcastId),
+    ]);
+
+    await this.audit(input.tenantId, actor, 'group_broadcast.edited', input.broadcastId, {
+      stepsUpdated: stepPlan.toUpdate.length,
+      stepsCreated: stepPlan.toCreate.length,
+      stepsDeleted: stepPlan.toDelete.length,
+      stepsFinished: stepPlan.toFinish.length,
+      groupsCreated: targetPlan.toCreate.length,
+      groupsDeleted: targetPlan.toDelete.length,
+      groupsSuppressed: targetPlan.toSuppress.length,
+    });
+    this.logger.info('Disparo em grupos editado', {
+      tenantId: input.tenantId,
+      broadcastId: input.broadcastId,
+    });
+
+    return { broadcast: updatedBroadcast!, steps, summary, targets };
   }
 
   async listBroadcasts(tenantId: string, sessionName: string): Promise<GroupBroadcastListItem[]> {

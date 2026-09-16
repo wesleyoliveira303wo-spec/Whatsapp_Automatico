@@ -1,5 +1,6 @@
 import { GroupBroadcastService } from '../../../../src/services/groupBroadcasts/application/GroupBroadcastService';
 import {
+  DuplicateStepIdError,
   InvalidRecurrenceError,
   GroupBroadcastEngineNotConfiguredError,
   GroupBroadcastMediaNotFoundError,
@@ -219,6 +220,229 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       await expect(
         service.createBroadcast({ ...baseInput, groupJids: ['aberto@g.us'], steps }),
       ).rejects.toBeInstanceOf(TooManyStepsError);
+    });
+  });
+
+  describe('updateBroadcast() — editar disparo já criado (2026-09-15)', () => {
+    it('editar o texto de uma etapa que já publicou preserva runsCompleted', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['aberto@g.us'],
+        messageTemplate: 'Texto antigo',
+        runsCompleted: 3,
+      });
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['aberto@g.us'],
+        steps: [{ id: stepIds[0], messageTemplate: 'Texto novo' }],
+      });
+
+      expect(detail.steps).toHaveLength(1);
+      expect(detail.steps[0].messageTemplate).toBe('Texto novo');
+      expect(detail.steps[0].runsCompleted).toBe(3);
+    });
+
+    it('remover do payload uma etapa que já publicou ENCERRA (markStepFinished), nunca apaga', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['aberto@g.us'],
+        runsCompleted: 2,
+        extraSteps: [{ messageTemplate: 'Segunda publicação' }],
+      });
+      // stepIds[0] tem histórico (runsCompleted=2); stepIds[1] é nova, sem histórico.
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['aberto@g.us'],
+        steps: [{ id: stepIds[1], messageTemplate: 'Segunda publicação' }],
+      });
+
+      const finished = detail.steps.find((s) => s.id === stepIds[0]);
+      expect(finished).toBeDefined();
+      expect(finished!.finishedAt).toBeDefined();
+      const untouched = detail.steps.find((s) => s.id === stepIds[1]);
+      expect(untouched!.finishedAt).toBeUndefined();
+    });
+
+    it('remover do payload uma etapa SEM histórico apaga de vez', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'draft',
+        groupJids: ['aberto@g.us'],
+        extraSteps: [{ messageTemplate: 'Segunda publicação' }],
+      });
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['aberto@g.us'],
+        steps: [{ id: stepIds[1], messageTemplate: 'Segunda publicação' }],
+      });
+
+      expect(detail.steps.map((s) => s.id)).toEqual([stepIds[1]]);
+    });
+
+    it('remover um grupo que já recebeu SUPRIME (nunca apaga), preservando sentCount', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds, targetIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['aberto@g.us', 'outro@g.us'],
+      });
+      repository.forceStepTarget(stepTargetIds[0][0], { sentCount: 2, status: 'sent' });
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['outro@g.us'], // remove aberto@g.us do desejado
+        steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+      });
+
+      const suppressed = detail.targets.find((t) => t.id === targetIds[0]);
+      expect(suppressed).toMatchObject({ status: 'skipped', skipReason: 'removed_by_operator' });
+      expect(detail.targets).toHaveLength(2); // continua existindo, só suprimido
+    });
+
+    it('remover um grupo que NUNCA recebeu apaga de vez', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds, targetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'draft',
+        groupJids: ['aberto@g.us', 'outro@g.us'],
+      });
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['outro@g.us'],
+        steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+      });
+
+      expect(detail.targets.map((t) => t.id)).toEqual([targetIds[1]]);
+    });
+
+    it('grupo NOVO só-admin entra como skipped, mesma régua da criação', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'draft',
+        groupJids: ['aberto@g.us'],
+      });
+
+      const detail = await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo',
+        groupJids: ['aberto@g.us', 'admin@g.us'],
+        steps: [{ id: stepIds[0], messageTemplate: 'Promoção!' }],
+      });
+
+      const added = detail.targets.find((t) => t.groupJid === 'admin@g.us');
+      expect(added).toMatchObject({ status: 'skipped', skipReason: 'admin_only_group' });
+    });
+
+    it('campanha running: recusa a edição (InvalidGroupBroadcastTransitionError, ação "edit")', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'running' });
+
+      const error = await service
+        .updateBroadcast({
+          tenantId: 'tenant-1',
+          broadcastId,
+          name: 'Disparo',
+          groupJids: ['aberto@g.us'],
+          steps: [{ messageTemplate: 'Promoção!' }],
+        })
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(InvalidGroupBroadcastTransitionError);
+      expect(error.attemptedAction).toBe('edit');
+    });
+
+    it('payload sem nenhuma etapa: NoStepsProvidedError', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'paused' });
+
+      await expect(
+        service.updateBroadcast({
+          tenantId: 'tenant-1',
+          broadcastId,
+          name: 'Disparo',
+          groupJids: ['aberto@g.us'],
+          steps: [],
+        }),
+      ).rejects.toBeInstanceOf(NoStepsProvidedError);
+    });
+
+    it('o dispatcher NUNCA é chamado — salvar uma edição não agenda nada', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['aberto@g.us'],
+        extraSteps: [{ messageTemplate: 'Segunda' }],
+      });
+
+      await service.updateBroadcast({
+        tenantId: 'tenant-1',
+        broadcastId,
+        name: 'Disparo renomeado',
+        groupJids: ['aberto@g.us', 'outro@g.us'],
+        steps: [
+          { id: stepIds[0], messageTemplate: 'Texto novo' },
+          { messageTemplate: 'Publicação totalmente nova' },
+        ],
+      });
+
+      expect(dispatcher.runs).toHaveLength(0);
+      expect(dispatcher.scheduled).toHaveLength(0);
+      expect(dispatcher.postponedRuns).toHaveLength(0);
+    });
+
+    it('id de etapa duplicado no payload: DuplicateStepIdError (a validação é do serviço, não da função pura)', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds } = repository.seedBroadcast({ tenantId: 'tenant-1', status: 'draft' });
+
+      await expect(
+        service.updateBroadcast({
+          tenantId: 'tenant-1',
+          broadcastId,
+          name: 'Disparo',
+          groupJids: ['aberto@g.us'],
+          steps: [
+            { id: stepIds[0], messageTemplate: 'A' },
+            { id: stepIds[0], messageTemplate: 'B' },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(DuplicateStepIdError);
+    });
+
+    it('IDOR: disparo de outro tenant não é encontrado', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-2' });
+
+      await expect(
+        service.updateBroadcast({
+          tenantId: 'tenant-1',
+          broadcastId,
+          name: 'Disparo',
+          groupJids: ['aberto@g.us'],
+          steps: [{ messageTemplate: 'Promoção!' }],
+        }),
+      ).rejects.toBeInstanceOf(GroupBroadcastNotFoundError);
     });
   });
 
