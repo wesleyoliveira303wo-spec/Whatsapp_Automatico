@@ -131,6 +131,16 @@ export interface UpdateGroupBroadcastInput {
   steps: UpdateGroupBroadcastStepInput[];
 }
 
+/**
+ * Retomar-com-escolha (2026-09-15) — `'now'` (padrão, comportamento de
+ * sempre) publica de imediato; `'scheduled'` honra um horário já marcado
+ * (`GroupBroadcastStep.nextRunAt`) em vez de disparar na hora, quando existir
+ * um no futuro. Mesmo tipo replicado em `CampaignService` (bounded contexts
+ * distintos, literal duplicado de propósito — mesmo padrão de
+ * `CampaignLinkedConversationStage`).
+ */
+export type ResumeMode = 'now' | 'scheduled';
+
 /** Quem executou a ação — só para a trilha de auditoria (`undefined` = plano máquina). */
 export interface GroupBroadcastActor {
   userId?: string;
@@ -538,12 +548,16 @@ export class GroupBroadcastService {
    *   a janela de horário) — com o escalonamento inicial
    *   (`order × stepLaunchOffsetMinutes`) se a etapa NUNCA rodou, ou de
    *   imediato se está só esperando entre um ciclo e o próximo (retomar não
-   *   espera o resto do temporizador antigo).
+   *   espera o resto do temporizador antigo) — A MENOS que `resumeMode`
+   *   (2026-09-15) seja `'scheduled'` e a etapa já tenha um `nextRunAt`
+   *   futuro marcado: nesse caso, honra o horário já marcado em vez de
+   *   disparar de imediato. Padrão `'now'` — preserva todo chamador atual.
    */
   async startBroadcast(
     tenantId: string,
     broadcastId: string,
     actor: GroupBroadcastActor = {},
+    resumeMode: ResumeMode = 'now',
   ): Promise<GroupBroadcast> {
     await this.assertTenantPlanAllowsSending(tenantId);
     if (!this.sendDispatcher) {
@@ -581,6 +595,15 @@ export class GroupBroadcastService {
         }
       | { kind: 'run'; step: GroupBroadcastStep; delayMs: number };
     const plans: StepPlan[] = [];
+    /**
+     * `resumeMode: 'scheduled'` honra um `nextRunAt` futuro já marcado em vez
+     * de disparar de imediato (`offsetMs`). Etapa sem `nextRunAt` (nunca
+     * rodou) se comporta exatamente como `'now'` — não há nada a honrar.
+     */
+    const resolveRunDelayMs = (step: GroupBroadcastStep, offsetMs: number): number =>
+      resumeMode === 'scheduled' && step.nextRunAt && step.nextRunAt.getTime() > now.getTime()
+        ? step.nextRunAt.getTime() - now.getTime()
+        : offsetMs;
     for (const step of activeSteps) {
       // "Nunca rodou" — marcado explicitamente em `startedAt` (nem
       // `runsCompleted` nem `nextRunAt` bastam sozinhos: os dois ficam
@@ -612,7 +635,7 @@ export class GroupBroadcastService {
         // escalonamento inicial — nunca dispara envios direto no 1º ciclo.
         // eslint-disable-next-line no-await-in-loop
         await this.repository.markStepStarted(tenantId, step.id, now);
-        plans.push({ kind: 'run', step, delayMs: stepOffsetMs });
+        plans.push({ kind: 'run', step, delayMs: resolveRunDelayMs(step, stepOffsetMs) });
         continue;
       }
 
@@ -628,8 +651,9 @@ export class GroupBroadcastService {
 
       // Sem pendentes: está entre um ciclo e o próximo (ou o 1º ciclo ainda
       // não rodou — só está aguardando na fila) — retoma na hora, mais o
-      // escalonamento inicial que ainda restar.
-      plans.push({ kind: 'run', step, delayMs: stepOffsetMs });
+      // escalonamento inicial que ainda restar (ou no `nextRunAt` já
+      // marcado, se `resumeMode: 'scheduled'`).
+      plans.push({ kind: 'run', step, delayMs: resolveRunDelayMs(step, stepOffsetMs) });
     }
 
     if (plans.length === 0) {

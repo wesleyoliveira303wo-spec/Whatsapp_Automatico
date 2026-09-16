@@ -77,6 +77,16 @@ export interface CreateCampaignResult {
 }
 
 /**
+ * Retomar-com-escolha (2026-09-15) — `'now'` (padrão, comportamento de
+ * sempre) agenda a partir de agora; `'scheduled'` honra `Campaign.scheduledFor`
+ * quando estiver no futuro, deslocando TODA a sequência para começar
+ * naquele instante em vez de imediatamente. Mesmo tipo replicado em
+ * `GroupBroadcastService` (bounded contexts distintos, literal duplicado de
+ * propósito — mesmo padrão de `CampaignLinkedConversationStage`).
+ */
+export type ResumeMode = 'now' | 'scheduled';
+
+/**
  * Edição de uma campanha já criada (2026-09-15) — mesma forma de
  * `CreateCampaignInput`, sem `sessionName` (uma edição nunca migra a
  * campanha de sessão) e sem `createdByUserId` (autoria não muda). O cliente
@@ -478,7 +488,11 @@ export class CampaignService {
    * — o destinatário ficou `PENDING`, órfão de qualquer job futuro, até este
    * método rodar de novo e reagendá-lo.
    */
-  async startCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
+  async startCampaign(
+    tenantId: string,
+    campaignId: string,
+    resumeMode: ResumeMode = 'now',
+  ): Promise<Campaign> {
     await this.assertTenantPlanAllowsSending(tenantId);
     if (!this.campaignSendDispatcher) {
       throw new SendingEngineNotConfiguredError();
@@ -492,7 +506,13 @@ export class CampaignService {
       throw new InvalidCampaignTransitionError(campaign.status, 'start');
     }
 
-    return this.scheduleAllPending(tenantId, campaignId, campaign, 'Campanha iniciada/retomada');
+    return this.scheduleAllPending(
+      tenantId,
+      campaignId,
+      campaign,
+      'Campanha iniciada/retomada',
+      resumeMode,
+    );
   }
 
   /**
@@ -512,7 +532,11 @@ export class CampaignService {
    * agendamento de `startCampaign` sobre todo `PENDING` resultante (os que já
    * estavam pendentes + os recém-resetados).
    */
-  async reopenCampaign(tenantId: string, campaignId: string): Promise<Campaign> {
+  async reopenCampaign(
+    tenantId: string,
+    campaignId: string,
+    resumeMode: ResumeMode = 'now',
+  ): Promise<Campaign> {
     await this.assertTenantPlanAllowsSending(tenantId);
     if (!this.campaignSendDispatcher) {
       throw new SendingEngineNotConfiguredError();
@@ -536,7 +560,7 @@ export class CampaignService {
       resetCount,
     });
 
-    return this.scheduleAllPending(tenantId, campaignId, campaign, 'Campanha reaberta');
+    return this.scheduleAllPending(tenantId, campaignId, campaign, 'Campanha reaberta', resumeMode);
   }
 
   /**
@@ -546,12 +570,22 @@ export class CampaignService {
    * Sem nenhum `PENDING` (ex.: todos suprimidos na materialização, ou uma
    * reabertura sem nenhum `FAILED` a resetar), a campanha vai direto para
    * `completed` em vez de `running`.
+   *
+   * `resumeMode: 'scheduled'` (2026-09-15), com `Campaign.scheduledFor` no
+   * futuro, desloca toda a sequência: `gapMs` é o intervalo entre AGORA e o
+   * horário marcado, e o espaçamento entre destinatários (`computeSendDelayMs`)
+   * é calculado como se `scheduledFor` fosse o "agora" (para a janela de
+   * horário avaliar corretamente o horário-do-dia pretendido) — a soma dos
+   * dois é o delay REAL, relativo ao agendamento no BullMQ, que sempre conta
+   * a partir do instante real da chamada. Sem `scheduledFor` no futuro,
+   * `gapMs` é 0 e o comportamento é idêntico a `'now'`.
    */
   private async scheduleAllPending(
     tenantId: string,
     campaignId: string,
     campaign: Campaign,
     logMessage: string,
+    resumeMode: ResumeMode = 'now',
   ): Promise<Campaign> {
     const pendingRecipients = await this.campaignRepository.listPendingRecipients(
       tenantId,
@@ -568,20 +602,27 @@ export class CampaignService {
     }
 
     const now = new Date();
+    const scheduledForFuture =
+      resumeMode === 'scheduled' &&
+      campaign.scheduledFor !== undefined &&
+      campaign.scheduledFor.getTime() > now.getTime();
+    const anchor = scheduledForFuture ? campaign.scheduledFor! : now;
+    const gapMs = anchor.getTime() - now.getTime();
+
     await Promise.all(
       pendingRecipients.map((recipient, index) => {
-        const delayMs = computeSendDelayMs(index, {
+        const delayFromAnchorMs = computeSendDelayMs(index, {
           intervalBaseMs: campaign.intervalSeconds * 1000,
           jitterMaxMs: DEFAULT_JITTER_MAX_MS,
           sendWindowStart: campaign.sendWindowStart,
           sendWindowEnd: campaign.sendWindowEnd,
-          now,
+          now: anchor,
         });
         return this.campaignSendDispatcher!.scheduleRecipient(
           tenantId,
           campaignId,
           recipient.id,
-          delayMs,
+          gapMs + delayFromAnchorMs,
         );
       }),
     );

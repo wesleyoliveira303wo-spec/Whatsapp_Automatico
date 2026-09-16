@@ -665,6 +665,68 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       expect(dispatcher.scheduled).toHaveLength(0);
     });
 
+    it('resumeMode "scheduled" com nextRunAt futuro: agenda para ELE, não de imediato (2026-09-15)', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        startedAt: new Date(),
+        runsCompleted: 1,
+      });
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
+      const nextRunAt = new Date(Date.now() + 60 * 60 * 1000); // daqui a 1h
+      await repository.markStepRunFinished('tenant-1', stepIds[0], 1, nextRunAt);
+
+      await service.startBroadcast('tenant-1', broadcastId, {}, 'scheduled');
+
+      expect(dispatcher.runs).toHaveLength(1);
+      expect(dispatcher.runs[0].delayMs).toBeGreaterThan(59 * 60 * 1000);
+      expect(dispatcher.runs[0].delayMs).toBeLessThanOrEqual(60 * 60 * 1000);
+    });
+
+    it('resumeMode "scheduled" SEM nextRunAt se comporta como "now"', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        startedAt: new Date(),
+        runsCompleted: 1,
+      });
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
+
+      await service.startBroadcast('tenant-1', broadcastId, {}, 'scheduled');
+
+      expect(dispatcher.runs[0].delayMs).toBe(0);
+    });
+
+    it('resumeMode "now" ignora um nextRunAt futuro (não-regressão) — e omitir o parâmetro equivale a "now"', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        startedAt: new Date(),
+        runsCompleted: 1,
+      });
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
+      await repository.markStepRunFinished(
+        'tenant-1',
+        stepIds[0],
+        1,
+        new Date(Date.now() + 60 * 60 * 1000),
+      );
+
+      await service.startBroadcast('tenant-1', broadcastId, {}, 'now');
+      expect(dispatcher.runs[0].delayMs).toBe(0);
+
+      dispatcher.runs.length = 0;
+      await repository.updateStatus('tenant-1', broadcastId, 'paused');
+      await service.startBroadcast('tenant-1', broadcastId); // parâmetro omitido
+      expect(dispatcher.runs[0].delayMs).toBe(0);
+    });
+
     it('1º início, todos os grupos suprimidos: encerra a etapa direto (sem agendar run) e completa a campanha', async () => {
       const { service, repository, dispatcher } = buildSut();
       const { broadcastId, stepTargetIds } = repository.seedBroadcast({ tenantId: 'tenant-1' });

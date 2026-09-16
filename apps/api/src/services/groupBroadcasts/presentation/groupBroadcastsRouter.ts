@@ -41,6 +41,11 @@ const listQuerySchema = z.object({
   sessionName: z.string().trim().min(1, 'sessionName não pode ser vazio'),
 });
 
+/** Corpo opcional de `POST /:broadcastId/start` (2026-09-15) — retomar-com-escolha. */
+const startBodySchema = z.object({
+  resumeMode: z.enum(['now', 'scheduled']).optional(),
+});
+
 /**
  * Uma publicação da sequência (2026-09-14) — cada etapa valida sua PRÓPRIA
  * recorrência, independente das demais.
@@ -310,11 +315,14 @@ export function createGroupBroadcastsRouter(service: GroupBroadcastService): Rou
         res,
       );
       if (!params) return;
+      const body = validateOrRespond(startBodySchema, req.body, res);
+      if (!body) return;
 
       const broadcast = await service.startBroadcast(
         params.tenantId,
         params.broadcastId,
         toActor(req),
+        body.resumeMode,
       );
       res.status(200).json({ broadcast });
     }),

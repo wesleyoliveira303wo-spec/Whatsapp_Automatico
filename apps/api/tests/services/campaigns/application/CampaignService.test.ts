@@ -675,6 +675,58 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
       expect(dispatcher.scheduled).toHaveLength(0);
     });
 
+    it('resumeMode "scheduled" com scheduledFor futuro desloca toda a sequência (2026-09-15)', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      const scheduledFor = new Date(Date.now() + 60 * 60 * 1000); // daqui a 1h
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'draft',
+        scheduledFor,
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      await service.startCampaign('tenant-1', campaignId, 'scheduled');
+
+      expect(dispatcher.scheduled).toHaveLength(1);
+      expect(dispatcher.scheduled[0].delayMs).toBeGreaterThan(59 * 60 * 1000);
+      expect(dispatcher.scheduled[0].delayMs).toBeLessThanOrEqual(60 * 60 * 1000 + 15_000);
+    });
+
+    it('resumeMode "scheduled" SEM scheduledFor se comporta como "now"', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'draft',
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      await service.startCampaign('tenant-1', campaignId, 'scheduled');
+
+      expect(dispatcher.scheduled[0].delayMs).toBeLessThan(15_000); // só jitter, sem o "gap"
+    });
+
+    it('resumeMode "now" ignora um scheduledFor futuro (não-regressão) — e omitir o parâmetro equivale a "now"', async () => {
+      const { service, campaigns, dispatcher } = buildSut();
+      const scheduledFor = new Date(Date.now() + 60 * 60 * 1000);
+      const campaignId = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'sessao',
+        status: 'draft',
+        scheduledFor,
+      });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      await service.startCampaign('tenant-1', campaignId, 'now');
+      expect(dispatcher.scheduled[0].delayMs).toBeLessThan(15_000);
+
+      dispatcher.scheduled.length = 0;
+      await campaigns.updateCampaignStatus('tenant-1', campaignId, 'paused');
+      await service.startCampaign('tenant-1', campaignId); // parâmetro omitido
+      expect(dispatcher.scheduled[0].delayMs).toBeLessThan(15_000);
+    });
+
     it('retomar uma campanha PAUSED reagenda os PENDING restantes', async () => {
       const { service, campaigns, dispatcher } = buildSut();
       const campaignId = campaigns.seedCampaign({

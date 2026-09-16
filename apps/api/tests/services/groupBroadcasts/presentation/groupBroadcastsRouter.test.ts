@@ -542,6 +542,43 @@ describe('groupBroadcastsRouter (Disparos em grupos, 2026-09-11)', () => {
       expect(dispatcher!.runs).toHaveLength(1);
     });
 
+    it('aceita resumeMode no corpo (2026-09-15) — repassado ao serviço', async () => {
+      const { app, repository, dispatcher } = buildApp(person('administrator'), {
+        withDispatcher: true,
+      });
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        startedAt: new Date(),
+        runsCompleted: 1,
+      });
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
+      await repository.markStepRunFinished(
+        'tenant-1',
+        stepIds[0],
+        1,
+        new Date(Date.now() + 60 * 60 * 1000),
+      );
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${broadcastId}/start`)
+        .send({ resumeMode: 'scheduled' });
+
+      expect(response.status).toBe(200);
+      expect(dispatcher!.runs[0].delayMs).toBeGreaterThan(59 * 60 * 1000);
+    });
+
+    it('resumeMode inválido: 400', async () => {
+      const { app, repository } = buildApp(person('administrator'), { withDispatcher: true });
+      const { broadcastId } = repository.seedBroadcast({ tenantId: 'tenant-1' });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/${broadcastId}/start`)
+        .send({ resumeMode: 'algo-invalido' });
+
+      expect(response.status).toBe(400);
+    });
+
     it('tenant no Plano Grátis: 403 group_broadcast_requires_paid_plan', async () => {
       const { app, repository } = buildApp(person('administrator'), {
         withDispatcher: true,

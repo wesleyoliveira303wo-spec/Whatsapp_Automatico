@@ -144,6 +144,11 @@ const campaignMediaHeadersSchema = z.object({
   'x-media-filename': z.string().trim().max(255).optional(),
 });
 
+/** Corpo opcional de `POST /:campaignId/{start,reopen}` (2026-09-15) — retomar-com-escolha. */
+const startBodySchema = z.object({
+  resumeMode: z.enum(['now', 'scheduled']).optional(),
+});
+
 /** `userId` de quem está autenticado, quando é uma PESSOA — mesmo helper de `contactsRouter`. */
 function actorUserId(req: Request): string | undefined {
   const principal = (req as RequestWithPrincipal).principal;
@@ -433,8 +438,14 @@ export function createCampaignsRouter(
         res,
       );
       if (!params) return;
+      const body = validateOrRespond(startBodySchema, req.body, res);
+      if (!body) return;
 
-      const campaign = await campaignService.startCampaign(params.tenantId, params.campaignId);
+      const campaign = await campaignService.startCampaign(
+        params.tenantId,
+        params.campaignId,
+        body.resumeMode,
+      );
       res.status(200).json({ campaign });
     }),
   );
@@ -487,8 +498,14 @@ export function createCampaignsRouter(
         res,
       );
       if (!params) return;
+      const body = validateOrRespond(startBodySchema, req.body, res);
+      if (!body) return;
 
-      const campaign = await campaignService.reopenCampaign(params.tenantId, params.campaignId);
+      const campaign = await campaignService.reopenCampaign(
+        params.tenantId,
+        params.campaignId,
+        body.resumeMode,
+      );
       res.status(200).json({ campaign });
     }),
   );
