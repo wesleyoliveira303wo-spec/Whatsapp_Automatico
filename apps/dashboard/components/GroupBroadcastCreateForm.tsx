@@ -845,7 +845,7 @@ export default function GroupBroadcastCreateForm({
                           value={step.endsAt}
                           onChange={(event) => updateStep(step.key, { endsAt: event.target.value })}
                           aria-label="Data e hora de término"
-                          className="ml-6 w-64 bg-card [color-scheme:light] dark:[color-scheme:dark]"
+                          className="ml-6 w-[calc(100%-1.5rem)] max-w-64 bg-card [color-scheme:light] dark:[color-scheme:dark]"
                         />
                       )}
 

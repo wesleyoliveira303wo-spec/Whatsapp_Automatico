@@ -230,8 +230,10 @@ function TabSectionHeader({
   trailing,
 }: TabSectionHeaderProps): JSX.Element {
   return (
-    <div className="mb-3.5 flex items-start justify-between gap-2.5">
-      <div className="flex items-center gap-2.5">
+    // Celular: o `trailing` ("Atualizado em ...") desce para baixo do título —
+    // lado a lado ele empurrava a tela 21px para a direita (2026-09-17).
+    <div className="mb-3.5 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" aria-hidden="true" />
         </div>

@@ -32,6 +32,7 @@ import {
 } from '@/lib/clientApi';
 import { formatDateTime } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
+import { COLUMN_FROM_LG, COLUMN_FROM_MD, COLUMN_FROM_SM } from '@/components/broadcasts/responsiveColumns';
 import { toast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -527,12 +528,12 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                   <TableHeader>
                     <TableRow>
                       <TableHead className="px-4">Disparo</TableHead>
-                      <TableHead className="px-4">Status</TableHead>
-                      <TableHead className="px-4">Progresso</TableHead>
-                      <TableHead className="px-4">Destinatários</TableHead>
-                      <TableHead className="px-4">Enviados</TableHead>
-                      <TableHead className="px-4">Respostas</TableHead>
-                      <TableHead className="px-4">Criado em</TableHead>
+                      <TableHead className={cn(COLUMN_FROM_SM, 'px-4')}>Status</TableHead>
+                      <TableHead className={cn(COLUMN_FROM_SM, 'px-4')}>Progresso</TableHead>
+                      <TableHead className={cn(COLUMN_FROM_LG, 'px-4')}>Destinatários</TableHead>
+                      <TableHead className={cn(COLUMN_FROM_MD, 'px-4')}>Enviados</TableHead>
+                      <TableHead className={cn(COLUMN_FROM_MD, 'px-4')}>Respostas</TableHead>
+                      <TableHead className={cn(COLUMN_FROM_LG, 'px-4')}>Criado em</TableHead>
                       <TableHead className="px-4 text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -570,11 +571,19 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                 <p className="truncate text-[12px] text-muted-foreground">
                                   {campaign.description ?? formatDateTime(campaign.createdAt)}
                                 </p>
+                                {/* Celular: a coluna Status some (não cabe) e o selo
+                                    desce para baixo do nome — o status nunca some da tela. */}
+                                <Badge
+                                  variant={STATUS_BADGE_VARIANT[campaign.status]}
+                                  className="mt-1 sm:hidden"
+                                >
+                                  {STATUS_LABELS[campaign.status]}
+                                </Badge>
                               </div>
                             </div>
                           </TableCell>
 
-                          <TableCell className="whitespace-nowrap px-4 py-3 align-top">
+                          <TableCell className={cn(COLUMN_FROM_SM, 'whitespace-nowrap px-4 py-3 align-top')}>
                             <Badge variant={STATUS_BADGE_VARIANT[campaign.status]}>
                               <span
                                 className={cn(
@@ -586,7 +595,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                             </Badge>
                           </TableCell>
 
-                          <TableCell className="px-4 py-3 align-top">
+                          <TableCell className={cn(COLUMN_FROM_SM, 'px-4 py-3 align-top')}>
                             <div className="w-24">
                               <div className="mb-1 flex items-center justify-between text-[12px] text-foreground">
                                 <span>{progressPct}%</span>
@@ -600,16 +609,16 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                             </div>
                           </TableCell>
 
-                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
+                          <TableCell className={cn(COLUMN_FROM_LG, 'whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground')}>
                             {summary?.total ?? '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
+                          <TableCell className={cn(COLUMN_FROM_MD, 'whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground')}>
                             {metrics ? sentPlusReplied : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground">
+                          <TableCell className={cn(COLUMN_FROM_MD, 'whitespace-nowrap px-4 py-3 align-top text-[13px] text-foreground')}>
                             {metrics?.replied ?? '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[12.5px] text-muted-foreground">
+                          <TableCell className={cn(COLUMN_FROM_LG, 'whitespace-nowrap px-4 py-3 align-top text-[12.5px] text-muted-foreground')}>
                             {formatDateTime(campaign.createdAt)}
                           </TableCell>
 
@@ -621,6 +630,7 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                   variant="outline"
                                   size="sm"
                                   disabled={actionPendingId === campaign.id}
+                                  aria-label="Pausar"
                                   onClick={() =>
                                     void runAction(
                                       campaign,
@@ -629,8 +639,8 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                     )
                                   }
                                 >
-                                  <Pause className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                                  Pausar
+                                  <Pause className="h-3.5 w-3.5 sm:mr-1" aria-hidden="true" />
+                                  <span className="hidden sm:inline">Pausar</span>
                                 </Button>
                               ) : canStart ? (
                                 <Button
@@ -638,10 +648,13 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
                                   variant="outline"
                                   size="sm"
                                   disabled={actionPendingId === campaign.id}
+                                  aria-label={campaign.status === 'paused' ? 'Retomar' : 'Iniciar'}
                                   onClick={() => setConfirmAction({ type: 'start', campaign })}
                                 >
-                                  <Play className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                                  {campaign.status === 'paused' ? 'Retomar' : 'Iniciar'}
+                                  <Play className="h-3.5 w-3.5 sm:mr-1" aria-hidden="true" />
+                                  <span className="hidden sm:inline">
+                                    {campaign.status === 'paused' ? 'Retomar' : 'Iniciar'}
+                                  </span>
                                 </Button>
                               ) : null}
                               {/* Botão "Ver" removido (2026-08-21, pedido do fundador) — era

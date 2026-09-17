@@ -77,3 +77,26 @@ Busca, filtro e página ainda não vão para a URL — hoje só a aba vai
 (`?tab=`). A consequência: não dá para mandar a alguém um link já filtrado, e
 o F5 perde o filtro. Vale corrigir quando alguma tela precisar de link
 compartilhável; está anotado para não ser redescoberto como novidade.
+
+## 9. Nunca rolagem horizontal (2026-09-17)
+
+Pedido permanente do fundador: o app só rola na vertical, em qualquer tela.
+Medido na varredura desta data, as causas se repetem — confira estas antes de
+dar uma tela por pronta:
+
+- **Item `flex-1` sem `min-w-0`.** O `min-width:auto` do flexbox deixa o
+  conteúdo alargar a coluna. Todo `flex-1` que contém texto ou tabela leva
+  `min-w-0`.
+- **Tabela com todas as colunas sempre visíveis.** Use
+  `components/broadcasts/responsiveColumns.ts`: nome, status e ações ficam; o
+  resto aparece por breakpoint. Dado que some da tabela no celular desce para
+  baixo do nome, nunca desaparece do produto.
+- **Largura fixa em px** (colunas de quadro, `min-w-[…]`, `<select>` nativo).
+  Prefira grade responsiva; no celular, `w-full`.
+- **Palavra sem espaço** (nome de arquivo, UUID, ação crua): `break-all` ou
+  `[overflow-wrap:anywhere]` — `break-words` sozinho não reduz a largura
+  mínima de uma célula de tabela.
+
+Verificação: rode, em cada tela, um detector que liste contêineres com
+`scrollWidth > clientWidth` e `overflow-x` auto/scroll, a 375px e a 1.280px.
+Captura de tela do painel embutido sai reduzida e esconde o problema.

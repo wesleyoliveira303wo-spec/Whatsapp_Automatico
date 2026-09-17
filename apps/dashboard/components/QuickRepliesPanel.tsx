@@ -198,7 +198,7 @@ export default function QuickRepliesPanel({ sessionName }: QuickRepliesPanelProp
                 </div>
               ) : (
                 <>
-                  <p className="flex-1 whitespace-pre-wrap text-[13px] leading-[1.5] text-foreground-secondary">
+                  <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-[1.5] text-foreground-secondary">
                     {quickReply.content}
                   </p>
                   <div className="flex shrink-0 gap-0.5">

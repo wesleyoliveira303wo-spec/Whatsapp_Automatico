@@ -70,7 +70,9 @@ function PipelineColumn({
         onDropOnColumn(column);
       }}
       className={cn(
-        'pipeline-column flex w-[268px] shrink-0 flex-col rounded-lg border border-border bg-panel transition-colors',
+        // Largura vem da grade do board (`PIPELINE_BOARD_CLASSES`) — nunca
+        // largura fixa, que era o que estourava a tela na horizontal.
+        'pipeline-column flex min-w-0 flex-col rounded-lg border border-border bg-panel transition-colors',
         isNotClientColumn && 'border-dashed bg-transparent',
         dragOver && 'border-primary bg-primary/5',
       )}
@@ -115,7 +117,7 @@ function PipelineColumn({
         variants={staggerContainerFast}
         initial="hidden"
         animate="visible"
-        className="fx-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2"
+        className="fx-scroll flex max-h-[360px] flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2 2xl:max-h-none"
         style={{ minHeight: '4rem' }}
       >
         <AnimatePresence mode="popLayout" initial={false}>

@@ -11,6 +11,21 @@ import PipelineColumn from './PipelineColumn';
 import { usePipelineConversations, MAX_PIPELINE_PAGES } from '@/hooks/usePipelineConversations';
 import type { ConversationSummary } from '@/lib/clientApi';
 
+/**
+ * Área das colunas (2026-09-17, pedido do fundador: "nunca barra de rolagem
+ * horizontal, só vertical"). Antes eram 6 colunas de 268px lado a lado com
+ * `overflow-x-auto` — rolava na horizontal em qualquer tela abaixo de ~1.750px.
+ *
+ * Agora é uma grade: 1 coluna no celular, 2 no tablet, 3 no notebook e as 6
+ * lado a lado só a partir de `2xl` (1.536px) — medido: a 1.280px, seis
+ * colunas davam 184px cada e o nome do contato ficava com 71px. Até `2xl` a
+ * PÁGINA rola na vertical e cada coluna limita a própria lista de cards (ver
+ * `PipelineColumn`). No celular o arrasto já não funcionava (toque não
+ * dispara HTML5 drag) — o seletor de estágio de cada card é o caminho de lá.
+ */
+const PIPELINE_BOARD_CLASSES =
+  'fx-scroll grid flex-1 grid-cols-1 content-start gap-3.5 overflow-y-auto px-6 pb-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 2xl:grid-rows-[minmax(0,1fr)] 2xl:content-stretch 2xl:overflow-y-hidden';
+
 interface PipelineBoardProps {
   sessionName: string;
 }
@@ -180,9 +195,9 @@ export default function PipelineBoard({ sessionName }: PipelineBoardProps): JSX.
     return (
       <div className="flex h-full flex-col">
         {header}
-        <div className="flex flex-1 gap-3.5 overflow-x-auto px-6 pb-5">
+        <div className={PIPELINE_BOARD_CLASSES}>
           {PIPELINE_COLUMN_ORDER.map((column) => (
-            <div key={column} className="w-[268px] shrink-0 space-y-2">
+            <div key={column} className="min-w-0 space-y-2">
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-24 w-full" />
               <Skeleton className="h-24 w-full" />
@@ -237,7 +252,7 @@ export default function PipelineBoard({ sessionName }: PipelineBoardProps): JSX.
           antigas não aparecem no funil.
         </p>
       )}
-      <div className="fx-scroll flex flex-1 gap-3.5 overflow-x-auto overflow-y-hidden px-6 pb-5">
+      <div className={PIPELINE_BOARD_CLASSES}>
         {PIPELINE_COLUMN_ORDER.map((column) => (
           <PipelineColumn
             key={column}

@@ -172,7 +172,9 @@ function StatCard({ icon: Icon, label, value, tone, numericValue }: StatCardProp
         <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-[12px] text-muted-foreground">{label}</p>
+        {/* Quebra de linha, nunca reticências: no celular o card tem ~135px e
+            "Total de contatos" virava "Total d…" (2026-09-17). */}
+        <p className="break-words text-[12px] leading-snug text-muted-foreground">{label}</p>
         <p className="text-[18px] font-semibold leading-tight tabular-nums text-foreground">
           {numericValue !== undefined ? <AnimatedNumber value={numericValue} /> : value}
         </p>
@@ -886,7 +888,7 @@ export default function ContactsPanel({ canManage }: ContactsPanelProps): JSX.El
                 withConversation={stats.withConversation}
                 withoutConversation={stats.withoutConversation}
               />
-              <div className="flex-1 space-y-2 text-[12.5px]">
+              <div className="min-w-0 flex-1 space-y-2 text-[12.5px]">
                 <div className="flex items-center gap-1.5">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-[3px] bg-success" />
                   <span className="text-foreground">Com conversa</span>

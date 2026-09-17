@@ -203,7 +203,7 @@ function MessageMediaContent({
       return (
         <div
           className={cn(
-            'chat-bubble-shadow flex min-w-[240px] flex-col gap-[7px] px-[9px] pb-[6px] pt-[7px]',
+            'chat-bubble-shadow flex min-w-[min(240px,100%)] flex-col gap-[7px] px-[9px] pb-[6px] pt-[7px]',
             BUBBLE_MAX_WIDTH,
             bubbleColorClassName(outbound),
             bubbleTailClassName(outbound),
@@ -294,7 +294,9 @@ export default function MessageBubble({
         numa mensagem recebida (que é onde a lacuna aparece) ele fica à
         DIREITA — pedido do fundador, 2026-09-05.
       */}
-      <div className={cn('flex min-w-0 items-center gap-1.5', outbound && 'flex-row-reverse')}>
+      {/* `max-w-full`: sem ele esta linha media o conteúdo inteiro (um PDF de nome
+          longo chegou a 349px num li de 295px) e empurrava a conversa para o lado. */}
+      <div className={cn('flex min-w-0 max-w-full items-center gap-1.5', outbound && 'flex-row-reverse')}>
       {isMedia ? (
         <MessageMediaContent message={message} outbound={outbound} />
       ) : (

@@ -55,7 +55,18 @@ export default function SessionLayout({ sessionName, children }: SessionLayoutPr
               outra tela sem precisar de F5. Ver docstring de
               `AppErrorBoundary` para o achado real que motivou isto.
             */}
-            <main className="flex-1 overflow-y-auto">
+            {/*
+              `min-w-0` é o que impede QUALQUER tela de estourar a largura
+              (2026-09-17, achado real com print do fundador). Sem ele, o
+              `main` — filho `flex-1` de uma LINHA flex — não encolhe abaixo
+              da largura do próprio conteúdo: uma legenda sem quebra, uma
+              tabela larga ou um popup fixo o faziam crescer, e como
+              `overflow-y-auto` força o eixo X para `auto` também, o `main`
+              ganhava uma barra de rolagem HORIZONTAL própria (começando
+              logo depois do rail — era essa a barra do print, não a do
+              `<body>`).
+            */}
+            <main className="min-w-0 flex-1 overflow-y-auto">
               <AppErrorBoundary>{children}</AppErrorBoundary>
             </main>
           </div>

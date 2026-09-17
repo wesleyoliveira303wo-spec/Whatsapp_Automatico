@@ -54,20 +54,30 @@ export default function SessionHeader({ sessionName }: SessionHeaderProps): JSX.
   }
 
   return (
-    <header className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background pl-4 pr-3.5">
-      <div className="flex w-fit items-center gap-2.5">
+    // `minmax(0,1fr)` e não `1fr` (2026-09-17): em CSS Grid, `1fr` nunca
+    // encolhe abaixo do próprio conteúdo. No celular (375px) a coluna da
+    // direita recebia ~116px para ~250px de conteúdo (nome da sessão + status
+    // + "Sair"), o cabeçalho passava da largura da tela e o botão "Sair"
+    // ficava fora dela. Agora o nome trunca, e o rótulo de status e o nome da
+    // marca somem abaixo de `sm` — a bolinha de status continua visível.
+    <header className="grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border bg-background pl-4 pr-3.5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <FrancisLogo size={22} />
-        <span className="text-[15px] font-semibold tracking-tight text-foreground">Francis</span>
+        <span className="hidden text-[15px] font-semibold tracking-tight text-foreground sm:inline">
+          Francis
+        </span>
       </div>
 
       <AiPowerToggle />
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex min-w-0 items-center justify-end gap-3">
         {session && (
-          <div className="flex items-center gap-2">
-            <span className="text-[12.5px] text-muted-foreground">{sessionName}</span>
-            <StatusDot status={session.status} className="h-1.5 w-1.5" />
-            <span className="text-[12.5px] text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[12.5px] text-muted-foreground" title={sessionName}>
+              {sessionName}
+            </span>
+            <StatusDot status={session.status} className="h-1.5 w-1.5 shrink-0" />
+            <span className="hidden shrink-0 text-[12.5px] text-muted-foreground sm:inline">
               {formatStatusLabel(session.status)}
             </span>
           </div>

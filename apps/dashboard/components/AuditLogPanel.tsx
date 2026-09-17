@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
+import { COLUMN_FROM_MD, COLUMN_FROM_SM } from '@/components/broadcasts/responsiveColumns';
+import { cn } from '@/lib/utils';
 
 /**
  * Mesma casca visual dos outros campos de Configurações — `<select>` nativo
@@ -38,6 +40,9 @@ function actionTextClassName(action: string): string {
 const ACTION_LABELS: Record<string, string> = {
   'auth.login.success': 'Login',
   'auth.login.failure': 'Tentativa de login falhou',
+  'auth.login.locked': 'Login bloqueado por excesso de tentativas',
+  'auth.login.tenant_suspended': 'Login recusado: empresa suspensa',
+  'auth.register': 'Conta criada',
   'auth.logout': 'Logout',
   'auth.password_change.failure': 'Troca de senha falhou',
   'auth.password_changed': 'Senha alterada',
@@ -53,6 +58,15 @@ const ACTION_LABELS: Record<string, string> = {
   'conversation.stage_changed': 'Estágio do Pipeline alterado',
   'conversation.excluded_from_pipeline': 'Conversa marcada como fora do funil comercial',
   'conversation.included_in_pipeline': 'Conversa devolvida ao funil comercial',
+  'conversation.archived': 'Conversa arquivada',
+  'conversation.unarchived': 'Conversa desarquivada',
+  'conversation.contact_saved': 'Contato salvo a partir da conversa',
+  'conversation.deleted': 'Conversa excluída',
+  // Achado da varredura de 2026-09-17: estas quatro apareciam cruas na tela.
+  'group_broadcast.created': 'Disparo em grupos criado',
+  'group_broadcast.edited': 'Disparo em grupos editado',
+  'group_broadcast.started': 'Disparo em grupos iniciado',
+  'group_broadcast.cancelled': 'Disparo em grupos cancelado',
   'session.created': 'Sessão WhatsApp criada',
   'session.disconnected_by_user': 'Sessão desconectada',
   'session.removed': 'Sessão removida',
@@ -148,7 +162,9 @@ export default function AuditLogPanel(): JSX.Element {
             setActionFilter(event.target.value);
             void load(event.target.value);
           }}
-          className={NATIVE_SELECT_CLASSES}
+          // Celular: o <select> nativo mede a opção mais longa (~340px) e
+          // empurrava a tela para o lado; aqui ele cabe na largura e quebra só o texto.
+          className={cn(NATIVE_SELECT_CLASSES, 'w-full min-w-0 sm:w-auto')}
         >
           <option value="">Todas as ações</option>
           {knownActions.map((action) => (
@@ -175,28 +191,35 @@ export default function AuditLogPanel(): JSX.Element {
       ) : (
         /* SEM `overflow-x-auto` — ver docstring equivalente em `UserManagementPanel.tsx` (mesmo achado/correção). */
         <div className="rounded-lg border border-border bg-card">
-          <Table className="min-w-[520px]">
+          {/* Celular (2026-09-17): sem largura mínima fixa abaixo de `sm`,
+              "Alvo" só a partir de `sm` e "Usuário" a partir de `md` — os
+              dois guardam UUIDs de 36 caracteres sem espaço, que estouravam
+              a tela. `break-all` quebra o UUID quando a coluna aparece. */}
+          <Table className="sm:min-w-[520px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[130px] px-4">Quando</TableHead>
                 <TableHead>Ação</TableHead>
-                <TableHead className="w-[200px]">Usuário</TableHead>
-                <TableHead className="px-4">Alvo</TableHead>
+                <TableHead className={cn(COLUMN_FROM_MD, 'w-[200px]')}>Usuário</TableHead>
+                <TableHead className={cn(COLUMN_FROM_SM, 'px-4')}>Alvo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {entries.map((entry) => (
                 <TableRow key={entry.id} data-testid={`audit-log-row-${entry.id}`}>
-                  <TableCell className="whitespace-nowrap px-4 text-muted-foreground">
+                  <TableCell className="px-4 text-muted-foreground sm:whitespace-nowrap">
                     {formatOccurredAt(entry.occurredAt)}
                   </TableCell>
-                  <TableCell className={actionTextClassName(entry.action)}>
+                  {/* `overflow-wrap:anywhere`: ação fora do catálogo aparece crua
+                      (ex.: "group_broadcast.created"), sem espaço — sem isso a
+                      palavra única alargava a coluna para fora da tela. */}
+                  <TableCell className={cn(actionTextClassName(entry.action), '[overflow-wrap:anywhere]')}>
                     {actionLabelFor(entry.action)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className={cn(COLUMN_FROM_MD, 'break-all text-muted-foreground')}>
                     {entry.actorUserId ?? '—'}
                   </TableCell>
-                  <TableCell className="px-4 text-muted-foreground">
+                  <TableCell className={cn(COLUMN_FROM_SM, 'break-all px-4 text-muted-foreground')}>
                     {entry.targetType
                       ? `${entry.targetType}${entry.targetId ? ` · ${entry.targetId}` : ''}`
                       : '—'}

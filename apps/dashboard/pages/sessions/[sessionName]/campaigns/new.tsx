@@ -43,12 +43,12 @@ export default function CampaignCreatePage({
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
       <Head>
-        <title>{pageTitle(`Nova campanha · ${sessionName}`)}</title>
+        <title>{pageTitle(`Novo disparo · ${sessionName}`)}</title>
       </Head>
       <div className="fx-scroll h-full overflow-y-auto">
         <div className="max-w-[820px] px-6 pb-12 pt-5">
           <h1 className="text-[21px] font-semibold tracking-tight text-foreground">
-            Nova campanha
+            Novo disparo
           </h1>
           <p className="mb-5 mt-1 text-[13px] text-muted-foreground">
             Combine contatos salvos, uma planilha e/ou números digitados manualmente.

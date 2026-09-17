@@ -139,7 +139,8 @@ describe('CampaignsPanel (retrofit visual 2026-08-18)', () => {
     expect(table.getByText('Promoção Especial')).toBeInTheDocument();
     expect(table.getByText('120')).toBeInTheDocument(); // destinatários
     expect(table.getByText('Reengajamento de clientes')).toBeInTheDocument();
-    expect(table.getByText('Concluída')).toBeInTheDocument();
+    // Duas cópias: a coluna Status (desktop) e o selo abaixo do nome (celular) — o CSS mostra uma de cada vez.
+    expect(table.getAllByText('Concluída')).toHaveLength(2);
   });
 
   it('busca filtra a lista pelo nome (client-side, sessão já carregada inteira)', async () => {

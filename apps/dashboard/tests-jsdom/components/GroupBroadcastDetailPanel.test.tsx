@@ -228,10 +228,9 @@ describe('GroupBroadcastDetailPanel', () => {
     });
     await renderPanel();
 
-    expect(screen.getByText('erro ao enviar')).toBeInTheDocument();
-    expect(
-      screen.getByText('Só administradores podem publicar neste grupo'),
-    ).toBeInTheDocument();
+    // Duas cópias de cada: a coluna Detalhe (desktop) e a linha abaixo do grupo (celular).
+    expect(screen.getAllByText('erro ao enviar')).toHaveLength(2);
+    expect(screen.getAllByText('Só administradores podem publicar neste grupo')).toHaveLength(2);
   });
 
   it('disparo pausado automaticamente pelo disjuntor mostra o motivo', async () => {

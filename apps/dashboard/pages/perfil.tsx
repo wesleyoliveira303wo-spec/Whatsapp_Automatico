@@ -74,7 +74,7 @@ export default function PerfilPage({ canManageCompany }: PerfilPageProps): JSX.E
 
       <div className="flex flex-1 overflow-hidden">
         <SessionRail />
-        <main className="fx-scroll flex-1 overflow-y-auto">
+        <main className="fx-scroll min-w-0 flex-1 overflow-y-auto">
           <AppErrorBoundary>
             <div className="mx-auto max-w-[640px] px-6 pb-16 pt-6">
               <h1 className="text-[21px] font-semibold tracking-tight text-foreground">Perfil</h1>

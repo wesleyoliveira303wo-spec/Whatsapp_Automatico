@@ -81,8 +81,12 @@ export default function ConversationActions({
           className="shadow-cta"
           onClick={() => void run('escalate')}
           disabled={pending}
+          aria-label={pending ? 'Assumindo…' : 'Assumir conversa'}
         >
-          {pending ? 'Assumindo…' : 'Assumir conversa'}
+          {/* Celular: rótulo curto — "Assumir conversa" inteiro espremia o nome
+              do contato no cabeçalho até sumir (2026-09-17). */}
+          <span className="sm:hidden">{pending ? 'Assumindo…' : 'Assumir'}</span>
+          <span className="hidden sm:inline">{pending ? 'Assumindo…' : 'Assumir conversa'}</span>
         </Button>
       ) : (
         <Button
@@ -91,8 +95,10 @@ export default function ConversationActions({
           variant="outline"
           onClick={() => void run('resume')}
           disabled={pending}
+          aria-label={pending ? 'Devolvendo…' : 'Devolver ao bot'}
         >
-          {pending ? 'Devolvendo…' : 'Devolver ao bot'}
+          <span className="sm:hidden">{pending ? 'Devolvendo…' : 'Devolver'}</span>
+          <span className="hidden sm:inline">{pending ? 'Devolvendo…' : 'Devolver ao bot'}</span>
         </Button>
       )}
       {excludedFromPipeline && (

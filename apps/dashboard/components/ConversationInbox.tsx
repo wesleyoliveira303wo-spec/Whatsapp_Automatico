@@ -260,7 +260,10 @@ export default function ConversationInbox({
       </div>
 
       {/* Conversa aberta — coluna central */}
-      <div className={cn('flex-1 flex-col bg-card lg:flex', hasSelection ? 'flex' : 'hidden')}>
+      {/* `min-w-0`: sem ele esta coluna crescia com o conteúdo (uma legenda
+          sem quebra) e empurrava o painel de contexto para fora da tela —
+          achado real, print do fundador, 2026-09-17. */}
+      <div className={cn('min-w-0 flex-1 flex-col bg-card lg:flex', hasSelection ? 'flex' : 'hidden')}>
         {selectedConversationId ? (
           <ConversationDetailPanel
             sessionName={sessionName}

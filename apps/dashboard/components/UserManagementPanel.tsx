@@ -25,6 +25,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { COLUMN_FROM_SM } from '@/components/broadcasts/responsiveColumns';
 
 /** Mesma casca visual dos outros campos do formulário — `<select>` nativo, `Select` (Radix) fica para quando um formulário exigir de fato as features dele (busca, portal). Reskin 2026-08-07: tamanho/raio igual ao resto dos campos do mockup de Configurações (h34, radius9). */
 const NATIVE_SELECT_CLASSES =
@@ -352,19 +353,22 @@ export default function UserManagementPanel(): JSX.Element {
           840px do container.
         */
         <div className="rounded-lg border border-border bg-card">
-          <Table className="min-w-[560px]">
+          {/* Celular (2026-09-17): sem largura mínima fixa abaixo de `sm`,
+              "Status" só a partir de `sm`, e o e-mail quebra em vez de
+              esticar a tabela para fora da tela. */}
+          <Table className="sm:min-w-[560px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="px-4">E-mail</TableHead>
                 <TableHead>Cargo</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className={COLUMN_FROM_SM}>Status</TableHead>
                 <TableHead className="w-[90px] px-4" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.map((user) => (
                 <TableRow key={user.id} data-testid={`user-row-${user.email}`}>
-                  <TableCell className="px-4 text-[13px] font-medium text-foreground">
+                  <TableCell className="break-all px-4 text-[13px] font-medium text-foreground">
                     {user.email}
                     {user.mustChangePassword && (
                       <span className="ml-2 inline-flex h-[19px] items-center rounded-[5px] bg-warning/[.13] px-1.5 text-[10.5px] font-semibold text-warning-emphasis">
@@ -403,7 +407,7 @@ export default function UserManagementPanel(): JSX.Element {
                       </select>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={COLUMN_FROM_SM}>
                     <span
                       className={cn(
                         'inline-flex items-center gap-[5px] text-[11.5px] font-semibold',

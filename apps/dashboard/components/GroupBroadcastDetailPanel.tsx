@@ -43,6 +43,8 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import { COLUMN_FROM_SM } from '@/components/broadcasts/responsiveColumns';
+import { cn } from '@/lib/utils';
 
 interface GroupBroadcastDetailPanelProps {
   sessionName: string;
@@ -91,6 +93,16 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   admin_only_group: 'Só administradores podem publicar neste grupo',
   group_not_found: 'O número não participa mais deste grupo',
 };
+
+/** Texto da coluna Detalhe — um lugar só, usado na coluna (desktop) e abaixo do nome (celular). */
+function targetDetail(target: GroupBroadcastTarget): string | null {
+  if (target.status === 'skipped' && target.skipReason) {
+    return SKIP_REASON_LABELS[target.skipReason] ?? target.skipReason;
+  }
+  if (target.status === 'failed') return target.errorMessage ?? null;
+  if (target.status === 'sent' && target.sentAt) return formatDateTime(target.sentAt);
+  return null;
+}
 
 function errorMessageFor(error: unknown): string {
   if (error instanceof ClientApiError) {
@@ -274,7 +286,7 @@ export default function GroupBroadcastDetailPanel({
         className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        Campanhas
+        Disparos
       </Link>
 
       <div className="mb-1 flex flex-wrap items-center gap-2.5">
@@ -652,29 +664,31 @@ export default function GroupBroadcastDetailPanel({
             <TableRow>
               <TableHead className="px-4">Grupo</TableHead>
               <TableHead className="px-4">Status</TableHead>
-              <TableHead className="px-4">Detalhe</TableHead>
+              <TableHead className={cn(COLUMN_FROM_SM, 'px-4')}>Detalhe</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {targets.map((target) => (
               <TableRow key={target.id}>
                 <TableCell className="px-4 py-3 align-top">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Users className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="text-[13px] text-foreground">{target.groupName}</span>
+                    <span className="min-w-0 break-words text-[13px] text-foreground">{target.groupName}</span>
                   </div>
+                  {/* Celular: a coluna Detalhe some e o texto desce para baixo do grupo. */}
+                  {targetDetail(target) && (
+                    <p className="mt-1 break-words text-[12px] text-muted-foreground sm:hidden">
+                      {targetDetail(target)}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap px-4 py-3 align-top">
                   <Badge variant={TARGET_STATUS_BADGE_VARIANT[target.status]}>
                     {TARGET_STATUS_LABELS[target.status]}
                   </Badge>
                 </TableCell>
-                <TableCell className="px-4 py-3 align-top text-[12.5px] text-muted-foreground">
-                  {target.status === 'skipped' &&
-                    target.skipReason &&
-                    (SKIP_REASON_LABELS[target.skipReason] ?? target.skipReason)}
-                  {target.status === 'failed' && target.errorMessage}
-                  {target.status === 'sent' && target.sentAt && formatDateTime(target.sentAt)}
+                <TableCell className={cn(COLUMN_FROM_SM, 'px-4 py-3 align-top text-[12.5px] text-muted-foreground')}>
+                  {targetDetail(target)}
                 </TableCell>
               </TableRow>
             ))}

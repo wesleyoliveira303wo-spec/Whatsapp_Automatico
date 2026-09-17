@@ -2296,6 +2296,21 @@ ser aceitos em paralelo pelo próprio fundador, conscientemente.
 
 ---
 
+### Varredura de dimensões: nenhuma tela rola na horizontal + streams SSE não sobrevivem ao crachá
+
+**Data:** 2026-09-17
+**Contexto:** o fundador pediu que o app "nunca use barra de rolagem horizontal, só vertical quando necessário", no PC e no celular, e que a varredura fosse conferida com os próprios olhos. Foi feita no Docker local com um detector em JavaScript rodando em cada tela logada, a 375px (celular), 768px (tablet), 1.280px e 1.600px — medindo `scrollWidth > clientWidth` em todo contêiner rolável e apontando o elemento culpado, em vez de julgar por captura de tela (as capturas do painel embutido saem reduzidas e enganam).
+**Causas encontradas, todas medidas:**
+- `main` e colunas `flex-1` sem `min-w-0` (o `min-width:auto` do flexbox deixava o conteúdo alargar a coluna) — SessionLayout, ConversationInbox, Perfil.
+- Tabelas de Disparos (contatos e grupos) com 7–8 colunas sempre visíveis. Novo `components/broadcasts/responsiveColumns.ts` (colunas aparecem por breakpoint; nome, status e ações ficam sempre). No celular a coluna Status some e o selo desce para baixo do nome; "Pausar/Iniciar/Retomar" viram só ícone (com `aria-label`).
+- Pipeline: seis colunas de 268px com `overflow-x-auto` rolavam na horizontal abaixo de ~1.750px. Virou grade 1 → 2 → 3 colunas e as seis lado a lado só a partir de `2xl` — medido: a 1.280px, seis colunas davam 184px e o nome do contato ficava com 71px.
+- Balão de documento: a linha da bolha não tinha `max-w-full` e um PDF de nome longo media 349px num `li` de 295px.
+- Cabeçalho da conversa no celular: "Assumir conversa" + selo espremiam o nome do contato até zero — rótulo curto e selo só a partir de `sm`.
+- Auditoria: `<select>` nativo mede a opção mais longa; ação fora do catálogo (palavra única, ex. `group_broadcast.started`) alargava a coluna — `[overflow-wrap:anywhere]` e as 4 ações de disparo em grupos + 7 outras ganharam rótulo.
+- Cérebro da IA: "Atualizado em …" ao lado do título empurrava 21px; cartões de Contatos cortavam o rótulo em reticências.
+**Bug colateral real — "Falha ao carregar sessões (status 401)":** o stream SSE valida a sessão uma vez e polla com o mesmo access token; a vida fixa de 10 min não conversava com a validade do token (15 min, renovado só com menos de 60s restantes). Um stream aberto com 5 min de token passava 5 min devolvendo 401. `streamLifetimeMs` (`lib/dashboardSession.ts`) limita a vida do stream ao tempo até o token vencer (menos 15s, piso de 5s) nas três rotas de stream; ao fechar, o `EventSource` reconecta e `requireSession` renova.
+**Impacto:** zero mudança em `apps/api`, zero migration. Suítes `dashboard`+`dashboard-jsdom` 155/155 e 1.199/1.199; `tsc`/`eslint` limpos. Três testes passaram a esperar o selo de status duas vezes (versão celular e desktop, o CSS mostra uma por vez). Regra permanente registrada em `.claude/rules/ui-telas-de-listagem.md` §9.
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---

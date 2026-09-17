@@ -251,11 +251,16 @@ export default function MessageComposer({
   const canSubmit = !sending && (content.trim().length > 0 || selectedFile !== null);
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+    // `relative` aqui ancora os popups de respostas rápidas no CELULAR
+    // (largura total do composer); a partir de `sm` eles voltam a ancorar no
+    // próprio botão — ver o wrapper `sm:relative` abaixo (2026-09-17).
+    <form onSubmit={handleSubmit} className="relative flex flex-col gap-2">
       {selectedFile && (
-        <div className="flex items-center gap-2 self-start rounded-full border border-input bg-muted/50 px-3 py-1.5 text-sm">
+        <div className="flex max-w-full items-center gap-2 self-start rounded-full border border-input bg-muted/50 px-3 py-1.5 text-sm">
           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="flex-1 truncate text-foreground">{selectedFile.name}</span>
+          {/* `min-w-0`: sem ele o `truncate` não funciona num item flex, e um
+              nome de arquivo longo alargava o composer além da tela. */}
+          <span className="min-w-0 flex-1 truncate text-foreground">{selectedFile.name}</span>
           <button
             type="button"
             onClick={clearSelectedFile}
@@ -292,7 +297,7 @@ export default function MessageComposer({
         >
           <Plus className="h-[18px] w-[18px]" aria-hidden="true" />
         </Button>
-        <div ref={quickRepliesRef} className="relative shrink-0 self-end">
+        <div ref={quickRepliesRef} className="shrink-0 self-end sm:relative">
           {/* T4 (Trava de plano): respostas rápidas é recurso do Plano Pro — some no Grátis. */}
           {!isFreePlan && (
             <Button
@@ -315,7 +320,7 @@ export default function MessageComposer({
           {!isFreePlan &&
             showQuickReplies &&
             (managingQuickReplies ? (
-              <div className="fx-scroll absolute bottom-full left-0 mb-2 max-h-[420px] w-[460px] overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-menu">
+              <div className="fx-scroll absolute bottom-full left-0 z-20 mb-2 max-h-[420px] w-full overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-menu sm:w-[460px]">
                 <div className="mb-2 flex items-center gap-1.5">
                   <button
                     type="button"
@@ -340,7 +345,7 @@ export default function MessageComposer({
                 <QuickRepliesPanel sessionName={sessionName} />
               </div>
             ) : (
-              <div className="absolute bottom-full left-0 mb-2 w-72 overflow-hidden rounded-xl border border-border bg-card shadow-menu">
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-menu sm:w-72">
                 <div className="fx-scroll max-h-56 overflow-y-auto p-1.5">
                   {quickReplies.length === 0 ? (
                     <p className="p-2 text-xs text-muted-foreground">
@@ -380,7 +385,7 @@ export default function MessageComposer({
           title="Enter envia · Shift+Enter quebra linha"
           rows={1}
           maxLength={MAX_LENGTH}
-          className="fx-scroll max-h-[132px] min-h-[24px] flex-1 resize-none self-center border-0 bg-transparent px-1 py-1 text-[14.2px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground"
+          className="fx-scroll max-h-[132px] min-h-[24px] min-w-0 flex-1 resize-none self-center border-0 bg-transparent px-1 py-1 text-[14.2px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground"
         />
         <Button
           type="submit"

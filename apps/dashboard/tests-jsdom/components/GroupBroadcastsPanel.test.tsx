@@ -69,7 +69,8 @@ describe('GroupBroadcastsPanel', () => {
     await renderPanel();
 
     const table = within(screen.getByTestId('group-broadcasts-table'));
-    expect(table.getByText('Rascunho')).toBeInTheDocument();
+    // Duas cópias: a coluna Status (desktop) e o selo abaixo do nome (celular) — o CSS mostra uma de cada vez.
+    expect(table.getAllByText('Rascunho')).toHaveLength(2);
     expect(table.getByText('3')).toBeInTheDocument(); // total de grupos
   });
 

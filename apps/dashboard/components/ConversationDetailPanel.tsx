@@ -206,7 +206,7 @@ export default function ConversationDetailPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[60px] shrink-0 items-center gap-3 border-b border-border px-[18px]">
+      <div className="flex h-[60px] shrink-0 items-center gap-2 border-b border-border px-3 sm:gap-3 sm:px-[18px]">
         <Link
           href={`/sessions/${encodeURIComponent(sessionName)}/conversations`}
           className="-ml-1.5 shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted lg:hidden"
@@ -234,11 +234,15 @@ export default function ConversationDetailPanel({
               )}
             />
           </h2>
-          <ConversationStatusBadge
-            status={conversation.status}
-            escalatedAt={conversation.escalatedAt}
-            aiEnabled={aiEnabled}
-          />
+          {/* Celular: o selo sai do cabeçalho (não cabe ao lado do nome e do
+              botão). O estado continua na tela — no aviso logo acima do composer. */}
+          <span className="hidden shrink-0 sm:inline-flex">
+            <ConversationStatusBadge
+              status={conversation.status}
+              escalatedAt={conversation.escalatedAt}
+              aiEnabled={aiEnabled}
+            />
+          </span>
         </div>
         <ConversationActions
           conversationId={conversation.id}
@@ -311,11 +315,11 @@ export default function ConversationDetailPanel({
           ) : conversation.escalatedAt ? (
             <p className="text-xs font-medium text-warning">
               A IA pediu ajuda humana nesta conversa e continua respondendo enquanto ninguém
-              assume. Clique em &quot;Assumir conversa&quot; acima para atender você mesmo.
+              assume. Clique em &quot;Assumir&quot; acima para atender você mesmo.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              A IA está respondendo esta conversa. Clique em &quot;Assumir conversa&quot; acima para
+              A IA está respondendo esta conversa. Clique em &quot;Assumir&quot; acima para
               responder você mesmo.
             </p>
           )}

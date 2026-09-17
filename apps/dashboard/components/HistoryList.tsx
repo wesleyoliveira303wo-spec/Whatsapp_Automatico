@@ -86,7 +86,7 @@ export default function HistoryList({ sessionName, limit = 20 }: HistoryListProp
               className={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusDotClassName(event.status))}
               aria-hidden="true"
             />
-            <span className="flex-1 text-[12.5px] text-foreground-secondary">
+            <span className="min-w-0 flex-1 break-words text-[12.5px] text-foreground-secondary">
               {formatStatusLabel(event.status)}
               {reason ? ` (${reason})` : ''}
             </span>
