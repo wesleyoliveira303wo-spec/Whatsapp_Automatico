@@ -117,7 +117,7 @@ const CONFIRM_ACTION_COPY: Record<
   cancel: {
     title: 'Cancelar este disparo?',
     description:
-      'Ação definitiva — um disparo cancelado não pode ser retomada. Destinatários ainda pendentes não receberão mensagem nenhuma.',
+      'Ação definitiva — um disparo cancelado não pode ser retomado. Destinatários ainda pendentes não receberão mensagem nenhuma.',
     confirmLabel: 'Confirmar cancelamento',
     variant: 'destructive',
   },

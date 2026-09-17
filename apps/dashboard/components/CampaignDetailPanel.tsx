@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Play, Pause, XCircle, RotateCcw, FileText, X } from 'lucide-react';
+import { ChevronLeft, Play, Pause, XCircle, RotateCcw, FileText, X, Pencil } from 'lucide-react';
 
 import {
   fetchCampaign,
@@ -22,6 +22,7 @@ import {
   type CampaignLinkedConversationStage,
 } from '@/lib/clientApi';
 import { usePollingRefresh } from '@/hooks/usePollingRefresh';
+import CampaignCreateForm from '@/components/CampaignCreateForm';
 import { formatDateTime, formatPersonLabelParts, type PersonDisplayParts } from '@/lib/formatters';
 import DisplayNameParts from '@/components/DisplayNameParts';
 import { toast } from '@/components/ui/use-toast';
@@ -57,6 +58,7 @@ const SKIP_REASON_LABELS: Record<CampaignSkipReason, string> = {
   opt_out: 'Pediram para não receber mais disparos',
   active_human_conversation: 'Já estão sendo atendidos por um humano',
   recently_contacted: 'Contatados por outro disparo há menos de 7 dias',
+  removed_by_operator: 'Removido numa edição do disparo',
 };
 
 const STATUS_LABELS: Record<CampaignStatus, string> = {
@@ -175,6 +177,9 @@ export default function CampaignDetailPanel({
   const [startDialogOpen, setStartDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [pauseAndEditConfirmOpen, setPauseAndEditConfirmOpen] = useState(false);
+  /** `null` = diálogo fechado; lista = TODOS os destinatários, carregados antes de abrir. */
+  const [editRecipients, setEditRecipients] = useState<CampaignRecipient[] | null>(null);
 
   // CORREÇÃO 2026-08-18 (pedido do fundador): a tela de detalhe não
   // atualizava sozinha enquanto um disparo estava em execução — só um F5
@@ -296,6 +301,43 @@ export default function CampaignDetailPanel({
     }
   }
 
+  /**
+   * Abre a edição (2026-09-17) com TODOS os destinatários, nunca só a página
+   * que está na tela: a edição envia o estado final inteiro, e quem ficasse de
+   * fora do formulário seria removido do disparo ao salvar — num disparo de
+   * 300 contatos, 200 sumiriam em silêncio.
+   *
+   * Quem já foi removido numa edição anterior não volta pré-marcado: marcá-lo
+   * de novo não o reenvia (já recebeu), então aparecer marcado só enganaria.
+   */
+  async function openEditor(): Promise<void> {
+    setActionPending(true);
+    try {
+      const all: CampaignRecipient[] = [];
+      let cursor: string | undefined;
+      do {
+        // eslint-disable-next-line no-await-in-loop
+        const page = await fetchCampaignRecipients(campaignId, { limit: 100, cursor });
+        all.push(...page.recipients);
+        cursor = page.nextCursor;
+      } while (cursor);
+      setEditRecipients(
+        all.filter(
+          (recipient) =>
+            !(recipient.status === 'skipped' && recipient.skipReason === 'removed_by_operator'),
+        ),
+      );
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Não foi possível abrir a edição',
+        description: errorMessageFor(error),
+      });
+    } finally {
+      setActionPending(false);
+    }
+  }
+
   async function handleRemoveMedia(): Promise<void> {
     setActionPending(true);
     try {
@@ -323,7 +365,7 @@ export default function CampaignDetailPanel({
     );
   }
   if (errorMessage || !campaign || !summary) {
-    return <ErrorState description={errorMessage ?? 'Disparo não encontrada.'} onRetry={load} />;
+    return <ErrorState description={errorMessage ?? 'Disparo não encontrado.'} onRetry={load} />;
   }
 
   const canStart = campaign.status === 'draft' || campaign.status === 'paused';
@@ -337,6 +379,14 @@ export default function CampaignDetailPanel({
   const canReopen =
     (campaign.status === 'completed' || campaign.status === 'cancelled') &&
     (metrics?.failed ?? 0) > 0;
+  // Mesma regra da API (`CampaignService.updateCampaign`) e da tela irmã de grupos.
+  const canEdit = campaign.status === 'draft' || campaign.status === 'paused';
+  const editBlockedReason =
+    campaign.status === 'completed'
+      ? 'Um disparo concluído não pode mais ser editado.'
+      : campaign.status === 'cancelled'
+        ? 'Um disparo cancelado não pode mais ser editado.'
+        : undefined;
 
   return (
     <div>
@@ -355,9 +405,86 @@ export default function CampaignDetailPanel({
         <Badge variant={STATUS_BADGE_VARIANT[campaign.status]}>
           {STATUS_LABELS[campaign.status]}
         </Badge>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={(!canEdit && campaign.status !== 'running') || actionPending}
+          title={editBlockedReason}
+          onClick={() =>
+            campaign.status === 'running' ? setPauseAndEditConfirmOpen(true) : void openEditor()
+          }
+        >
+          <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          {campaign.status === 'running' ? 'Pausar e editar' : 'Editar'}
+        </Button>
       </div>
+
+      <Dialog open={pauseAndEditConfirmOpen} onOpenChange={setPauseAndEditConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pausar este disparo para editar?</DialogTitle>
+            <DialogDescription>
+              Editar exige pausar primeiro — o disparo para de enviar até você retomá-lo (o que já
+              foi enviado não muda).
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Voltar
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={actionPending}
+              onClick={async () => {
+                setPauseAndEditConfirmOpen(false);
+                setActionPending(true);
+                try {
+                  const result = await pauseCampaign(campaignId);
+                  setCampaign(result.campaign);
+                } catch (error) {
+                  toast({
+                    variant: 'destructive',
+                    title: 'Não foi possível pausar',
+                    description: errorMessageFor(error),
+                  });
+                  setActionPending(false);
+                  return;
+                }
+                setActionPending(false);
+                await openEditor();
+              }}
+            >
+              Pausar e editar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editRecipients !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditRecipients(null);
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar disparo</DialogTitle>
+          </DialogHeader>
+          {editRecipients && (
+            <CampaignCreateForm
+              sessionName={sessionName}
+              editing={{ campaign, recipients: editRecipients }}
+              onCreated={load}
+              onClose={() => setEditRecipients(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <p className="mb-1 text-[13px] text-muted-foreground">
-        Criada em {formatDateTime(campaign.createdAt)}
+        Criado em {formatDateTime(campaign.createdAt)}
       </p>
       {campaign.description && (
         <p className="mb-2 max-w-2xl text-[13px] text-muted-foreground">{campaign.description}</p>
@@ -471,7 +598,7 @@ export default function CampaignDetailPanel({
             <DialogHeader>
               <DialogTitle>Cancelar este disparo?</DialogTitle>
               <DialogDescription>
-                Ação definitiva — um disparo cancelado não pode ser retomada. Destinatários ainda
+                Ação definitiva — um disparo cancelado não pode ser retomado. Destinatários ainda
                 pendentes não receberão mensagem nenhuma.
               </DialogDescription>
             </DialogHeader>

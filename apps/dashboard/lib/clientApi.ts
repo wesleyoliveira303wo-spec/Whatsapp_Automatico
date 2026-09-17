@@ -891,7 +891,12 @@ export interface Campaign {
   updatedAt: string;
 }
 
-export type CampaignSkipReason = 'opt_out' | 'active_human_conversation' | 'recently_contacted';
+export type CampaignSkipReason =
+  | 'opt_out'
+  | 'active_human_conversation'
+  | 'recently_contacted'
+  /** Tirado do disparo numa edição, depois de já ter recebido (2026-09-15). */
+  | 'removed_by_operator';
 
 /** O "63 de 100, eis os motivos" — resumo devolvido junto com a campanha recém-criada. */
 export interface CampaignRecipientSummary {

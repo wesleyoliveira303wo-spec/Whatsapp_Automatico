@@ -52,6 +52,7 @@ const SKIP_REASON_LABELS: Record<CampaignSkipReason, string> = {
   opt_out: 'Pediram para não receber mais disparos',
   active_human_conversation: 'Já estão sendo atendidos por um humano',
   recently_contacted: 'Contatados por outro disparo há menos de 7 dias',
+  removed_by_operator: 'Removidos numa edição do disparo',
 };
 
 /** Teto do lado do CLIENTE — puramente UX (falha rápido); a API impõe o teto de verdade (`413`). Espelha `MAX_CAMPAIGN_MEDIA_UPLOAD_BYTES`. */
@@ -338,7 +339,7 @@ export default function CampaignCreateForm({
     return (
       <Card className="p-6">
         <h2 className="text-[16px] font-semibold text-foreground">
-          {editing ? 'Alterações salvas' : 'Disparo criada'}
+          {editing ? 'Alterações salvas' : 'Disparo criado'}
         </h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
           {editing ? (
@@ -349,7 +350,7 @@ export default function CampaignCreateForm({
             </>
           ) : (
             <>
-              O disparo foi calculada — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
+              O disparo foi calculado — <strong>nenhuma mensagem foi enviada ainda</strong>. Para
               disparar de verdade, abra o disparo e use &quot;Iniciar envio&quot; (que pede
               confirmação separada).
             </>
@@ -358,7 +359,7 @@ export default function CampaignCreateForm({
 
         {mediaError && (
           <p className="mt-2 text-[12.5px] text-destructive">
-            {editing ? 'A edição foi salva' : 'O disparo foi criada'}, mas o anexo de mídia falhou:{' '}
+            {editing ? 'A edição foi salva' : 'O disparo foi criado'}, mas o anexo de mídia falhou:{' '}
             {mediaError} Você pode tentar de novo pela tela de detalhe.
           </p>
         )}

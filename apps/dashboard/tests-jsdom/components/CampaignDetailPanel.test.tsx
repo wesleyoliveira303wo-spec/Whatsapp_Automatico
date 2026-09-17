@@ -7,6 +7,16 @@ import '@testing-library/jest-dom';
 import CampaignDetailPanel from '../../components/CampaignDetailPanel';
 import * as clientApi from '../../lib/clientApi';
 
+// O formulário de edição tem testes próprios; aqui só importa O QUE ele recebe.
+const mockCampaignCreateForm = jest.fn();
+jest.mock('../../components/CampaignCreateForm', () => ({
+  __esModule: true,
+  default: (props: unknown) => {
+    mockCampaignCreateForm(props);
+    return <div data-testid="campaign-edit-form" />;
+  },
+}));
+
 jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   fetchCampaign: jest.fn(),
@@ -83,6 +93,82 @@ async function renderPanel(): Promise<void> {
 describe('CampaignDetailPanel (Fase L, Bloco L4)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  /**
+   * Edição do disparo para contatos (2026-09-17). O servidor já aceitava
+   * editar desde 2026-09-15, mas a tela não tinha o botão. A edição envia o
+   * estado FINAL inteiro, então o formulário precisa receber TODOS os
+   * destinatários — quem ficasse fora seria removido ao salvar.
+   */
+  describe('editar', () => {
+    it('rascunho: "Editar" carrega TODAS as páginas de destinatários antes de abrir', async () => {
+      mockDetail();
+      await renderPanel();
+      (clientApi.fetchCampaignRecipients as jest.Mock)
+        .mockResolvedValueOnce({
+          recipients: [{ id: 'p1', phoneE164: '5521911111111', status: 'pending', createdAt: '' }],
+          nextCursor: 'cursor-2',
+        })
+        .mockResolvedValueOnce({
+          recipients: [{ id: 'p2', phoneE164: '5521922222222', status: 'pending', createdAt: '' }],
+        });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+      });
+
+      expect(await screen.findByTestId('campaign-edit-form')).toBeInTheDocument();
+      expect(clientApi.fetchCampaignRecipients).toHaveBeenCalledWith('campaign-1', {
+        limit: 100,
+        cursor: 'cursor-2',
+      });
+      const { editing } = mockCampaignCreateForm.mock.calls.at(-1)[0];
+      expect(editing.recipients.map((r: { id: string }) => r.id)).toEqual(['p1', 'p2']);
+      expect(editing.campaign.id).toBe('campaign-1');
+    });
+
+    it('quem já foi removido numa edição anterior não volta pré-marcado', async () => {
+      mockDetail();
+      await renderPanel();
+      (clientApi.fetchCampaignRecipients as jest.Mock).mockResolvedValueOnce({
+        recipients: [
+          { id: 'fica', contactId: 'c1', status: 'skipped', skipReason: 'opt_out', createdAt: '' },
+          {
+            id: 'removido',
+            contactId: 'c2',
+            status: 'skipped',
+            skipReason: 'removed_by_operator',
+            createdAt: '',
+          },
+        ],
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+      });
+      await screen.findByTestId('campaign-edit-form');
+
+      const { editing } = mockCampaignCreateForm.mock.calls.at(-1)[0];
+      expect(editing.recipients.map((r: { id: string }) => r.id)).toEqual(['fica']);
+    });
+
+    it('em envio: o botão vira "Pausar e editar" e pede confirmação antes de pausar', async () => {
+      mockDetail({ status: 'running' });
+      await renderPanel();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pausar e editar' }));
+
+      expect(await screen.findByText('Pausar este disparo para editar?')).toBeInTheDocument();
+      expect(clientApi.pauseCampaign).not.toHaveBeenCalled();
+    });
+
+    it('concluído: não dá para editar', async () => {
+      mockDetail({ status: 'completed' });
+      await renderPanel();
+
+      expect(screen.getByRole('button', { name: 'Editar' })).toBeDisabled();
+    });
   });
 
   it('mostra o resumo (total/pendentes/suprimidos) e os motivos de supressão', async () => {
