@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClientApiError, fetchConversation } from '../lib/clientApi';
-import { usePollingRefresh } from './usePollingRefresh';
+import { useSharedPoll } from './useSharedPoll';
 import type { ConversationSummary } from '../lib/clientApi';
 
 export interface UseConversationDetailResult {
@@ -32,54 +31,28 @@ export interface UseConversationDetailResult {
  * por `refresh()` manual/polling.
  */
 export function useConversationDetail(conversationId: string | null): UseConversationDetailResult {
-  const [conversation, setConversation] = useState<ConversationSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState(0);
-  // Tempo real (N2-4): nos refreshes de polling não queremos piscar o
-  // "Carregando…" nem apagar a conversa já exibida — só na 1ª carga.
-  const initialLoadDoneRef = useRef(false);
+  // Compartilhado por chave (2026-09-17): o painel central e o painel de
+  // contexto montam este hook para a MESMA conversa — antes eram dois polls
+  // independentes a cada 4s, agora é um só (ver `useSharedPoll`). Bônus:
+  // `applyUpdate` num painel reflete no outro na hora.
+  const { data, error, settled, refresh, setData } = useSharedPoll<ConversationSummary>(
+    conversationId ? `conversation:${conversationId}` : null,
+    () => fetchConversation(conversationId as string),
+  );
 
-  useEffect(() => {
-    if (!conversationId) return;
-    let cancelled = false;
+  // Mesmo racional de antes: erro num poll não derruba a conversa já
+  // carregada — só vira mensagem na tela quando nunca houve dado bom.
+  let errorMessage: string | null = null;
+  if (settled && data === undefined && error !== undefined) {
+    const notFound = error instanceof ClientApiError && error.status === 404;
+    errorMessage = notFound ? 'Conversa nao encontrada.' : 'Falha ao carregar a conversa.';
+  }
 
-    const lookup = async (): Promise<void> => {
-      if (!initialLoadDoneRef.current) setLoading(true);
-      setErrorMessage(null);
-      try {
-        const found = await fetchConversation(conversationId);
-        if (cancelled) return;
-        setConversation(found);
-        setErrorMessage(null);
-        setLoading(false);
-        initialLoadDoneRef.current = true;
-      } catch (error) {
-        if (cancelled) return;
-        // Mesmo racional de antes: erro num poll não derruba a conversa já
-        // carregada — só reflete na tela (não encontrada/falha) na 1ª carga.
-        if (!initialLoadDoneRef.current) {
-          const notFound = error instanceof ClientApiError && error.status === 404;
-          setConversation(null);
-          setErrorMessage(notFound ? 'Conversa nao encontrada.' : 'Falha ao carregar a conversa.');
-          setLoading(false);
-          initialLoadDoneRef.current = true;
-        }
-      }
-    };
-
-    void lookup();
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, refreshToken]);
-
-  const refresh = useCallback(() => setRefreshToken((token) => token + 1), []);
-  const applyUpdate = useCallback((updated: ConversationSummary) => setConversation(updated), []);
-
-  // Tempo real (N2-4): o status da conversa (bot/human) também acompanha ao
-  // vivo — se outro atendente assumir/devolver, o cabeçalho reflete sem F5.
-  usePollingRefresh(refresh);
-
-  return { conversation, loading, errorMessage, refresh, applyUpdate };
+  return {
+    conversation: data ?? null,
+    loading: !settled,
+    errorMessage,
+    refresh,
+    applyUpdate: setData,
+  };
 }

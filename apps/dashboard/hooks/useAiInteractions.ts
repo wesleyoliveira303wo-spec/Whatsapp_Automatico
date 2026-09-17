@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { fetchAiInteractions } from '../lib/clientApi';
-import { usePollingRefresh } from './usePollingRefresh';
+import { useSharedPoll } from './useSharedPoll';
 import type { AiInteractionSummary } from '../lib/clientApi';
 
 export interface UseAiInteractionsResult {
@@ -21,31 +21,23 @@ export function useAiInteractions(
   conversationId: string | null,
   limit?: number,
 ): UseAiInteractionsResult {
-  const [interactions, setInteractions] = useState<AiInteractionSummary[] | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState(0);
+  // Compartilhado por conversa (2026-09-17, ver `useSharedPoll`): o painel
+  // central e o de contexto pediam a mesma lista em polls separados. Agora a
+  // busca é uma só (limite padrão da API, 50, mais recentes primeiro) e o
+  // `limit` recorta no cliente — as N primeiras são as N mais recentes.
+  const { data, error, refresh } = useSharedPoll(
+    conversationId ? `ai-interactions:${conversationId}` : null,
+    () => fetchAiInteractions(conversationId as string),
+  );
 
-  useEffect(() => {
-    if (!conversationId) return;
-    let cancelled = false;
-    setErrorMessage(null);
-    fetchAiInteractions(conversationId, limit)
-      .then(({ interactions: fetched }) => {
-        if (!cancelled) setInteractions(fetched);
-      })
-      .catch(() => {
-        if (!cancelled) setErrorMessage('Falha ao carregar as interacoes de IA.');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, limit, refreshToken]);
+  const interactions = useMemo(() => {
+    if (!data) return null;
+    return limit ? data.interactions.slice(0, limit) : data.interactions;
+  }, [data, limit]);
 
-  const refresh = useCallback(() => setRefreshToken((token) => token + 1), []);
-
-  // Tempo real (N2-4): acompanha as respostas da IA chegando ao vivo, junto da
-  // timeline de mensagens. Atualização silenciosa (não pisca).
-  usePollingRefresh(refresh);
-
-  return { interactions, errorMessage, refresh };
+  return {
+    interactions,
+    errorMessage: error !== undefined ? 'Falha ao carregar as interacoes de IA.' : null,
+    refresh,
+  };
 }

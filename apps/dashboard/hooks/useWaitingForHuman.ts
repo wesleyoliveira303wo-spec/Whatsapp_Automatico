@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { fetchConversations } from '../lib/clientApi';
-import { usePollingRefresh } from './usePollingRefresh';
+import type { ConversationSummary } from '../lib/clientApi';
+import { useSharedPoll } from './useSharedPoll';
 import {
   ensureNotificationPermission,
   playAlertSound,
@@ -17,6 +18,36 @@ export interface UseWaitingForHumanResult {
    * (`WhatsAppAccountCard`) sem precisar de um endpoint novo.
    */
   countBySession: Record<string, number>;
+}
+
+/**
+ * Busca a fila e toca o alerta — roda UMA vez por poll, não uma vez por
+ * componente (2026-09-17): com o hook montado no rail E na aba WhatsApps, o
+ * alerta de uma única escalada tocava duas vezes. `previous` é a fila da busca
+ * anterior (`undefined` na 1ª, que nunca alarma).
+ */
+async function fetchWaitingQueue(
+  previous: ConversationSummary[] | undefined,
+): Promise<ConversationSummary[]> {
+  const { conversations } = await fetchConversations({ needsHumanAttention: true, limit: 200 });
+  if (previous !== undefined) {
+    const seen = new Set(previous.map(escalationKey));
+    const newOnes = conversations.filter((conversation) => !seen.has(escalationKey(conversation)));
+    if (newOnes.length > 0) {
+      playAlertSound();
+      showBrowserNotification(
+        'Atendimento humano necessário',
+        newOnes.length === 1
+          ? 'Uma conversa está aguardando um atendente.'
+          : `${newOnes.length} conversas aguardando um atendente.`,
+      );
+    }
+  }
+  return conversations;
+}
+
+function escalationKey(conversation: ConversationSummary): string {
+  return `${conversation.id}:${conversation.escalatedAt}`;
 }
 
 /**
@@ -37,63 +68,31 @@ export interface UseWaitingForHumanResult {
  * também não soube responder) dispara o alerta. Nunca alarma no 1º
  * carregamento (só registra o que já existia, sem tocar som).
  *
- * Milestone 6, Bloco M6H-1: com a extinção da Sidebar única (agora há
- * Workspace sem sidebar + `SessionSidebar` por sessão), este hook passou a
- * ser montado em MAIS de um lugar (`pages/index.tsx` e `SessionSidebar`) —
- * cada montagem faz seu próprio polling independente, mesmo padrão que já
- * existia implicitamente (a Sidebar antiga remontava a cada navegação entre
- * páginas protegidas, então o polling nunca foi de fato "único"). O alerta
- * sonoro/notificação continua funcionando em qualquer tela onde o hook esteja
- * montado.
+ * Milestone 6, Bloco M6H-1: este hook é montado em MAIS de um lugar (rail
+ * da sessão, Workspace, aba WhatsApps). Desde 2026-09-17 todas as montagens
+ * compartilham UM poll (`useSharedPoll`) — antes cada uma tinha o seu, e o
+ * alerta sonoro tocava uma vez por montagem.
  */
 export function useWaitingForHuman(): UseWaitingForHumanResult {
-  const [count, setCount] = useState(0);
-  const [countBySession, setCountBySession] = useState<Record<string, number>>({});
-  const seenEscalationsRef = useRef<Set<string> | null>(null);
-
-  const load = useCallback(async (): Promise<void> => {
-    try {
-      const { conversations } = await fetchConversations({ needsHumanAttention: true, limit: 200 });
-      setCount(conversations.length);
-      setCountBySession(
-        conversations.reduce<Record<string, number>>((acc, conversation) => {
-          acc[conversation.sessionName] = (acc[conversation.sessionName] ?? 0) + 1;
-          return acc;
-        }, {}),
-      );
-
-      const currentKeys = new Set(
-        conversations.map((conversation) => `${conversation.id}:${conversation.escalatedAt}`),
-      );
-      const seen = seenEscalationsRef.current;
-      if (seen === null) {
-        // 1ª carga: só registra o que já existia — não alarma com a fila que já estava lá.
-        seenEscalationsRef.current = currentKeys;
-        return;
-      }
-      const newOnes = [...currentKeys].filter((key) => !seen.has(key));
-      seenEscalationsRef.current = currentKeys;
-      if (newOnes.length > 0) {
-        playAlertSound();
-        showBrowserNotification(
-          'Atendimento humano necessário',
-          newOnes.length === 1
-            ? 'Uma conversa está aguardando um atendente.'
-            : `${newOnes.length} conversas aguardando um atendente.`,
-        );
-      }
-    } catch {
-      // Silencioso: um poll que falhou não deve quebrar a navegação nem zerar o
-      // contador (mantém o último valor bom).
-    }
-  }, []);
+  // Falha num poll mantém a última fila boa (`useSharedPoll` nunca apaga o
+  // dado por causa de um erro) — não quebra a navegação nem zera o contador.
+  const { data } = useSharedPoll('waiting-for-human', fetchWaitingQueue, 5000);
 
   useEffect(() => {
     ensureNotificationPermission();
-    void load();
-  }, [load]);
+  }, []);
 
-  usePollingRefresh(load, 5000);
+  const conversations = data ?? EMPTY_QUEUE;
+  const countBySession = useMemo(
+    () =>
+      conversations.reduce<Record<string, number>>((acc, conversation) => {
+        acc[conversation.sessionName] = (acc[conversation.sessionName] ?? 0) + 1;
+        return acc;
+      }, {}),
+    [conversations],
+  );
 
-  return { count, countBySession };
+  return { count: conversations.length, countBySession };
 }
+
+const EMPTY_QUEUE: ConversationSummary[] = [];

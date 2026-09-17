@@ -10,6 +10,75 @@ export interface UseEventSourceResult<T> {
   connected: boolean;
 }
 
+interface SourceEntry {
+  source: EventSource;
+  state: UseEventSourceResult<unknown>;
+  listeners: Set<() => void>;
+}
+
+/**
+ * Uma conexão por URL, não por componente (2026-09-17): `SessionHeader`,
+ * `SessionRail` e `SessionConnectionPanel` abriam cada um o seu
+ * `EventSource` para `/api/sessions/:nome/stream` — e cada conexão SSE faz o
+ * BFF consultar a API a cada 2s. Três conexões iguais triplicavam essa carga
+ * e ocupavam três das seis conexões HTTP/1.1 que o navegador permite por
+ * origem. Agora a primeira inscrição abre a conexão, as demais recebem o mesmo
+ * estado, e a última a sair fecha.
+ */
+const sources = new Map<string, SourceEntry>();
+
+const INITIAL_STATE: UseEventSourceResult<never> = {
+  data: null,
+  errorMessage: null,
+  connected: false,
+};
+
+function acquireSource(url: string): SourceEntry {
+  const existing = sources.get(url);
+  if (existing) return existing;
+
+  const entry: SourceEntry = {
+    source: new EventSource(url),
+    state: INITIAL_STATE,
+    listeners: new Set(),
+  };
+  const update = (patch: Partial<UseEventSourceResult<unknown>>): void => {
+    entry.state = { ...entry.state, ...patch };
+    for (const listener of entry.listeners) listener();
+  };
+
+  entry.source.onopen = () => {
+    update({ connected: true });
+  };
+
+  entry.source.onmessage = (event: MessageEvent) => {
+    const parsed = parseJsonSafely<unknown>(event.data);
+    if (parsed !== null) {
+      update({ data: parsed, errorMessage: null });
+    }
+  };
+
+  entry.source.addEventListener('error', (event: Event) => {
+    const messageEvent = event as MessageEvent;
+    if (typeof messageEvent.data === 'string') {
+      const parsed = parseJsonSafely<{ message?: string }>(messageEvent.data);
+      update({ errorMessage: parsed?.message ?? 'Falha ao atualizar os dados.' });
+      return;
+    }
+    update({ connected: false });
+  });
+
+  sources.set(url, entry);
+  return entry;
+}
+
+function releaseSource(url: string, entry: SourceEntry, listener: () => void): void {
+  entry.listeners.delete(listener);
+  if (entry.listeners.size > 0) return;
+  entry.source.close();
+  if (sources.get(url) === entry) sources.delete(url);
+}
+
 /**
  * Hook cliente (M2, Fase 4 — UI-3) que consome um endpoint SSE do próprio
  * BFF (`/api/sessions/stream`, `/api/sessions/:sessionName/stream` — Fase
@@ -33,45 +102,21 @@ export interface UseEventSourceResult<T> {
  * primeira renderização de uma rota dinâmica antes do router hidratar).
  */
 export function useEventSource<T>(url: string | null): UseEventSourceResult<T> {
-  const [data, setData] = useState<T | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [state, setState] = useState<UseEventSourceResult<T>>(
+    () => ((url && sources.get(url)?.state) as UseEventSourceResult<T> | undefined) ?? INITIAL_STATE,
+  );
 
   useEffect(() => {
     if (!url) {
-      setData(null);
-      setConnected(false);
+      setState(INITIAL_STATE);
       return;
     }
-
-    const source = new EventSource(url);
-
-    source.onopen = () => {
-      setConnected(true);
-    };
-
-    source.onmessage = (event: MessageEvent) => {
-      const parsed = parseJsonSafely<T>(event.data);
-      if (parsed !== null) {
-        setData(parsed);
-        setErrorMessage(null);
-      }
-    };
-
-    source.addEventListener('error', (event: Event) => {
-      const messageEvent = event as MessageEvent;
-      if (typeof messageEvent.data === 'string') {
-        const parsed = parseJsonSafely<{ message?: string }>(messageEvent.data);
-        setErrorMessage(parsed?.message ?? 'Falha ao atualizar os dados.');
-        return;
-      }
-      setConnected(false);
-    });
-
-    return () => {
-      source.close();
-    };
+    const entry = acquireSource(url);
+    const listener = (): void => setState(entry.state as UseEventSourceResult<T>);
+    entry.listeners.add(listener);
+    listener();
+    return () => releaseSource(url, entry, listener);
   }, [url]);
 
-  return { data, errorMessage, connected };
+  return state;
 }
