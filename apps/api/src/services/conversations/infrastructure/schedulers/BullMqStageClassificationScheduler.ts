@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 
+import { buildJobId } from '../../../../shared/infrastructure/queue/jobId';
 import { StageClassificationScheduler } from '../../domain/schedulers/StageClassificationScheduler';
 import { AiReplyJobData, STAGE_CLASSIFY_JOB_NAME } from '../queues/AiReplyQueue';
 
@@ -23,7 +24,7 @@ export class BullMqStageClassificationScheduler implements StageClassificationSc
     // com `:` salvo com exatamente 3 partes (incidente do balão único,
     // 2026-08-21), e o prefixo evita colidir com o `jobId` do `generate-reply`
     // da mesma mensagem.
-    const jobId = `stage-${tenantId}-${conversationId}-${messageId}`;
+    const jobId = buildJobId('stage', tenantId, conversationId, messageId);
     await this.queue.add(
       STAGE_CLASSIFY_JOB_NAME,
       { tenantId, conversationId, messageId },

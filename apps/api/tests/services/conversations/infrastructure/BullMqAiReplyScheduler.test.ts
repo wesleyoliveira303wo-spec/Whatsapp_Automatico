@@ -16,7 +16,7 @@ describe('BullMqAiReplyScheduler', () => {
       expect(queue.add).toHaveBeenCalledWith(
         AI_REPLY_JOB_NAME,
         { tenantId: 'tenant-1', conversationId: 'conversation-1', messageId: 'message-1' },
-        { jobId: 'tenant-1:conversation-1:message-1', delay: 8000 },
+        { jobId: 'reply-tenant-1-conversation-1-message-1', delay: 8000 },
       );
     });
 
@@ -67,6 +67,22 @@ describe('BullMqAiReplyScheduler', () => {
 
       const jobIds = queue.add.mock.calls.map((call) => call[2].jobId);
       expect(jobIds[0]).not.toBe(jobIds[1]);
+    });
+
+    // Trava de regressão (2026-09-17): o BullMQ recusa um `jobId` que contenha
+    // `:` e não tenha EXATAMENTE 3 partes. A forma antiga
+    // (`tenant:conversa:mensagem`) passava só por coincidência de ter 3 — um
+    // `tenantId` com `:` derrubaria todo agendamento de IA em silêncio, a
+    // mesma classe de bug que sumiu com os balões 2+ das respostas em
+    // 2026-08-21. O separador agora é `-`, e nenhum id pode voltar a usar `:`.
+    it('nunca monta um jobId com ":", mesmo quando os ids recebidos contêm ":"', async () => {
+      const queue = createFakeQueue();
+      const scheduler = new BullMqAiReplyScheduler(queue as never);
+
+      await scheduler.schedule('tenant:a', 'conversation:b', 'message:c');
+
+      const jobId = queue.add.mock.calls[0][2].jobId as string;
+      expect(jobId).not.toContain(':');
     });
 
     it('propaga uma falha de queue.add() (não engole)', async () => {

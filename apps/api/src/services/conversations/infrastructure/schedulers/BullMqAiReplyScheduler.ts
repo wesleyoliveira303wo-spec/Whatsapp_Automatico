@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 
+import { buildJobId } from '../../../../shared/infrastructure/queue/jobId';
 import { AiReplyScheduler } from '../../domain/schedulers/AiReplyScheduler';
 import { AI_REPLY_JOB_NAME, AiReplyJobData } from '../queues/AiReplyQueue';
 
@@ -18,7 +19,7 @@ import { AI_REPLY_JOB_NAME, AiReplyJobData } from '../queues/AiReplyQueue';
  *
  * IDEMPOTÊNCIA DO JOB `ai-reply` (achado do levantamento arquitetural do
  * Bloco 4, resolvido aqui): `jobId` é derivado de
- * `tenantId:conversationId:messageId` (o `messageId` é da mensagem INBOUND
+ * `reply-<tenantId>-<conversationId>-<messageId>` (o `messageId` é da mensagem INBOUND
  * que disparou o agendamento, único por definição). BullMQ trata `jobId`
  * como chave de deduplicação nativa — uma segunda chamada com o MESMO
  * `jobId` enquanto o job anterior ainda não foi concluído/removido não cria
@@ -50,8 +51,8 @@ export class BullMqAiReplyScheduler implements AiReplyScheduler {
    * AGRUPAMENTO DE MENSAGENS EM RAJADA (2026-08-14, bug real de produção).
    *
    * O que mudou aqui: o job passou a entrar na fila com `delay`, em vez de
-   * imediatamente. O `jobId` continua sendo `tenant:conversa:MENSAGEM` — uma
-   * chave por mensagem, como sempre foi.
+   * imediatamente. O `jobId` continua sendo uma chave por MENSAGEM, como
+   * sempre foi (só o separador mudou de `:` para `-`, ver `schedule()`).
    *
    * O atraso é a metade do mecanismo; a outra metade é a policy
    * `shouldGenerateReply` (Domain), aplicada no processamento. Os 8 segundos
@@ -82,7 +83,15 @@ export class BullMqAiReplyScheduler implements AiReplyScheduler {
    * processar: são proteções para riscos diferentes.
    */
   async schedule(tenantId: string, conversationId: string, messageId: string): Promise<void> {
-    const jobId = `${tenantId}:${conversationId}:${messageId}`;
+    // SEPARADOR `-`, NUNCA `:` (2026-09-17). O BullMQ recusa um `jobId` que
+    // contenha `:` e não tenha EXATAMENTE 3 partes (`job.js`,
+    // `validateOptions`) — a forma antiga (`tenant:conversa:mensagem`)
+    // funcionava só por coincidência de ter 3 partes: um `tenantId` com `:`
+    // derrubaria todo agendamento de IA, e de forma invisível (a mesma
+    // classe de bug que sumiu com os balões 2+ das respostas, 2026-08-21).
+    // O prefixo espelha `BullMqStageClassificationScheduler` e evita colidir
+    // com o job de classificação da mesma mensagem.
+    const jobId = buildJobId('reply', tenantId, conversationId, messageId);
     await this.queue.add(
       AI_REPLY_JOB_NAME,
       { tenantId, conversationId, messageId },
