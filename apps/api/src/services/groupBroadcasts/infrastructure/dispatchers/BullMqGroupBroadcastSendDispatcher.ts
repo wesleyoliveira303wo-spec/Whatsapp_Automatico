@@ -25,6 +25,13 @@ import {
  *    disparo pausado não reagendaria nada (bug real de 2026-08-18 em
  *    `BullMqCampaignSendDispatcher`). `queue.remove` é idempotente.
  */
+/**
+ * Teto da varredura de jobs pendentes (ver `removeOtherPendingRuns`). Alto o
+ * bastante para cobrir qualquer cenário real deste produto (etapas × campanhas
+ * ativas) e baixo o bastante para nunca virar uma leitura cara do Redis.
+ */
+const PENDING_RUN_SCAN_LIMIT = 500;
+
 export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDispatcher {
   constructor(
     private readonly queue: Queue<GroupBroadcastSendJobData | GroupBroadcastRunJobData>,
@@ -61,12 +68,50 @@ export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDis
     // repetição entra na chave para um ciclo novo nunca ser engolido como
     // duplicata de um ciclo antigo que ainda esteja retido em Redis.
     const jobId = `${stepId}-run-${runNumber}`;
+    await this.removeOtherPendingRuns(stepId, jobId);
     await this.queue.remove(jobId);
     await this.queue.add(
       GROUP_BROADCAST_RUN_JOB_NAME,
       { tenantId, broadcastId, stepId, runNumber },
       { jobId, delay: delayMs },
     );
+  }
+
+  /**
+   * UMA etapa só pode ter UM job de repetição pendente — achado real de
+   * produção (2026-09-17, medido no Redis: a etapa `303dd023` tinha `run-5`,
+   * `run-6` e `run-7` pendentes, TODOS agendados para o MESMO instante
+   * (10:00 UTC, a abertura da janela), e a etapa `5a8f9eb7` tinha `run-10` e
+   * `run-11` para 10:30).
+   *
+   * Como surgia: o `jobId` inclui o `runNumber`, então cada novo agendamento
+   * (fim de ciclo, retomada, edição) cria uma chave DIFERENTE — o
+   * `queue.remove(jobId)` abaixo só apaga a chave idêntica, nunca as antigas.
+   * E como `computeNextRunAt` empurra para a abertura da janela tudo que
+   * cairia de madrugada, todos esses jobs convergiam para o MESMO horário.
+   * Resultado: a etapa publicava 2–3 vezes seguidas na abertura da janela, e
+   * as 4 publicações da campanha saíam "todas juntas" — exatamente o que o
+   * fundador reportou (com vídeo) em 23:07 BRT.
+   *
+   * A varredura é barata e limitada por construção: no máximo
+   * `MAX_STEPS_PER_BROADCAST` etapas × poucas campanhas ativas por sessão.
+   * Só toca jobs de REPETIÇÃO (prefixo `${stepId}-run-`) — os jobs de ENVIO
+   * usam o id do alvo (UUID puro) e nunca casam com esse prefixo.
+   */
+  private async removeOtherPendingRuns(stepId: string, keepJobId: string): Promise<void> {
+    const prefix = `${stepId}-run-`;
+    const pending = [
+      ...(await this.queue.getDelayed(0, PENDING_RUN_SCAN_LIMIT)),
+      ...(await this.queue.getWaiting(0, PENDING_RUN_SCAN_LIMIT)),
+    ];
+    for (const job of pending) {
+      const id = job.id;
+      if (!id || id === keepJobId || !id.startsWith(prefix)) continue;
+      // `Queue.remove` é idempotente e nunca lança sobre um job travado
+      // (devolve 0) — diferente de `Job.remove()`.
+      // eslint-disable-next-line no-await-in-loop
+      await this.queue.remove(id);
+    }
   }
 
   /**
@@ -91,6 +136,9 @@ export class BullMqGroupBroadcastSendDispatcher implements GroupBroadcastSendDis
     delayMs: number,
   ): Promise<void> {
     const jobId = `${stepId}-run-${runNumber}-postponed-${postponedTo.getTime()}`;
+    // Um adiamento também É "a próxima rodada desta etapa" — qualquer outro
+    // job de repetição pendente para ela está superado (2026-09-17).
+    await this.removeOtherPendingRuns(stepId, jobId);
     await this.queue.remove(jobId);
     await this.queue.add(
       GROUP_BROADCAST_RUN_JOB_NAME,

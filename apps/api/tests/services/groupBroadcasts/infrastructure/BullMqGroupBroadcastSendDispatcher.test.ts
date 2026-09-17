@@ -1,10 +1,24 @@
 import { BullMqGroupBroadcastSendDispatcher } from '../../../../src/services/groupBroadcasts/infrastructure/dispatchers/BullMqGroupBroadcastSendDispatcher';
 import { GROUP_BROADCAST_SEND_JOB_NAME } from '../../../../src/services/groupBroadcasts/infrastructure/queues/GroupBroadcastSendQueue';
 
-function createFakeQueue(): { add: jest.Mock; remove: jest.Mock } {
+interface FakeQueue {
+  add: jest.Mock;
+  remove: jest.Mock;
+  getDelayed: jest.Mock;
+  getWaiting: jest.Mock;
+}
+
+/**
+ * `getDelayed`/`getWaiting` existem aqui desde 2026-09-17: o dispatcher
+ * varre os jobs pendentes para garantir UM job de repetição por etapa (ver
+ * `removeOtherPendingRuns`). `pendingIds` simula jobs já agendados no Redis.
+ */
+function createFakeQueue(pendingIds: string[] = []): FakeQueue {
   return {
     add: jest.fn().mockResolvedValue({ id: 'job-1' }),
     remove: jest.fn().mockResolvedValue(1),
+    getDelayed: jest.fn().mockResolvedValue(pendingIds.map((id) => ({ id }))),
+    getWaiting: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -80,7 +94,7 @@ describe('BullMqGroupBroadcastSendDispatcher (Disparos em grupos, 2026-09-11, et
 
 describe('scheduleRun (recorrência por etapa, 2026-09-11/2026-09-14)', () => {
   it('usa um jobId por ETAPA+REPETIÇÃO, sem ":" e removendo o job anterior antes', async () => {
-    const queue = { add: jest.fn(), remove: jest.fn() };
+    const queue = createFakeQueue();
     const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
 
     await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 'step-1', 3, 7200000);
@@ -95,7 +109,7 @@ describe('scheduleRun (recorrência por etapa, 2026-09-11/2026-09-14)', () => {
   });
 
   it('repetições diferentes da mesma etapa nunca colidem no mesmo jobId', async () => {
-    const queue = { add: jest.fn(), remove: jest.fn() };
+    const queue = createFakeQueue();
     const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
 
     await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 'step-1', 1, 0);
@@ -105,8 +119,41 @@ describe('scheduleRun (recorrência por etapa, 2026-09-11/2026-09-14)', () => {
     expect(new Set(jobIds).size).toBe(2);
   });
 
+  // Achado real de produção (2026-09-17, medido no Redis): a etapa
+  // `303dd023` tinha `run-5`, `run-6` E `run-7` pendentes ao mesmo tempo,
+  // TODOS agendados para o mesmo instante (a abertura da janela). Como o
+  // `jobId` embute o `runNumber`, cada novo agendamento criava uma chave
+  // diferente e o `remove(jobId)` nunca apagava as antigas — a etapa
+  // publicava 2–3 vezes seguidas, e as 4 publicações da campanha saíam
+  // "todas juntas".
+  it('remove TODOS os outros jobs de repetição pendentes da MESMA etapa (um por etapa, sempre)', async () => {
+    const queue = createFakeQueue([
+      'step-1-run-5',
+      'step-1-run-6',
+      'step-1-run-5-postponed-1789639200000',
+      'step-2-run-5', // outra etapa — NUNCA pode ser tocada
+      'e6f0a0f1-2b3c-4d5e-8f90-1234567890ab', // job de ENVIO (UUID puro) — nunca tocado
+    ]);
+    const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
+
+    await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 'step-1', 7, 3600000);
+
+    const removed = queue.remove.mock.calls.map((call) => call[0]);
+    expect(removed).toEqual(
+      expect.arrayContaining(['step-1-run-5', 'step-1-run-6', 'step-1-run-5-postponed-1789639200000']),
+    );
+    expect(removed).not.toContain('step-2-run-5');
+    expect(removed).not.toContain('e6f0a0f1-2b3c-4d5e-8f90-1234567890ab');
+    // E o novo entra normalmente.
+    expect(queue.add).toHaveBeenCalledWith(
+      'start-group-broadcast-run',
+      { tenantId: 'tenant-1', broadcastId: 'broadcast-1', stepId: 'step-1', runNumber: 7 },
+      { jobId: 'step-1-run-7', delay: 3600000 },
+    );
+  });
+
   it('a mesma repetição de ETAPAS diferentes nunca colide no mesmo jobId', async () => {
-    const queue = { add: jest.fn(), remove: jest.fn() };
+    const queue = createFakeQueue();
     const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
 
     await dispatcher.scheduleRun('tenant-1', 'broadcast-1', 'step-1', 1, 0);
@@ -129,7 +176,7 @@ describe('reschedulePostponedRun (achado real de produção, 2026-09-15)', () =>
   // chamadas silenciosamente não faziam nada, e o disparo nunca era
   // reagendado — a campanha ficava muda até uma pausa/retomada manual.
   it('NUNCA usa o mesmo jobId de scheduleRun para o mesmo runNumber (evita colidir com o job em execução)', async () => {
-    const queue = { add: jest.fn(), remove: jest.fn() };
+    const queue = createFakeQueue();
     const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
     const postponedTo = new Date('2026-09-15T10:00:00.000Z');
 
@@ -154,7 +201,7 @@ describe('reschedulePostponedRun (achado real de produção, 2026-09-15)', () =>
   });
 
   it('duas postergações da MESMA etapa/repetição para instantes diferentes nunca colidem no mesmo jobId', async () => {
-    const queue = { add: jest.fn(), remove: jest.fn() };
+    const queue = createFakeQueue();
     const dispatcher = new BullMqGroupBroadcastSendDispatcher(queue as never);
 
     await dispatcher.reschedulePostponedRun(
