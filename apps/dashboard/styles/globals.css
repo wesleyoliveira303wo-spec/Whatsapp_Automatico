@@ -198,6 +198,21 @@
   * {
     @apply border-border;
   }
+  html,
+  body {
+    /*
+     * Rede de segurança contra rolagem horizontal na PÁGINA inteira
+     * (2026-09-17, achado real: uma legenda de mensagem sem quebra de linha
+     * "estourava" a largura de um item de lista flex sem `min-w-0`, e como
+     * nenhum container intermediário travava isso, o navegador inteiro
+     * ganhava uma barra de rolagem horizontal — sidebar incluída). Containers
+     * que precisam de rolagem horizontal DELIBERADA (tabela de Campanhas,
+     * fila de filtros) continuam funcionando normalmente: eles têm sua
+     * própria `overflow-x-auto` num elemento INTERNO, o que esta regra não
+     * afeta — só impede que o <body> em si vire mais largo que a viewport.
+     */
+    overflow-x: hidden;
+  }
   body {
     @apply bg-background text-foreground;
   }

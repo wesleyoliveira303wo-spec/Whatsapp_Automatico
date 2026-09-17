@@ -52,6 +52,33 @@ describe('MessageBubble (Fase 1, Bloco F1.1 — mídia)', () => {
     expect(screen.getByText('Legenda da foto')).toBeInTheDocument();
   });
 
+  it('mensagem de imagem COM legenda: legenda vive DENTRO do mesmo balão colorido da mídia (2026-09-17 — achado real: legenda solta, sem fundo, estourava a largura da tela e parecia um bloco diferente do resto das mensagens)', () => {
+    const message = buildMessage({
+      direction: 'outbound',
+      contentType: 'image',
+      content: 'Legenda da foto',
+      media: {
+        mimeType: 'image/jpeg',
+        url: 'https://mmg.whatsapp.net/x.enc',
+        mediaKeyEncrypted: 'enc:abc',
+      },
+    });
+    const { container } = render(<MessageBubble message={message} />);
+
+    const img = screen.getByRole('img');
+    const caption = screen.getByText('Legenda da foto');
+    // O balão colorido (mesma classe usada pelo restante das bolhas de
+    // texto/documento) precisa ser um ANCESTRAL comum da imagem E da
+    // legenda — prova que os dois vivem dentro do mesmo cartão, não em
+    // blocos separados.
+    const bubble = container.querySelector('.chat-bubble-shadow.bg-chat-bubble-out');
+    expect(bubble).toBeInTheDocument();
+    expect(bubble).toContainElement(img);
+    expect(bubble).toContainElement(caption);
+    // Quebra de linha garantida (a causa raiz do "estouro" de largura).
+    expect(caption.className).toContain('break-words');
+  });
+
   it('mensagem de imagem sem legenda: não renderiza parágrafo de texto vazio', () => {
     const message = buildMessage({
       contentType: 'image',

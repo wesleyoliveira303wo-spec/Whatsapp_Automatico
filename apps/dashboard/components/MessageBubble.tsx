@@ -101,14 +101,15 @@ function MessageMediaContent({
   const status = outbound ? OUTBOUND_DELIVERY_STATUS : undefined;
 
   switch (message.contentType) {
-    case 'image':
     case 'sticker':
+      // Figurinha: nunca tem legenda nem balão colorido no WhatsApp de
+      // verdade — só a imagem "solta", com o horário sobreposto nela.
       return (
         <div className={cn('relative', BUBBLE_MAX_WIDTH)}>
           {/* eslint-disable-next-line @next/next/no-img-element -- binário servido pelo proxy BFF (sessão/cookie), não um asset otimizável pelo next/image. */}
           <img
             src={mediaUrl}
-            alt={message.content || 'Imagem recebida'}
+            alt="Figurinha"
             className="chat-bubble-shadow max-h-64 max-w-full rounded-xl object-contain"
           />
           <MessageMeta
@@ -119,10 +120,62 @@ function MessageMediaContent({
           />
         </div>
       );
+    case 'image':
     case 'video':
-      return (
+      // Imagem/vídeo COM legenda (2026-09-17 — achado real: a legenda vivia
+      // FORA do balão, como texto solto sem fundo nem quebra de linha
+      // garantida, "estourando" a largura da tela e parecendo um bloco
+      // totalmente diferente do resto das mensagens). Agora a mídia e a
+      // legenda moram no MESMO balão colorido — mesmo tratamento visual de
+      // `document`/texto puro, igual ao WhatsApp de verdade. Sem legenda, o
+      // horário volta a ficar sobreposto na própria mídia (sem balão de
+      // fundo — imagem "a bleed", como sempre foi).
+      return message.content ? (
+        <div
+          className={cn(
+            'chat-bubble-shadow flex flex-col overflow-hidden',
+            BUBBLE_MAX_WIDTH,
+            bubbleColorClassName(outbound),
+            bubbleTailClassName(outbound),
+          )}
+        >
+          {message.contentType === 'video' ? (
+            <video src={mediaUrl} controls className="max-h-64 w-full" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- binário servido pelo proxy BFF (sessão/cookie), não um asset otimizável pelo next/image.
+            <img
+              src={mediaUrl}
+              alt={message.content}
+              className="max-h-64 w-full object-contain"
+            />
+          )}
+          <div className="relative px-[9px] pb-[6px] pt-[6px] text-[14.2px] leading-[19px]">
+            <p className="whitespace-pre-wrap break-words text-pretty">
+              {message.content}
+              <span
+                className={cn('inline-block h-1', outbound ? 'w-[62px]' : 'w-[44px]')}
+                aria-hidden="true"
+              />
+            </p>
+            <MessageMeta
+              occurredAt={message.occurredAt}
+              status={status}
+              className="absolute bottom-[6px] right-[9px]"
+            />
+          </div>
+        </div>
+      ) : (
         <div className={cn('relative', BUBBLE_MAX_WIDTH)}>
-          <video src={mediaUrl} controls className="chat-bubble-shadow max-h-64 max-w-full rounded-xl" />
+          {message.contentType === 'video' ? (
+            <video src={mediaUrl} controls className="chat-bubble-shadow max-h-64 max-w-full rounded-xl" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- binário servido pelo proxy BFF (sessão/cookie), não um asset otimizável pelo next/image.
+            <img
+              src={mediaUrl}
+              alt="Imagem recebida"
+              className="chat-bubble-shadow max-h-64 max-w-full rounded-xl object-contain"
+            />
+          )}
           <MessageMeta
             occurredAt={message.occurredAt}
             status={status}
@@ -220,7 +273,7 @@ export default function MessageBubble({
   return (
     <li
       className={cn(
-        'flex flex-col',
+        'flex min-w-0 flex-col',
         spacedFromPrevious ? 'mt-[10px]' : 'mt-[2px]',
         outbound ? 'items-end' : 'items-start',
       )}
@@ -241,7 +294,7 @@ export default function MessageBubble({
         numa mensagem recebida (que é onde a lacuna aparece) ele fica à
         DIREITA — pedido do fundador, 2026-09-05.
       */}
-      <div className={cn('flex items-center gap-1.5', outbound && 'flex-row-reverse')}>
+      <div className={cn('flex min-w-0 items-center gap-1.5', outbound && 'flex-row-reverse')}>
       {isMedia ? (
         <MessageMediaContent message={message} outbound={outbound} />
       ) : (
@@ -284,10 +337,19 @@ export default function MessageBubble({
         )}
       </div>
 
-      {isMedia && message.content && (
+      {/*
+        Legenda de imagem/vídeo mora DENTRO do balão da mídia desde
+        2026-09-17 (ver `MessageMediaContent`) — aqui só sobra o caso raro de
+        um outro tipo de mídia vir com `content` preenchido (áudio/documento/
+        figurinha normalmente não têm legenda, mas nunca perder o texto se
+        vier).
+      */}
+      {isMedia &&
+        message.content &&
+        (!message.media || (contentType !== 'image' && contentType !== 'video')) && (
         <p
           className={cn(
-            'mt-[3px] px-1 text-[12.5px] leading-[1.45] text-muted-foreground',
+            'mt-[3px] whitespace-pre-wrap break-words px-1 text-[12.5px] leading-[1.45] text-muted-foreground',
             BUBBLE_MAX_WIDTH,
           )}
         >
