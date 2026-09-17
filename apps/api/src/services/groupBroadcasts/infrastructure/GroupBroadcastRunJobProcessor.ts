@@ -75,6 +75,29 @@ export class GroupBroadcastRunJobProcessor {
       return 'completed_without_targets';
     }
 
+    // Achado real de produção (2026-09-17): pausar/editar uma campanha nunca
+    // mexe na fila (comentário da classe) — de propósito, pois um job que
+    // acorda com a campanha ainda PAUSADA já é descartado pela checagem
+    // acima. O buraco real é outro: se a campanha for RETOMADA antes desse
+    // job antigo disparar, o status volta a ser `running` e a checagem
+    // acima deixa passar — mas o `runNumber` dele é de uma rodada JÁ
+    // SUPERADA pelo reagendamento da retomada (`startBroadcast` sempre
+    // agenda `runsCompleted + 1`, então um job legítimo SEMPRE bate com
+    // esse valor no instante em que dispara). Um `runNumber` que não bate
+    // só existe se for um job órfão de antes da pausa — descartado aqui,
+    // nunca reagendado (a rodada corrente, agendada pela retomada, já
+    // cobre o que falta). Corrige o "publica fora de ordem/cadência"
+    // relatado pelo fundador com vídeo: uma etapa antiga disparava sozinha,
+    // fora do ciclo combinado, porque este job nunca soube que já tinha
+    // sido substituído.
+    if (runNumber !== step.runsCompleted + 1) {
+      this.logger.warn(
+        'Repetição de disparo em grupos obsoleta (runNumber não bate com o esperado) — descartando',
+        { tenantId, broadcastId, stepId, runNumber, expectedRunNumber: step.runsCompleted + 1 },
+      );
+      return 'skipped';
+    }
+
     const now = new Date();
     const window = buildSendWindow(broadcast.sendWindowStart, broadcast.sendWindowEnd);
     if (!isWithinSendWindow(now, window, DEFAULT_GROUP_BROADCAST_TIMEZONE)) {

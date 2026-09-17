@@ -250,8 +250,11 @@ describe('Recorrência — início de uma repetição (GroupBroadcastRunJobProce
     repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent' });
     repository.forceStepTarget(stepTargetIds[0][1], { status: 'failed', errorMessage: 'falhou antes' });
 
+    // `runNumber` precisa bater com `runsCompleted + 1` (0 + 1 = 1, seed
+    // padrão) — 2026-09-17, guarda contra job obsoleto (ver docstring do
+    // processador).
     await expect(
-      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2 }),
+      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 1 }),
     ).resolves.toBe('started');
 
     expect(dispatcher.scheduled).toHaveLength(2);
@@ -274,6 +277,32 @@ describe('Recorrência — início de uma repetição (GroupBroadcastRunJobProce
     ).resolves.toBe('skipped');
     expect(dispatcher.scheduled).toHaveLength(0);
   });
+
+  it('reprodução do incidente real (2026-09-17): job órfão de uma rodada JÁ SUPERADA (pausar/editar/retomar não mexe na fila) descarta em vez de publicar fora de ordem/cadência', async () => {
+    const { runProcessor, repository, dispatcher } = buildSut();
+    // Cenário real: a etapa já avançou para a rodada 4 (runsCompleted=3) —
+    // seja porque a campanha foi pausada/editada/retomada no meio do
+    // caminho, seja por qualquer outra convergência. Um job antigo, da
+    // rodada 2, ainda estava esperando no Redis (agendado ANTES da
+    // pausa) e dispara agora, com a campanha já `running` de novo.
+    const { broadcastId, stepIds } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      status: 'running',
+      groupJids: ['111@g.us'],
+      recurrenceIntervalHours: 4,
+      runsCompleted: 3,
+    });
+
+    await expect(
+      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2 }),
+    ).resolves.toBe('skipped');
+    // Nunca reenviou nada, nunca reagendou nada, nunca tocou `runsCompleted`.
+    expect(dispatcher.scheduled).toHaveLength(0);
+    expect(dispatcher.runs).toHaveLength(0);
+    expect(dispatcher.postponedRuns).toHaveLength(0);
+    const [step] = await repository.listSteps('tenant-1', broadcastId);
+    expect(step.runsCompleted).toBe(3);
+  });
 });
 
 describe('Recorrência — janela de horário e alvos esgotados', () => {
@@ -293,7 +322,7 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
     });
 
     await expect(
-      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2 }),
+      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 1 }),
     ).resolves.toBe('postponed');
     expect(dispatcher.scheduled).toHaveLength(0);
     // Regressão (2026-09-15): NUNCA via `scheduleRun` — reusar o jobId do
@@ -302,7 +331,7 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
     // nunca chega a existir no Redis (achado real de produção).
     expect(dispatcher.runs).toHaveLength(0);
     expect(dispatcher.postponedRuns).toHaveLength(1);
-    expect(dispatcher.postponedRuns[0]).toMatchObject({ stepId: stepIds[0], runNumber: 2 });
+    expect(dispatcher.postponedRuns[0]).toMatchObject({ stepId: stepIds[0], runNumber: 1 });
     expect(dispatcher.postponedRuns[0].postponedTo).toBeInstanceOf(Date);
     const [step] = await repository.listSteps('tenant-1', broadcastId);
     expect(step.nextRunAt).toBeInstanceOf(Date);
@@ -419,7 +448,7 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
     });
 
     await expect(
-      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2 }),
+      runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 1 }),
     ).resolves.toBe('completed_without_targets');
     const steps = await repository.listSteps('tenant-1', broadcastId);
     expect(steps[0].finishedAt).toBeInstanceOf(Date);
@@ -441,7 +470,7 @@ describe('Recorrência — janela de horário e alvos esgotados', () => {
       skipReason: 'admin_only_group',
     });
 
-    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 2 });
+    await runProcessor.process({ tenantId: 'tenant-1', broadcastId, stepId: stepIds[0], runNumber: 1 });
 
     expect((await repository.findById('tenant-1', broadcastId))?.status).toBe('completed');
   });
