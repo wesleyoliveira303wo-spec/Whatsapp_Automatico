@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireSession } from '../../../../lib/dashboardSession';
+import { requireSession, streamLifetimeMs } from '../../../../lib/dashboardSession';
 import { callApi } from '../../../../lib/apiClient';
-import { runSsePoller } from '../../../../lib/sse';
+import { runSsePoller, SSE_MAX_LIFETIME_MS, SSE_POLL_INTERVAL_MS } from '../../../../lib/sse';
 import { requireStringParam } from '../../../../lib/routeParams';
 
 /**
@@ -24,7 +24,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  runSsePoller(req, res, () => callApi(session, `/${encodeURIComponent(sessionName)}`));
+  runSsePoller(
+    req,
+    res,
+    () => callApi(session, `/${encodeURIComponent(sessionName)}`),
+    SSE_POLL_INTERVAL_MS,
+    streamLifetimeMs(session, Date.now(), SSE_MAX_LIFETIME_MS),
+  );
 }
 
 /** Ver mesma nota em `sessions/stream.ts`. */

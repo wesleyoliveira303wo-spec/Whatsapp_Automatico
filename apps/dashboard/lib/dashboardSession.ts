@@ -368,6 +368,45 @@ export function getAccessTokenExpiration(accessToken: string): number | null {
 /** Margem de renovacao: renova quando faltar MENOS que isso para o cracha vencer (evita usar um token que morre no meio da chamada proxy). */
 const REFRESH_MARGIN_SECONDS = 60;
 
+/** Folga para fechar um stream SSE ANTES de o access token vencer — cobre o atraso de reconexão do `EventSource`. */
+const STREAM_EXPIRY_SAFETY_MS = 15_000;
+/** Piso da vida de um stream — nunca abre e fecha na hora (evitaria laço de reconexão). */
+const MIN_STREAM_LIFETIME_MS = 5_000;
+
+/**
+ * Quanto tempo um stream SSE pode ficar aberto com ESTA sessão (2026-09-17,
+ * achado real: "Falha ao carregar sessões (status 401)" em Configurações →
+ * WhatsApps, com a página aberta há alguns minutos).
+ *
+ * O stream valida a sessão UMA vez, na abertura, e repete a chamada à API com
+ * o MESMO access token a cada ~2s. A vida fixa de 10 min
+ * (`SSE_MAX_LIFETIME_MS`) existia para forçar a reconexão antes do token
+ * vencer, mas não conversava com a validade real dele: o token vale 15 min e
+ * só é renovado quando falta menos de 60s. Um stream aberto com 5 min de token
+ * restante durava 10 min — e passava 5 min devolvendo 401 para a tela.
+ *
+ * Agora a vida do stream é o MENOR entre o teto e o tempo até o token vencer
+ * (com folga). Ao fechar, o `EventSource` reconecta sozinho, a requisição nova
+ * passa por `requireSession` — que vê o token perto do fim e renova — e o
+ * stream seguinte nasce com um token cheio. Sessões sem access token (API key,
+ * suporte) mantêm o teto: não há token de 15 min para respeitar.
+ */
+export function streamLifetimeMs(
+  session: DashboardSession,
+  nowMs: number,
+  maxLifetimeMs: number,
+): number {
+  if (!isUserSession(session)) {
+    return maxLifetimeMs;
+  }
+  const exp = getAccessTokenExpiration(session.accessToken);
+  if (exp === null) {
+    return MIN_STREAM_LIFETIME_MS;
+  }
+  const untilExpiryMs = exp * 1000 - nowMs - STREAM_EXPIRY_SAFETY_MS;
+  return Math.max(MIN_STREAM_LIFETIME_MS, Math.min(maxLifetimeMs, untilExpiryMs));
+}
+
 function needsRefresh(session: DashboardSession & { accessToken: string }, nowMs: number): boolean {
   const exp = getAccessTokenExpiration(session.accessToken);
   if (exp === null) {

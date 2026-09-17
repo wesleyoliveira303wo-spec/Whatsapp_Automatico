@@ -1,8 +1,8 @@
 import handler from '../../../../pages/api/sessions/stream';
 import { createFakeReq, createFakeRes } from '../../../testDoubles';
-import { requireSession } from '../../../../lib/dashboardSession';
+import { requireSession, streamLifetimeMs } from '../../../../lib/dashboardSession';
 import { callApi } from '../../../../lib/apiClient';
-import { runSsePoller } from '../../../../lib/sse';
+import { runSsePoller, SSE_POLL_INTERVAL_MS } from '../../../../lib/sse';
 
 jest.mock('../../../../lib/dashboardSession');
 jest.mock('../../../../lib/apiClient');
@@ -50,5 +50,17 @@ describe('GET /api/sessions/stream (SSE, lista)', () => {
     const [, , poll] = (runSsePoller as jest.Mock).mock.calls[0];
     await poll();
     expect(callApi).toHaveBeenCalledWith(SESSION, '');
+  });
+  it('limita a vida do stream à validade do crachá (streamLifetimeMs), para nunca pollar com token vencido', async () => {
+    (streamLifetimeMs as jest.Mock).mockReturnValue(123_000);
+    const req = createFakeReq({ method: 'GET' });
+    const res = createFakeRes();
+
+    await handler(req, res);
+
+    expect(streamLifetimeMs).toHaveBeenCalledWith(SESSION, expect.any(Number), expect.any(Number));
+    const [, , , intervalMs, lifetimeMs] = (runSsePoller as jest.Mock).mock.calls[0];
+    expect(intervalMs).toBe(SSE_POLL_INTERVAL_MS);
+    expect(lifetimeMs).toBe(123_000);
   });
 });

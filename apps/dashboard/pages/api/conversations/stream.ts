@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { requireSession } from '../../../lib/dashboardSession';
+import { requireSession, streamLifetimeMs } from '../../../lib/dashboardSession';
 import { callConversationsApi } from '../../../lib/apiClient';
-import { runSsePoller } from '../../../lib/sse';
+import { runSsePoller, SSE_MAX_LIFETIME_MS, SSE_POLL_INTERVAL_MS } from '../../../lib/sse';
 
 /**
  * SSE (Milestone 3, Bloco 6 — D23) para a LISTA de conversas do tenant —
@@ -47,10 +47,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Menu "⋮" da conversa (2026-08-29) — mesmo racional, congelado no momento da conexão.
   const archived = typeof req.query.archived === 'string' ? req.query.archived : undefined;
 
-  runSsePoller(req, res, () =>
-    callConversationsApi(session, '', {
-      query: { status, limit, sessionName, needsHumanAttention, awaitingOrInHumanCare, archived },
-    }),
+  runSsePoller(
+    req,
+    res,
+    () =>
+      callConversationsApi(session, '', {
+        query: { status, limit, sessionName, needsHumanAttention, awaitingOrInHumanCare, archived },
+      }),
+    SSE_POLL_INTERVAL_MS,
+    streamLifetimeMs(session, Date.now(), SSE_MAX_LIFETIME_MS),
   );
 }
 

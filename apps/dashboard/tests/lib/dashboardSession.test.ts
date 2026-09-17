@@ -4,6 +4,7 @@ import {
   readSessionFromRequest,
   requireSession,
   getAccessTokenExpiration,
+  streamLifetimeMs,
   SESSION_COOKIE_NAME,
 } from '../../lib/dashboardSession';
 import { createFakeReq, createFakeRes } from '../testDoubles';
@@ -301,6 +302,41 @@ describe('dashboardSession', () => {
       expect(getAccessTokenExpiration(fakeAccessToken(1_234_567))).toBe(1_234_567);
       expect(getAccessTokenExpiration('nao-e-um-token')).toBeNull();
       expect(getAccessTokenExpiration('a.b.c')).toBeNull();
+    });
+
+    describe('streamLifetimeMs (2026-09-17 — stream SSE nunca sobrevive ao cracha)', () => {
+      const NOW = 1_800_000_000_000;
+      const TEN_MIN = 10 * 60 * 1000;
+
+      it('cracha com 5 min restantes: o stream fecha 15s ANTES de vencer, nao aos 10 min', () => {
+        const session = userSession(NOW / 1000 + 300);
+
+        expect(streamLifetimeMs(session, NOW, TEN_MIN)).toBe(300_000 - 15_000);
+      });
+
+      it('cracha cheio (15 min): respeita o teto de 10 min', () => {
+        const session = userSession(NOW / 1000 + 900);
+
+        expect(streamLifetimeMs(session, NOW, TEN_MIN)).toBe(TEN_MIN);
+      });
+
+      it('cracha quase vencido: usa o piso de 5s, nunca zero ou negativo (evita laco de reconexao)', () => {
+        const session = userSession(NOW / 1000 + 10);
+
+        expect(streamLifetimeMs(session, NOW, TEN_MIN)).toBe(5_000);
+      });
+
+      it('cracha malformado: piso de 5s — reconecta logo e requireSession renova', () => {
+        const session = { ...userSession(NOW / 1000 + 900), accessToken: 'nao-e-um-token' };
+
+        expect(streamLifetimeMs(session, NOW, TEN_MIN)).toBe(5_000);
+      });
+
+      it('sessao por API key (sem cracha de 15 min): mantem o teto', () => {
+        expect(streamLifetimeMs({ tenantId: 'tenant-1', apiKey: 'chave' }, NOW, TEN_MIN)).toBe(
+          TEN_MIN,
+        );
+      });
     });
 
     it('cracha ainda valido (> 60s): passa direto, SEM chamar a API', async () => {
