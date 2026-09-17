@@ -315,7 +315,7 @@ describe('GroupBroadcastDetailPanel — publicações e repetição (2026-09-14)
           recurrenceIntervalHours: 2,
           recurrenceMaxRuns: 5,
           runsCompleted: 2,
-          nextRunAt: '2026-09-12T14:30:00.000Z',
+          nextRunAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
         }),
       ],
     });
@@ -324,6 +324,26 @@ describe('GroupBroadcastDetailPanel — publicações e repetição (2026-09-14)
     expect(screen.getByText(/Repete a cada 2 horas/)).toBeInTheDocument();
     expect(screen.getByText(/2 de 5 repetições/)).toBeInTheDocument();
     expect(screen.getByText(/Próxima publicação em/)).toBeInTheDocument();
+  });
+
+  // Achado real de produção (2026-09-17): depois de retomar, o horário salvo
+  // ficava velho e a tela anunciava como "próxima" uma hora que já tinha passado.
+  it('horário de próxima publicação já passado, com o disparo rodando: mostra "Publicando agora"', async () => {
+    mockDetail({
+      broadcast: { status: 'running' },
+      steps: [
+        step({
+          startedAt: '2026-09-11T10:00:00.000Z',
+          recurrenceIntervalHours: 4,
+          runsCompleted: 6,
+          nextRunAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        }),
+      ],
+    });
+    await renderPanel();
+
+    expect(screen.queryByText(/Próxima publicação em/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Publicando agora/)).toBeInTheDocument();
   });
 
   it('sem limite: avisa que só para quando cancelarem', async () => {

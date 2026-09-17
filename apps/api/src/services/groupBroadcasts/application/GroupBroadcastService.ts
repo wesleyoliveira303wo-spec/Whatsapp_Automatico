@@ -634,6 +634,21 @@ export class GroupBroadcastService {
       resumeMode === 'scheduled' && step.nextRunAt && step.nextRunAt.getTime() > now.getTime()
         ? step.nextRunAt.getTime() - now.getTime()
         : offsetMs;
+    /**
+     * Grava em `nextRunAt` o horário em que esta etapa vai de fato publicar
+     * (achado real de produção, 2026-09-17: depois de retomar a "Divulgação
+     * disparos", a tela dizia "Próxima publicação em 07:30" — o horário
+     * ANTIGO, já passado — enquanto o job real estava marcado para 10:08).
+     * Retomar agenda na fila, mas nunca atualizava o que a tela lê. `null`
+     * quando os envios começam agora ("Publicando agora").
+     */
+    const recordPlannedStart = (step: GroupBroadcastStep, delayMs: number): Promise<void> =>
+      this.repository.markStepRunFinished(
+        tenantId,
+        step.id,
+        step.runsCompleted,
+        delayMs > 0 ? new Date(now.getTime() + delayMs) : null,
+      );
     for (const step of activeSteps) {
       // "Nunca rodou" — marcado explicitamente em `startedAt` (nem
       // `runsCompleted` nem `nextRunAt` bastam sozinhos: os dois ficam
@@ -665,7 +680,10 @@ export class GroupBroadcastService {
         // escalonamento inicial — nunca dispara envios direto no 1º ciclo.
         // eslint-disable-next-line no-await-in-loop
         await this.repository.markStepStarted(tenantId, step.id, now);
-        plans.push({ kind: 'run', step, delayMs: resolveRunDelayMs(step, stepOffsetMs) });
+        const delayMs = resolveRunDelayMs(step, stepOffsetMs);
+        // eslint-disable-next-line no-await-in-loop
+        await recordPlannedStart(step, delayMs);
+        plans.push({ kind: 'run', step, delayMs });
         continue;
       }
 
@@ -675,6 +693,8 @@ export class GroupBroadcastService {
         // delay FRESCO a partir de agora — mais o escalonamento inicial que
         // ainda restar para esta etapa (0 se ela já publicou ao menos uma
         // vez antes).
+        // eslint-disable-next-line no-await-in-loop
+        await recordPlannedStart(step, stepOffsetMs);
         plans.push({ kind: 'resume_pending', step, pending: pendingStepTargets, stepOffsetMs });
         continue;
       }
@@ -683,7 +703,10 @@ export class GroupBroadcastService {
       // não rodou — só está aguardando na fila) — retoma na hora, mais o
       // escalonamento inicial que ainda restar (ou no `nextRunAt` já
       // marcado, se `resumeMode: 'scheduled'`).
-      plans.push({ kind: 'run', step, delayMs: resolveRunDelayMs(step, stepOffsetMs) });
+      const delayMs = resolveRunDelayMs(step, stepOffsetMs);
+      // eslint-disable-next-line no-await-in-loop
+      await recordPlannedStart(step, delayMs);
+      plans.push({ kind: 'run', step, delayMs });
     }
 
     if (plans.length === 0) {

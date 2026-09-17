@@ -439,7 +439,10 @@ export default function GroupBroadcastDetailPanel({
                       </p>
                       {isRunning && (
                         <p>
-                          {step.nextRunAt
+                          {/* Horário já passado com o disparo rodando = o ciclo
+                              está saindo agora; mostrar a hora velha como
+                              "próxima" confundia (achado real, 2026-09-17). */}
+                          {step.nextRunAt && new Date(step.nextRunAt).getTime() > now
                             ? 'Próxima publicação em ' + formatDateTime(step.nextRunAt)
                             : 'Publicando agora nos grupos selecionados.'}
                           {step.recurrenceEndsAt &&

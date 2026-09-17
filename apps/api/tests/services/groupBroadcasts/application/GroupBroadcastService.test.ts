@@ -717,6 +717,64 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       expect(dispatcher.scheduled).toHaveLength(0);
     });
 
+    // Achado real de produção (2026-09-17): retomar agendava na fila mas nunca
+    // atualizava `nextRunAt`, e a tela mostrava o horário ANTIGO como "próxima
+    // publicação" (07:30, já passado) enquanto o job real saía às 10:08.
+    it('retomar grava em nextRunAt o horário em que cada etapa vai de fato publicar', async () => {
+      const { service, repository, dispatcher } = buildSut();
+      const before = Date.now();
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        stepLaunchOffsetMinutes: 30,
+        startedAt: new Date(),
+        runsCompleted: 6,
+        extraSteps: [{ messageTemplate: 'Post 2' }],
+      });
+      await repository.markStepStarted('tenant-1', stepIds[1], new Date());
+      // Etapa 0 entre ciclos (tudo enviado) com um horário velho gravado.
+      repository.forceStepTarget(stepTargetIds[0][0], { status: 'sent', attemptedAt: new Date() });
+      await repository.markStepRunFinished('tenant-1', stepIds[0], 6, new Date(before - 3 * 60 * 60 * 1000));
+      // Etapa 1 também entre ciclos, com horário velho.
+      repository.forceStepTarget(stepTargetIds[1][0], { status: 'sent', attemptedAt: new Date() });
+      await repository.markStepRunFinished('tenant-1', stepIds[1], 6, new Date(before - 3 * 60 * 60 * 1000));
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      const steps = await repository.listSteps('tenant-1', broadcastId);
+      // Etapa 0 (order 0): sai agora — nada a anunciar como "próxima".
+      expect(steps[0].nextRunAt).toBeUndefined();
+      // Etapa 1 (order 1): 30 min depois, exatamente o delay do job agendado.
+      const run1 = dispatcher.runs.find((run) => run.stepId === stepIds[1])!;
+      expect(run1.delayMs).toBe(30 * 60 * 1000);
+      expect(steps[1].nextRunAt!.getTime()).toBeGreaterThanOrEqual(before + 30 * 60 * 1000);
+      expect(steps[1].nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now() + 30 * 60 * 1000);
+    });
+
+    it('retomar uma etapa pausada no meio do envio com escalonamento pendente: nextRunAt = início dos envios dela', async () => {
+      const { service, repository } = buildSut();
+      const before = Date.now();
+      const { broadcastId, stepIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        status: 'paused',
+        groupJids: ['a@g.us'],
+        stepLaunchOffsetMinutes: 30,
+        startedAt: new Date(),
+        runsCompleted: 3,
+        extraSteps: [{ messageTemplate: 'Post 2' }, { messageTemplate: 'Post 3' }],
+      });
+      await repository.markStepStarted('tenant-1', stepIds[1], new Date());
+      await repository.markStepStarted('tenant-1', stepIds[2], new Date());
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      const steps = await repository.listSteps('tenant-1', broadcastId);
+      expect(steps[0].nextRunAt).toBeUndefined();
+      expect(steps[2].nextRunAt!.getTime()).toBeGreaterThanOrEqual(before + 60 * 60 * 1000);
+      expect(steps[2].nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now() + 60 * 60 * 1000);
+    });
+
     it('resumeMode "scheduled" com nextRunAt futuro: agenda para ELE, não de imediato (2026-09-15)', async () => {
       const { service, repository, dispatcher } = buildSut();
       const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
