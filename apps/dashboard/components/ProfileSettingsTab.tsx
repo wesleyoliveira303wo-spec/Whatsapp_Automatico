@@ -23,7 +23,7 @@ import {
 } from '@/components/BusinessOverviewSections';
 import { fadeInUp, staggerContainer } from '@/lib/motion';
 import { formatShortDate, formatDateTime } from '@/lib/formatters';
-import { PLAN_LABEL } from '@/lib/plans';
+import { PLAN_LABEL, planAllows } from '@/lib/plans';
 
 /**
  * Indicador de plano (2026-09-05). Rótulo e tom por plano — `free` sai em
@@ -109,6 +109,8 @@ export default function ProfileSettingsTab({
   // Indicador de plano (pedido do fundador, 2026-09-05): vem do MESMO
   // `GET /api/tenant` que já traz o nome — nenhuma requisição nova.
   const [plan, setPlan] = useState<TenantPlan | null>(null);
+  // Plano pago sem IA (Disparos): o que vem do Cérebro da IA some daqui.
+  const hidesAi = plan !== null && plan !== 'free' && !planAllows(plan, 'ai');
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   /**
@@ -298,7 +300,9 @@ export default function ProfileSettingsTab({
             )}
             <div className="flex gap-2">
               <Button type="submit" size="sm" disabled={submitting}>
-                {submitting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                {submitting && (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                )}
                 {submitting ? 'Salvando…' : 'Salvar'}
               </Button>
               <Button
@@ -441,19 +445,28 @@ export default function ProfileSettingsTab({
         )}
       </ProfileSection>
 
-      <ProfileSection
-        title="Horário de atendimento"
-        description="Definido no Cérebro da IA de cada WhatsApp — aqui é só leitura."
-      >
-        <WorkingHoursSection {...businessProfiles} />
-      </ProfileSection>
+      {/*
+        As duas seções vêm do Cérebro da IA, que não existe num plano pago sem
+        IA (Disparos, B5): o horário só governa a mensagem de ausência da IA e
+        o resumo nunca é gerado. Lá elas somem, como o resto da IA.
+      */}
+      {!hidesAi && (
+        <>
+          <ProfileSection
+            title="Horário de atendimento"
+            description="Definido no Cérebro da IA de cada WhatsApp — aqui é só leitura."
+          >
+            <WorkingHoursSection {...businessProfiles} />
+          </ProfileSection>
 
-      <ProfileSection
-        title="Sobre o negócio"
-        description="Resumo gerado automaticamente a partir do que está configurado no Cérebro da IA."
-      >
-        <BusinessSummarySection {...businessProfiles} />
-      </ProfileSection>
+          <ProfileSection
+            title="Sobre o negócio"
+            description="Resumo gerado automaticamente a partir do que está configurado no Cérebro da IA."
+          >
+            <BusinessSummarySection {...businessProfiles} />
+          </ProfileSection>
+        </>
+      )}
 
       <ProfileSection title="Segurança" description="Gerencie a segurança da sua conta.">
         {passwordMessage && (

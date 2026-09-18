@@ -75,7 +75,13 @@ describe('ProfileSettingsTab', () => {
     });
     (clientApi.updateMyProfile as jest.Mock).mockResolvedValue({
       tenantId: 't1',
-      user: { id: 'u1', email: 'a@b.com', role: 'operator', mustChangePassword: false, name: 'Ana' },
+      user: {
+        id: 'u1',
+        email: 'a@b.com',
+        role: 'operator',
+        mustChangePassword: false,
+        name: 'Ana',
+      },
     });
     render(<ProfileSettingsTab />);
 
@@ -156,6 +162,22 @@ describe('ProfileSettingsTab', () => {
     // Nada de workspace aqui: equipe/auditoria/WhatsApps são Configurações.
     expect(screen.queryByText('Equipe')).not.toBeInTheDocument();
     expect(screen.queryByText('Auditoria')).not.toBeInTheDocument();
+  });
+
+  it('plano Disparos (sem IA): horário e resumo do negócio somem', async () => {
+    (clientApi.fetchTenant as jest.Mock).mockResolvedValue({
+      tenant: { id: 't1', name: 'Empresa Teste', plan: 'broadcast' },
+    });
+    mockUseMe.mockReturnValue({
+      user: { id: 'u1', email: 'a@b.com', role: 'owner', mustChangePassword: false },
+    });
+    render(<ProfileSettingsTab />);
+    await waitFor(() => expect(screen.getAllByText('Empresa Teste').length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.queryByText('Horário de atendimento')).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText('Sobre o negócio')).not.toBeInTheDocument();
+    expect(screen.getByText('Segurança')).toBeInTheDocument();
   });
 
   // Auditoria do Perfil (2026-08-28, `PERFIL_REDESIGN_PLAN.md` Fase 2/3) —
