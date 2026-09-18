@@ -89,6 +89,8 @@ export class FakeBillingGateway implements BillingGateway {
   nextEvent: GatewayEvent = { id: 'evt_1', type: 'invoice.paid', customerId: 'cus_1' };
   /** Faz `findCurrentSubscription` falhar (Stripe fora do ar). */
   failLookup = false;
+  /** Ordem das chamadas que mexem em páginas de pagamento. */
+  readonly calls: string[] = [];
 
   async createCustomer(input: { tenantId: string; name: string }): Promise<string> {
     this.customers.push(input);
@@ -98,8 +100,13 @@ export class FakeBillingGateway implements BillingGateway {
   async createCheckoutSession(
     input: Parameters<BillingGateway['createCheckoutSession']>[0],
   ): Promise<string> {
+    this.calls.push('createCheckoutSession');
     this.checkouts.push(input);
     return 'https://checkout.stripe.test/session';
+  }
+
+  async expireOpenCheckoutSessions(customerId: string): Promise<void> {
+    this.calls.push(`expireOpenCheckoutSessions:${customerId}`);
   }
 
   async createPortalSession(

@@ -124,6 +124,10 @@ export class BillingService {
     }
 
     const customerId = existing?.stripeCustomerId ?? (await this.createCustomer(billing, tenant));
+    // Só a página mais nova pode ser paga: duas abas não viram duas assinaturas.
+    // Vale também para o primeiro clique duplo — os dois caem no mesmo cliente
+    // (o primeiro a gravar fica), então sempre há o que conferir.
+    await billing.gateway.expireOpenCheckoutSessions(customerId);
     const trialDays = tenant.trialUsedAt ? undefined : TRIAL_DAYS;
     const url = await billing.gateway.createCheckoutSession({
       customerId,
@@ -274,7 +278,5 @@ export class BillingService {
 }
 
 function isLive(subscription: Subscription): boolean {
-  return Boolean(
-    subscription.status && ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status),
-  );
+  return Boolean(subscription.status && ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status));
 }

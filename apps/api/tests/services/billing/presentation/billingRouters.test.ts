@@ -152,11 +152,14 @@ describe('billingRouter', () => {
     expect(response.body.error).toBe('human_required');
   });
 
-  it.each([{ plan: 'free' }, { plan: 'gold' }, {}])('checkout com plano inválido %j: 400', async (body) => {
-    const { app } = build(person('owner'));
-    const response = await request(app).post(`${BASE}/checkout`).send(body);
-    expect(response.status).toBe(400);
-  });
+  it.each([{ plan: 'free' }, { plan: 'gold' }, {}])(
+    'checkout com plano inválido %j: 400',
+    async (body) => {
+      const { app } = build(person('owner'));
+      const response = await request(app).post(`${BASE}/checkout`).send(body);
+      expect(response.status).toBe(400);
+    },
+  );
 
   it('checkout com assinatura valendo: 409 subscription_already_active', async () => {
     const { app, subscriptions } = build(person('owner'));

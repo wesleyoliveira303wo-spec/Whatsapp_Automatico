@@ -70,6 +70,21 @@ export class StripeBillingGateway implements BillingGateway {
     return session.url;
   }
 
+  async expireOpenCheckoutSessions(customerId: string): Promise<void> {
+    const open = await this.stripe.checkout.sessions.list({
+      customer: customerId,
+      status: 'open',
+      limit: 10,
+    });
+    for (const session of open.data) {
+      try {
+        await this.stripe.checkout.sessions.expire(session.id);
+      } catch {
+        // Concluída ou vencida entre listar e expirar: já não pode ser paga de novo.
+      }
+    }
+  }
+
   async createPortalSession(input: { customerId: string; returnUrl: string }): Promise<string> {
     const session = await this.stripe.billingPortal.sessions.create({
       customer: input.customerId,

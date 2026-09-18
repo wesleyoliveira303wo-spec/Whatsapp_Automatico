@@ -41,6 +41,32 @@ describe('StripeBillingGateway', () => {
     expect(create).toHaveBeenCalledWith({ name: 'Loja', metadata: { tenantId: 't1' } });
   });
 
+  it('expira as páginas de pagamento ainda abertas do cliente', async () => {
+    const { stripe, gateway } = build();
+    const list = jest.spyOn(stripe.checkout.sessions, 'list').mockResolvedValue({
+      data: [{ id: 'cs_a' }, { id: 'cs_b' }],
+    } as never);
+    const expire = jest.spyOn(stripe.checkout.sessions, 'expire').mockResolvedValue({} as never);
+
+    await gateway.expireOpenCheckoutSessions('cus_1');
+
+    expect(list).toHaveBeenCalledWith({ customer: 'cus_1', status: 'open', limit: 10 });
+    expect(expire).toHaveBeenCalledWith('cs_a');
+    expect(expire).toHaveBeenCalledWith('cs_b');
+  });
+
+  it('página que venceu entre listar e expirar não impede o checkout novo', async () => {
+    const { stripe, gateway } = build();
+    jest
+      .spyOn(stripe.checkout.sessions, 'list')
+      .mockResolvedValue({ data: [{ id: 'cs_a' }] } as never);
+    jest
+      .spyOn(stripe.checkout.sessions, 'expire')
+      .mockRejectedValue(new Error('Only Checkout Sessions with a status of open can be expired.'));
+
+    await expect(gateway.expireOpenCheckoutSessions('cus_1')).resolves.toBeUndefined();
+  });
+
   it('checkout: assinatura só cartão, pt-BR, com o tenant e o teste quando pedido', async () => {
     const { stripe, gateway } = build();
     const create = jest

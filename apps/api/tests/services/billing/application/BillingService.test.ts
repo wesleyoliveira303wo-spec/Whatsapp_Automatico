@@ -139,6 +139,25 @@ describe('BillingService', () => {
       expect(gateway.checkouts[0].priceId).toBe('price_b');
     });
 
+    it('cliente que já existe: expira as páginas de pagamento abertas ANTES de criar outra', async () => {
+      // Duas abas, duas páginas de pagamento: concluir as duas daria duas
+      // assinaturas cobrando. Só a mais nova pode ser concluída.
+      const { service, gateway, subscriptions } = build();
+      subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1', status: null });
+
+      await service.createCheckout('t1', 'pro', {});
+
+      expect(gateway.calls).toEqual(['expireOpenCheckoutSessions:cus_1', 'createCheckoutSession']);
+    });
+
+    it('cliente novo também confere (clique duplo na primeira assinatura cai no mesmo cliente)', async () => {
+      const { service, gateway } = build();
+
+      await service.createCheckout('t1', 'pro', {});
+
+      expect(gateway.calls).toEqual(['expireOpenCheckoutSessions:cus_1', 'createCheckoutSession']);
+    });
+
     it('reaproveita o cliente que já existe (cancelou antes e voltou)', async () => {
       const { service, gateway, subscriptions } = build();
       subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_antigo', status: 'canceled' });
@@ -181,9 +200,7 @@ describe('BillingService', () => {
   describe('createPortalSession', () => {
     it('sem cliente no Stripe: NoBillingAccountError', async () => {
       const { service } = build();
-      await expect(service.createPortalSession('t1')).rejects.toBeInstanceOf(
-        NoBillingAccountError,
-      );
+      await expect(service.createPortalSession('t1')).rejects.toBeInstanceOf(NoBillingAccountError);
     });
 
     it('com cliente: abre o portal voltando para a aba Plano', async () => {

@@ -33,6 +33,13 @@ export interface BillingGateway {
     successUrl: string;
     cancelUrl: string;
   }): Promise<string>;
+  /**
+   * Fecha as páginas de pagamento que o cliente ainda tem abertas. Chamado
+   * antes de abrir outra: com duas abas, concluir as duas daria duas
+   * assinaturas cobrando o mesmo cartão. Nunca lança por uma página que
+   * venceu no meio do caminho.
+   */
+  expireOpenCheckoutSessions(customerId: string): Promise<void>;
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<string>;
   /** A assinatura que vale agora para o cliente, ou `null` se ele não tem nenhuma. */
   findCurrentSubscription(customerId: string): Promise<GatewaySubscription | null>;

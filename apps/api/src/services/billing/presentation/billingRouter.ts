@@ -23,7 +23,8 @@ function toActor(req: Request): BillingActor {
   return {
     userId: principal?.kind === 'user' ? principal.userId : undefined,
     ip: req.ip,
-    userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    userAgent:
+      typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
   };
 }
 
