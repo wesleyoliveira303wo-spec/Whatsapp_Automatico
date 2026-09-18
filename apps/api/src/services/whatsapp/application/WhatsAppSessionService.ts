@@ -1,5 +1,7 @@
 import { Logger } from '../../../shared/domain/Logger';
+import { Tenant } from '../../../shared/tenant/domain/Tenant';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
+import { sessionLimitFor } from '../../../shared/tenant/domain/planCapabilities';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { CredentialsStore } from '../../../shared/security/domain/CredentialsStore';
 import { AuditLogRepository } from '../../auth/domain/repositories/AuditLogRepository';
@@ -8,6 +10,7 @@ import { WhatsAppSessionEvent } from '../domain/entities/WhatsAppSessionEvent';
 import { WhatsAppSessionRepository } from '../domain/repositories/WhatsAppSessionRepository';
 import { WhatsAppSessionEventRepository } from '../domain/repositories/WhatsAppSessionEventRepository';
 import { buildWhatsAppCredentialsNamespace } from '../domain/credentialsNamespace';
+import { WhatsAppSessionLimitReachedError } from '../domain/errors/WhatsAppSessionLimitReachedError';
 import { WhatsAppConnectionRegistry } from './WhatsAppConnectionRegistry';
 
 /** M2, Fase 2 — quantidade padrão de eventos devolvidos por `getSessionHistory()` quando o chamador não especifica `limit`. */
@@ -118,6 +121,10 @@ export class WhatsAppSessionService {
    * `POST /` — sobe/reconecta a sessão. Milestone 5, Bloco M5D-3: registra
    * `session.created` na auditoria com o ator. `actor`/`meta` são opcionais
    * (default plano máquina) para não quebrar chamadores/testes antigos.
+   *
+   * B5 (2026-09-18): antes de tocar o Registry, confere se o plano ainda tem
+   * vaga (`assertSessionSlotAvailable`) — recusar depois de abrir o socket
+   * deixaria uma conexão meio aberta para trás.
    */
   async initSession(
     tenantId: string,
@@ -125,7 +132,8 @@ export class WhatsAppSessionService {
     actor: WhatsAppSessionActor = {},
     meta: WhatsAppSessionActionMeta = {},
   ): Promise<WhatsAppSession> {
-    await this.assertTenantExists(tenantId);
+    const tenant = await this.assertTenantExists(tenantId);
+    await this.assertSessionSlotAvailable(tenant, sessionName);
     const sessionManager = this.registry.getOrCreate(tenantId, sessionName);
     const session = await sessionManager.init();
     await this.audit(tenantId, actor.userId, 'session.created', sessionName, meta);
@@ -331,12 +339,59 @@ export class WhatsAppSessionService {
     this.logger.info('Sessão do WhatsApp removida definitivamente', { tenantId, sessionName });
   }
 
-  private async assertTenantExists(tenantId: string): Promise<void> {
+  private async assertTenantExists(tenantId: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findById(tenantId);
     if (!tenant) {
       this.logger.warn('Operação de sessão do WhatsApp recusada: tenant inexistente', { tenantId });
       throw new TenantNotFoundError(tenantId);
     }
+    return tenant;
+  }
+
+  /**
+   * Limite de WhatsApps por plano (B5, 2026-09-18). Uma sessão OCUPA VAGA
+   * quando está conectada agora ou tem credenciais guardadas — ou seja,
+   * quando poderia voltar a receber mensagens sozinha. Um QR aberto e
+   * abandonado não prende a vaga, e reconectar a MESMA sessão nunca é
+   * barrado: só uma sessão nova esbarra no limite.
+   */
+  private async assertSessionSlotAvailable(tenant: Tenant, sessionName: string): Promise<void> {
+    if (await this.occupiesSlot(tenant.id, sessionName)) {
+      return;
+    }
+    const limit = sessionLimitFor(tenant.plan);
+    const sessions = await this.sessionRepository.findAllByTenant(tenant.id);
+    const others = sessions.filter((session) => session.sessionName !== sessionName);
+    const occupied = await Promise.all(
+      others.map((session) => this.occupiesSlot(tenant.id, session.sessionName)),
+    );
+    if (occupied.filter(Boolean).length >= limit) {
+      this.logger.info('Nova sessão do WhatsApp recusada: limite do plano atingido', {
+        tenantId: tenant.id,
+        sessionName,
+        plan: tenant.plan,
+        limit,
+      });
+      throw new WhatsAppSessionLimitReachedError(limit);
+    }
+  }
+
+  private async occupiesSlot(tenantId: string, sessionName: string): Promise<boolean> {
+    // `peek`, nunca `getOrCreate`: contar vagas não pode abrir socket nenhum.
+    const live = this.registry.peek(tenantId, sessionName);
+    if (live) {
+      try {
+        if ((await live.getStatus()).status === 'connected') return true;
+      } catch {
+        // Dessincronia rara (sessão removida no meio) — cai para as credenciais.
+      }
+    }
+    const creds = await this.credentialsStore.get(
+      tenantId,
+      buildWhatsAppCredentialsNamespace(sessionName),
+      'creds',
+    );
+    return creds !== null;
   }
 
   private async audit(

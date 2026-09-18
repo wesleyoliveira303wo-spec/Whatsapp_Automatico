@@ -1,5 +1,6 @@
 import { WhatsAppSessionService } from '../../../src/services/whatsapp/application/WhatsAppSessionService';
 import { WhatsAppConnectionRegistry } from '../../../src/services/whatsapp/application/WhatsAppConnectionRegistry';
+import { buildWhatsAppCredentialsNamespace } from '../../../src/services/whatsapp/domain/credentialsNamespace';
 import { TenantNotFoundError } from '../../../src/shared/tenant/domain/errors/TenantNotFoundError';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
@@ -439,6 +440,105 @@ describe('WhatsAppSessionService', () => {
 });
 
 describe('WhatsAppSessionService — auditoria + ator (Milestone 5, Bloco M5D-3)', () => {
+  // B5 (2026-09-18): quantos WhatsApps cada plano mantém. Uma sessão OCUPA
+  // VAGA quando está conectada agora ou tem credenciais guardadas (poderia se
+  // reconectar sozinha); um QR aberto e abandonado não prende a vaga.
+  describe('limite de WhatsApps por plano', () => {
+    function occupySlot(
+      sessionRepo: FakeWhatsAppSessionRepository,
+      credentialsStore: FakeCredentialsStore,
+      sessionName: string,
+    ): void {
+      sessionRepo.seed({
+        id: `session-${sessionName}`,
+        tenantId: 'tenant-1',
+        sessionName,
+        provider: 'baileys',
+        status: 'disconnected',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      credentialsStore.seed(
+        'tenant-1',
+        buildWhatsAppCredentialsNamespace(sessionName),
+        'creds',
+        '{}',
+      );
+    }
+
+    it('Pro com 1 WhatsApp ocupando a vaga: conectar um 2º é recusado', async () => {
+      const { service, tenantRepository, sessionRepo, credentialsStore, providerFactory } =
+        buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Pro', apiKeyHash: null, plan: 'pro' });
+      occupySlot(sessionRepo, credentialsStore, 'vendas');
+
+      await expect(service.initSession('tenant-1', 'suporte')).rejects.toMatchObject({
+        name: 'WhatsAppSessionLimitReachedError',
+        limit: 1,
+      });
+      expect(providerFactory.createCalls).toHaveLength(0);
+    });
+
+    it('reconectar o MESMO WhatsApp que ocupa a vaga é sempre permitido', async () => {
+      const { service, tenantRepository, sessionRepo, credentialsStore } = buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Pro', apiKeyHash: null, plan: 'pro' });
+      occupySlot(sessionRepo, credentialsStore, 'vendas');
+
+      await expect(service.initSession('tenant-1', 'vendas')).resolves.toMatchObject({
+        sessionName: 'vendas',
+      });
+    });
+
+    it('sessão desconectada e sem credenciais não ocupa vaga', async () => {
+      const { service, tenantRepository, sessionRepo } = buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Pro', apiKeyHash: null, plan: 'pro' });
+      sessionRepo.seed({
+        id: 'session-abandonada',
+        tenantId: 'tenant-1',
+        sessionName: 'abandonada',
+        provider: 'baileys',
+        status: 'disconnected',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await expect(service.initSession('tenant-1', 'nova')).resolves.toMatchObject({
+        sessionName: 'nova',
+      });
+    });
+
+    it('sessão conectada ao vivo ocupa vaga mesmo antes de ter credenciais gravadas', async () => {
+      const { service, tenantRepository, providerFactory } = buildSut();
+      tenantRepository.seed({ id: 'tenant-1', name: 'Pro', apiKeyHash: null, plan: 'pro' });
+      await service.initSession('tenant-1', 'vendas');
+      providerFactory.getCreatedProviders()[0].getStatus = async () => 'connected';
+
+      await expect(service.initSession('tenant-1', 'suporte')).rejects.toMatchObject({
+        name: 'WhatsAppSessionLimitReachedError',
+      });
+    });
+
+    it('Enterprise com 4 ocupados: conectar o 5º é permitido, o 6º não', async () => {
+      const { service, tenantRepository, sessionRepo, credentialsStore } = buildSut();
+      tenantRepository.seed({
+        id: 'tenant-1',
+        name: 'Enterprise',
+        apiKeyHash: null,
+        plan: 'enterprise',
+      });
+      for (const name of ['a', 'b', 'c', 'd']) occupySlot(sessionRepo, credentialsStore, name);
+
+      await expect(service.initSession('tenant-1', 'e')).resolves.toMatchObject({
+        sessionName: 'e',
+      });
+      occupySlot(sessionRepo, credentialsStore, 'e');
+      await expect(service.initSession('tenant-1', 'f')).rejects.toMatchObject({
+        name: 'WhatsAppSessionLimitReachedError',
+        limit: 5,
+      });
+    });
+  });
+
   it('initSession audita session.created com o ator', async () => {
     const { service, tenantRepository, auditLogRepository } = buildSut();
     tenantRepository.seed({ id: 'tenant-1', name: 'Empresa', apiKeyHash: null });

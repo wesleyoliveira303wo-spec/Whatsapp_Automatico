@@ -5,6 +5,7 @@ import { WhatsAppSessionNotFoundError } from '../domain/errors/WhatsAppSessionNo
 import { WhatsAppQRCodeNotAvailableError } from '../domain/errors/WhatsAppQRCodeNotAvailableError';
 import { WhatsAppNotConnectedError } from '../domain/errors/WhatsAppNotConnectedError';
 import { WhatsAppGroupsFetchTimeoutError } from '../domain/errors/WhatsAppGroupsFetchTimeoutError';
+import { WhatsAppSessionLimitReachedError } from '../domain/errors/WhatsAppSessionLimitReachedError';
 
 /**
  * Middleware de erro (Express, 4 parâmetros) para `createWhatsAppSessionsRouter`.
@@ -45,6 +46,12 @@ export function createWhatsAppErrorHandler(logger: Logger): ErrorRequestHandler 
     }
     if (error instanceof TenantNotFoundError) {
       res.status(404).json({ error: 'tenant_not_found', message: error.message });
+      return;
+    }
+    // B5 (2026-09-18): o plano já ocupa todas as vagas de WhatsApp. 409 — o
+    // pedido é válido, o estado da conta é que não permite.
+    if (error instanceof WhatsAppSessionLimitReachedError) {
+      res.status(409).json({ error: 'session_limit_reached', message: error.message });
       return;
     }
     // Disparos em grupos (2026-09-11) — a listagem de grupos é a primeira

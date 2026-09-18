@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createWhatsAppErrorHandler } from '../../../../src/services/whatsapp/presentation/whatsAppErrorHandler';
 import { WhatsAppSessionNotFoundError } from '../../../../src/services/whatsapp/domain/errors/WhatsAppSessionNotFoundError';
 import { WhatsAppQRCodeNotAvailableError } from '../../../../src/services/whatsapp/domain/errors/WhatsAppQRCodeNotAvailableError';
+import { WhatsAppSessionLimitReachedError } from '../../../../src/services/whatsapp/domain/errors/WhatsAppSessionLimitReachedError';
 import { TenantNotFoundError } from '../../../../src/shared/tenant/domain/errors/TenantNotFoundError';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
 
@@ -54,6 +55,21 @@ describe('createWhatsAppErrorHandler', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'tenant_not_found' }));
+  });
+
+  it('B5: mapeia WhatsAppSessionLimitReachedError para 409 session_limit_reached, com a mensagem para a tela', () => {
+    const handler = createWhatsAppErrorHandler(new NoopLogger());
+    const res = buildRes();
+
+    handler(new WhatsAppSessionLimitReachedError(1), {} as Request, res, jest.fn() as NextFunction);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'session_limit_reached',
+        message: expect.stringContaining('1 WhatsApp'),
+      }),
+    );
   });
 
   it('mapeia qualquer outro erro para 500 e loga via Logger.error', () => {
