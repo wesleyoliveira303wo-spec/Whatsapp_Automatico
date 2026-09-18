@@ -338,6 +338,45 @@ function PlanFeatureList({ features }: { features: readonly string[] }): JSX.Ele
   );
 }
 
+type Plano = (typeof PLANOS.plans)[number];
+
+/**
+ * Um cartão de plano — os quatro planos (B5, 2026-09-18) saem do mesmo
+ * componente, em vez de blocos escritos à mão que divergiriam sozinhos. O
+ * plano em destaque (`highlight`) ganha o selo e o botão cheio.
+ */
+function PlanCard({ plan }: { plan: Plano }): JSX.Element {
+  const highlight = 'highlight' in plan && plan.highlight;
+  return (
+    <div
+      className={
+        highlight
+          ? 'relative flex h-full flex-col rounded-2xl border border-primary/30 bg-primary/[0.05] p-7'
+          : 'flex h-full flex-col rounded-2xl border border-border bg-card p-7'
+      }
+    >
+      {highlight && (
+        <span className="absolute right-4 top-4 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
+          Mais popular
+        </span>
+      )}
+      <p className="text-sm font-semibold">{plan.name}</p>
+      <p className="mt-2.5 flex items-baseline gap-1.5">
+        <span className="text-4xl font-bold tracking-tight">{plan.price}</span>
+        <span className="text-[13px] text-muted-foreground">{plan.period}</span>
+      </p>
+      <p className="mt-2 text-sm text-muted-foreground">{plan.tagline}</p>
+      <Button asChild variant={highlight ? 'default' : 'outline'} className="mt-5 w-full">
+        <Link href="/register">{plan.cta}</Link>
+      </Button>
+      {'ctaNote' in plan && (
+        <p className="mt-2 text-center text-xs text-muted-foreground">{plan.ctaNote}</p>
+      )}
+      <PlanFeatureList features={plan.features} />
+    </div>
+  );
+}
+
 export function Planos(): JSX.Element {
   return (
     <section id="planos" className="scroll-mt-24 mx-auto max-w-6xl px-5 py-24 sm:px-8">
@@ -347,56 +386,12 @@ export function Planos(): JSX.Element {
           {PLANOS.title}
         </h2>
       </Reveal>
-      <div className="mt-10 grid gap-5 lg:grid-cols-3">
-        <Reveal>
-          <div className="flex h-full flex-col rounded-2xl border border-border bg-card p-7">
-            <p className="text-sm font-semibold">{PLANOS.free.name}</p>
-            <p className="mt-2.5 flex items-baseline gap-1.5">
-              <span className="text-4xl font-bold tracking-tight">{PLANOS.free.price}</span>
-              <span className="text-[13px] text-muted-foreground">{PLANOS.free.period}</span>
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">{PLANOS.free.tagline}</p>
-            <Button asChild variant="outline" className="mt-5 w-full">
-              <Link href="/register">{PLANOS.free.cta}</Link>
-            </Button>
-            <PlanFeatureList features={PLANOS.free.features} />
-          </div>
-        </Reveal>
-        <Reveal delay={0.08}>
-          <div className="relative flex h-full flex-col rounded-2xl border border-primary/30 bg-primary/[0.05] p-7">
-            <span className="absolute right-4 top-4 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
-              Mais popular
-            </span>
-            <p className="text-sm font-semibold">{PLANOS.pro.name}</p>
-            <p className="mt-2.5 flex items-baseline gap-1.5">
-              <span className="text-4xl font-bold tracking-tight">{PLANOS.pro.price}</span>
-              <span className="text-[13px] text-muted-foreground">{PLANOS.pro.period}</span>
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">{PLANOS.pro.tagline}</p>
-            <Button asChild className="mt-5 w-full">
-              <Link href="/register">{PLANOS.pro.cta}</Link>
-            </Button>
-            <p className="mt-2 text-center text-xs text-muted-foreground">{PLANOS.pro.ctaNote}</p>
-            <PlanFeatureList features={PLANOS.pro.features} />
-          </div>
-        </Reveal>
-        <Reveal delay={0.16}>
-          <div className="flex h-full flex-col rounded-2xl border border-border bg-card p-7">
-            <p className="text-sm font-semibold">{PLANOS.enterprise.name}</p>
-            <p className="mt-2.5 flex items-baseline gap-1.5">
-              <span className="text-4xl font-bold tracking-tight">{PLANOS.enterprise.price}</span>
-              <span className="text-[13px] text-muted-foreground">{PLANOS.enterprise.period}</span>
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">{PLANOS.enterprise.tagline}</p>
-            <Button asChild variant="outline" className="mt-5 w-full">
-              <Link href="/register">{PLANOS.enterprise.cta}</Link>
-            </Button>
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-              {PLANOS.enterprise.ctaNote}
-            </p>
-            <PlanFeatureList features={PLANOS.enterprise.features} />
-          </div>
-        </Reveal>
+      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {PLANOS.plans.map((plan, index) => (
+          <Reveal key={plan.id} delay={index * 0.06}>
+            <PlanCard plan={plan} />
+          </Reveal>
+        ))}
       </div>
       <Reveal>
         <p className="mt-5 text-[13px] text-muted-foreground/80">{PLANOS.footnote}</p>

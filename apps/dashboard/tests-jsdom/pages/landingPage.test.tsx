@@ -25,25 +25,27 @@ describe('LandingPage', () => {
     expect(screen.getAllByRole('link', { name: 'Entrar' })[0]).toHaveAttribute('href', '/login');
   });
 
-  it('mostra os três planos do Lançamento suave (Grátis / Pro R$ 99 / Enterprise R$ 349)', () => {
+  it('mostra os quatro planos do B5 (Grátis R$ 0 / Disparos R$ 69 / Pro R$ 119 / Enterprise R$ 249)', () => {
     render(<LandingPage currentYear={2026} />);
     const planos = document.getElementById('planos') as HTMLElement;
     expect(within(planos).getByText('Grátis')).toBeInTheDocument();
+    expect(within(planos).getByText('Disparos')).toBeInTheDocument();
     expect(within(planos).getByText('Pro')).toBeInTheDocument();
     expect(within(planos).getByText('Enterprise')).toBeInTheDocument();
     expect(within(planos).getByText('R$ 0')).toBeInTheDocument();
-    expect(within(planos).getByText('R$ 99')).toBeInTheDocument();
-    expect(within(planos).getByText('R$ 349')).toBeInTheDocument();
+    expect(within(planos).getByText('R$ 69')).toBeInTheDocument();
+    expect(within(planos).getByText('R$ 119')).toBeInTheDocument();
+    expect(within(planos).getByText('R$ 249')).toBeInTheDocument();
     // Nenhuma copy dizendo que o Grátis inclui IA/pipeline/analytics como recurso ativo.
     expect(within(planos).queryByText('Em breve')).not.toBeInTheDocument();
     expect(within(planos).getAllByText(/A IA não responde/i).length).toBeGreaterThan(0);
   });
 
-  it('CTAs de Pro e Enterprise instruem chamar o WhatsApp comercial para ativar', () => {
+  it('CTAs dos três planos pagos instruem chamar o WhatsApp comercial para ativar', () => {
     render(<LandingPage currentYear={2026} />);
     const planos = document.getElementById('planos') as HTMLElement;
     const notes = within(planos).getAllByText(/chame o comercial no WhatsApp \(21\) 98292-5941/i);
-    expect(notes.length).toBe(2);
+    expect(notes.length).toBe(3);
   });
 
   it('renderiza a FAQ como <details> acessível', () => {

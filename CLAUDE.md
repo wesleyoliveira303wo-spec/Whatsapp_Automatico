@@ -2336,6 +2336,69 @@ ser aceitos em paralelo pelo próprio fundador, conscientemente.
 **Impacto:** zero migration, zero mudança de contrato de API/BFF. Testes novos: `buildJobId` (3), `BullMqAiReplyScheduler` (+1, trava contra `:`), `AiReplyJobProcessor` (+4, incluindo a prova de que uma rajada gasta UMA ficha), `useBroadcastListControls` (8, jsdom). O bloco de testes do teto saiu de `MessageIngestionService.test.ts` e virou lá a garantia oposta: a ingestão não barra mais nada por ritmo. Dois testes de painel passaram a montar um router. Suítes com Postgres e Redis reais de pé (nenhum aviso de "pulando"): `api` 211 suítes / 2.598 testes; `dashboard`+`jsdom` 158 suítes / 1.223 testes. `tsc`, lint e `next build` limpos nos dois pacotes (restam 2 avisos pré-existentes em arquivos não tocados).
 **Pendente:** conferir no navegador que a barra de endereço reflete busca/filtro/página — exige login, que é do fundador.
 
+### B5, etapa 1 — plano Disparos, trava por recurso e limite de WhatsApps
+
+**Data:** 2026-09-18
+**Contexto:** primeira das três etapas da cobrança automática (spec
+`docs/superpowers/specs/2026-09-18-cobranca-stripe-design.md`, plano
+`docs/superpowers/plans/2026-09-18-planos-e-limites.md`). Antes de ligar o
+Stripe, o produto precisava saber vender quatro planos: Grátis (R$ 0),
+**Disparos** (R$ 69, tudo menos IA, 1 número), Pro (R$ 119, 1 número) e
+Enterprise (R$ 249, até 5 números). A regra antiga (`planPermiteUso`) só
+sabia "pago libera tudo" — não comportava um plano pago sem IA — e o limite
+de números nunca foi imposto em código ("o fundador controla ao ativar").
+**Decisão — trava por RECURSO, num lugar só.** `planCapabilities.ts`
+(`shared/tenant/domain`) define dois recursos: `operation` (responder pela
+Dashboard, disparos, Contatos, Pipeline manual, Tags, respostas rápidas,
+Analytics) e `ai` (tudo que chama o provedor de IA). `planPermiteUso` foi
+apagado; os seis pontos que o consultavam passaram a pedir o recurso certo
+(resposta automática e classificação de estágio pedem `ai`; responder pela
+Dashboard, campanhas e disparos em grupos pedem `operation`). Três outros
+chamadores de IA que não olhavam plano nenhum ganharam a trava de `ai`:
+resumo de conversa, resumo do negócio (gerado ao salvar o Cérebro da IA) e
+geração de mensagens de prospecção — esta última deixava um tenant Grátis
+gastar IA livremente. 403 `plan_does_not_allow` nos dois que respondem ao
+operador; o resumo do negócio, que é automático, só deixa de ser gerado.
+**Decisão — `Tenant.planSource`.** `self_service` | `manual`. Migration
+aditiva marca `MANUAL` só os tenants pagos que já existiam (ativados à mão);
+todo tenant novo e todo Grátis nasce `SELF_SERVICE`. `changePlan` passou a
+gravar plano e origem juntos: plano pago ativado pelo fundador (script ou
+`/admin`) vira `manual`, voltar ao Grátis devolve o tenant ao
+`self_service`. É o que vai impedir, na etapa 2, um webhook do Stripe de
+rebaixar um cliente de cortesia. O valor novo do enum (`BROADCAST`) veio numa
+migration própria: o Postgres não deixa usar um valor de enum na mesma
+transação que o criou.
+**Decisão — limite de números em `initSession`, antes de tocar o Registry.**
+Uma sessão ocupa vaga quando está conectada agora (`registry.peek`, nunca
+`getOrCreate` — contar vagas não pode abrir socket) ou tem credenciais
+guardadas. Um QR aberto e abandonado não prende a vaga; reconectar a MESMA
+sessão nunca é barrado. Estourou: 409 `session_limit_reached`, com uma
+mensagem que o formulário "Conectar WhatsApp" já mostrava tal e qual.
+**Decisão — no Disparos a IA some, não aparece bloqueada** (pedido
+explícito do fundador; o Grátis mantém a vitrine com aviso). `lib/plans.ts`
+espelha a regra no painel e concentra os rótulos de plano que estavam
+copiados em cinco arquivos. `usePlan` ganhou `allows` e `hideAi`, e
+`useHidesAi()` é tolerante como `useIsFreePlan` (sem provider, nunca
+esconde). Somem no Disparos: o item IA do rail, o botão de ligar a IA, o
+resumo da conversa, "Últimas interações" (e o poll delas), os selos "Bot" e
+"IA desativada" (inclusive na prévia da lista), o marcador de lacuna, os
+cartões e gráficos de IA do Analytics, e a página do Cérebro da IA, que
+devolve a pessoa para Conversas. O rótulo "Humano" e "Aguardando atendente"
+continuam — descrevem atendimento humano, que o plano tem. A vitrine do
+Grátis passou a dizer qual plano libera cada tela (`requires` no
+`PlanGate`/`UpgradeState`), e a página de venda ganhou os quatro planos,
+todos saindo de um único componente de cartão.
+**Impacto:** migrations `20260918120000_add_broadcast_plan` e
+`20260918120100_add_tenant_plan_source`, aplicadas e conferidas contra
+Postgres real. Nenhuma mudança de contrato pré-existente além de campos
+aditivos. Suítes: `api` 211 suítes / 2.627 testes; `dashboard`+`jsdom` 160
+suítes / 1.250 testes; `tsc`, lint e `next build` limpos. **Pendente:**
+deploy (as duas migrations rodam no `migrate` do compose) e as etapas 2
+(assinatura pelo Stripe) e 3 (tolerância de atraso e rebaixamento). O
+`/settings` (aba Atendimento e resumo do negócio no Perfil) fica fora do
+`PlanProvider` e ainda mostra links de IA a um tenant Disparos — entra na
+etapa 2, quando o `/settings` ganhar a aba Plano.
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---

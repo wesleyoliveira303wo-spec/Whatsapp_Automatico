@@ -5,11 +5,12 @@
  * testável. Nada aqui é inventado — cada recurso citado existe no produto
  * (ver CLAUDE.md §18 / DECISIONS.md).
  *
- * Preços (Lançamento suave, T5 — ver `CONTEXT.md`): Grátis = R$ 0 (só
- * visualização — a IA NÃO responde), Pro = R$ 99/mês (1 número, uso
- * completo), Enterprise = R$ 349/mês (até 5 números). Sem cobrança
- * automática: o cliente cria a conta Grátis e ativa o plano pago falando
- * com o comercial no WhatsApp (21) 98292-5941 (Billing manual).
+ * Preços (B5, 2026-09-18 — ver `CONTEXT.md`): Grátis = R$ 0 (só
+ * visualização — a IA NÃO responde), Disparos = R$ 69/mês (tudo menos IA, 1
+ * número), Pro = R$ 119/mês (uso completo, 1 número), Enterprise = R$ 249/mês
+ * (até 5 números). Até a cobrança automática entrar no ar, o cliente cria a
+ * conta Grátis e ativa o plano pago falando com o comercial no WhatsApp
+ * (21) 98292-5941.
  */
 
 export const NAV_LINKS = [
@@ -191,51 +192,72 @@ export const CONFIANCA = {
 
 export const PLANOS = {
   eyebrow: 'Planos',
-  title: 'Comece grátis. Ative o Pro quando quiser a IA atendendo.',
-  free: {
-    name: 'Grátis',
-    price: 'R$ 0',
-    period: '/ sempre',
-    tagline: 'Conecte um WhatsApp e veja as mensagens chegando. A IA não responde.',
-    features: [
-      '1 número de WhatsApp',
-      'Mensagens dos clientes na Dashboard em tempo real',
-      'Explore Cérebro da IA, Pipeline, Campanhas e Analytics por dentro',
-      'A IA não responde e você não envia mensagens pela Dashboard',
-    ],
-    cta: 'Criar conta grátis',
-  },
-  pro: {
-    name: 'Pro',
-    price: 'R$ 99',
-    period: '/ mês',
-    highlight: true,
-    tagline: 'O atendimento com IA funcionando de verdade, em 1 número.',
-    features: [
-      '1 número de WhatsApp, uso completo',
-      'A IA responde seus clientes automaticamente',
-      'Atendimento humano com handoff (texto e mídia)',
-      'Pipeline automático, Campanhas e Analytics',
-      'Contatos, tags, respostas rápidas e resumo de conversa',
-    ],
-    cta: 'Criar conta grátis',
-    ctaNote:
-      'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Pro.',
-  },
-  enterprise: {
-    name: 'Enterprise',
-    price: 'R$ 349',
-    period: '/ mês',
-    tagline: 'Para quem atende em vários números de WhatsApp.',
-    features: [
-      'Até 5 números de WhatsApp',
-      'Tudo do plano Pro em cada número',
-      'Cada número com seu próprio Cérebro da IA e funil',
-    ],
-    cta: 'Criar conta grátis',
-    ctaNote:
-      'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Enterprise.',
-  },
+  title: 'Comece grátis. Escolha o plano quando quiser.',
+  plans: [
+    {
+      id: 'free',
+      name: 'Grátis',
+      price: 'R$ 0',
+      period: '/ sempre',
+      tagline: 'Conecte um WhatsApp e veja as mensagens chegando. A IA não responde.',
+      features: [
+        '1 número de WhatsApp',
+        'Mensagens dos clientes na Dashboard em tempo real',
+        'Explore Cérebro da IA, Pipeline, Disparos e Analytics por dentro',
+        'A IA não responde e você não envia mensagens pela Dashboard',
+      ],
+      cta: 'Criar conta grátis',
+    },
+    {
+      id: 'broadcast',
+      name: 'Disparos',
+      price: 'R$ 69',
+      period: '/ mês',
+      tagline: 'Dispare para contatos e grupos e atenda você mesmo, sem IA.',
+      features: [
+        '1 número de WhatsApp',
+        'Disparos para contatos e para grupos',
+        'Responda seus clientes pela Dashboard (texto e mídia)',
+        'Contatos, Pipeline, tags, respostas rápidas e Analytics',
+      ],
+      cta: 'Criar conta grátis',
+      ctaNote:
+        'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Disparos.',
+    },
+    {
+      id: 'pro',
+      name: 'Pro',
+      price: 'R$ 119',
+      period: '/ mês',
+      highlight: true,
+      tagline: 'O atendimento com IA funcionando de verdade, em 1 número.',
+      features: [
+        '1 número de WhatsApp, uso completo',
+        'Tudo do plano Disparos',
+        'A IA responde seus clientes automaticamente',
+        'Atendimento humano com handoff quando a IA precisa de ajuda',
+        'Pipeline organizado pela IA e resumo de conversa',
+      ],
+      cta: 'Criar conta grátis',
+      ctaNote:
+        'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Pro.',
+    },
+    {
+      id: 'enterprise',
+      name: 'Enterprise',
+      price: 'R$ 249',
+      period: '/ mês',
+      tagline: 'Para quem atende em vários números de WhatsApp.',
+      features: [
+        'Até 5 números de WhatsApp',
+        'Tudo do plano Pro em cada número',
+        'Cada número com seu próprio Cérebro da IA e funil',
+      ],
+      cta: 'Criar conta grátis',
+      ctaNote:
+        'Crie a conta no Grátis e chame o comercial no WhatsApp (21) 98292-5941 para ativar o Enterprise.',
+    },
+  ],
   footnote:
     'A cobrança é combinada direto com o comercial (Pix). O plano Grátis não tem compromisso e você pode cancelar quando quiser.',
 } as const;

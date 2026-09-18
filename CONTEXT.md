@@ -12,8 +12,10 @@ Termos já bem estabelecidos no `CLAUDE.md` (não repetidos aqui): **Tenant**,
 ## Planos e monetização
 
 **Plano** (`Tenant.plan`):
-O nível de acesso de um tenant. Um de `free`, `pro`, `enterprise`. Todo
-tenant novo nasce `free`.
+O nível de acesso de um tenant. Um de `free`, `broadcast`, `pro`,
+`enterprise`. Todo tenant novo nasce `free`. O que cada plano libera e
+quantos números aceita vive num lugar só: `planCapabilities.ts` na API,
+espelhado em `lib/plans.ts` no painel.
 _Avoid_: assinatura, tier, licença.
 
 **Plano Grátis** (`free`):
@@ -25,30 +27,62 @@ resumo de conversa) ficam visíveis mas bloqueados com um aviso de upgrade.
 É uma **demonstração** — existe para criar desejo, não para operar.
 _Avoid_: trial, free tier, período de teste.
 
+**Plano Disparos** (`broadcast`):
+R$ 69/mês. **1 número** de WhatsApp. **Tudo menos IA**: responder pela
+Dashboard, disparos para contatos e para grupos, Contatos, Pipeline manual,
+Tags, respostas rápidas e Analytics. O que depende de IA **some da tela** —
+não aparece bloqueado, simplesmente não está lá (decisão do fundador,
+2026-09-18).
+_Avoid_: plano básico, plano sem IA.
+
 **Plano Pro** (`pro`):
-R$ 99/mês. **1 número** de WhatsApp. Uso completo do produto.
+R$ 119/mês. **1 número** de WhatsApp. Uso completo do produto, IA incluída.
 _Avoid_: plano básico, starter.
 
 **Plano Enterprise** (`enterprise`):
-R$ 349/mês. **Até 5 números** de WhatsApp. Uso completo.
+R$ 249/mês. **Até 5 números** de WhatsApp. Uso completo.
 _Avoid_: plano premium, business.
 
 **Trava de plano** (paywall):
-A regra que separa o Grátis do pago. No lançamento é **uma só**: a IA
-responde automaticamente e o operador responde pela Dashboard **apenas se o
-plano do tenant ≠ `free`**. Trava por recurso individual e limites
-(interações de IA por mês, disparos por dia) são deliberadamente adiados —
-"a definir com uso real".
+A regra que diz o que cada plano pode usar. São dois **recursos**:
+- **operação** (`operation`) — responder pela Dashboard, disparos, Contatos,
+  Pipeline manual, Tags, respostas rápidas, Analytics. Disparos, Pro e
+  Enterprise têm.
+- **IA** (`ai`) — tudo que chama o provedor de IA: resposta automática,
+  classificação do Pipeline, resumo de conversa, resumo do negócio, geração
+  de mensagens de prospecção. Só Pro e Enterprise têm. É o único custo
+  variável do produto, e por isso é o que separa o Disparos do Pro.
+
+Além dos recursos, cada plano tem um **limite de números**: 1 no Grátis,
+Disparos e Pro; 5 no Enterprise. Um número **ocupa vaga** quando está
+conectado ou tem credenciais guardadas (poderia voltar sozinho); conectar um
+número novo além do limite é recusado. A trava de verdade é sempre a API —
+o painel só esconde.
 _Avoid_: gate, feature flag, restrição.
 
+**Origem do plano** (`Tenant.planSource`):
+Quem manda no plano do tenant. `manual` — ativado pelo fundador (script ou
+`/admin`); a cobrança automática **nunca** mexe nele. `self_service` — o
+próprio cliente assina (ou está no Grátis, podendo assinar). Plano pago
+ativado à mão vira `manual`; voltar ao Grátis devolve o tenant ao
+`self_service`.
+_Avoid_: tipo de conta, canal de venda.
+
 **Billing manual**:
-Enquanto não há cobrança automática (gateway de pagamento é fase futura),
-ativar o Pro/Enterprise é: o cliente cria a conta Grátis, chama o fundador
-no WhatsApp, o fundador marca o `plan` do tenant no banco e o pagamento é
-combinado por fora (Pix).
+Enquanto a cobrança automática não está no ar, ativar um plano pago é: o
+cliente cria a conta Grátis, chama o fundador no WhatsApp, o fundador ativa
+o plano (script ou `/admin`) e o pagamento é combinado por fora (Pix). Vale
+até a etapa 2 do B5 (assinatura pelo Stripe, ver
+`docs/superpowers/specs/2026-09-18-cobranca-stripe-design.md`); depois dela,
+continua existindo para os planos de origem `manual`.
 _Avoid_: assinatura self-service, checkout.
 
 ## Fase de testes controlados (decidido em 2026-09-05)
+
+> **Substituído pelo B5 (2026-09-18)** — cobrança automática pelo Stripe, com
+> teste de 1 dia só com cartão cadastrado e 3 dias de tolerância antes de
+> voltar ao Grátis (ver a spec citada em _Billing manual_). Os três termos
+> abaixo valem até a etapa 2 do B5 entrar no ar.
 
 **Ativação manual**:
 O fundador ativa e desativa o plano de cada tenant PESSOALMENTE, no banco.
