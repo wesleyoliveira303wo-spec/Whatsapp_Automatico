@@ -170,6 +170,10 @@ model Tenant {
   /// pagos anteriores a esta coluna nascem `MANUAL` (ativados a mao).
   planSource PlanSource @default(SELF_SERVICE) @map("plan_source")
 
+  /// Quando o tenant usou o teste grátis de 1 dia (B5, etapa 2). Um teste por
+  /// conta, para sempre — preenchido na primeira assinatura com teste.
+  trialUsedAt DateTime? @map("trial_used_at")
+
   /// Trava de ACESSO (Painel /admin, Fase 4 — ADMIN_PLATFORM_MASTER_PLAN.md
   /// §8). `plan` responde "o que ele pode fazer"; `status` responde "ele pode
   /// entrar". Suspenso, o tenant inteiro deixa de logar (checado no
@@ -189,6 +193,8 @@ model Tenant {
 
   whatsAppSessions      WhatsAppSession[]
   tenantCredentials     TenantCredential[]
+  // B5, etapa 2 — assinatura no Stripe (uma por tenant, ver `Subscription`).
+  subscription          Subscription?
   whatsAppSessionEvents WhatsAppSessionEvent[]
   whatsAppConversations WhatsAppConversation[]
   aiInteractions        AiInteraction[]
@@ -1731,4 +1737,50 @@ model TenantAccessRequest {
   @@index([tenantId, status, requestedAt])
   @@index([status, expiresAt])
   @@map("tenant_access_requests")
+}
+
+// ---------- Cobrança (B5, etapa 2 — 2026-09-18) ----------
+
+/// Situação da assinatura no Stripe — ver `services/billing/domain/entities/Subscription.ts`.
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+
+  @@map("subscription_status")
+}
+
+/// Retrato local da assinatura do tenant no Stripe. Uma por tenant; nasce no
+/// primeiro clique em "Assinar" (cliente Stripe criado) e é reconciliada a cada
+/// aviso do Stripe. A fonte de verdade é o Stripe.
+model Subscription {
+  id                   String              @id @default(uuid())
+  tenantId             String              @unique @map("tenant_id")
+  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String              @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?             @unique @map("stripe_subscription_id")
+  plan                 TenantPlan?
+  status               SubscriptionStatus?
+  trialEndsAt          DateTime?           @map("trial_ends_at")
+  currentPeriodEnd     DateTime?           @map("current_period_end")
+  cancelAtPeriodEnd    Boolean             @default(false) @map("cancel_at_period_end")
+  pastDueSince         DateTime?           @map("past_due_since")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  @@map("subscriptions")
+}
+
+/// Avisos do Stripe já processados — append-only e SEM FK: é a garantia de
+/// processar cada aviso uma vez só, e sobrevive à exclusão do tenant.
+model BillingEvent {
+  id            String   @id @default(uuid())
+  stripeEventId String   @unique @map("stripe_event_id")
+  type          String
+  tenantId      String?  @map("tenant_id")
+  receivedAt    DateTime @default(now()) @map("received_at")
+
+  @@map("billing_events")
 }

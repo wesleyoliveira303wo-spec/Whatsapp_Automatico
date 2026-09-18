@@ -57,6 +57,13 @@ export class FakeTenantRepository implements TenantRepository {
     return this.patch(id, { status });
   }
 
+  async markTrialUsed(id: string, at: Date): Promise<void> {
+    const existing = this.tenants.get(id);
+    if (existing && !existing.trialUsedAt) {
+      this.tenants.set(id, { ...existing, trialUsedAt: at });
+    }
+  }
+
   private patch(id: string, changes: Partial<Tenant>): Tenant | undefined {
     const existing = this.tenants.get(id);
     if (!existing) return undefined;

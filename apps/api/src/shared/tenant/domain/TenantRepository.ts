@@ -72,4 +72,10 @@ export interface TenantRepository {
    */
   changePlan(id: string, plan: TenantPlan, source: PlanSource): Promise<Tenant | undefined>;
   setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined>;
+
+  /**
+   * B5, etapa 2 — registra que o tenant usou o teste grátis. Só a PRIMEIRA
+   * chamada grava: um aviso repetido do Stripe nunca empurra a data para frente.
+   */
+  markTrialUsed(id: string, at: Date): Promise<void>;
 }

@@ -31,6 +31,11 @@ export interface Tenant {
    */
   planSource: PlanSource;
   /**
+   * Quando o tenant usou o teste grátis de 1 dia (B5, etapa 2). Ausente =
+   * ainda pode testar. Um teste por conta, para sempre.
+   */
+  trialUsedAt?: Date;
+  /**
    * Trava de acesso (Painel /admin, Fase 4, ver `TenantStatus` e §8 do plano
    * mestre). Sempre presente — a coluna do banco é `NOT NULL DEFAULT
    * 'ACTIVE'`. `'suspended'` bloqueia o login do tenant inteiro.

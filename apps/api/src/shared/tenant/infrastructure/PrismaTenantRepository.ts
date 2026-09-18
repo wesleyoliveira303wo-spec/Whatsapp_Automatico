@@ -64,6 +64,7 @@ interface TenantRow {
   plan: PrismaTenantPlan;
   planSource: PrismaPlanSource;
   status: PrismaUserStatus;
+  trialUsedAt: Date | null;
 }
 
 function toDomain(row: TenantRow): Tenant {
@@ -73,6 +74,7 @@ function toDomain(row: TenantRow): Tenant {
     apiKeyHash: row.apiKeyHash,
     plan: PLAN_TO_DOMAIN[row.plan],
     planSource: SOURCE_TO_DOMAIN[row.planSource],
+    trialUsedAt: row.trialUsedAt ?? undefined,
     status: STATUS_TO_DOMAIN[row.status],
   };
 }
@@ -115,6 +117,10 @@ export class PrismaTenantRepository implements TenantRepository {
 
   async setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined> {
     return this.applyUpdate(id, { status: STATUS_TO_PRISMA[status] });
+  }
+
+  async markTrialUsed(id: string, at: Date): Promise<void> {
+    await this.prisma.tenant.updateMany({ where: { id, trialUsedAt: null }, data: { trialUsedAt: at } });
   }
 
   private async applyUpdate(
