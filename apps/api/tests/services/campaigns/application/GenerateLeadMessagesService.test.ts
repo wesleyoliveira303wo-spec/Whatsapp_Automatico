@@ -2,6 +2,7 @@ import { GenerateLeadMessagesService } from '../../../../src/services/campaigns/
 import { LeadMessageGenerationUnavailableError } from '../../../../src/services/campaigns/domain/errors/LeadMessageGenerationUnavailableError';
 import { EnrichedLead } from '../../../../src/services/campaigns/domain/entities/EnrichedLead';
 import { FakeAiProvider } from '../../../services/ai/infrastructure/FakeAiProviderFactory';
+import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 
 function buildLead(overrides: Partial<EnrichedLead> = {}): EnrichedLead {
   return {
@@ -22,6 +23,35 @@ function buildLead(overrides: Partial<EnrichedLead> = {}): EnrichedLead {
 }
 
 describe('GenerateLeadMessagesService (Fase de Prospecção IA)', () => {
+  describe('trava de plano (B5, 2026-09-18) — gerar mensagem gasta IA', () => {
+    it.each(['free', 'broadcast'] as const)(
+      'plano %s: recusa com PlanDoesNotAllowError("ai") sem chamar o provider',
+      async (plan) => {
+        const aiProvider = new FakeAiProvider();
+        const tenants = new FakeTenantRepository();
+        tenants.seed({ id: 'tenant-1', name: 'Empresa', apiKeyHash: null, plan });
+        const service = new GenerateLeadMessagesService(aiProvider, tenants);
+
+        await expect(service.generate('tenant-1', [buildLead()])).rejects.toMatchObject({
+          name: 'PlanDoesNotAllowError',
+          capability: 'ai',
+        });
+        expect(aiProvider.generateReplyCalls).toHaveLength(0);
+      },
+    );
+
+    it('plano Pro: gera normalmente', async () => {
+      const aiProvider = new FakeAiProvider();
+      const tenants = new FakeTenantRepository();
+      tenants.seed({ id: 'tenant-1', name: 'Empresa', apiKeyHash: null, plan: 'pro' });
+      const service = new GenerateLeadMessagesService(aiProvider, tenants);
+
+      const { drafts } = await service.generate('tenant-1', [buildLead()]);
+
+      expect(drafts).toHaveLength(1);
+    });
+  });
+
   it('gera um rascunho por lead, com o telefone já normalizado', async () => {
     const aiProvider = new FakeAiProvider();
     aiProvider.setNextResult({
@@ -32,7 +62,7 @@ describe('GenerateLeadMessagesService (Fase de Prospecção IA)', () => {
     });
     const service = new GenerateLeadMessagesService(aiProvider);
 
-    const { drafts, failures } = await service.generate([buildLead()]);
+    const { drafts, failures } = await service.generate('tenant-1', [buildLead()]);
 
     expect(drafts).toHaveLength(1);
     expect(failures).toHaveLength(0);
@@ -51,7 +81,7 @@ describe('GenerateLeadMessagesService (Fase de Prospecção IA)', () => {
     const aiProvider = new FakeAiProvider();
     const service = new GenerateLeadMessagesService(aiProvider);
 
-    await service.generate([buildLead(), buildLead({ companyName: 'Segundo Lead' })]);
+    await service.generate('tenant-1', [buildLead(), buildLead({ companyName: 'Segundo Lead' })]);
 
     expect(aiProvider.generateReplyCalls).toHaveLength(2);
     expect(aiProvider.generateReplyCalls[0].systemPrompt).not.toBe(
@@ -63,7 +93,7 @@ describe('GenerateLeadMessagesService (Fase de Prospecção IA)', () => {
     const aiProvider = new FakeAiProvider();
     const service = new GenerateLeadMessagesService(aiProvider);
 
-    const { drafts, failures } = await service.generate([
+    const { drafts, failures } = await service.generate('tenant-1', [
       buildLead({ rawPhone: 'não é um telefone' }),
     ]);
 
@@ -82,7 +112,7 @@ describe('GenerateLeadMessagesService (Fase de Prospecção IA)', () => {
     });
     const service = new GenerateLeadMessagesService(aiProvider);
 
-    const { drafts, failures } = await service.generate([
+    const { drafts, failures } = await service.generate('tenant-1', [
       buildLead({ companyName: 'Lead que falha' }),
       buildLead({ companyName: 'Lead que funciona', rawPhone: '+55 21 99105-6156' }),
     ]);
@@ -100,7 +130,7 @@ describe('GenerateLeadMessagesService (Fase de Prospecção IA)', () => {
   it('sem AiProvider configurado, lança LeadMessageGenerationUnavailableError', async () => {
     const service = new GenerateLeadMessagesService(undefined);
 
-    await expect(service.generate([buildLead()])).rejects.toBeInstanceOf(
+    await expect(service.generate('tenant-1', [buildLead()])).rejects.toBeInstanceOf(
       LeadMessageGenerationUnavailableError,
     );
   });

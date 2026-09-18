@@ -9,7 +9,7 @@ import {
   DEFAULT_SESSION_GAP_MS,
   trimHistoryToCurrentSession,
 } from '../../conversations/domain/policies/trimHistoryToCurrentSession';
-import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
 import { Logger } from '../../../shared/domain/Logger';
 import { AiInteractionRepository } from '../domain/repositories/AiInteractionRepository';
 import { AiProvider, AiGenerationResult } from '../domain/providers/AiProvider';
@@ -82,8 +82,8 @@ export class StageClassificationJobProcessor {
       return 'skipped';
     }
 
-    const planAllows = planPermiteUso(await this.tenantPlanRepository.getPlan(tenantId));
-    if (!planAllows) {
+    const planAllowsAi = planAllows(await this.tenantPlanRepository.getPlan(tenantId), 'ai');
+    if (!planAllowsAi) {
       return 'skipped';
     }
 
@@ -107,7 +107,7 @@ export class StageClassificationJobProcessor {
       tenantId,
       conversation.sessionName,
     );
-    if (latestIsInbound && shouldAutoRespond(conversation, aiEnabled, planAllows)) {
+    if (latestIsInbound && shouldAutoRespond(conversation, aiEnabled, planAllowsAi)) {
       return 'skipped';
     }
 

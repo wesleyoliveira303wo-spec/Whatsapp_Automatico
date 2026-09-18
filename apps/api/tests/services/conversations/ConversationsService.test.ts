@@ -552,6 +552,22 @@ describe('ConversationsService', () => {
       caption: 'foto',
     };
 
+    it('tenant broadcast (Disparos): responde pela Dashboard normalmente', async () => {
+      const { service, conversationRepository, tenantRepository, outboundDispatcher } =
+        buildService();
+      tenantRepository.seed({
+        id: 'tenant-1',
+        name: 'Disparos',
+        apiKeyHash: 'h',
+        plan: 'broadcast',
+      });
+      conversationRepository.seed(buildConversation({ status: 'human', assignedToUserId: 'op-1' }));
+
+      await service.sendAgentMessage('tenant-1', 'conversation-1', 'oi', OP);
+
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+    });
+
     it('tenant free: sendAgentMessage recusa com AgentReplyRequiresPaidPlanError e NÃO despacha', async () => {
       const { service, conversationRepository, tenantRepository, outboundDispatcher } =
         buildService();

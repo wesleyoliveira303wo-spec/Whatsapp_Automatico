@@ -313,7 +313,10 @@ export function createCampaignsRouter(
       const body = validateOrRespond(generateLeadMessagesBodySchema, req.body, res);
       if (!body) return;
 
-      const { drafts, failures } = await generateLeadMessagesService.generate(body.leads);
+      const { drafts, failures } = await generateLeadMessagesService.generate(
+        params.tenantId,
+        body.leads,
+      );
       res.status(200).json({ drafts, failures });
     }),
   );

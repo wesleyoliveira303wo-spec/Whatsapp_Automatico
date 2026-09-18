@@ -23,7 +23,7 @@ import { splitReplyIntoParagraphs } from '../domain/messageSplitting';
 import { AiBusinessProfileRepository } from '../domain/repositories/AiBusinessProfileRepository';
 import { AiPreferencesRepository } from '../domain/repositories/AiPreferencesRepository';
 import { TenantPlanRepository } from '../../conversations/domain/repositories/TenantPlanRepository';
-import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
 import { ConversationAiService } from './ConversationAiService';
 
 /**
@@ -233,8 +233,9 @@ export class AiReplyJobProcessor {
     const sessionAiEnabled = profile?.aiEnabled ?? true;
     // Trava de plano (Lançamento suave, 2026-08-31) — re-checa aqui também
     // (ver docstring do parâmetro no construtor).
-    const tenantPlanAllowsAutoReply = planPermiteUso(
+    const tenantPlanAllowsAutoReply = planAllows(
       await this.tenantPlanRepository.getPlan(data.tenantId),
+      'ai',
     );
 
     if (!shouldAutoRespond(conversation, sessionAiEnabled, tenantPlanAllowsAutoReply)) {

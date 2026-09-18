@@ -335,6 +335,17 @@ describe('MessageIngestionService', () => {
 
         expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
       });
+
+      // B5 (2026-09-18): o plano Disparos é pago mas NÃO inclui IA.
+      it('Plano Disparos: NÃO agenda resposta de IA (plano pago, mas sem o recurso ai)', async () => {
+        const { sut, aiReplyScheduler, messageRepository, tenantPlanRepository } = buildSut();
+        tenantPlanRepository.setPlan('broadcast');
+
+        await sut.handle(buildInboundMessage());
+
+        expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
+        expect(messageRepository.getAll()).toHaveLength(1);
+      });
     });
   });
 

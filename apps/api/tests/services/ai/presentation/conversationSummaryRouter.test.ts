@@ -8,6 +8,8 @@ import { Conversation } from '../../../../src/services/conversations/domain/enti
 import { Principal, RequestWithPrincipal } from '../../../../src/shared/presentation/authenticate';
 import { UserRole } from '../../../../src/services/auth/domain/entities/User';
 import { NoopLogger } from '../../../../src/shared/infrastructure/logging/NoopLogger';
+import { TenantPlan } from '../../../../src/shared/tenant/domain/TenantPlan';
+import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakeConversationRepository, FakeMessageRepository } from '../../conversations/testDoubles';
 import { FakeAiInteractionRepository } from '../infrastructure/FakeAiInteractionRepository';
 import { FakeAiProvider } from '../infrastructure/FakeAiProviderFactory';
@@ -46,7 +48,7 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
 
 function buildApp(
   principal: Principal | undefined,
-  options: { withProvider?: boolean } = {},
+  options: { withProvider?: boolean; plan?: TenantPlan } = {},
 ): {
   app: express.Express;
   conversationRepository: FakeConversationRepository;
@@ -57,7 +59,12 @@ function buildApp(
   const messageRepository = new FakeMessageRepository();
   const aiInteractionRepository = new FakeAiInteractionRepository();
   const aiProvider = new FakeAiProvider();
-  const { withProvider = true } = options;
+  const { withProvider = true, plan } = options;
+  let tenantRepository: FakeTenantRepository | undefined;
+  if (plan) {
+    tenantRepository = new FakeTenantRepository();
+    tenantRepository.seed({ id: TENANT_ID, name: 'Empresa', apiKeyHash: null, plan });
+  }
 
   const service = new ConversationSummaryService(
     conversationRepository,
@@ -66,6 +73,8 @@ function buildApp(
     'gemini',
     new NoopLogger(),
     withProvider ? aiProvider : undefined,
+    undefined,
+    tenantRepository,
   );
 
   const app = express();
@@ -119,6 +128,19 @@ describe('conversationSummaryRouter (Redesign 2026-08-05, R5)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.aiSummary).toBe('Resumo gerado.');
+  });
+
+  it('plano Disparos: 403 plan_does_not_allow (o resumo usa IA)', async () => {
+    const { app, conversationRepository, aiProvider } = buildApp(person('operator'), {
+      plan: 'broadcast',
+    });
+    conversationRepository.seed(buildConversation());
+
+    const response = await request(app).post(summaryPath(TENANT_ID));
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe('plan_does_not_allow');
+    expect(aiProvider.generateReplyCalls).toHaveLength(0);
   });
 
   it('read_only NÃO pode gerar resumo (403 — sem message:send)', async () => {

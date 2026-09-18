@@ -2,6 +2,7 @@ import { BusinessSummaryService } from '../../../src/services/ai/application/Bus
 import { AiBusinessProfileService } from '../../../src/services/ai/application/AiBusinessProfileService';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
 import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
+import { TenantPlan } from '../../../src/shared/tenant/domain/TenantPlan';
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
 import { FakeAiProvider } from './infrastructure/FakeAiProviderFactory';
 
@@ -16,13 +17,13 @@ describe('BusinessSummaryService', () => {
   const SESSION = 'sessao-1';
   const FIXED_NOW = new Date('2026-08-28T12:00:00.000Z');
 
-  function setup(): {
+  function setup(plan?: TenantPlan): {
     service: BusinessSummaryService;
     profiles: FakeAiBusinessProfileRepository;
     aiProvider: FakeAiProvider;
   } {
     const tenantRepository = new FakeTenantRepository();
-    tenantRepository.seed({ id: TENANT, name: 'Empresa Um', apiKeyHash: 'hash' });
+    tenantRepository.seed({ id: TENANT, name: 'Empresa Um', apiKeyHash: 'hash', plan });
     const profiles = new FakeAiBusinessProfileRepository();
     profiles.seed(TENANT, SESSION, 'conteúdo inicial');
     const aiBusinessProfileService = new AiBusinessProfileService(
@@ -36,9 +37,20 @@ describe('BusinessSummaryService', () => {
       new NoopLogger(),
       aiProvider,
       () => FIXED_NOW,
+      tenantRepository,
     );
     return { service, profiles, aiProvider };
   }
+
+  it('B5: plano sem IA (Disparos) não gera resumo nem chama o provider', async () => {
+    const { service, profiles, aiProvider } = setup('broadcast');
+
+    await service.regenerate(TENANT, SESSION, 'Vendo bolos sob encomenda.');
+
+    expect(aiProvider.generateReplyCalls).toHaveLength(0);
+    const persisted = await profiles.findByTenantAndSession(TENANT, SESSION);
+    expect(persisted?.summary ?? null).toBeNull();
+  });
 
   it('gera e salva o resumo a partir do content informado', async () => {
     const { service, profiles, aiProvider } = setup();

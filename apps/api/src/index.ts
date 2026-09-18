@@ -813,6 +813,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       aiBusinessProfileService,
       logger.child({ module: 'business-summary' }),
       summaryAiProvider,
+      undefined,
+      tenantRepository,
     );
 
     // Base de Conhecimento (Nível 1) — o "Cérebro da IA". Migrada de rota
@@ -1018,6 +1020,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       summaryProviderName,
       logger.child({ module: 'conversation-summary' }),
       summaryAiProvider,
+      undefined,
+      tenantRepository,
     );
     app.use(
       '/api/tenants/:tenantId/conversations',

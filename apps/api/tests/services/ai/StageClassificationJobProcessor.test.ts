@@ -170,6 +170,14 @@ describe('StageClassificationJobProcessor', () => {
     expect(provider.generateReplyCalls).toHaveLength(0);
   });
 
+  it('Plano Disparos: não gasta IA (plano pago, mas sem o recurso ai)', async () => {
+    const { processor, plan, provider } = setup();
+    plan.setPlan('broadcast');
+
+    await expect(processor.process(job)).resolves.toBe('skipped');
+    expect(provider.generateReplyCalls).toHaveLength(0);
+  });
+
   it('falha do provider (ex.: cota): registra e NÃO relança', async () => {
     const { processor, provider, aiInteractionRepository, conversationRepository } = setup();
     provider.setNextError(new Error('Gemini API respondeu 429'));

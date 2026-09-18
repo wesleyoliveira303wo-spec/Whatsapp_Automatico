@@ -1,6 +1,6 @@
 /**
  * `startCampaign`/`reopenCampaign` chamado por um tenant no **Plano Grátis**
- * (Lançamento suave, 2026-08-31 — Trava de plano, ver `planPermiteUso` e
+ * (Lançamento suave, 2026-08-31 — Trava de plano; recurso `operation` desde o B5, ver `planAllows` e
  * `CONTEXT.md`).
  *
  * Criar/rascunhar campanha (e calcular destinatários) continua liberado para
@@ -16,7 +16,7 @@
 export class CampaignRequiresPaidPlanError extends Error {
   constructor() {
     super(
-      'Disparar campanhas é um recurso do Plano Pro. Fale com o comercial para ativar seu plano.',
+      'Disparar campanhas faz parte dos planos pagos (Disparos, Pro ou Enterprise).',
     );
     this.name = 'CampaignRequiresPaidPlanError';
   }

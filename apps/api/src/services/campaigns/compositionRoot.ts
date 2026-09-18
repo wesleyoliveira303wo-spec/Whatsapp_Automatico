@@ -71,7 +71,10 @@ export function createCampaignsComposition(
     undefined,
     contactLookup,
   );
-  const generateLeadMessagesService = new GenerateLeadMessagesService(leadMessageAiProvider);
+  const generateLeadMessagesService = new GenerateLeadMessagesService(
+    leadMessageAiProvider,
+    tenantRepository,
+  );
   const campaignsRouter = createCampaignsRouter(campaignService, generateLeadMessagesService);
   const campaignsErrorHandler = createCampaignsErrorHandler(logger);
 

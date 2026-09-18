@@ -1,4 +1,7 @@
 import { AiProvider } from '../../ai/domain/providers/AiProvider';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
+import { PlanDoesNotAllowError } from '../../../shared/tenant/domain/errors/PlanDoesNotAllowError';
+import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { normalizePhoneToE164 } from '../../contacts/domain/phoneNumber';
 import { EnrichedLead } from '../domain/entities/EnrichedLead';
 import { pickMessageVariation } from '../domain/policies/pickMessageVariation';
@@ -41,9 +44,24 @@ export interface GenerateLeadMessagesResult {
  * a variação NA ORDEM em que recebe.
  */
 export class GenerateLeadMessagesService {
-  constructor(private readonly aiProvider?: AiProvider) {}
+  constructor(
+    private readonly aiProvider?: AiProvider,
+    /**
+     * Trava de `ai` (B5, 2026-09-18): gerar mensagem de prospecção chama o
+     * provider, então só Pro/Enterprise geram. Antes desta trava a rota não
+     * olhava plano nenhum — um tenant Grátis podia gastar IA por aqui.
+     */
+    private readonly tenantRepository?: TenantRepository,
+  ) {}
 
-  async generate(leads: EnrichedLead[]): Promise<GenerateLeadMessagesResult> {
+  async generate(tenantId: string, leads: EnrichedLead[]): Promise<GenerateLeadMessagesResult> {
+    if (this.tenantRepository) {
+      const tenant = await this.tenantRepository.findById(tenantId);
+      if (tenant && !planAllows(tenant.plan, 'ai')) {
+        throw new PlanDoesNotAllowError('ai');
+      }
+    }
+
     if (!this.aiProvider) {
       throw new LeadMessageGenerationUnavailableError();
     }

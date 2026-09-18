@@ -9,6 +9,9 @@ import { AiProviderName } from '../domain/providers/AiProviderName';
 import { calculateCostUsd } from '../domain/AiPricing';
 import { buildSummaryPrompt } from './SummaryPromptBuilder';
 import { Logger } from '../../../shared/domain/Logger';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
+import { PlanDoesNotAllowError } from '../../../shared/tenant/domain/errors/PlanDoesNotAllowError';
+import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 
 /** Quantas mensagens (mais recentes) entram no resumo — mais generoso que `DEFAULT_HISTORY_LIMIT` (20) do autoresponder, já que este é um resumo sob demanda, não uma chamada por resposta. */
 const DEFAULT_SUMMARY_HISTORY_LIMIT = 50;
@@ -55,9 +58,23 @@ export class ConversationSummaryService {
     private readonly logger: Logger,
     private readonly aiProvider?: AiProvider,
     private readonly historyLimit: number = DEFAULT_SUMMARY_HISTORY_LIMIT,
+    /**
+     * Trava de `ai` (B5, 2026-09-18) — o resumo chama o provider, então só
+     * Pro/Enterprise geram. Opcional: sem ele não há trava (testes antigos e
+     * modo degradado); em produção sempre vem de `index.ts`. A checagem vem
+     * ANTES de qualquer leitura para um plano sem IA nunca gastar nada.
+     */
+    private readonly tenantRepository?: TenantRepository,
   ) {}
 
   async generateSummary(tenantId: string, conversationId: string): Promise<Conversation> {
+    if (this.tenantRepository) {
+      const tenant = await this.tenantRepository.findById(tenantId);
+      if (tenant && !planAllows(tenant.plan, 'ai')) {
+        throw new PlanDoesNotAllowError('ai');
+      }
+    }
+
     if (!this.aiProvider) {
       throw new Error(
         'AiProvider não configurado para gerar resumos (ver AI_PROVIDER/CLAUDE_API_KEY/GEMINI_API_KEY no .env).',

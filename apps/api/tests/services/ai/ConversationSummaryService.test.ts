@@ -3,6 +3,8 @@ import { ConversationNotFoundError } from '../../../src/services/conversations/d
 import { ConversationSummaryUnavailableError } from '../../../src/services/ai/domain/errors/ConversationSummaryUnavailableError';
 import { Conversation } from '../../../src/services/conversations/domain/entities/Conversation';
 import { NoopLogger } from '../../../src/shared/infrastructure/logging/NoopLogger';
+import { TenantPlan } from '../../../src/shared/tenant/domain/TenantPlan';
+import { FakeTenantRepository } from '../../shared/tenant/FakeTenantRepository';
 import { FakeConversationRepository, FakeMessageRepository } from '../conversations/testDoubles';
 import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionRepository';
 import { FakeAiProvider } from './infrastructure/FakeAiProviderFactory';
@@ -31,7 +33,9 @@ function buildConversation(overrides: Partial<Conversation> = {}): Conversation 
   };
 }
 
-function buildSut(options: { withProvider?: boolean; historyLimit?: number } = {}): {
+function buildSut(
+  options: { withProvider?: boolean; historyLimit?: number; plan?: TenantPlan } = {},
+): {
   sut: ConversationSummaryService;
   conversationRepository: FakeConversationRepository;
   messageRepository: FakeMessageRepository;
@@ -42,7 +46,13 @@ function buildSut(options: { withProvider?: boolean; historyLimit?: number } = {
   const messageRepository = new FakeMessageRepository();
   const aiInteractionRepository = new FakeAiInteractionRepository();
   const aiProvider = new FakeAiProvider();
-  const { withProvider = true, historyLimit } = options;
+  const { withProvider = true, historyLimit, plan } = options;
+  // Sem `plan`, nenhuma trava (comportamento anterior ao B5).
+  let tenantRepository: FakeTenantRepository | undefined;
+  if (plan) {
+    tenantRepository = new FakeTenantRepository();
+    tenantRepository.seed({ id: TENANT_ID, name: 'Empresa', apiKeyHash: null, plan });
+  }
 
   const sut = new ConversationSummaryService(
     conversationRepository,
@@ -52,12 +62,56 @@ function buildSut(options: { withProvider?: boolean; historyLimit?: number } = {
     new NoopLogger(),
     withProvider ? aiProvider : undefined,
     historyLimit,
+    tenantRepository,
   );
 
   return { sut, conversationRepository, messageRepository, aiInteractionRepository, aiProvider };
 }
 
 describe('ConversationSummaryService (Redesign 2026-08-05, R5)', () => {
+  describe('trava de plano (B5, 2026-09-18) — o resumo gasta IA', () => {
+    it.each(['free', 'broadcast'] as const)(
+      'plano %s: recusa com PlanDoesNotAllowError("ai") sem chamar o provider',
+      async (plan) => {
+        const { sut, conversationRepository, messageRepository, aiProvider } = buildSut({ plan });
+        conversationRepository.seed(buildConversation());
+        await messageRepository.create({
+          tenantId: TENANT_ID,
+          conversationId: CONVERSATION_ID,
+          direction: 'inbound',
+          content: 'Olá',
+          contentType: 'text',
+          occurredAt: new Date(),
+        });
+
+        await expect(sut.generateSummary(TENANT_ID, CONVERSATION_ID)).rejects.toMatchObject({
+          name: 'PlanDoesNotAllowError',
+          capability: 'ai',
+        });
+        expect(aiProvider.generateReplyCalls).toHaveLength(0);
+      },
+    );
+
+    it('plano Pro: gera o resumo normalmente', async () => {
+      const { sut, conversationRepository, messageRepository, aiProvider } = buildSut({
+        plan: 'pro',
+      });
+      conversationRepository.seed(buildConversation());
+      await messageRepository.create({
+        tenantId: TENANT_ID,
+        conversationId: CONVERSATION_ID,
+        direction: 'inbound',
+        content: 'Olá',
+        contentType: 'text',
+        occurredAt: new Date(),
+      });
+
+      await sut.generateSummary(TENANT_ID, CONVERSATION_ID);
+
+      expect(aiProvider.generateReplyCalls).toHaveLength(1);
+    });
+  });
+
   it('lança um erro claro quando o AiProvider não está configurado', async () => {
     const { sut, conversationRepository, messageRepository } = buildSut({ withProvider: false });
     conversationRepository.seed(buildConversation());

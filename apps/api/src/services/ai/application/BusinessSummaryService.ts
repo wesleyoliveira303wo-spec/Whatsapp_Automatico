@@ -1,4 +1,6 @@
 import { Logger } from '../../../shared/domain/Logger';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
+import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { AiProvider } from '../domain/providers/AiProvider';
 import { AiBusinessProfileService } from './AiBusinessProfileService';
 import { buildBusinessSummaryPrompt } from './BusinessSummaryPromptBuilder';
@@ -36,6 +38,12 @@ export class BusinessSummaryService {
     private readonly logger: Logger,
     private readonly aiProvider?: AiProvider,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * Trava de `ai` (B5, 2026-09-18): num plano sem IA o resumo não é gerado
+     * — o Cérebro continua sendo salvo normalmente, só não gasta IA. Opcional
+     * pelo mesmo motivo de `ConversationSummaryService.tenantRepository`.
+     */
+    private readonly tenantRepository?: TenantRepository,
   ) {}
 
   /**
@@ -56,6 +64,14 @@ export class BusinessSummaryService {
     const trimmed = content.trim();
     if (trimmed === '') {
       await this.aiBusinessProfileService.updateSummary(tenantId, sessionName, null, this.now());
+      return;
+    }
+
+    if (!(await this.planAllowsAi(tenantId))) {
+      this.logger.info('Resumo do negócio não gerado: o plano do tenant não inclui IA', {
+        tenantId,
+        sessionName,
+      });
       return;
     }
 
@@ -90,5 +106,11 @@ export class BusinessSummaryService {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async planAllowsAi(tenantId: string): Promise<boolean> {
+    if (!this.tenantRepository) return true;
+    const tenant = await this.tenantRepository.findById(tenantId);
+    return !tenant || planAllows(tenant.plan, 'ai');
   }
 }

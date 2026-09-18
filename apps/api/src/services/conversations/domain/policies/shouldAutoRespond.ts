@@ -35,7 +35,7 @@ import { Conversation } from '../entities/Conversation';
  *
  * Lançamento suave (2026-08-31) — Trava de plano: quarta condição,
  * `tenantPlanAllowsAutoReply`. Mesmo padrão do `sessionAiEnabled` — quem
- * chama resolve `planPermiteUso(tenant.plan)` (via `TenantRepository`) e
+ * chama resolve `planAllows(tenant.plan, 'ai')` (via `TenantRepository`) e
  * passa aqui. Um tenant no Plano Grátis nunca gera resposta automática de
  * IA; a mensagem ainda é ingerida e aparece na Dashboard (fluxo intocado),
  * só não vira trabalho de IA — exatamente como o Botão POWER desligado.

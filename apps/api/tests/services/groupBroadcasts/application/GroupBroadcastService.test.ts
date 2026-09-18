@@ -30,7 +30,7 @@ const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0
 const MP4_BYTES = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69]);
 
 function buildSut(
-  options: { plan?: 'free' | 'pro' | 'enterprise'; withDispatcher?: boolean } = {},
+  options: { plan?: 'free' | 'broadcast' | 'pro' | 'enterprise'; withDispatcher?: boolean } = {},
 ): {
   service: GroupBroadcastService;
   repository: FakeGroupBroadcastRepository;
@@ -608,6 +608,18 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
       expect(delaysByStep.get(stepIds[0])).toBe(0);
       expect(delaysByStep.get(stepIds[1])).toBe(10 * 60 * 1000);
       expect(delaysByStep.get(stepIds[2])).toBe(20 * 60 * 1000);
+    });
+
+    it('Plano Disparos dispara normalmente (é o plano feito para isso)', async () => {
+      const { service, repository } = buildSut({ plan: 'broadcast' });
+      const { broadcastId } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        groupJids: ['a@g.us'],
+      });
+
+      await service.startBroadcast('tenant-1', broadcastId);
+
+      expect((await repository.findById('tenant-1', broadcastId))?.status).toBe('running');
     });
 
     it('Plano Grátis não dispara (mesma trava de campanha)', async () => {

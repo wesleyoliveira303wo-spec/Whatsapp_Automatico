@@ -2,7 +2,7 @@ import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { Tenant } from '../../../shared/tenant/domain/Tenant';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
-import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
 import {
   Campaign,
   CampaignRecipientSummary,
@@ -801,15 +801,16 @@ export class CampaignService {
   }
 
   /**
-   * Trava de plano (T3, Lançamento suave 2026-08-31): só um tenant pago
-   * (`pro`/`enterprise`) pode DISPARAR uma campanha. Criar/rascunhar/calcular
-   * destinatários continua liberado para todos — ver
-   * `CampaignRequiresPaidPlanError`. Fonte única da regra: `planPermiteUso`.
+   * Trava de plano (T3, Lançamento suave 2026-08-31; recurso `operation`
+   * desde o B5, 2026-09-18): só um plano pago (Disparos, Pro, Enterprise)
+   * pode DISPARAR uma campanha. Criar/rascunhar/calcular destinatários
+   * continua liberado para todos — ver `CampaignRequiresPaidPlanError`. Fonte
+   * única da regra: `planAllows`.
    */
   private async assertTenantPlanAllowsSending(tenantId: string): Promise<Tenant> {
     const tenant = await this.assertTenantExists(tenantId);
-    if (!planPermiteUso(tenant.plan)) {
-      this.logger.warn('Disparo de campanha recusado: Plano Grátis', {
+    if (!planAllows(tenant.plan, 'operation')) {
+      this.logger.warn('Disparo de campanha recusado: plano sem operação', {
         tenantId,
         plan: tenant.plan,
       });

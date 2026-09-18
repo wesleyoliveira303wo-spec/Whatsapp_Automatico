@@ -7,7 +7,7 @@ import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { Tenant } from '../../../shared/tenant/domain/Tenant';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
-import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
 import { AuditLogRepository } from '../../auth/domain/repositories/AuditLogRepository';
 import {
   isDeclaredMediaCategoryImplausible,
@@ -910,10 +910,10 @@ export class GroupBroadcastService {
     return tenant;
   }
 
-  /** Mesma trava de plano do disparo de campanha (`planPermiteUso`, fonte única). */
+  /** Mesma trava de plano do disparo de campanha (recurso `operation`, `planAllows`). */
   private async assertTenantPlanAllowsSending(tenantId: string): Promise<void> {
     const tenant = await this.assertTenantExists(tenantId);
-    if (!planPermiteUso(tenant.plan)) {
+    if (!planAllows(tenant.plan, 'operation')) {
       throw new GroupBroadcastRequiresPaidPlanError();
     }
   }

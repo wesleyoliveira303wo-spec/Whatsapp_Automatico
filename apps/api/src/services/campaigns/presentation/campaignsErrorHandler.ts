@@ -1,5 +1,6 @@
 import { ErrorRequestHandler } from 'express';
 import { Logger } from '../../../shared/domain/Logger';
+import { PlanDoesNotAllowError } from '../../../shared/tenant/domain/errors/PlanDoesNotAllowError';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { CampaignNotFoundError } from '../domain/errors/CampaignNotFoundError';
 import { NoRecipientsSelectedError } from '../domain/errors/NoRecipientsSelectedError';
@@ -62,6 +63,11 @@ export function createCampaignsErrorHandler(logger: Logger): ErrorRequestHandler
     // Fase de Prospecção IA (2026-08-29) — mesmo racional/mesmo status de
     // `SendingEngineNotConfiguredError`: ambiente sem credenciais de IA
     // configuradas (ver `index.ts`).
+    // B5 (2026-09-18): gerar mensagens por IA exige o recurso `ai`.
+    if (error instanceof PlanDoesNotAllowError) {
+      res.status(403).json({ error: 'plan_does_not_allow', message: error.message });
+      return;
+    }
     if (error instanceof LeadMessageGenerationUnavailableError) {
       res.status(503).json({
         error: 'lead_message_generation_unavailable',

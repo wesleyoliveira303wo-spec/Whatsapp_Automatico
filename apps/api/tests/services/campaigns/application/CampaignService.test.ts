@@ -830,6 +830,26 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
       expect(dispatcher.scheduled).toHaveLength(0);
     });
 
+    it('startCampaign(): tenant no plano Disparos dispara normalmente', async () => {
+      const tenants = new FakeTenantRepository();
+      tenants.seed({
+        id: 'tenant-1',
+        name: 'Empresa Disparos',
+        apiKeyHash: 'hash',
+        plan: 'broadcast',
+      });
+      const campaigns = new FakeCampaignRepository();
+      const dispatcher = new FakeCampaignSendDispatcher();
+      const service = new CampaignService(campaigns, tenants, new NoopLogger(), dispatcher);
+      const campaignId = campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'sessao' });
+      campaigns.seedRecipient({ tenantId: 'tenant-1', campaignId, contactId: 'contact-1' });
+
+      const campaign = await service.startCampaign('tenant-1', campaignId);
+
+      expect(campaign.status).toBe('running');
+      expect(dispatcher.scheduled).toHaveLength(1);
+    });
+
     it('reopenCampaign(): tenant free é recusado com CampaignRequiresPaidPlanError', async () => {
       const { service, campaigns } = buildFreeSut();
       const campaignId = campaigns.seedCampaign({

@@ -68,10 +68,10 @@ export class GroupDirectoryUnavailableError extends Error {
 // explícito do fundador removeu a trava por completo — `startBroadcast` não
 // checa mais outros disparos da sessão; vários podem rodar em paralelo.
 
-/** Mesma trava de plano do disparo de campanha (`planPermiteUso`): criar é livre, DISPARAR é recurso pago. */
+/** Mesma trava de plano do disparo de campanha (recurso `operation`): criar é livre, DISPARAR é recurso pago. */
 export class GroupBroadcastRequiresPaidPlanError extends Error {
   constructor() {
-    super('Disparar em grupos é um recurso do Plano Pro. Fale com o comercial para ativar seu plano.');
+    super('Publicar em grupos faz parte dos planos pagos (Disparos, Pro ou Enterprise).');
     this.name = 'GroupBroadcastRequiresPaidPlanError';
   }
 }

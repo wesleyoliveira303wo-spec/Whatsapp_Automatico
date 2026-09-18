@@ -14,7 +14,7 @@ import { OptOutDetector } from '../domain/repositories/OptOutDetector';
 import { CampaignReplyTracker } from '../domain/repositories/CampaignReplyTracker';
 import { TenantPlanRepository } from '../domain/repositories/TenantPlanRepository';
 import { shouldAutoRespond } from '../domain/policies/shouldAutoRespond';
-import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
 import {
   DEFAULT_BOT_REACTIVATION_SILENCE_MS,
   isWaitingForHumanUnowned,
@@ -284,12 +284,13 @@ export class MessageIngestionService implements MessageReceivedHandler {
       message.tenantId,
       message.sessionName,
     );
-    // Trava de plano (Lançamento suave, 2026-08-31): tenant no Plano Grátis
-    // não gera resposta automática. A mensagem já foi persistida/exibida
+    // Trava de plano (B5, 2026-09-18): só plano com o recurso `ai` (Pro,
+    // Enterprise) gera resposta automática — Grátis e Disparos não. A mensagem já foi persistida/exibida
     // acima (passos 1-3) — só não vira trabalho de IA, exatamente como o
     // Botão POWER desligado.
-    const tenantPlanAllowsAutoReply = planPermiteUso(
+    const tenantPlanAllowsAutoReply = planAllows(
       await this.tenantPlanRepository.getPlan(message.tenantId),
+      'ai',
     );
     const aiWillReply = shouldAutoRespond(
       effectiveConversation,

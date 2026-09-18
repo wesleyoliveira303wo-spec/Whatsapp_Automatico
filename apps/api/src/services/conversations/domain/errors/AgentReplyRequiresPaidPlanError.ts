@@ -1,7 +1,8 @@
 /**
  * Erro de Domain para quando um operador de um tenant no **Plano Grátis**
  * tenta responder uma conversa pela Dashboard (texto ou mídia) — Lançamento
- * suave, 2026-08-31 (Trava de plano, ver `planPermiteUso` e `CONTEXT.md`).
+ * suave, 2026-08-31 (Trava de plano; recurso `operation` desde o B5, ver `planAllows` e
+ * `CONTEXT.md`).
  *
  * No Plano Grátis a tela de Conversas é só-leitura: o operador vê as
  * mensagens chegando mas não envia. Responder pela Dashboard (como a IA
@@ -15,7 +16,7 @@
 export class AgentReplyRequiresPaidPlanError extends Error {
   constructor() {
     super(
-      'Responder pela Dashboard é um recurso do Plano Pro. Fale com o comercial para ativar seu plano.',
+      'Responder pela Dashboard faz parte dos planos pagos (Disparos, Pro ou Enterprise).',
     );
     this.name = 'AgentReplyRequiresPaidPlanError';
   }

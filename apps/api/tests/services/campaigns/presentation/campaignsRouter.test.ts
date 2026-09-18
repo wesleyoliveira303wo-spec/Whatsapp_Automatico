@@ -26,7 +26,7 @@ function buildApp(
   options: {
     withDispatcher?: boolean;
     withoutAiProvider?: boolean;
-    tenant1Plan?: 'free' | 'pro' | 'enterprise';
+    tenant1Plan?: 'free' | 'broadcast' | 'pro' | 'enterprise';
   } = {},
 ): {
   app: express.Express;
@@ -48,6 +48,7 @@ function buildApp(
   const aiProvider = new FakeAiProvider();
   const generateLeadMessagesService = new GenerateLeadMessagesService(
     options.withoutAiProvider ? undefined : aiProvider,
+    tenantRepository,
   );
 
   const app = express();
@@ -955,6 +956,37 @@ describe('campaignsRouter (Fase L, Bloco L3)', () => {
   });
 
   describe('POST /leads/generate-messages (campaign:manage)', () => {
+    it('B5: plano Disparos recebe 403 plan_does_not_allow (a geração usa IA)', async () => {
+      const { app, aiProvider } = buildApp(person('administrator'), {
+        tenant1Plan: 'broadcast',
+      });
+
+      const response = await request(app)
+        .post(`${basePath('tenant-1')}/leads/generate-messages`)
+        .send({
+          leads: [
+            {
+              companyName: 'Adega Barril do Recreio',
+              category: 'Restaurante português',
+              neighborhood: 'Recreio dos Bandeirantes',
+              siteStatus: 'Sem Site',
+              googleRating: 4.3,
+              reviewCount: 3096,
+              mainPainPoint: 'Dor qualquer.',
+              socialProofTrigger: 'Gatilho qualquer.',
+              recommendedTone: 'Tom qualquer.',
+              openingHooks: ['Gancho único'],
+              recommendedCta: 'CTA qualquer.',
+              rawPhone: '+55 21 2437-4428',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('plan_does_not_allow');
+      expect(aiProvider.generateReplyCalls).toHaveLength(0);
+    });
+
     it('devolve um rascunho por lead, sem criar campanha', async () => {
       const { app, aiProvider } = buildApp(person('administrator'));
       aiProvider.setNextResult({

@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { Logger } from '../../../shared/domain/Logger';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { Tenant } from '../../../shared/tenant/domain/Tenant';
-import { planPermiteUso } from '../../../shared/tenant/domain/planPermiteUso';
+import { planAllows } from '../../../shared/tenant/domain/planCapabilities';
 import { TenantNotFoundError } from '../../../shared/tenant/domain/errors/TenantNotFoundError';
 import { AuditLogRepository } from '../../auth/domain/repositories/AuditLogRepository';
 import { OutboundMessageDispatcher } from '../../whatsapp/domain/dispatchers/OutboundMessageDispatcher';
@@ -796,15 +796,16 @@ export class ConversationsService {
   }
 
   /**
-   * Trava de plano (T2, Lançamento suave 2026-08-31): no Plano Grátis a tela
-   * de Conversas é só-leitura — o operador não responde pela Dashboard (texto
-   * nem mídia). `pro`/`enterprise` respondem normalmente. Fonte única da
-   * regra: `planPermiteUso`. Ver `AgentReplyRequiresPaidPlanError`.
+   * Trava de plano (T2, Lançamento suave 2026-08-31; recurso `operation`
+   * desde o B5, 2026-09-18): no Plano Grátis a tela de Conversas é
+   * só-leitura — o operador não responde pela Dashboard (texto nem mídia).
+   * Disparos, Pro e Enterprise respondem normalmente. Fonte única da regra:
+   * `planAllows`. Ver `AgentReplyRequiresPaidPlanError`.
    */
   private async assertTenantPlanAllowsAgentReply(tenantId: string): Promise<Tenant> {
     const tenant = await this.assertTenantExists(tenantId);
-    if (!planPermiteUso(tenant.plan)) {
-      this.logger.warn('Resposta pela Dashboard recusada: Plano Grátis', {
+    if (!planAllows(tenant.plan, 'operation')) {
+      this.logger.warn('Resposta pela Dashboard recusada: plano sem operação', {
         tenantId,
         plan: tenant.plan,
       });

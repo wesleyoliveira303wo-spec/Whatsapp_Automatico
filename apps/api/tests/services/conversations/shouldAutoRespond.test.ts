@@ -66,7 +66,7 @@ describe('shouldAutoRespond', () => {
   });
 
   // Lançamento suave (2026-08-31) — Trava de plano. `tenantPlanAllowsAutoReply`
-  // vem de `planPermiteUso(tenant.plan)`, resolvido por quem chama (mesmo
+  // vem de `planAllows(tenant.plan, 'ai')`, resolvido por quem chama (mesmo
   // padrão do `sessionAiEnabled` acima).
   describe('tenantPlanAllowsAutoReply (Trava de plano, Lançamento suave/2026-08-31)', () => {
     it('retorna false quando o plano do tenant não permite uso, mesmo com tudo o mais liberado', () => {

@@ -1,5 +1,6 @@
 import { ErrorRequestHandler } from 'express';
 import { Logger } from '../../../shared/domain/Logger';
+import { PlanDoesNotAllowError } from '../../../shared/tenant/domain/errors/PlanDoesNotAllowError';
 import { ConversationNotFoundError } from '../../conversations/domain/errors/ConversationNotFoundError';
 import { ConversationSummaryUnavailableError } from '../domain/errors/ConversationSummaryUnavailableError';
 
@@ -30,6 +31,12 @@ export function createConversationSummaryErrorHandler(logger: Logger): ErrorRequ
     }
     if (error instanceof ConversationNotFoundError) {
       res.status(404).json({ error: 'conversation_not_found', message: error.message });
+      return;
+    }
+    // B5 (2026-09-18): plano sem o recurso `ai` (Grátis, Disparos) — 403,
+    // mesmo idioma dos demais erros de plano.
+    if (error instanceof PlanDoesNotAllowError) {
+      res.status(403).json({ error: 'plan_does_not_allow', message: error.message });
       return;
     }
     if (error instanceof ConversationSummaryUnavailableError) {

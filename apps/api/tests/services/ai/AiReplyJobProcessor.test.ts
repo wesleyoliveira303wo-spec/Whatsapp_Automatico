@@ -557,6 +557,23 @@ describe('AiReplyJobProcessor', () => {
       expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
       expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
     });
+
+    it('tenant no plano Disparos (sem IA): a re-checagem descarta o job sem gerar nem despachar', async () => {
+      const {
+        processor,
+        conversationRepository,
+        aiProviderFactory,
+        outboundDispatcher,
+        tenantPlanRepository,
+      } = buildSut();
+      conversationRepository.seed(buildConversation({ status: 'bot' }));
+      tenantPlanRepository.setPlan('broadcast');
+
+      await processor.process(buildJobData());
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+    });
   });
 
   // Agrupamento de rajada (2026-08-14). O mecanismo tem duas metades: o
