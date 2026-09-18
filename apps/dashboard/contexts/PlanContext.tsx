@@ -49,3 +49,13 @@ export function useIsFreePlan(): boolean {
 export function useHidesAi(): boolean {
   return useContext(PlanContext)?.hideAi ?? false;
 }
+
+const NO_OP = (): void => undefined;
+
+/**
+ * Relê o plano do tenant (B5, etapa 2) — a aba Plano chama depois que a
+ * assinatura é confirmada. Tolerante: sem `PlanProvider`, não faz nada.
+ */
+export function useRefreshPlan(): () => void {
+  return useContext(PlanContext)?.refresh ?? NO_OP;
+}

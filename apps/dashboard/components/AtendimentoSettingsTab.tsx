@@ -3,6 +3,7 @@ import { Clock, ArrowRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import EmptyState from '@/components/states/EmptyState';
+import { useHidesAi } from '@/contexts/PlanContext';
 import { useSessionsList } from '@/hooks/useSessionsList';
 
 /**
@@ -27,9 +28,24 @@ import { useSessionsList } from '@/hooks/useSessionsList';
  * tenant (com a sessão sobrescrevendo) — decisão de produto + migration,
  * registrada como Fase 4 no plano. Prometer aqui um "horário da empresa"
  * que o backend não tem seria inventar função.
+ *
+ * No plano Disparos (sem IA, B5) o atalho some: o horário só governa a
+ * mensagem de ausência da IA, e a tela do Cérebro da IA não existe nesse
+ * plano — o link levaria a uma página que devolve a pessoa para Conversas.
  */
 export default function AtendimentoSettingsTab(): JSX.Element {
   const { sessions, loading, errorMessage } = useSessionsList();
+  const hidesAi = useHidesAi();
+
+  if (hidesAi) {
+    return (
+      <EmptyState
+        icon={Clock}
+        title="Sem horário para configurar no seu plano"
+        description="O horário de atendimento controla a mensagem de ausência da IA, que faz parte dos planos Pro e Enterprise."
+      />
+    );
+  }
 
   if (loading) {
     return (

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import FrancisLogo from '@/components/brand/FrancisLogo';
 import ThemeToggle from '@/components/ThemeToggle';
 import SettingsLayout from '@/components/SettingsLayout';
+import { PlanProvider } from '@/contexts/PlanContext';
 import { type SettingsSectionId } from '@/components/SettingsSidebar';
 import { resolveSectionFromQuery } from '@/pages/sessions/[sessionName]/settings/[[...section]]';
 import { requireProtectedPageSession } from '@/lib/auth';
@@ -13,6 +14,7 @@ import type { ManagedUserRole } from '@/lib/clientApi';
 interface SettingsPageProps {
   role: ManagedUserRole | null;
   section: SettingsSectionId;
+  isSupport: boolean;
 }
 
 /**
@@ -44,37 +46,48 @@ export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async (
     return { redirect: { destination: `/settings/${section}`, permanent: false } };
   }
 
-  return { props: { role, section } };
+  return { props: { role, section, isSupport: Boolean(session.user?.isSupport) } };
 };
 
-export default function SettingsPage({ role, section }: SettingsPageProps): JSX.Element {
+export default function SettingsPage({ role, section, isSupport }: SettingsPageProps): JSX.Element {
+  // `PlanProvider` aqui porque esta página não passa pelo `SessionLayout`, que
+  // é quem o monta nas telas de sessão — a aba Plano relê o plano por ele.
   return (
-    <div className="flex h-screen flex-col bg-background">
-      <Head>
-        <title>{pageTitle('Configurações')}</title>
-      </Head>
+    <PlanProvider>
+      <div className="flex h-screen flex-col bg-background">
+        <Head>
+          <title>{pageTitle('Configurações')}</title>
+        </Head>
 
-      {/* Cabeçalho enxuto — mesma casca de `SessionHeader`, mas de nível tenant. */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background pl-4 pr-3.5">
-        <Link
-          href="/app"
-          className="flex w-fit items-center gap-2.5"
-          title="Voltar para Todos os WhatsApps"
-        >
-          <FrancisLogo size={22} />
-          <span className="text-[15px] font-semibold tracking-tight text-foreground">Francis</span>
-        </Link>
-        <ThemeToggle />
-      </header>
+        {/* Cabeçalho enxuto — mesma casca de `SessionHeader`, mas de nível tenant. */}
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background pl-4 pr-3.5">
+          <Link
+            href="/app"
+            className="flex w-fit items-center gap-2.5"
+            title="Voltar para Todos os WhatsApps"
+          >
+            <FrancisLogo size={22} />
+            <span className="text-[15px] font-semibold tracking-tight text-foreground">
+              Francis
+            </span>
+          </Link>
+          <ThemeToggle />
+        </header>
 
-      <main className="fx-scroll flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1000px] px-6 pb-16 pt-6">
-          <h1 className="mb-6 text-[21px] font-semibold tracking-tight text-foreground">
-            Configurações
-          </h1>
-          <SettingsLayout section={section} role={role} basePath="/settings" />
-        </div>
-      </main>
-    </div>
+        <main className="fx-scroll flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1000px] px-6 pb-16 pt-6">
+            <h1 className="mb-6 text-[21px] font-semibold tracking-tight text-foreground">
+              Configurações
+            </h1>
+            <SettingsLayout
+              section={section}
+              role={role}
+              basePath="/settings"
+              isSupport={isSupport}
+            />
+          </div>
+        </main>
+      </div>
+    </PlanProvider>
   );
 }

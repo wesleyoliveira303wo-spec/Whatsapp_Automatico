@@ -13,6 +13,8 @@
  * (21) 98292-5941.
  */
 
+import { PLAN_PRICE_LABEL } from './plans';
+
 export const NAV_LINKS = [
   { href: '#recursos', label: 'Recursos' },
   { href: '#ia', label: 'IA' },
@@ -197,7 +199,7 @@ export const PLANOS = {
     {
       id: 'free',
       name: 'Grátis',
-      price: 'R$ 0',
+      price: PLAN_PRICE_LABEL.free,
       period: '/ sempre',
       tagline: 'Conecte um WhatsApp e veja as mensagens chegando. A IA não responde.',
       features: [
@@ -211,7 +213,7 @@ export const PLANOS = {
     {
       id: 'broadcast',
       name: 'Disparos',
-      price: 'R$ 69',
+      price: PLAN_PRICE_LABEL.broadcast,
       period: '/ mês',
       tagline: 'Dispare para contatos e grupos e atenda você mesmo, sem IA.',
       features: [
@@ -227,7 +229,7 @@ export const PLANOS = {
     {
       id: 'pro',
       name: 'Pro',
-      price: 'R$ 119',
+      price: PLAN_PRICE_LABEL.pro,
       period: '/ mês',
       highlight: true,
       tagline: 'O atendimento com IA funcionando de verdade, em 1 número.',
@@ -245,7 +247,7 @@ export const PLANOS = {
     {
       id: 'enterprise',
       name: 'Enterprise',
-      price: 'R$ 249',
+      price: PLAN_PRICE_LABEL.enterprise,
       period: '/ mês',
       tagline: 'Para quem atende em vários números de WhatsApp.',
       features: [

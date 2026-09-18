@@ -17,6 +17,7 @@ interface SessionSettingsPageProps {
   sessionName: string;
   role: ManagedUserRole | null;
   section: SettingsSectionId;
+  isSupport: boolean;
 }
 
 /**
@@ -69,9 +70,7 @@ export function resolveSectionFromQuery(
   return firstVisibleSection(role);
 }
 
-export const getServerSideProps: GetServerSideProps<SessionSettingsPageProps> = async (
-  context,
-) => {
+export const getServerSideProps: GetServerSideProps<SessionSettingsPageProps> = async (context) => {
   const guard = requireProtectedPageSession(context);
   if (guard.kind === 'redirect') {
     return { redirect: guard.redirect };
@@ -98,7 +97,15 @@ export const getServerSideProps: GetServerSideProps<SessionSettingsPageProps> = 
     };
   }
 
-  return { props: { tenantId: session.tenantId, sessionName, role, section } };
+  return {
+    props: {
+      tenantId: session.tenantId,
+      sessionName,
+      role,
+      section,
+      isSupport: Boolean(session.user?.isSupport),
+    },
+  };
 };
 
 export default function SessionSettingsPage({
@@ -106,6 +113,7 @@ export default function SessionSettingsPage({
   sessionName,
   role,
   section,
+  isSupport,
 }: SessionSettingsPageProps): JSX.Element {
   return (
     <SessionLayout tenantId={tenantId} sessionName={sessionName}>
@@ -121,6 +129,7 @@ export default function SessionSettingsPage({
             section={section}
             role={role}
             basePath={`/sessions/${encodeURIComponent(sessionName)}/settings`}
+            isSupport={isSupport}
           />
         </div>
       </div>

@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { Clock, Smartphone, Users, ShieldCheck, ScrollText } from 'lucide-react';
+import { Clock, CreditCard, Smartphone, Users, ShieldCheck, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ManagedUserRole } from '@/lib/clientApi';
 
 /** Uma seção de Configurações. `id` é o segmento da URL (`/settings/:id`). */
-export type SettingsSectionId = 'atendimento' | 'whatsapps' | 'equipe' | 'seguranca' | 'auditoria';
+export type SettingsSectionId =
+  'atendimento' | 'plano' | 'whatsapps' | 'equipe' | 'seguranca' | 'auditoria';
 
 interface SectionDef {
   id: SettingsSectionId;
@@ -32,12 +33,23 @@ const isOwner = (role: ManagedUserRole | null): boolean => role === 'owner';
  * "Dados da empresa" SAIU do catálogo na Auditoria do Perfil (2026-08-28,
  * pedido explícito do fundador) — mudou para o Perfil (`ProfileSettingsTab`)
  * junto com a identidade da pessoa. Ver docstring de `SettingsLayout`.
+ *
+ * "Plano" (B5, etapa 2) é visível a todos: todo mundo pode ver em que plano
+ * a empresa está; só o dono assina ou troca (a aba esconde os botões e a API
+ * confere de novo).
  */
 export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: 'atendimento', label: 'Atendimento', icon: Clock, group: 'EMPRESA' },
+  { id: 'plano', label: 'Plano', icon: CreditCard, group: 'EMPRESA' },
   { id: 'whatsapps', label: 'WhatsApps', icon: Smartphone, group: 'CANAIS' },
   { id: 'equipe', label: 'Equipe', icon: Users, group: 'PESSOAS', requiresRole: canManageUsers },
-  { id: 'seguranca', label: 'Segurança', icon: ShieldCheck, group: 'PESSOAS', requiresRole: isOwner },
+  {
+    id: 'seguranca',
+    label: 'Segurança',
+    icon: ShieldCheck,
+    group: 'PESSOAS',
+    requiresRole: isOwner,
+  },
   {
     id: 'auditoria',
     label: 'Auditoria',
@@ -48,9 +60,7 @@ export const SETTINGS_SECTIONS: readonly SectionDef[] = [
 ] as const;
 
 export function isSettingsSection(value: unknown): value is SettingsSectionId {
-  return (
-    typeof value === 'string' && SETTINGS_SECTIONS.some((section) => section.id === value)
-  );
+  return typeof value === 'string' && SETTINGS_SECTIONS.some((section) => section.id === value);
 }
 
 /** A seção é visível para este papel? Usado pela sidebar E pelo guard de rota. */

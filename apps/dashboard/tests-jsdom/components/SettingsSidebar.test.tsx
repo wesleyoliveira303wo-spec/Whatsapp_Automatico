@@ -13,6 +13,9 @@
  * Auditoria do Perfil (2026-08-28, pedido explícito do fundador) — "Dados
  * da empresa" SAIU do catálogo (mudou para o Perfil): 5 seções agora, não
  * mais 6. O grupo EMPRESA continua existindo (com só "Atendimento" dentro).
+ *
+ * B5, etapa 2 (2026-09-18): "Plano" entra no grupo EMPRESA, visível a todos
+ * (quem assina é só o dono, mas todos veem em que plano a empresa está).
  */
 import { render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -23,9 +26,9 @@ jest.mock('next/router', () => ({ useRouter: () => ({ asPath: '/settings/atendim
 describe('SettingsSidebar', () => {
   const base = '/settings';
 
-  it('owner vê todas as 5 seções', () => {
+  it('owner vê todas as 6 seções', () => {
     render(<SettingsSidebar active="atendimento" role="owner" basePath={base} />);
-    for (const label of ['Atendimento', 'WhatsApps', 'Equipe', 'Segurança', 'Auditoria']) {
+    for (const label of ['Atendimento', 'Plano', 'WhatsApps', 'Equipe', 'Segurança', 'Auditoria']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
     }
   });
@@ -38,6 +41,7 @@ describe('SettingsSidebar', () => {
   it('operator vê só o que alcança — sem Equipe, Segurança ou Auditoria', () => {
     render(<SettingsSidebar active="atendimento" role="operator" basePath={base} />);
     expect(screen.getByRole('link', { name: 'Atendimento' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Plano' })).toHaveAttribute('href', '/settings/plano');
     expect(screen.getByRole('link', { name: 'WhatsApps' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Equipe' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Segurança' })).not.toBeInTheDocument();

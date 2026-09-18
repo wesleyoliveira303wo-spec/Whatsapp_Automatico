@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchTenant, type TenantPlan } from '@/lib/clientApi';
 import { planAllows, type PlanCapability } from '@/lib/plans';
 
@@ -22,6 +22,11 @@ export interface UsePlanResult {
    */
   hideAi: boolean;
   loading: boolean;
+  /**
+   * Relê o plano sem piscar a tela (B5, etapa 2): chamado quando a assinatura
+   * acabou de ser confirmada, para o resto do painel acompanhar sem F5.
+   */
+  refresh: () => void;
 }
 
 /**
@@ -40,16 +45,20 @@ export interface UsePlanResult {
 export function usePlan(): UsePlanResult {
   const [plan, setPlan] = useState<TenantPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    // Só a primeira leitura mostra "carregando" — uma releitura mantém o plano
+    // antigo na tela até o novo chegar, sem esconder nada no meio.
+    if (version === 0) setLoading(true);
     fetchTenant()
       .then(({ tenant }) => {
         if (!cancelled) setPlan(tenant.plan ?? null);
       })
       .catch(() => {
-        if (!cancelled) setPlan(null);
+        // Numa releitura que falhou, o plano conhecido continua valendo.
+        if (!cancelled && version === 0) setPlan(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -57,7 +66,9 @@ export function usePlan(): UsePlanResult {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [version]);
+
+  const refresh = useCallback(() => setVersion((current) => current + 1), []);
 
   const resolved = !loading && plan !== null;
   return {
@@ -67,5 +78,6 @@ export function usePlan(): UsePlanResult {
     allows: (capability) => (plan ? planAllows(plan, capability) : true),
     hideAi: resolved && plan !== 'free' && !planAllows(plan, 'ai'),
     loading,
+    refresh,
   };
 }

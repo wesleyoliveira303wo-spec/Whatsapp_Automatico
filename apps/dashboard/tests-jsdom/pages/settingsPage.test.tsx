@@ -77,7 +77,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
     const result = await getServerSideProps(
       contextFor(userSession('owner'), { section: ['equipe'] }),
     );
-    expect(result).toEqual({ props: { role: 'owner', section: 'equipe' } });
+    expect(result).toEqual({ props: { role: 'owner', section: 'equipe', isSupport: false } });
   });
 
   it('GATE: operator pedindo /settings/equipe é redirecionado — a seção nunca renderiza', async () => {
@@ -93,7 +93,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
     const asOwner = await getServerSideProps(
       contextFor(userSession('owner'), { section: ['seguranca'] }),
     );
-    expect(asOwner).toEqual({ props: { role: 'owner', section: 'seguranca' } });
+    expect(asOwner).toEqual({ props: { role: 'owner', section: 'seguranca', isSupport: false } });
 
     const asAdmin = await getServerSideProps(
       contextFor(userSession('administrator'), { section: ['seguranca'] }),
@@ -107,7 +107,7 @@ describe('/settings/[[...section]] (getServerSideProps)', () => {
     const asManager = await getServerSideProps(
       contextFor(userSession('manager'), { section: ['auditoria'] }),
     );
-    expect(asManager).toEqual({ props: { role: 'manager', section: 'auditoria' } });
+    expect(asManager).toEqual({ props: { role: 'manager', section: 'auditoria', isSupport: false } });
 
     const asOperator = await getServerSideProps(
       contextFor(userSession('operator'), { section: ['auditoria'] }),

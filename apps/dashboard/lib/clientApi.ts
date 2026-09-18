@@ -228,7 +228,7 @@ export function updateMyProfile(
 
 /** Plano do tenant — espelha `TenantPlan` da API. A regra de cada plano vive em `lib/plans.ts`. */
 export type { TenantPlan } from './plans';
-import type { TenantPlan } from './plans';
+import type { PaidPlan, TenantPlan } from './plans';
 
 /** Nome da empresa (aba "Empresa" de Configuracoes) + plano (T4 — Trava de plano). */
 export interface TenantInfo {
@@ -240,6 +240,40 @@ export interface TenantInfo {
    * ausência como "não é grátis" (não bloqueia nada por engano).
    */
   plan?: TenantPlan;
+}
+
+/** Situação da assinatura no Stripe (B5, etapa 2) — ver `BillingStatus`. */
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete';
+
+export interface BillingStatus {
+  plan: TenantPlan;
+  planSource: 'self_service' | 'manual';
+  /** Chaves do Stripe configuradas no servidor. `false` = "assinatura pelo site em breve". */
+  billingEnabled: boolean;
+  /** A conta ainda pode usar o teste grátis de 1 dia. */
+  trialAvailable: boolean;
+  subscription: null | {
+    plan: TenantPlan | null;
+    status: SubscriptionStatus | null;
+    trialEndsAt: string | null;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    pastDueSince: string | null;
+  };
+}
+
+export function fetchBillingStatus(): Promise<{ billing: BillingStatus }> {
+  return request('/api/billing');
+}
+
+/** Só o dono. Devolve a página de pagamento do Stripe para onde o navegador vai. */
+export function startCheckout(plan: PaidPlan): Promise<{ url: string }> {
+  return request('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) });
+}
+
+/** Só o dono. Devolve o portal do Stripe (cartão, troca de plano, cancelamento). */
+export function openBillingPortal(): Promise<{ url: string }> {
+  return request('/api/billing/portal', { method: 'POST' });
 }
 
 export function fetchTenant(): Promise<{ tenant: TenantInfo }> {

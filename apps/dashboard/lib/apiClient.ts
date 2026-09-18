@@ -254,6 +254,13 @@ export const callGroupBroadcastsApi = createApiClient('group-broadcasts');
 export const callTenantApi = createApiClient('');
 
 /**
+ * Cliente do recurso `billing` (B5, etapa 2), consumido por
+ * `pages/api/billing/*`. `GET /` para qualquer pessoa da conta; `POST
+ * /checkout` e `POST /portal` só para o dono (a API responde 403 aos demais).
+ */
+export const callBillingApi = createApiClient('billing');
+
+/**
  * Cliente do recurso `support-access` (Painel `/admin`, Fase 5 — lado TENANT
  * do acesso assistido), consumido por `pages/api/support-access/*`. A API
  * expõe `GET /active` (sem RBAC — o banner aparece para qualquer usuário) e

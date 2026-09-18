@@ -8,6 +8,7 @@ import UserManagementPanel from '@/components/UserManagementPanel';
 import AuditLogPanel from '@/components/AuditLogPanel';
 import AtendimentoSettingsTab from '@/components/AtendimentoSettingsTab';
 import SecuritySettingsTab from '@/components/SecuritySettingsTab';
+import PlanSettingsTab from '@/components/PlanSettingsTab';
 import { fadeIn } from '@/lib/motion';
 import type { ManagedUserRole } from '@/lib/clientApi';
 
@@ -15,6 +16,11 @@ interface SettingsLayoutProps {
   section: SettingsSectionId;
   role: ManagedUserRole | null;
   basePath: string;
+  /**
+   * Sessão de suporte do `/admin`: nunca assina pelo cliente (a API recusa com
+   * `human_required`), então os botões de assinatura nem aparecem.
+   */
+  isSupport?: boolean;
 }
 
 /** Título e subtítulo por seção — o `<h2>` some da barra e passa a titular o conteúdo. */
@@ -23,6 +29,10 @@ const SECTION_COPY: Record<SettingsSectionId, { title: string; description: stri
     title: 'Atendimento',
     description:
       'O horário de atendimento é definido por WhatsApp — cada número tem a própria agenda e mensagem de ausência.',
+  },
+  plano: {
+    title: 'Plano',
+    description: 'Seu plano, a assinatura e as cobranças.',
   },
   whatsapps: {
     title: 'WhatsApps',
@@ -68,6 +78,7 @@ export default function SettingsLayout({
   section,
   role,
   basePath,
+  isSupport = false,
 }: SettingsLayoutProps): JSX.Element {
   const copy = SECTION_COPY[section];
 
@@ -77,9 +88,7 @@ export default function SettingsLayout({
 
       <div className="min-w-0 flex-1">
         <div className="mb-5">
-          <h2 className="text-[17px] font-semibold tracking-tight text-foreground">
-            {copy.title}
-          </h2>
+          <h2 className="text-[17px] font-semibold tracking-tight text-foreground">{copy.title}</h2>
           <p className="mt-0.5 text-[13px] text-muted-foreground">{copy.description}</p>
         </div>
 
@@ -90,6 +99,7 @@ export default function SettingsLayout({
         */}
         <motion.div key={section} variants={fadeIn} initial="hidden" animate="visible">
           {section === 'atendimento' && <AtendimentoSettingsTab />}
+          {section === 'plano' && <PlanSettingsTab canManage={role === 'owner' && !isSupport} />}
           {section === 'whatsapps' && <WhatsAppsSettingsTab />}
           {section === 'equipe' && <UserManagementPanel />}
           {section === 'seguranca' && <SecuritySettingsTab />}

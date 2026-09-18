@@ -12,6 +12,22 @@ export type PlanCapability = 'operation' | 'ai';
 /** Ordem de venda — a mesma da página de preços e do `/admin`. */
 export const PLAN_ORDER: readonly TenantPlan[] = ['free', 'broadcast', 'pro', 'enterprise'];
 
+/** Os planos que se assinam pelo Stripe (B5, etapa 2). */
+export type PaidPlan = Exclude<TenantPlan, 'free'>;
+export const PAID_PLANS: readonly PaidPlan[] = ['broadcast', 'pro', 'enterprise'];
+
+/**
+ * Preço mensal de cada plano, como aparece na tela. Um lugar só: a página de
+ * venda e a aba Plano leem daqui. O preço COBRADO é o do Stripe (criado pelo
+ * script `createStripePrices`) — se um mudar, o outro muda junto.
+ */
+export const PLAN_PRICE_LABEL: Record<TenantPlan, string> = {
+  free: 'R$ 0',
+  broadcast: 'R$ 69',
+  pro: 'R$ 119',
+  enterprise: 'R$ 249',
+};
+
 export const PLAN_LABEL: Record<TenantPlan, string> = {
   free: 'Grátis',
   broadcast: 'Disparos',
