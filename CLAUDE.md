@@ -2399,6 +2399,89 @@ deploy (as duas migrations rodam no `migrate` do compose) e as etapas 2
 `PlanProvider` e ainda mostra links de IA a um tenant Disparos — entra na
 etapa 2, quando o `/settings` ganhar a aba Plano.
 
+### B5, etapa 2 — assinatura pelo Stripe (checkout, teste de 1 dia, portal e aviso assinado)
+
+**Data:** 2026-09-18
+**Contexto:** segunda das três etapas da cobrança automática (spec
+`docs/superpowers/specs/2026-09-18-cobranca-stripe-design.md`, plano
+`docs/superpowers/plans/2026-09-18-assinatura-stripe.md`). Com os planos e a
+trava por recurso prontos (etapa 1), faltava o cliente conseguir assinar
+sozinho: assinatura mensal só no cartão, teste de 1 dia do plano escolhido
+com o cartão cadastrado na hora e cobrança automática no dia seguinte.
+**Decisão — o Stripe cobra, o Francis só reconcilia.** A página de pagamento
+(Checkout) e o portal (troca de plano, cartão, cancelamento) são do Stripe;
+nenhum número de cartão passa pelo Francis. Bounded context novo
+`services/billing`, com a porta `BillingGateway` — o `BillingService` nunca
+vê a biblioteca `stripe` (única implementação: `StripeBillingGateway`, SDK
+oficial `stripe@22`, API `2026-08-26.dahlia`, onde `current_period_end` mora
+em `items.data[0]`). Tabelas novas `subscriptions` (uma por tenant) e
+`billing_events` (sem FK, só para garantir que cada aviso é processado uma
+vez), `Tenant.trialUsedAt` (um teste por conta, mesmo cancelando e voltando).
+**Decisão — "estado, não evento".** O aviso do Stripe não é aplicado como
+delta: a cada aviso, `syncFromStripe` relê a assinatura atual do cliente e
+acerta a linha local e o plano. Aviso fora de ordem, repetido ou reenviado
+depois de uma falha chega sempre ao mesmo resultado. O aviso só é gravado
+como processado DEPOIS do sucesso (falhou → 500 → o Stripe reenvia por dias).
+O tenant é resolvido pelo `customerId` gravado no nosso banco, nunca pelo
+metadado do aviso; cliente que não é nosso é ignorado com 200 — a conta do
+Stripe é compartilhada com outro produto do fundador.
+**Decisão — rota pública só com assinatura.** `POST /billing/stripe/webhook`
+não tem `authenticate`: quem prova a origem é a assinatura do Stripe,
+conferida sobre o corpo CRU (`express.raw` na rota; o parser JSON global
+pula esse caminho). Assinatura inválida → 400 sem gravar nada. Caddy
+encaminha o caminho direto para a API.
+**Decisão — quem pode.** `GET /api/tenants/:t/billing` para qualquer pessoa
+da conta; `POST .../checkout` e `.../portal` só com `billing:manage` (dono) e
+só login de pessoa (`requireHumanActor`, extraído para `shared/presentation`
+e reaproveitado em `usersRouter`/suporte) — nem API key nem o suporte
+assistido assinam pelo cliente. Plano pago de origem `manual` nunca é mexido
+pelo Stripe, e o `/admin` recusa (409 `plan_managed_by_subscription`) trocar
+o plano de quem paga pelo Stripe. `deleteTenant` recusa tenant com
+assinatura valendo.
+**Decisão — cobrança desligável.** Sem as 6 variáveis (`STRIPE_SECRET_KEY`,
+`STRIPE_WEBHOOK_SECRET`, os 3 `STRIPE_PRICE_*`, `BILLING_PUBLIC_URL`) a
+cobrança fica desligada inteira: a leitura funciona, as ações devolvem 503 e
+a aba Plano diz "assinatura pelo site ainda não disponível", com o link do
+comercial. Os preços são criados por `scripts/createStripePrices.ts`
+(idempotente por `lookup_key`, simulação por padrão, `--live` obrigatório com
+chave de produção, nunca imprime a chave).
+**Decisão — aba Plano.** Nova seção de Configurações (grupo EMPRESA, todos os
+cargos veem): plano atual, a situação em uma linha (teste até DD/MM, próxima
+cobrança, cancelamento agendado, pagamento em atraso, ativado pela equipe —
+datas no horário de Brasília), os três planos pagos com preço e limite de
+WhatsApps. Na volta do pagamento (`?checkout=done`) a tela NÃO supõe que deu
+certo: consulta a cada 2s por até 60s até o aviso confirmar, e só então diz
+"Plano ativado." e relê o plano do painel (`usePlan.refresh`, sem piscar).
+Um preço, um lugar: `PLAN_PRICE_LABEL` alimenta a aba e a página de venda.
+**Revisão de segurança (antes do deploy):** achado real corrigido — com duas
+abas, o dono podia concluir duas páginas de pagamento e ficar com duas
+assinaturas cobrando o mesmo cartão. Agora toda abertura de checkout expira
+antes as páginas abertas do cliente (`expireOpenCheckoutSessions`), inclusive
+no clique duplo da primeira assinatura (os dois cliques caem no mesmo
+cliente — `createForCustomer` mantém o primeiro). Conferidos sem achado:
+isolamento entre tenants nas rotas (mesmo porteiro de sempre), CSRF no BFF,
+repetição de aviso (tolerância de 5 min da assinatura + `billing_events`),
+variações de caminho do aviso (barra no fim, maiúsculas) falham fechado com
+400, nenhum segredo em log.
+**Também nesta etapa (pendências da etapa 1):** o `/settings` ganhou
+`PlanProvider`; no plano Disparos, a aba Atendimento deixa de apontar para o
+Cérebro da IA e o Perfil esconde "Horário de atendimento" e "Sobre o
+negócio" (os dois vêm da IA).
+**Impacto:** migration `20260918150000_add_billing` (aditiva), aplicada e
+conferida contra Postgres real. Dependência nova: `stripe`. Suítes: `api` 218
+suítes / 2.724 testes (integração inclusa, nenhum "pulando");
+`dashboard`+`jsdom` 164 suítes / 1.293 testes; `tsc`, lint (só avisos
+antigos) e `next build` limpos. **Pendente, nesta ordem:** (1) teste ponta a
+ponta no modo teste do Stripe — depende do fundador (autorizar
+`createStripePrices --apply`, instalar a Stripe CLI e fazer o `stripe login`,
+colar `whsec_`/preços/`BILLING_PUBLIC_URL` no `.env`, pagar com o cartão de
+teste 4242); (2) **antes de ligar em produção**, conferir a configuração do
+portal do Stripe: como a conta é compartilhada, a troca de plano no portal
+precisa listar só os produtos do Francis (ou ficar desligada) — está no
+passo a passo da etapa 3; (3) trocar o texto da página de venda que manda
+"chamar o comercial / Pix" quando a cobrança for ligada; (4) etapa 3
+(tolerância de 3 dias e rebaixamento).
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---

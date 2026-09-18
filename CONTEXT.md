@@ -16,7 +16,8 @@ O nível de acesso de um tenant. Um de `free`, `broadcast`, `pro`,
 `enterprise`. Todo tenant novo nasce `free`. O que cada plano libera e
 quantos números aceita vive num lugar só: `planCapabilities.ts` na API,
 espelhado em `lib/plans.ts` no painel.
-_Avoid_: assinatura, tier, licença.
+_Avoid_: tier, licença. Não confundir com **Assinatura**: o plano é o que o
+tenant pode usar; a assinatura é como um plano pago é cobrado.
 
 **Plano Grátis** (`free`):
 O tenant cria conta, conecta um WhatsApp e **vê as mensagens chegando na
@@ -68,14 +69,31 @@ ativado à mão vira `manual`; voltar ao Grátis devolve o tenant ao
 `self_service`.
 _Avoid_: tipo de conta, canal de venda.
 
+**Assinatura** (`Subscription`, no Stripe):
+O pagamento mensal, no cartão, de um plano pago de origem `self_service`. Uma
+por tenant. O dono assina na aba **Plano** (Configurações), paga numa página
+do Stripe, e troca de plano, atualiza o cartão ou cancela no portal do
+Stripe. O plano do tenant segue o estado da assinatura — lido do Stripe a
+cada aviso —, nunca o contrário. Implementada na etapa 2 do B5 (2026-09-18);
+só vale em produção quando as chaves do Stripe estiverem configuradas.
+_Avoid_: mensalidade, plano (ver acima).
+
+**Teste grátis de 1 dia**:
+Na primeira assinatura, o cliente usa o plano escolhido por 1 dia sem pagar.
+O cartão é cadastrado na hora e a primeira cobrança acontece no dia seguinte,
+se ele não cancelar. Um por conta (`Tenant.trialUsedAt`), mesmo que cancele
+e volte.
+_Avoid_: trial de 7/14/30 dias. Não confundir com o **Plano Grátis**, que é
+permanente e não pede cartão.
+
 **Billing manual**:
-Enquanto a cobrança automática não está no ar, ativar um plano pago é: o
-cliente cria a conta Grátis, chama o fundador no WhatsApp, o fundador ativa
-o plano (script ou `/admin`) e o pagamento é combinado por fora (Pix). Vale
-até a etapa 2 do B5 (assinatura pelo Stripe, ver
-`docs/superpowers/specs/2026-09-18-cobranca-stripe-design.md`); depois dela,
-continua existindo para os planos de origem `manual`.
-_Avoid_: assinatura self-service, checkout.
+Ativar um plano pago à mão: o cliente chama o fundador no WhatsApp, o
+fundador ativa o plano (script ou `/admin`) e o pagamento é combinado por
+fora (Pix). Com a **Assinatura** no ar, passa a valer só para os planos de
+origem `manual` (cortesia, contrato, Pix) — e o `/admin` recusa trocar o
+plano de quem paga pelo Stripe. Spec:
+`docs/superpowers/specs/2026-09-18-cobranca-stripe-design.md`.
+_Avoid_: checkout (checkout é a página de pagamento do Stripe).
 
 ## Fase de testes controlados (decidido em 2026-09-05)
 
