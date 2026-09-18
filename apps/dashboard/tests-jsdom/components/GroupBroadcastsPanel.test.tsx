@@ -23,6 +23,20 @@ jest.mock('../../components/ui/use-toast', () => ({
   toast: jest.fn(),
 }));
 
+// O hook de lista guarda busca/filtro/página na URL (2026-09-17), então o
+// painel precisa de um router montado. `isReady: true` para o hook hidratar.
+const mockRouterReplace = jest.fn();
+const mockRouterQuery: Record<string, string> = {};
+jest.mock('next/router', () => ({
+  useRouter: () => ({
+    query: mockRouterQuery,
+    pathname: '/sessions/[sessionName]/campaigns',
+    isReady: true,
+    replace: mockRouterReplace,
+  }),
+}));
+
+
 function broadcast(over: Partial<clientApi.GroupBroadcast> = {}): clientApi.GroupBroadcast {
   return {
     id: 'broadcast-1',

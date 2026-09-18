@@ -198,6 +198,9 @@ export default function GroupBroadcastsPanel({
     },
     initialFilter: 'all',
     initialSort: 'recent',
+    // Validam o que vem da URL (2026-09-17) — ver a tela irmã.
+    filterOptions: GROUP_FILTER_OPTIONS.map((option) => option.key),
+    sortOptions: GROUP_SORT_OPTIONS.map((option) => option.key),
   });
 
   /**

@@ -71,12 +71,25 @@ Checado a cada tela: caixa de seleção e campo com nome acessível; menu com
 ícone decorativo com `aria-hidden`; foco visível; e o gatilho do filtro
 **mostrando** o filtro ativo em vez de dizer sempre "Filtros".
 
-## 8. Pendência conhecida (não é esquecimento)
+## 8. Busca, filtro e página vão para a URL
 
-Busca, filtro e página ainda não vão para a URL — hoje só a aba vai
-(`?tab=`). A consequência: não dá para mandar a alguém um link já filtrado, e
-o F5 perde o filtro. Vale corrigir quando alguma tela precisar de link
-compartilhável; está anotado para não ser redescoberto como novidade.
+Resolvido em 2026-09-17 — era a pendência registrada aqui desde a revisão.
+Cada controle tem seu parâmetro (`q`, `status`, `sort`, `page`), e eles
+convivem com o `?tab=` da página sem se atropelarem. Consequências práticas:
+um link já filtrado pode ser compartilhado, e o F5 não perde a escolha.
+
+Três regras que a implementação carrega e valem para a próxima tela:
+
+- **Só aparece na URL o que saiu do padrão.** A URL de uma tela intocada
+  continua limpa.
+- **Valor inválido cai no padrão.** `?status=banana` mostra a lista inteira;
+  nunca uma tela vazia sem explicação. O mesmo para uma página que não existe
+  mais: mostra a última.
+- **A troca de endereço é `replace` raso.** Não recarrega dados e não empilha
+  histórico — senão o "voltar" do navegador sairia da tela letra por letra.
+
+Quem usa o hook compartilhado (`useBroadcastListControls`) ganha isso sem
+escrever nada, só declarando os valores aceitos de filtro e ordenação.
 
 ## 9. Nunca rolagem horizontal (2026-09-17)
 

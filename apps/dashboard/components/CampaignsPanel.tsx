@@ -320,6 +320,10 @@ export default function CampaignsPanel({ sessionName }: CampaignsPanelProps): JS
     },
     initialFilter: 'all',
     initialSort: 'recent',
+    // Validam o que vem da URL (2026-09-17): `?status=banana` cai no padrão
+    // em vez de esvaziar a lista sem explicação.
+    filterOptions: FILTER_OPTIONS.map((option) => option.key),
+    sortOptions: SORT_OPTIONS.map((option) => option.key),
   });
   const { search, setSearch, page, setPage, filteredRows, pagedRows, pageCount } = controls;
   const statusFilter = controls.filter;
