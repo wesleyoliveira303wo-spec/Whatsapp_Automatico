@@ -150,6 +150,14 @@ const STEPS: ReadonlyArray<{ label: string; count: Deleter; del: Deleter }> = [
     del: (tx, t) => tx.user.deleteMany({ where: { tenantId: t } }).then((r) => r.count),
   },
   {
+    // B5, etapa 2. Só chega aqui assinatura já encerrada — a valendo barra a
+    // exclusão antes (ver `deleteTenantData`). `BillingEvent` fica: não tem
+    // FK, é a trilha dos avisos do Stripe.
+    label: 'Assinatura (Stripe)',
+    count: (tx, t) => tx.subscription.count({ where: { tenantId: t } }),
+    del: (tx, t) => tx.subscription.deleteMany({ where: { tenantId: t } }).then((r) => r.count),
+  },
+  {
     label: 'Trilha de auditoria',
     count: (tx, t) => tx.auditLog.count({ where: { tenantId: t } }),
     del: (tx, t) => tx.auditLog.deleteMany({ where: { tenantId: t } }).then((r) => r.count),
@@ -187,6 +195,17 @@ export async function deleteTenantData(
   tenantId: string,
 ): Promise<TenantDeletionReport> {
   return prisma.$transaction(async (tx) => {
+    // Apagar um tenant que ainda paga pelo Stripe deixaria a cobrança correndo
+    // sem conta nenhuma do lado de cá (B5, etapa 2).
+    const live = await tx.subscription.findFirst({
+      where: { tenantId, status: { in: ['TRIALING', 'ACTIVE', 'PAST_DUE'] } },
+      select: { id: true },
+    });
+    if (live) {
+      throw new Error(
+        'Este tenant tem assinatura valendo no Stripe. Cancele a assinatura no Stripe antes de apagá-lo.',
+      );
+    }
     const counts: Record<string, number> = {};
     let total = 0;
     for (const step of STEPS) {

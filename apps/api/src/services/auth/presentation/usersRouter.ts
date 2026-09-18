@@ -1,9 +1,10 @@
-import { NextFunction, Request, Response, Router } from 'express';
+import { Request, Router } from 'express';
 import { z } from 'zod';
 
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 import { RequestWithPrincipal } from '../../../shared/presentation/authenticate';
+import { requireHumanActor } from '../../../shared/presentation/requireHumanActor';
 import { UserManagementActor, UserManagementService } from '../application/UserManagementService';
 import { AuthRequestMeta } from '../application/AuthService';
 
@@ -45,18 +46,6 @@ const DEFAULT_LIST_LIMIT = 20;
  * IDENTIFICAVEL (quem contratou? quem suspendeu?) — a chave nao tem "quem".
  * Alem de responsabilizacao, evita que uma integracao vazada crie contas.
  */
-function requireHumanActor(req: Request, res: Response, next: NextFunction): void {
-  const principal = (req as RequestWithPrincipal).principal;
-  if (!principal || principal.kind !== 'user') {
-    res.status(403).json({
-      error: 'human_required',
-      message: 'Gestao de usuarios exige login de pessoa (nao API key).',
-    });
-    return;
-  }
-  next();
-}
-
 /** Extrai o ator humano do principal — so chamado depois de `requireHumanActor`, entao o cast e seguro. */
 function toActor(req: Request): UserManagementActor {
   const principal = (req as RequestWithPrincipal).principal as Extract<
@@ -85,7 +74,7 @@ function toMeta(req: Request): AuthRequestMeta {
 export function createUsersRouter(userManagementService: UserManagementService): Router {
   const router = Router({ mergeParams: true });
 
-  router.use(requireHumanActor);
+  router.use(requireHumanActor('Gestao de usuarios exige login de pessoa (nao API key).'));
 
   router.get(
     '/',

@@ -74,6 +74,13 @@ export type Permission =
    */
   | 'support:respond'
   /**
+   * B5, etapa 2 (2026-09-18) — assinar, trocar de plano e abrir o portal de
+   * pagamento. SÓ o dono: quem paga é quem responde pela conta. Fica fora de
+   * todas as listas abaixo de propósito — o `owner` a tem porque tem tudo
+   * (`hasPermission`), e nenhum outro cargo a recebe.
+   */
+  | 'billing:manage'
+  /**
    * DECLARADA MAS NUNCA APLICADA — nomeia uma funcionalidade que NAO EXISTE
    * no produto (transferir a posse do tenant), mesmo caso de
    * `conversation:reassign`. Nao e falha de seguranca: nao ha rota, servico

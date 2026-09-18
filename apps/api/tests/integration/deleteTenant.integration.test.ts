@@ -184,4 +184,37 @@ describe('Integração real — deleteTenant (T7)', () => {
     expect(await prisma.quickReply.count({ where: { tenantId } })).toBe(0);
     expect(await prisma.auditLog.count({ where: { tenantId } })).toBe(0);
   });
+
+  it('B5: assinatura valendo no Stripe barra a exclusão; encerrada é apagada junto', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real.');
+      return;
+    }
+    const payingTenantId = `test-tenant-delete-paying-${Date.now()}`;
+    await prisma.tenant.create({ data: { id: payingTenantId, name: 'Tenant pagante' } });
+    await prisma.subscription.create({
+      data: {
+        tenantId: payingTenantId,
+        stripeCustomerId: `cus_${payingTenantId}`,
+        status: 'ACTIVE',
+        plan: 'PRO',
+      },
+    });
+
+    try {
+      await expect(deleteTenantData(prisma, payingTenantId)).rejects.toThrow('assinatura valendo');
+      expect(await prisma.tenant.findUnique({ where: { id: payingTenantId } })).not.toBeNull();
+
+      await prisma.subscription.update({
+        where: { tenantId: payingTenantId },
+        data: { status: 'CANCELED' },
+      });
+      const report = await deleteTenantData(prisma, payingTenantId);
+
+      expect(report.counts['Assinatura (Stripe)']).toBe(1);
+      expect(await prisma.subscription.count({ where: { tenantId: payingTenantId } })).toBe(0);
+    } finally {
+      await prisma.tenant.deleteMany({ where: { id: payingTenantId } });
+    }
+  });
 });

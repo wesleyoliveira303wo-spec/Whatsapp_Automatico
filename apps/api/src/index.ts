@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import type Redis from 'ioredis';
 import type { Worker } from 'bullmq';
+import { STRIPE_WEBHOOK_PATH } from './services/billing/presentation/webhookPath';
 
 // Caminho absoluto para o `.env` da RAIZ do monorepo, calculado a partir
 // de `__dirname` (não de `process.cwd()`): `npm run dev -w apps/api` executa
@@ -33,7 +34,14 @@ app.set('trust proxy', Number.isFinite(trustProxyHops) && trustProxyHops >= 0 ? 
 // pra essa miniatura sem abrir a porta pra corpos JSON grandes de verdade —
 // upload de midia de conversa/campanha continua fora disto, em rotas com
 // corpo BRUTO dedicado (ver docstring de `sendMediaHeadersSchema`).
-app.use(express.json({ limit: '256kb' }));
+//
+// O aviso do Stripe (B5) fica DE FORA: a assinatura dele é conferida sobre o
+// corpo cru, e este parser o consumiria antes. A rota do webhook tem o
+// próprio `express.raw` (ver `billingWebhookRouter`).
+const jsonParser = express.json({ limit: '256kb' });
+app.use((req, res, next) =>
+  req.path === STRIPE_WEBHOOK_PATH ? next() : jsonParser(req, res, next),
+);
 
 // Simple health check
 app.get('/health', (_req: Request, res: Response) => {
@@ -429,6 +437,24 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
         createTenantRouter(tenantRepository),
       );
     }
+
+    // B5, etapa 2 — cobrança pelo Stripe. As rotas do tenant existem sempre
+    // (a aba Plano precisa saber o plano mesmo com a cobrança desligada); o
+    // webhook só existe com a configuração completa. A trava do `/admin`
+    // (não trocar o plano de quem paga pelo Stripe) é ligada aqui porque a
+    // cobrança nasce depois do `/admin`.
+    const { createBillingComposition } = await import('./services/billing/compositionRoot');
+    const billing = createBillingComposition(
+      prisma,
+      logger.child({ module: 'billing' }),
+      tenantRepository,
+    );
+    app.use('/api/tenants/:tenantId/billing', authenticate, billing.billingRouter);
+    app.use('/api/tenants/:tenantId/billing', billing.billingErrorHandler);
+    if (billing.billingWebhookRouter) {
+      app.use(STRIPE_WEBHOOK_PATH, billing.billingWebhookRouter);
+    }
+    platform?.tenantControlService.setActiveSubscriptionChecker(billing.activeSubscriptionChecker);
 
     // Painel `/admin`, Fase 5 — Acesso assistido, LADO TENANT. Montado ANTES
     // dos routers de domínio (conversas, campanhas, ...) para que o

@@ -1,9 +1,10 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request } from 'express';
 import { z } from 'zod';
 
 import { asyncHandler, validateOrRespond } from '../../../shared/presentation/httpHelpers';
 import { requirePermission } from '../../../shared/presentation/requirePermission';
 import { RequestWithPrincipal } from '../../../shared/presentation/authenticate';
+import { requireHumanActor } from '../../../shared/presentation/requireHumanActor';
 import { hasPermission } from '../../auth/domain/permissions';
 import { TenantAccessRequest } from '../domain/entities/TenantAccessRequest';
 import { SupportAccessService } from '../application/SupportAccessService';
@@ -61,7 +62,7 @@ export function createTenantSupportAccessRouter(service: SupportAccessService): 
 
   router.post(
     '/:id/respond',
-    requireHumanActor,
+    requireHumanActor('Autorizar acesso de suporte exige login de pessoa.'),
     requirePermission('support:respond'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(idParamSchema, req.params, res);
@@ -84,7 +85,7 @@ export function createTenantSupportAccessRouter(service: SupportAccessService): 
 
   router.post(
     '/:id/revoke',
-    requireHumanActor,
+    requireHumanActor('Autorizar acesso de suporte exige login de pessoa.'),
     requirePermission('support:respond'),
     asyncHandler(async (req, res) => {
       const params = validateOrRespond(idParamSchema, req.params, res);
@@ -103,19 +104,6 @@ export function createTenantSupportAccessRouter(service: SupportAccessService): 
   );
 
   return router;
-}
-
-/** Só uma PESSOA identificável responde a um pedido de acesso — nunca a API key. */
-function requireHumanActor(req: Request, res: Response, next: NextFunction): void {
-  const principal = (req as RequestWithPrincipal).principal;
-  if (!principal || principal.kind !== 'user') {
-    res.status(403).json({
-      error: 'human_required',
-      message: 'Autorizar acesso de suporte exige login de pessoa.',
-    });
-    return;
-  }
-  next();
 }
 
 function humanUserId(req: Request): string {

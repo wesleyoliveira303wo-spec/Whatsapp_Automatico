@@ -1,6 +1,7 @@
 import { TenantControlService } from '../../../../src/services/platform/application/TenantControlService';
 import { TenantControlNoOpError } from '../../../../src/services/platform/domain/errors/TenantControlNoOpError';
 import { TenantNotFoundError } from '../../../../src/services/platform/domain/errors/TenantNotFoundError';
+import { TenantPlanManagedBySubscriptionError } from '../../../../src/services/platform/domain/errors/TenantPlanManagedBySubscriptionError';
 import { FakeTenantRepository } from '../../../shared/tenant/FakeTenantRepository';
 import { FakePlatformAuditLogRepository, fakeLogger } from '../testDoubles';
 
@@ -56,6 +57,24 @@ describe('TenantControlService', () => {
 
       expect(result).toMatchObject({ plan: 'free', planSource: 'self_service' });
       expect(audit.entries[0].metadata).toMatchObject({ source: 'self_service' });
+    });
+
+    it('B5: tenant com assinatura valendo no Stripe → 409, sem auditar nem escrever', async () => {
+      const { tenants, audit, service } = build();
+      service.setActiveSubscriptionChecker({ hasActiveSubscription: async () => true });
+
+      await expect(service.changePlan('t1', 'pro', CTX)).rejects.toBeInstanceOf(
+        TenantPlanManagedBySubscriptionError,
+      );
+      expect(audit.entries).toHaveLength(0);
+      expect((await tenants.findById('t1'))?.plan).toBe('free');
+    });
+
+    it('B5: sem assinatura valendo, o /admin troca normalmente', async () => {
+      const { service } = build();
+      service.setActiveSubscriptionChecker({ hasActiveSubscription: async () => false });
+
+      await expect(service.changePlan('t1', 'pro', CTX)).resolves.toMatchObject({ plan: 'pro' });
     });
 
     it('tenant inexistente → TenantNotFoundError, sem auditar', async () => {

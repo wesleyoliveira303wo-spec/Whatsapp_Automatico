@@ -106,4 +106,11 @@ describe('permissions / outranks (Milestone 5, Bloco M5E)', () => {
     expect(outranks('administrator', 'owner')).toBe(false);
     expect(outranks('manager', 'owner')).toBe(false);
   });
+
+  it('B5: billing:manage é só do dono — assinar e trocar de plano', () => {
+    expect(hasPermission('owner', 'billing:manage')).toBe(true);
+    for (const role of ['administrator', 'manager', 'operator', 'read_only'] as const) {
+      expect(hasPermission(role, 'billing:manage')).toBe(false);
+    }
+  });
 });

@@ -7,6 +7,7 @@
 #
 # Roteamento:
 #   /health e /health/*  -> container `api`   (UptimeRobot bate em /health/ready)
+#   /billing/stripe/webhook -> container `api` (aviso do Stripe, B5 — assinado)
 #   todo o resto         -> container `dashboard` (Next.js, que é o BFF — o
 #                            navegador NUNCA fala direto com a `api`)
 #
@@ -24,6 +25,13 @@
 	# É o único caminho que NÃO vai para o dashboard.
 	@health path /health /health/*
 	handle @health {
+		reverse_proxy api:4000
+	}
+
+	# Aviso do Stripe (B5, etapa 2). Vai direto para a API: quem prova a origem
+	# é a assinatura do próprio aviso, conferida lá sobre o corpo cru.
+	@stripe path /billing/stripe/webhook
+	handle @stripe {
 		reverse_proxy api:4000
 	}
 

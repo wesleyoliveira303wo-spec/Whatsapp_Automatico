@@ -4,6 +4,7 @@ import { Logger } from '../../../shared/domain/Logger';
 import { InvalidPlatformCredentialsError } from '../domain/errors/InvalidPlatformCredentialsError';
 import { PlatformAccountLockedError } from '../domain/errors/PlatformAccountLockedError';
 import { TenantControlNoOpError } from '../domain/errors/TenantControlNoOpError';
+import { TenantPlanManagedBySubscriptionError } from '../domain/errors/TenantPlanManagedBySubscriptionError';
 import { TenantNotFoundError } from '../domain/errors/TenantNotFoundError';
 import { mapSupportAccessError } from './supportAccessErrorMapper';
 
@@ -47,6 +48,11 @@ export function createPlatformErrorHandler(logger: Logger): ErrorRequestHandler 
 
     if (error instanceof TenantControlNoOpError) {
       res.status(409).json({ error: 'no_op', message: error.message });
+      return;
+    }
+
+    if (error instanceof TenantPlanManagedBySubscriptionError) {
+      res.status(409).json({ error: 'plan_managed_by_subscription', message: error.message });
       return;
     }
 

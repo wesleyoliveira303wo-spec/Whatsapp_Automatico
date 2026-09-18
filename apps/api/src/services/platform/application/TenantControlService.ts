@@ -5,6 +5,8 @@ import { TenantPlan } from '../../../shared/tenant/domain/TenantPlan';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
 import { PlatformAuditLogRepository } from '../domain/repositories/PlatformAuditLogRepository';
 import { TenantControlNoOpError } from '../domain/errors/TenantControlNoOpError';
+import { TenantPlanManagedBySubscriptionError } from '../domain/errors/TenantPlanManagedBySubscriptionError';
+import { ActiveSubscriptionChecker } from '../domain/providers/ActiveSubscriptionChecker';
 import { TenantNotFoundError } from '../domain/errors/TenantNotFoundError';
 
 /**
@@ -35,11 +37,21 @@ export interface TenantControlContext {
  * atalho: nenhum parâmetro "forçar", nenhuma rota alternativa sem porteiro.
  */
 export class TenantControlService {
+  /**
+   * B5, etapa 2 — injetado tarde por `index.ts` (a cobrança é montada depois
+   * do `/admin`). Ausente = sem a trava, como antes da cobrança existir.
+   */
+  private activeSubscriptions?: ActiveSubscriptionChecker;
+
   constructor(
     private readonly tenants: TenantRepository,
     private readonly auditLog: PlatformAuditLogRepository,
     private readonly logger: Logger,
   ) {}
+
+  setActiveSubscriptionChecker(checker: ActiveSubscriptionChecker): void {
+    this.activeSubscriptions = checker;
+  }
 
   async changePlan(
     tenantId: string,
@@ -49,6 +61,11 @@ export class TenantControlService {
     const tenant = await this.requireTenant(tenantId);
     if (tenant.plan === plan) {
       throw new TenantControlNoOpError(`O tenant ${tenantId} já está no plano ${plan}.`);
+    }
+    // Quem paga pelo Stripe troca de plano pelo portal; mudar aqui deixaria a
+    // cobrança correndo com o plano dizendo outra coisa (B5, etapa 2).
+    if (await this.activeSubscriptions?.hasActiveSubscription(tenantId)) {
+      throw new TenantPlanManagedBySubscriptionError();
     }
 
     // Plano pago ativado pelo fundador vira `manual` (o Stripe nunca mexe nele);
