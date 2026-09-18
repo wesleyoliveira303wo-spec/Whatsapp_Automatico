@@ -12,6 +12,13 @@ import type { ConversationSummary } from '../../lib/clientApi';
 // Milestone 6, Bloco M6H-2b: a linha agora renderiza `ContactAvatar`, que
 // busca a foto de perfil via `fetchContactAvatar` — mockado (mesmo padrão de
 // `ConversationActions.test.tsx`) para o teste não depender de rede real.
+// B5 (2026-09-18): liga/desliga o "plano sem IA" (Disparos) por teste.
+let mockHidesAi = false;
+jest.mock('../../contexts/PlanContext', () => ({
+  ...jest.requireActual('../../contexts/PlanContext'),
+  useHidesAi: () => mockHidesAi,
+}));
+
 jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   fetchContactAvatar: jest.fn(),
@@ -239,5 +246,26 @@ describe('ConversationListItem (Milestone 6, Bloco M6H-2)', () => {
       render(<ConversationListItem conversation={buildConversation({ status: 'bot' })} />);
       expect(screen.getByText('Bot')).toBeInTheDocument();
     });
+  });
+});
+
+describe('ConversationListItem no plano Disparos (sem IA, B5 2026-09-18)', () => {
+  beforeEach(() => {
+    mockHidesAi = true;
+  });
+  afterEach(() => {
+    mockHidesAi = false;
+  });
+
+  it('conversa "bot" sem prévia: nada de "Bot", "Bot respondendo" nem "IA desativada"', () => {
+    render(<ConversationListItem conversation={buildConversation()} aiEnabled={false} />);
+    expect(screen.queryByText('Bot')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bot respondendo')).not.toBeInTheDocument();
+    expect(screen.queryByText('IA desativada')).not.toBeInTheDocument();
+  });
+
+  it('conversa humana mostra "Humano"', () => {
+    render(<ConversationListItem conversation={buildConversation({ status: 'human' })} />);
+    expect(screen.getByText('Humano')).toBeInTheDocument();
   });
 });

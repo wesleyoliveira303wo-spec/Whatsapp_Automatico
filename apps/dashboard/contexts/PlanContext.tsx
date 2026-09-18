@@ -39,3 +39,13 @@ export function usePlanContext(): UsePlanResult {
 export function useIsFreePlan(): boolean {
   return useContext(PlanContext)?.isFree ?? false;
 }
+
+/**
+ * B5 (2026-09-18) — o plano é pago mas não inclui IA (Disparos)? Então tudo
+ * que depende de IA some da tela: o item IA do rail, o botão de ligar a IA,
+ * o resumo, as interações e os selos "Bot"/"IA desativada". Tolerante como
+ * `useIsFreePlan`: sem `PlanProvider` (teste de unidade), nunca esconde.
+ */
+export function useHidesAi(): boolean {
+  return useContext(PlanContext)?.hideAi ?? false;
+}

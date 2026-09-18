@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { useHidesAi } from '@/contexts/PlanContext';
 import { formatConversationStatusLabel } from '@/lib/formatters';
 import type { ConversationStatus } from '@/lib/clientApi';
 
@@ -42,10 +43,14 @@ export default function ConversationStatusBadge({
   status,
   escalatedAt,
   aiEnabled = true,
-}: ConversationStatusBadgeProps): JSX.Element {
+}: ConversationStatusBadgeProps): JSX.Element | null {
+  const hideAi = useHidesAi();
   const isWaiting = Boolean(escalatedAt);
   const isHuman = status === 'human';
-  const aiOff = !aiEnabled;
+  // Plano sem IA (Disparos, B5 2026-09-18): "Bot" e "IA desativada" não
+  // descrevem nada — nenhuma IA responde nesse plano. Sobra o que é humano.
+  if (hideAi && !isWaiting && !isHuman) return null;
+  const aiOff = !aiEnabled && !hideAi;
   const tone = aiOff ? 'destructive' : isWaiting || isHuman ? 'warning' : 'success';
   const label = aiOff
     ? 'IA desativada'

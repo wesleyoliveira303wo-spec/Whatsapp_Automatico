@@ -3,6 +3,7 @@ import { LogOut } from 'lucide-react';
 import FrancisLogo from '@/components/brand/FrancisLogo';
 import StatusDot from '@/components/StatusDot';
 import AiPowerToggle from '@/components/AiPowerToggle';
+import { useHidesAi } from '@/contexts/PlanContext';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
 import { formatStatusLabel } from '@/lib/formatters';
 import { logout } from '@/lib/clientApi';
@@ -47,6 +48,7 @@ interface SessionHeaderProps {
 export default function SessionHeader({ sessionName }: SessionHeaderProps): JSX.Element {
   const router = useRouter();
   const { session } = useSessionDetail(sessionName);
+  const hideAi = useHidesAi();
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -68,7 +70,9 @@ export default function SessionHeader({ sessionName }: SessionHeaderProps): JSX.
         </span>
       </div>
 
-      <AiPowerToggle />
+      {/* Plano sem IA (Disparos): não há IA para ligar. O `span` vazio mantém
+          a coluna central da grade, para o resto do cabeçalho não pular. */}
+      {hideAi ? <span /> : <AiPowerToggle />}
 
       <div className="flex min-w-0 items-center justify-end gap-3">
         {session && (

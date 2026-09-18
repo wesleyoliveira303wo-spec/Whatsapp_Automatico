@@ -269,7 +269,7 @@ describe('ConversationDetailPanel — Trava de plano (T2, Lançamento suave)', (
     await flushMicrotasks();
 
     await waitFor(() =>
-      expect(screen.getByText(/Responder pela Dashboard é um recurso do Plano Pro/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Responder pela Dashboard faz parte dos planos pagos/i)).toBeInTheDocument(),
     );
     // O composer (textarea) não é renderizado no Plano Grátis.
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
@@ -295,7 +295,7 @@ describe('ConversationDetailPanel — Trava de plano (T2, Lançamento suave)', (
 
     await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument());
     expect(
-      screen.queryByText(/Responder pela Dashboard é um recurso do Plano Pro/i),
+      screen.queryByText(/Responder pela Dashboard faz parte dos planos pagos/i),
     ).not.toBeInTheDocument();
   });
 });

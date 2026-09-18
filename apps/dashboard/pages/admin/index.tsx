@@ -15,6 +15,7 @@ import {
   type PlatformOverview,
 } from '@/lib/platformClientApi';
 import { pageTitle } from '@/lib/brand';
+import { PLAN_LABEL, PLAN_ORDER } from '@/lib/plans';
 
 interface AdminHomeProps {
   admin: PlatformAdmin;
@@ -134,8 +135,10 @@ function Kpis({ kpis }: { kpis: PlatformOverview['kpis'] }): JSX.Element {
           {kpis.tenants.total}
         </span>
         <span className="text-sm text-muted-foreground">
-          clientes · {kpis.tenants.byPlan.free} Grátis · {kpis.tenants.byPlan.pro} Pro ·{' '}
-          {kpis.tenants.byPlan.enterprise} Enterprise
+          clientes ·{' '}
+          {PLAN_ORDER.map((plan) => `${kpis.tenants.byPlan[plan] ?? 0} ${PLAN_LABEL[plan]}`).join(
+            ' · ',
+          )}
         </span>
       </div>
 

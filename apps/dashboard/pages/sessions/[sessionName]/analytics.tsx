@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { staggerContainer } from '@/lib/motion';
 import SessionLayout from '@/components/SessionLayout';
 import PlanGate from '@/components/PlanGate';
+import AiOnly from '@/components/AiOnly';
 import AnalyticsRangePicker from '@/components/AnalyticsRangePicker';
 import MetricCard from '@/components/MetricCard';
 import ChartCard from '@/components/ChartCard';
@@ -130,23 +131,25 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
                 inteira, não um decimal);
               - contagens passam por `formatCount` (separador de milhar).
             */}
-            <MetricCard
-              label="Custo de IA no período"
-              value={totalCost !== null ? formatCostUsd(totalCost) : '…'}
-              exactValue={totalCost !== null ? formatCostUsdExact(totalCost) : undefined}
-              hint={
-                totalInteractions !== null
-                  ? `${formatCount(totalInteractions)} ${totalInteractions === 1 ? 'interação' : 'interações'}`
-                  : undefined
-              }
-            />
-            <MetricCard
-              label="Interações de IA"
-              value={totalInteractions !== null ? formatCount(totalInteractions) : '…'}
-              numericValue={totalInteractions ?? undefined}
-              formatValue={(current) => formatCount(Math.round(current))}
-              hint="Respostas geradas pela IA no período"
-            />
+            <AiOnly>
+              <MetricCard
+                label="Custo de IA no período"
+                value={totalCost !== null ? formatCostUsd(totalCost) : '…'}
+                exactValue={totalCost !== null ? formatCostUsdExact(totalCost) : undefined}
+                hint={
+                  totalInteractions !== null
+                    ? `${formatCount(totalInteractions)} ${totalInteractions === 1 ? 'interação' : 'interações'}`
+                    : undefined
+                }
+              />
+              <MetricCard
+                label="Interações de IA"
+                value={totalInteractions !== null ? formatCount(totalInteractions) : '…'}
+                numericValue={totalInteractions ?? undefined}
+                formatValue={(current) => formatCount(Math.round(current))}
+                hint="Respostas geradas pela IA no período"
+              />
+            </AiOnly>
             <MetricCard
               label="Mensagens (entrada + saída)"
               value={totalMessages !== null ? formatCount(totalMessages) : '…'}
@@ -161,15 +164,17 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
           </motion.div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <ChartCard
-              title="Uso de IA por dia"
-              subtitle="Custo estimado em dólares, por dia do período."
-            >
-              <AiUsageChart
-                points={aiUsage.data?.points ?? null}
-                errorMessage={aiUsage.errorMessage}
-              />
-            </ChartCard>
+            <AiOnly>
+              <ChartCard
+                title="Uso de IA por dia"
+                subtitle="Custo estimado em dólares, por dia do período."
+              >
+                <AiUsageChart
+                  points={aiUsage.data?.points ?? null}
+                  errorMessage={aiUsage.errorMessage}
+                />
+              </ChartCard>
+            </AiOnly>
 
             <ChartCard
               title="Fluxo de mensagens"
@@ -201,17 +206,19 @@ export default function AnalyticsPage({ tenantId, sessionName }: AnalyticsPagePr
               />
             </ChartCard>
 
-            <ChartCard
-              title="Taxa de escalonamento"
-              subtitle="% de conversas que precisaram de humano, por dia."
-            >
-              <EscalationRateChart
-                points={escalationRate.data?.points ?? null}
-                errorMessage={escalationRate.errorMessage}
-                from={range.from}
-                to={range.to}
-              />
-            </ChartCard>
+            <AiOnly>
+              <ChartCard
+                title="Taxa de escalonamento"
+                subtitle="% de conversas que precisaram de humano, por dia."
+              >
+                <EscalationRateChart
+                  points={escalationRate.data?.points ?? null}
+                  errorMessage={escalationRate.errorMessage}
+                  from={range.from}
+                  to={range.to}
+                />
+              </ChartCard>
+            </AiOnly>
 
             <ChartCard
               title="Estabilidade da sessão"

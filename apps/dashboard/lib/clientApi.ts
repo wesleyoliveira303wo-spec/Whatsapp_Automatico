@@ -226,8 +226,9 @@ export function updateMyProfile(
   return request('/api/auth/me', { method: 'PATCH', body: JSON.stringify(changes) });
 }
 
-/** Plano do tenant — Trava de plano (Lançamento suave). Espelha `TenantPlan` da API. */
-export type TenantPlan = 'free' | 'pro' | 'enterprise';
+/** Plano do tenant — espelha `TenantPlan` da API. A regra de cada plano vive em `lib/plans.ts`. */
+export type { TenantPlan } from './plans';
+import type { TenantPlan } from './plans';
 
 /** Nome da empresa (aba "Empresa" de Configuracoes) + plano (T4 — Trava de plano). */
 export interface TenantInfo {

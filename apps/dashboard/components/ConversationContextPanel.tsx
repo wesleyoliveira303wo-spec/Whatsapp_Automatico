@@ -7,7 +7,7 @@ import ConversationSummarySection from './ConversationSummarySection';
 import SaveContactButton from './SaveContactButton';
 import DisplayNameParts from './DisplayNameParts';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useIsFreePlan } from '@/contexts/PlanContext';
+import { useHidesAi, useIsFreePlan } from '@/contexts/PlanContext';
 import { useConversationDetail } from '@/hooks/useConversationDetail';
 import { useAiInteractions } from '@/hooks/useAiInteractions';
 import {
@@ -50,12 +50,15 @@ export default function ConversationContextPanel({
   aiEnabled = true,
 }: ConversationContextPanelProps): JSX.Element {
   const isFreePlan = useIsFreePlan();
+  // Plano sem IA (Disparos, B5 2026-09-18): nem busca as interações de IA —
+  // não há o que mostrar, e cada poll seria uma requisição à toa.
+  const hideAi = useHidesAi();
   const { conversation, loading, applyUpdate } = useConversationDetail(conversationId);
   const {
     interactions,
     errorMessage: interactionsError,
     refresh: refreshInteractions,
-  } = useAiInteractions(conversationId, RECENT_INTERACTIONS_LIMIT);
+  } = useAiInteractions(hideAi ? null : conversationId, RECENT_INTERACTIONS_LIMIT);
 
   if (loading || !conversation) {
     return (
@@ -130,7 +133,7 @@ export default function ConversationContextPanel({
       {isFreePlan ? (
         <div className="border-b border-border px-5 py-4">
           <p className="text-[12.5px] text-muted-foreground">
-            Etiquetas e resumo por IA fazem parte do Plano Pro.
+            Etiquetas fazem parte dos planos pagos, e o resumo por IA, do Pro e do Enterprise.
           </p>
         </div>
       ) : (
@@ -144,30 +147,34 @@ export default function ConversationContextPanel({
             />
           </div>
 
-          <div className="border-b border-border px-5 py-4">
-            <ConversationSummarySection conversation={conversation} onUpdated={applyUpdate} />
-          </div>
+          {!hideAi && (
+            <div className="border-b border-border px-5 py-4">
+              <ConversationSummarySection conversation={conversation} onUpdated={applyUpdate} />
+            </div>
+          )}
         </>
       )}
 
-      <details className="group px-5 pb-6 pt-4" open>
-        <summary className="flex cursor-pointer list-none items-center justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-            Últimas interações
-          </span>
-          <ChevronDown
-            className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180"
-            aria-hidden="true"
-          />
-        </summary>
-        <div className="mt-2.5">
-          <AiInteractionPanel
-            interactions={interactions}
-            errorMessage={interactionsError}
-            onRetry={refreshInteractions}
-          />
-        </div>
-      </details>
+      {!hideAi && (
+        <details className="group px-5 pb-6 pt-4" open>
+          <summary className="flex cursor-pointer list-none items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+              Últimas interações
+            </span>
+            <ChevronDown
+              className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="mt-2.5">
+            <AiInteractionPanel
+              interactions={interactions}
+              errorMessage={interactionsError}
+              onRetry={refreshInteractions}
+            />
+          </div>
+        </details>
+      )}
     </aside>
   );
 }

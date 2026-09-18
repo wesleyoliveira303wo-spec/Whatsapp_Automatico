@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { commercialWhatsAppLink } from '@/lib/brand';
+import type { PlanCapability } from '@/lib/plans';
 
 /**
  * T4 (Lançamento suave — Trava de plano): bloco "Disponível no Plano Pro"
@@ -15,22 +16,40 @@ import { commercialWhatsAppLink } from '@/lib/brand';
  * WhatsApp do comercial (Billing manual — ver `commercialWhatsAppLink`).
  */
 export interface UpgradeStateProps {
-  /** O que está bloqueado — completa "… é um recurso do Plano Pro". Ex.: "O Pipeline". */
+  /** O que está bloqueado — completa "… faz parte dos planos pagos". Ex.: "O Pipeline". */
   feature?: string;
   /** Texto de apoio; se omitido, usa um genérico. */
   description?: string;
   className?: string;
+  /**
+   * O que a tela exige (B5, 2026-09-18): `operation` libera a partir do plano
+   * Disparos; `ai`, só no Pro e no Enterprise. Muda só o texto — o bloqueio é
+   * da API.
+   */
+  requires?: PlanCapability;
 }
+
+const COPY: Record<PlanCapability, { title: (feature?: string) => string; body: string }> = {
+  operation: {
+    title: (feature) =>
+      feature ? `${feature}: a partir do plano Disparos` : 'Disponível a partir do plano Disparos',
+    body: 'No Plano Grátis você conecta um WhatsApp e acompanha as mensagens. A partir do plano Disparos você responde pela Dashboard, organiza os contatos e faz disparos.',
+  },
+  ai: {
+    title: (feature) =>
+      feature ? `${feature}: nos planos Pro e Enterprise` : 'Disponível nos planos Pro e Enterprise',
+    body: 'A IA que responde sozinha, organiza o Pipeline e resume conversas está nos planos Pro e Enterprise.',
+  },
+};
 
 export default function UpgradeState({
   feature,
   description,
   className,
+  requires = 'operation',
 }: UpgradeStateProps): JSX.Element {
-  const title = feature ? `${feature} é um recurso do Plano Pro` : 'Disponível no Plano Pro';
-  const body =
-    description ??
-    'No Plano Grátis você conecta um WhatsApp e acompanha as mensagens. Para a IA responder, o CRM e as campanhas, ative o Plano Pro.';
+  const title = COPY[requires].title(feature);
+  const body = description ?? COPY[requires].body;
 
   return (
     <div
@@ -48,7 +67,7 @@ export default function UpgradeState({
       </div>
       <Button asChild>
         <a
-          href={commercialWhatsAppLink('Olá! Quero ativar o Plano Pro do Francis.')}
+          href={commercialWhatsAppLink('Olá! Quero ativar um plano pago do Francis.')}
           target="_blank"
           rel="noreferrer"
         >

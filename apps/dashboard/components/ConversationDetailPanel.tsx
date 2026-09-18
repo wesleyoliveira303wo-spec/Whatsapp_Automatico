@@ -9,7 +9,7 @@ import { useUnansweredMessageIds } from '@/hooks/useUnansweredMessageIds';
 import MessageComposer from './MessageComposer';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorState from '@/components/states/ErrorState';
-import { useIsFreePlan } from '@/contexts/PlanContext';
+import { useHidesAi, useIsFreePlan } from '@/contexts/PlanContext';
 import { useConversationDetail } from '@/hooks/useConversationDetail';
 import { useMessagesTimeline } from '@/hooks/useMessagesTimeline';
 import { useAiInteractions } from '@/hooks/useAiInteractions';
@@ -68,11 +68,14 @@ export default function ConversationDetailPanel({
     errorMessage: messagesError,
     refresh: refreshMessages,
   } = useMessagesTimeline(conversationId);
-  const { interactions } = useAiInteractions(conversationId);
+  // Plano sem IA (Disparos, B5 2026-09-18): nem as interações nem o marcador
+  // de lacuna existem ali — não há IA gerando nada para marcar.
+  const hideAi = useHidesAi();
+  const { interactions } = useAiInteractions(hideAi ? null : conversationId);
   // Marcador de lacuna nas bolhas (2026-09-05, pedido do fundador): quais
   // mensagens DESTA conversa a IA sinalizou não saber responder.
   const { messageIds: unansweredMessageIds, refresh: refreshUnanswered } =
-    useUnansweredMessageIds(sessionName, conversationId);
+    useUnansweredMessageIds(hideAi ? undefined : sessionName, conversationId);
   const [teachQuestion, setTeachQuestion] = useState<string | null>(null);
 
   // Milestone 6, Bloco M6H-2 (pedido do fundador): abrir uma conversa sempre
@@ -303,7 +306,7 @@ export default function ConversationDetailPanel({
         <div className="shrink-0 px-3 py-2.5 sm:px-4">
           {isFreePlan ? (
             <p className="text-xs text-muted-foreground">
-              Responder pela Dashboard é um recurso do Plano Pro. No Plano Grátis você acompanha as
+              Responder pela Dashboard faz parte dos planos pagos. No Plano Grátis você acompanha as
               conversas, mas não envia mensagens por aqui.
             </p>
           ) : conversation.status === 'human' ? (

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { forwardRef, memo, type Ref } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { useHidesAi } from '@/contexts/PlanContext';
 import {
   formatConversationTimestamp,
   formatContactDisplayNameParts,
@@ -56,6 +57,23 @@ function ConversationListItemImpl(
   // pediu atenção humana (`escalatedAt` definido) — a conversa pode continuar
   // em `status: 'bot'` nesse caso, a IA segue respondendo até alguém assumir.
   const waitingForHuman = Boolean(conversation.escalatedAt);
+  const isHuman = conversation.status === 'human';
+  // Plano sem IA (Disparos, B5 2026-09-18): "Bot" e "IA desativada" não
+  // descrevem nada ali — nenhuma IA responde nesse plano. O rótulo só fala de
+  // atendimento humano, e some quando não há nada a dizer.
+  const hideAi = useHidesAi();
+  const aiOff = !aiEnabled && !hideAi;
+  const statusLabel = hideAi
+    ? isHuman
+      ? 'Humano'
+      : null
+    : aiOff
+      ? 'IA desativada'
+      : isHuman
+        ? 'Humano'
+        : 'Bot';
+  const previewFallback =
+    hideAi && !isHuman ? '' : formatConversationStatusLabel(conversation.status);
 
   return (
     <motion.div
@@ -121,18 +139,20 @@ function ConversationListItemImpl(
                 )}
               />
             </p>
-            <span
-              className={cn(
-                'shrink-0 text-[10.5px] font-semibold',
-                !aiEnabled
-                  ? 'text-destructive'
-                  : conversation.status === 'human'
-                    ? 'text-warning-emphasis'
-                    : 'text-success-emphasis',
-              )}
-            >
-              {!aiEnabled ? 'IA desativada' : conversation.status === 'human' ? 'Humano' : 'Bot'}
-            </span>
+            {statusLabel && (
+              <span
+                className={cn(
+                  'shrink-0 text-[10.5px] font-semibold',
+                  aiOff
+                    ? 'text-destructive'
+                    : isHuman
+                      ? 'text-warning-emphasis'
+                      : 'text-success-emphasis',
+                )}
+              >
+                {statusLabel}
+              </span>
+            )}
             <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
               {formatConversationTimestamp(conversation.lastMessageAt ?? conversation.createdAt)}
             </span>
@@ -144,8 +164,7 @@ function ConversationListItemImpl(
               sobrepõe esse texto, o sinal de escalonamento já é comunicado
               pelo ponto no avatar + pelo selo abaixo. */}
             <p className="min-w-0 flex-1 truncate text-[12.5px] leading-[1.35] text-muted-foreground">
-              {conversation.lastMessagePreview ||
-                formatConversationStatusLabel(conversation.status)}
+              {conversation.lastMessagePreview || previewFallback}
             </p>
             {conversation.unreadCount > 0 && (
               <span

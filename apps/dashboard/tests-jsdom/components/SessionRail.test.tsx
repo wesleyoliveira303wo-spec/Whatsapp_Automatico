@@ -24,6 +24,13 @@ jest.mock('../../hooks/useMe');
 jest.mock('../../hooks/useWaitingForHuman');
 jest.mock('../../hooks/useSessionDetail');
 
+// B5 (2026-09-18): liga/desliga o "plano sem IA" (Disparos) por teste.
+let mockHidesAi = false;
+jest.mock('../../contexts/PlanContext', () => ({
+  ...jest.requireActual('../../contexts/PlanContext'),
+  useHidesAi: () => mockHidesAi,
+}));
+
 const mockUseMe = useMeModule.useMe as jest.Mock;
 const mockUseWaitingForHuman = useWaitingForHumanModule.useWaitingForHuman as jest.Mock;
 const mockUseSessionDetail = useSessionDetailModule.useSessionDetail as jest.Mock;
@@ -38,6 +45,7 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
       connected: true,
     });
     mockAsPath = '/sessions/vendas';
+    mockHidesAi = false;
   });
 
   it('mostra Conversas, Pipeline e Configurações para qualquer cargo', () => {
@@ -64,6 +72,14 @@ describe('SessionRail (Redesign 2026-08-05, R2)', () => {
     render(<SessionRail sessionName="vendas" />);
     expect(screen.queryByLabelText('Analytics')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('IA')).not.toBeInTheDocument();
+  });
+
+  it('plano Disparos (sem IA): o item IA some, mesmo para owner; Analytics continua', () => {
+    mockHidesAi = true;
+    mockUseMe.mockReturnValue({ user: { email: 'a@b.com', role: 'owner' } });
+    render(<SessionRail sessionName="vendas" />);
+    expect(screen.queryByLabelText('IA')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Analytics')).toBeInTheDocument();
   });
 
   it('mostra Analytics e IA para owner', () => {

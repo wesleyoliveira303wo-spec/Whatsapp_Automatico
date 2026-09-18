@@ -14,6 +14,13 @@ import type { ConversationSummary } from '../../lib/clientApi';
 
 jest.mock('../../hooks/useConversationDetail');
 jest.mock('../../hooks/useAiInteractions');
+
+// B5 (2026-09-18): liga/desliga o "plano sem IA" (Disparos) por teste.
+let mockHidesAi = false;
+jest.mock('../../contexts/PlanContext', () => ({
+  ...jest.requireActual('../../contexts/PlanContext'),
+  useHidesAi: () => mockHidesAi,
+}));
 jest.mock('../../hooks/useContactAvatar', () => ({
   useContactAvatar: () => undefined,
 }));
@@ -167,6 +174,26 @@ describe('ConversationContextPanel (Redesign 2026-08-05, R3)', () => {
     });
     render(<ConversationContextPanel sessionName="vendas" conversationId="c1" />);
     expect(screen.getByText('Negociando')).toBeInTheDocument();
+  });
+
+  it('plano Disparos (sem IA): sem resumo por IA e sem "Últimas interações" — e nem busca as interações', () => {
+    mockHidesAi = true;
+    try {
+      mockUseConversationDetail.mockReturnValue({
+        conversation: buildConversation(),
+        loading: false,
+        errorMessage: null,
+        refresh: jest.fn(),
+        applyUpdate: jest.fn(),
+      });
+      render(<ConversationContextPanel sessionName="vendas" conversationId="c1" />);
+
+      expect(screen.queryByText('Últimas interações')).not.toBeInTheDocument();
+      expect(screen.queryByText('Resumo da IA')).not.toBeInTheDocument();
+      expect(mockUseAiInteractions).toHaveBeenLastCalledWith(null, expect.anything());
+    } finally {
+      mockHidesAi = false;
+    }
   });
 
   it('mostra "Últimas interações" com a lista vinda de useAiInteractions', () => {

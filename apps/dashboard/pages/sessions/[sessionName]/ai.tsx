@@ -61,7 +61,11 @@ export default function AiPage({ tenantId, sessionName }: AiPageProps): JSX.Elem
             O que o Francis sabe sobre o seu negócio.
           </p>
 
-          <PlanGate feature="O Cérebro da IA">
+          <PlanGate
+            feature="O Cérebro da IA"
+            requires="ai"
+            unavailableRedirectTo={`/sessions/${encodeURIComponent(sessionName)}/conversations`}
+          >
             <AiProfilePanel sessionName={sessionName} />
           </PlanGate>
         </div>

@@ -19,17 +19,13 @@ import {
 } from '@/lib/platformClientApi';
 import { formatDateTime, formatShortRelativeTime } from '@/lib/formatters';
 import { pageTitle } from '@/lib/brand';
+import { PLAN_LABEL } from '@/lib/plans';
 
 interface Props {
   admin: PlatformAdmin;
   tenantId: string;
 }
 
-const PLAN_LABEL: Record<PlatformTenantDetail['plan'], string> = {
-  free: 'Grátis',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-};
 
 const SESSION_STATUS_LABEL: Record<PlatformTenantDetail['sessions'][number]['status'], string> = {
   connecting: 'Conectando',

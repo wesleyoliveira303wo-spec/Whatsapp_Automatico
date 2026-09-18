@@ -5,6 +5,7 @@ import { MessageSquare, Brain, BarChart3, Kanban, Contact, Send, Settings } from
 import { useMe } from '@/hooks/useMe';
 import { useWaitingForHuman } from '@/hooks/useWaitingForHuman';
 import { useSessionDetail } from '@/hooks/useSessionDetail';
+import { useHidesAi } from '@/contexts/PlanContext';
 import ContactAvatar from '@/components/ContactAvatar';
 import UserAvatar from '@/components/UserAvatar';
 import StatusDot from '@/components/StatusDot';
@@ -32,6 +33,8 @@ interface RailItem {
   icon: typeof MessageSquare;
   /** Só quem gerencia (administrator/owner) vê — mesma régua de cortesia de UX de sempre (quem barra de verdade é a API). */
   requiresManager?: boolean;
+  /** Some da navegação num plano sem IA (Disparos) — B5, 2026-09-18. */
+  requiresAi?: boolean;
 }
 
 /**
@@ -85,6 +88,7 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
   const router = useRouter();
   const { user } = useMe();
   const canManageUsers = user?.role === 'administrator' || user?.role === 'owner';
+  const hideAi = useHidesAi();
   const { countBySession } = useWaitingForHuman();
   const waitingHere = sessionName ? (countBySession[sessionName] ?? 0) : 0;
   const { session } = useSessionDetail(sessionName ?? null);
@@ -107,7 +111,13 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
         { href: `${base}/campaigns`, label: 'Disparos', icon: Send },
         { href: `${base}/pipeline`, label: 'Pipeline', icon: Kanban },
         { href: `${base}/analytics`, label: 'Analytics', icon: BarChart3, requiresManager: true },
-        { href: `${base}/ai`, label: 'IA', icon: Brain, requiresManager: true },
+        {
+          href: `${base}/ai`,
+          label: 'IA',
+          icon: Brain,
+          requiresManager: true,
+          requiresAi: true,
+        },
       ]
     : [];
 
@@ -173,8 +183,9 @@ export default function SessionRail({ sessionName }: SessionRailProps): JSX.Elem
       )}
 
       <nav className="flex flex-1 flex-col items-center gap-1">
-        {items.map(({ href, label, icon: Icon, requiresManager }) => {
+        {items.map(({ href, label, icon: Icon, requiresManager, requiresAi }) => {
           if (requiresManager && !canManageUsers) return null;
+          if (requiresAi && hideAi) return null;
           const isActive =
             router.asPath === href ||
             router.asPath.startsWith(`${href}/`) ||

@@ -23,6 +23,7 @@ import {
 } from '@/components/BusinessOverviewSections';
 import { fadeInUp, staggerContainer } from '@/lib/motion';
 import { formatShortDate, formatDateTime } from '@/lib/formatters';
+import { PLAN_LABEL } from '@/lib/plans';
 
 /**
  * Indicador de plano (2026-09-05). Rótulo e tom por plano — `free` sai em
@@ -31,9 +32,10 @@ import { formatShortDate, formatDateTime } from '@/lib/formatters';
  * decide o que está liberado é sempre a API, nunca esta tela.
  */
 const PLAN_BADGE: Record<TenantPlan, { label: string; className: string }> = {
-  free: { label: 'Grátis', className: 'bg-muted text-muted-foreground' },
-  pro: { label: 'Pro', className: 'bg-primary/10 text-primary' },
-  enterprise: { label: 'Enterprise', className: 'bg-success/10 text-success' },
+  free: { label: PLAN_LABEL.free, className: 'bg-muted text-muted-foreground' },
+  broadcast: { label: PLAN_LABEL.broadcast, className: 'bg-primary/10 text-primary' },
+  pro: { label: PLAN_LABEL.pro, className: 'bg-primary/10 text-primary' },
+  enterprise: { label: PLAN_LABEL.enterprise, className: 'bg-success/10 text-success' },
 };
 
 const ROLE_LABELS: Record<string, string> = {

@@ -8,6 +8,13 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ConversationStatusBadge from '../../components/ConversationStatusBadge';
 
+// B5 (2026-09-18): liga/desliga o "plano sem IA" (Disparos) por teste.
+let mockHidesAi = false;
+jest.mock('../../contexts/PlanContext', () => ({
+  ...jest.requireActual('../../contexts/PlanContext'),
+  useHidesAi: () => mockHidesAi,
+}));
+
 describe('ConversationStatusBadge (reforma do escalonamento, 2026-07-25)', () => {
   it('mostra "Bot respondendo" quando status=bot e sem escalatedAt', () => {
     render(<ConversationStatusBadge status="bot" />);
@@ -55,5 +62,30 @@ describe('ConversationStatusBadge (reforma do escalonamento, 2026-07-25)', () =>
       render(<ConversationStatusBadge status="bot" />);
       expect(screen.getByText('Bot respondendo')).toBeInTheDocument();
     });
+  });
+});
+
+describe('ConversationStatusBadge no plano Disparos (sem IA, B5 2026-09-18)', () => {
+  beforeEach(() => {
+    mockHidesAi = true;
+  });
+  afterEach(() => {
+    mockHidesAi = false;
+  });
+
+  it('conversa "bot" não mostra selo nenhum — não há IA respondendo nesse plano', () => {
+    const { container } = render(<ConversationStatusBadge status="bot" />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('conversa humana continua mostrando "Atendimento humano"', () => {
+    render(<ConversationStatusBadge status="human" />);
+    expect(screen.getByText('Atendimento humano')).toBeInTheDocument();
+  });
+
+  it('o Botão POWER desligado não vira "IA desativada"', () => {
+    render(<ConversationStatusBadge status="human" aiEnabled={false} />);
+    expect(screen.getByText('Atendimento humano')).toBeInTheDocument();
+    expect(screen.queryByText('IA desativada')).not.toBeInTheDocument();
   });
 });

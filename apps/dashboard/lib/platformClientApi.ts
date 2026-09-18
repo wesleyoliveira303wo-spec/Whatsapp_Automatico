@@ -19,7 +19,8 @@ export interface PlatformAdmin {
 
 // --- Fase 2 — Centro de Tenants (`ADMIN_PLATFORM_MASTER_PLAN.md` §6) ---
 
-export type TenantPlan = 'free' | 'pro' | 'enterprise';
+export type { TenantPlan } from './plans';
+import type { TenantPlan } from './plans';
 /** Trava de acesso (Fase 4). `'suspended'` = o tenant inteiro não loga. */
 export type TenantStatus = 'active' | 'suspended';
 export type TenantSignalSeverity = 'red' | 'amber' | 'green';

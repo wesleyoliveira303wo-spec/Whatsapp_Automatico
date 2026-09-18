@@ -1,13 +1,26 @@
 import { useEffect, useState } from 'react';
 import { fetchTenant, type TenantPlan } from '@/lib/clientApi';
+import { planAllows, type PlanCapability } from '@/lib/plans';
 
 export interface UsePlanResult {
   /** `null` enquanto carrega OU se a leitura falhar. */
   plan: TenantPlan | null;
   /** `true` só quando o plano foi RESOLVIDO como `free` — nunca durante o carregamento. */
   isFree: boolean;
-  /** `pro`/`enterprise`. Durante o carregamento é `false`. */
+  /** Qualquer plano pago (Disparos, Pro, Enterprise). Durante o carregamento é `false`. */
   isPaid: boolean;
+  /**
+   * O plano libera o recurso? (B5, 2026-09-18 — espelho de `planAllows` da
+   * API.) Enquanto o plano não chegou, responde `true`: a tela nunca some por
+   * engano durante o carregamento.
+   */
+  allows: (capability: PlanCapability) => boolean;
+  /**
+   * `true` só num plano PAGO sem IA (hoje, o Disparos): ali o que depende de
+   * IA some da tela. No Grátis a IA continua visível como vitrine (com aviso
+   * de upgrade), então aqui é `false` — decisão do fundador.
+   */
+  hideAi: boolean;
   loading: boolean;
 }
 
@@ -46,10 +59,13 @@ export function usePlan(): UsePlanResult {
     };
   }, []);
 
+  const resolved = !loading && plan !== null;
   return {
     plan,
-    isFree: !loading && plan === 'free',
-    isPaid: plan === 'pro' || plan === 'enterprise',
+    isFree: resolved && plan === 'free',
+    isPaid: resolved && plan !== 'free',
+    allows: (capability) => (plan ? planAllows(plan, capability) : true),
+    hideAi: resolved && plan !== 'free' && !planAllows(plan, 'ai'),
     loading,
   };
 }

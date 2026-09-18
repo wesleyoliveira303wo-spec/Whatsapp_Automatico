@@ -12,14 +12,7 @@ import {
   type PlatformTenantControlResult,
   type TenantPlan,
 } from '@/lib/platformClientApi';
-
-const PLAN_LABEL: Record<TenantPlan, string> = {
-  free: 'Grátis',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-};
-
-const PLANS: TenantPlan[] = ['free', 'pro', 'enterprise'];
+import { PLAN_LABEL, PLAN_ORDER } from '@/lib/plans';
 
 interface Props {
   tenant: { id: string; name: string; plan: TenantPlan; status: 'active' | 'suspended' };
@@ -77,7 +70,7 @@ export default function TenantControlPanel({ tenant, onChanged }: Props): JSX.El
         <div>
           <p className="text-xs text-muted-foreground">Plano</p>
           <div className="mt-1.5 flex flex-wrap gap-2">
-            {PLANS.map((plan) => (
+            {PLAN_ORDER.map((plan) => (
               <Button
                 key={plan}
                 type="button"

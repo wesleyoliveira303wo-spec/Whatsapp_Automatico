@@ -14,6 +14,13 @@ const push = jest.fn();
 jest.mock('next/router', () => ({ useRouter: () => ({ push }) }));
 jest.mock('../../hooks/useSessionDetail');
 jest.mock('../../contexts/AiToggleContext');
+
+// B5 (2026-09-18): liga/desliga o "plano sem IA" (Disparos) por teste.
+let mockHidesAi = false;
+jest.mock('../../contexts/PlanContext', () => ({
+  ...jest.requireActual('../../contexts/PlanContext'),
+  useHidesAi: () => mockHidesAi,
+}));
 jest.mock('../../lib/clientApi', () => ({
   ...jest.requireActual('../../lib/clientApi'),
   logout: jest.fn(),
@@ -25,6 +32,7 @@ const mockUseAiToggleContext = aiToggleContextModule.useAiToggleContext as jest.
 describe('SessionHeader (correção 2026-08-07)', () => {
   beforeEach(() => {
     push.mockClear();
+    mockHidesAi = false;
     (clientApi.logout as jest.Mock).mockReset().mockResolvedValue(undefined);
     mockUseSessionDetail.mockReturnValue({
       session: null,
@@ -64,6 +72,15 @@ describe('SessionHeader (correção 2026-08-07)', () => {
     render(<SessionHeader sessionName="vendas" />);
     expect(screen.getByText('vendas')).toBeInTheDocument();
     expect(screen.getByText('Conectado')).toBeInTheDocument();
+  });
+
+  it('plano Disparos (sem IA): o botão de ligar a IA some do cabeçalho', () => {
+    mockHidesAi = true;
+    render(<SessionHeader sessionName="vendas" />);
+    expect(
+      screen.queryByRole('button', { name: /IA aguardando novas mensagens/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Francis')).toBeInTheDocument();
   });
 
   it('Fase 1 (Botão POWER): renderiza o AiPowerToggle no cabeçalho', () => {

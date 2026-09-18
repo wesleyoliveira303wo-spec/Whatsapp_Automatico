@@ -24,16 +24,12 @@ import {
 } from '@/lib/platformClientApi';
 import { formatShortRelativeTime } from '@/lib/formatters';
 import { pageTitle } from '@/lib/brand';
+import { PLAN_LABEL } from '@/lib/plans';
 
 interface Props {
   admin: PlatformAdmin;
 }
 
-const PLAN_LABEL: Record<PlatformTenantRow['plan'], string> = {
-  free: 'Grátis',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-};
 
 /**
  * Centro de Tenants — lista (Fase 2, `ADMIN_PLATFORM_MASTER_PLAN.md` §6.1).
