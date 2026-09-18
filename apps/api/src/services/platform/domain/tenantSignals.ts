@@ -65,7 +65,8 @@ export const HIGH_COST_PLAN_FRACTION = 0.2;
 
 /**
  * Preço mensal do plano em USD — DERIVADO das cifras em `CONTEXT.md`
- * (R$ 0 / R$ 99 / R$ 349) a uma taxa de referência FIXA de R$ 5,50/US$.
+ * (R$ 0 / R$ 69 / R$ 119 / R$ 249, B5 2026-09-18) a uma taxa de referência
+ * FIXA de R$ 5,50/US$.
  *
  * NÃO é cotação ao vivo e NÃO vive no banco (`Tenant` só tem o enum `plan` —
  * lacuna que o próprio plano mestre registra, §10.2). É uma constante
@@ -79,8 +80,9 @@ export const HIGH_COST_PLAN_FRACTION = 0.2;
  */
 export const PLAN_MONTHLY_PRICE_USD: Record<TenantPlan, number> = {
   free: 0,
-  pro: 18,
-  enterprise: 63,
+  broadcast: 12.5,
+  pro: 21.6,
+  enterprise: 45.3,
 };
 
 // --- Predicados individuais (um por linha do §6.3) ---

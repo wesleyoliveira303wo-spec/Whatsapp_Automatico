@@ -17,7 +17,7 @@ describe('PlatformOverviewService.getOverview', () => {
   it('repassa os KPIs globais de platformTotals sem mexer', async () => {
     const repo = new FakeTenantObservabilityRepository([tenantOverview({ id: 't1' })]);
     repo.totals = emptyPlatformTotals({
-      tenants: { total: 21, byPlan: { free: 20, pro: 0, enterprise: 1 } },
+      tenants: { total: 21, byPlan: { free: 20, broadcast: 0, pro: 0, enterprise: 1 } },
       users: 27,
       messages30d: { inbound: 485, outbound: 1047 },
       ai30d: { total: 213, success: 156, providerError: 53, validationRejected: 4, costUsd: '0' },
@@ -25,7 +25,7 @@ describe('PlatformOverviewService.getOverview', () => {
 
     const overview = await build(repo).getOverview();
 
-    expect(overview.kpis.tenants).toEqual({ total: 21, byPlan: { free: 20, pro: 0, enterprise: 1 } });
+    expect(overview.kpis.tenants).toEqual({ total: 21, byPlan: { free: 20, broadcast: 0, pro: 0, enterprise: 1 } });
     expect(overview.kpis.users).toBe(27);
     expect(overview.kpis.ai30d.providerError).toBe(53);
     expect(typeof overview.kpis.ai30d.costUsd).toBe('string');

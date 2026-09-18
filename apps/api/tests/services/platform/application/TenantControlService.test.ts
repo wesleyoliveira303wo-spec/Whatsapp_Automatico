@@ -20,23 +20,42 @@ describe('TenantControlService', () => {
       const { tenants, audit, service } = build();
       let auditedBeforeWrite = false;
       const realChangePlan = tenants.changePlan.bind(tenants);
-      tenants.changePlan = async (id, plan) => {
+      tenants.changePlan = async (id, plan, source) => {
         auditedBeforeWrite = audit.entries.length === 1;
-        return realChangePlan(id, plan);
+        return realChangePlan(id, plan, source);
       };
 
       const result = await service.changePlan('t1', 'pro', CTX);
 
       expect(auditedBeforeWrite).toBe(true);
       expect(result.plan).toBe('pro');
+      expect(result.planSource).toBe('manual');
       expect(audit.entries[0]).toMatchObject({
         platformUserId: 'admin-1',
         action: 'tenant.plan_changed',
         tenantId: 't1',
-        metadata: { from: 'free', to: 'pro' },
+        metadata: { from: 'free', to: 'pro', source: 'manual' },
         ip: '10.0.0.9',
         userAgent: 'jest',
       });
+    });
+
+    it('plano Disparos ativado pelo fundador também vira manual', async () => {
+      const { service } = build();
+
+      const result = await service.changePlan('t1', 'broadcast', CTX);
+
+      expect(result).toMatchObject({ plan: 'broadcast', planSource: 'manual' });
+    });
+
+    it('voltar ao Grátis devolve o tenant ao self-service', async () => {
+      const { tenants, audit, service } = build();
+      tenants.seed({ id: 't2', name: 'Cliente Dois', apiKeyHash: null, plan: 'pro' });
+
+      const result = await service.changePlan('t2', 'free', CTX);
+
+      expect(result).toMatchObject({ plan: 'free', planSource: 'self_service' });
+      expect(audit.entries[0].metadata).toMatchObject({ source: 'self_service' });
     });
 
     it('tenant inexistente → TenantNotFoundError, sem auditar', async () => {

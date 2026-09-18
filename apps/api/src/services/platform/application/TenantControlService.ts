@@ -1,4 +1,5 @@
 import { Logger } from '../../../shared/domain/Logger';
+import { PlanSource } from '../../../shared/tenant/domain/PlanSource';
 import { Tenant } from '../../../shared/tenant/domain/Tenant';
 import { TenantPlan } from '../../../shared/tenant/domain/TenantPlan';
 import { TenantRepository } from '../../../shared/tenant/domain/TenantRepository';
@@ -50,16 +51,21 @@ export class TenantControlService {
       throw new TenantControlNoOpError(`O tenant ${tenantId} já está no plano ${plan}.`);
     }
 
+    // Plano pago ativado pelo fundador vira `manual` (o Stripe nunca mexe nele);
+    // voltar ao Grátis devolve o tenant ao self-service, para ele poder assinar
+    // sozinho depois (B5, 2026-09-18).
+    const source: PlanSource = plan === 'free' ? 'self_service' : 'manual';
+
     await this.auditLog.append({
       platformUserId: context.actorId,
       action: 'tenant.plan_changed',
       tenantId,
-      metadata: { from: tenant.plan, to: plan },
+      metadata: { from: tenant.plan, to: plan, source },
       ip: context.ip,
       userAgent: context.userAgent,
     });
 
-    const updated = await this.tenants.changePlan(tenantId, plan);
+    const updated = await this.tenants.changePlan(tenantId, plan, source);
     return this.requireUpdated(tenantId, updated, 'plan_changed');
   }
 

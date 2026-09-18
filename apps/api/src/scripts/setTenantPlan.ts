@@ -2,10 +2,12 @@
  * Ativa/troca o Plano de um tenant — Trava de plano do Lançamento suave
  * (2026-08-31, ver `CONTEXT.md` e `docs/specs/2026-08-31-lancamento-suave.md`).
  *
- * Enquanto não há billing automático, é assim que o fundador ativa um
- * cliente que pagou (por Pix): `pro` ou `enterprise`. Também serve para
- * rebaixar de volta para `free` quem parou de pagar — o tenant volta ao
- * modo só-visualização sem perder nenhum dado.
+ * É assim que o fundador ativa um cliente que pagou por fora (Pix,
+ * cortesia): `broadcast`, `pro` ou `enterprise`. Um plano pago ativado aqui
+ * vira de origem `MANUAL` — o Stripe nunca mexe nele (B5, 2026-09-18). Também
+ * serve para rebaixar de volta para `free` quem parou de pagar: o tenant volta
+ * ao modo só-visualização sem perder nenhum dado, e à origem `SELF_SERVICE`
+ * (pode assinar sozinho depois).
  *
  * MODO SIMULAÇÃO POR PADRÃO (mesmo contrato de `backfillContacts` e dos
  * demais scripts deste diretório): sem `--apply`, apenas mostra o que faria.
@@ -34,6 +36,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
 const PLAN_BY_ARG: Record<string, TenantPlan> = {
   free: 'FREE',
+  broadcast: 'BROADCAST',
+  disparos: 'BROADCAST',
   pro: 'PRO',
   enterprise: 'ENTERPRISE',
 };
@@ -66,7 +70,7 @@ async function main(): Promise<void> {
   }
 
   if (args.length !== 2) {
-    console.error('Uso: setTenantPlan <tenant-id-ou-nome> <free|pro|enterprise> [--apply]');
+    console.error('Uso: setTenantPlan <tenant-id-ou-nome> <free|broadcast|pro|enterprise> [--apply]');
     console.error('Sem argumentos: lista todos os tenants.');
     await prisma.$disconnect();
     process.exitCode = 1;
@@ -76,7 +80,7 @@ async function main(): Promise<void> {
   const [tenantArg, planArg] = args;
   const targetPlan = PLAN_BY_ARG[planArg.toLowerCase()];
   if (!targetPlan) {
-    console.error(`Plano inválido: "${planArg}". Use free, pro ou enterprise.`);
+    console.error(`Plano inválido: "${planArg}". Use free, broadcast, pro ou enterprise.`);
     await prisma.$disconnect();
     process.exitCode = 1;
     return;
@@ -122,7 +126,10 @@ async function main(): Promise<void> {
   );
 
   if (apply) {
-    await prisma.tenant.update({ where: { id: tenant.id }, data: { plan: targetPlan } });
+    await prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { plan: targetPlan, planSource: targetPlan === 'FREE' ? 'SELF_SERVICE' : 'MANUAL' },
+    });
     console.log('Plano atualizado.');
   } else {
     console.log('');

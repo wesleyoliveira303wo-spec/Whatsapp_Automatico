@@ -70,4 +70,25 @@ describe('Integração real — Controle do tenant (Fase 4)', () => {
 
     await expect(repository.setStatus('id-que-nao-existe', 'suspended')).resolves.toBeUndefined();
   });
+
+  it('B5: tenant novo nasce self_service; o plano Disparos e a origem são gravados juntos', async () => {
+    if (!databaseAvailable) {
+      console.warn('Postgres indisponível — pulando teste de integração real do B5.');
+      return;
+    }
+
+    const created = await repository.create({ name: 'Tenant de teste B5' });
+    try {
+      expect(created).toMatchObject({ plan: 'free', planSource: 'self_service' });
+
+      const onBroadcast = await repository.changePlan(created.id, 'broadcast', 'manual');
+      expect(onBroadcast).toMatchObject({ plan: 'broadcast', planSource: 'manual' });
+      expect(await repository.findById(created.id)).toMatchObject({
+        plan: 'broadcast',
+        planSource: 'manual',
+      });
+    } finally {
+      await prisma.tenant.deleteMany({ where: { id: created.id } });
+    }
+  });
 });

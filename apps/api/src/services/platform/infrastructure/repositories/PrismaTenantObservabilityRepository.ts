@@ -18,6 +18,7 @@ import { PlatformTotals } from '../../domain/entities/PlatformTotals';
 
 const PLAN_TO_DOMAIN: Record<string, TenantPlan> = {
   FREE: 'free',
+  BROADCAST: 'broadcast',
   PRO: 'pro',
   ENTERPRISE: 'enterprise',
 };
@@ -363,7 +364,7 @@ export class PrismaTenantObservabilityRepository implements TenantObservabilityR
       `),
     ]);
 
-    const byPlan: Record<TenantPlan, number> = { free: 0, pro: 0, enterprise: 0 };
+    const byPlan: Record<TenantPlan, number> = { free: 0, broadcast: 0, pro: 0, enterprise: 0 };
     let tenantTotal = 0;
     for (const row of plans) {
       const plan = PLAN_TO_DOMAIN[row.plan] ?? 'free';

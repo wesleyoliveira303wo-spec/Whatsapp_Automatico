@@ -1,3 +1,4 @@
+import { PlanSource } from './PlanSource';
 import { Tenant } from './Tenant';
 import { TenantPlan } from './TenantPlan';
 import { TenantStatus } from './TenantStatus';
@@ -65,7 +66,10 @@ export interface TenantRepository {
    * dois métodos; a orquestração (carregar antes, auditar antes de escrever)
    * fica no `TenantControlService`, não aqui. Devolvem `undefined` se o id
    * não existir — mesmo contrato de `update`.
+   *
+   * `changePlan` grava o plano E a origem dele juntos (B5, 2026-09-18): um
+   * plano nunca muda sem que se saiba quem manda nele dali em diante.
    */
-  changePlan(id: string, plan: TenantPlan): Promise<Tenant | undefined>;
+  changePlan(id: string, plan: TenantPlan, source: PlanSource): Promise<Tenant | undefined>;
   setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined>;
 }

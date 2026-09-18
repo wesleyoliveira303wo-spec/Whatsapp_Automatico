@@ -1,3 +1,4 @@
+import { PlanSource } from '../../../src/shared/tenant/domain/PlanSource';
 import { Tenant } from '../../../src/shared/tenant/domain/Tenant';
 import { TenantPlan } from '../../../src/shared/tenant/domain/TenantPlan';
 import { TenantRepository } from '../../../src/shared/tenant/domain/TenantRepository';
@@ -15,6 +16,10 @@ import { TenantStatus } from '../../../src/shared/tenant/domain/TenantStatus';
  * especificamente o Plano Grátis passam `plan: 'free'` explicitamente.
  * `create(...)` devolve `'free'` — simula um tenant novo de verdade
  * (`Tenant.plan` = `@default(FREE)` no banco).
+ *
+ * ORIGEM DO PLANO (B5, 2026-09-18): omitida no `seed`, segue a mesma regra da
+ * migration que criou a coluna — pago nasce `'manual'`, Grátis nasce
+ * `'self_service'`.
  */
 export class FakeTenantRepository implements TenantRepository {
   private tenants = new Map<string, Tenant>();
@@ -33,6 +38,7 @@ export class FakeTenantRepository implements TenantRepository {
       name: input.name,
       apiKeyHash: null,
       plan: 'free',
+      planSource: 'self_service',
       status: 'active',
     };
     this.tenants.set(tenant.id, tenant);
@@ -43,8 +49,8 @@ export class FakeTenantRepository implements TenantRepository {
     return this.patch(id, { name: changes.name });
   }
 
-  async changePlan(id: string, plan: TenantPlan): Promise<Tenant | undefined> {
-    return this.patch(id, { plan });
+  async changePlan(id: string, plan: TenantPlan, source: PlanSource): Promise<Tenant | undefined> {
+    return this.patch(id, { plan, planSource: source });
   }
 
   async setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined> {
@@ -63,10 +69,18 @@ export class FakeTenantRepository implements TenantRepository {
    * Helper de teste, não faz parte da interface de produção. `plan` é
    * opcional — omitido, assume `'pro'` (ver docstring da classe).
    */
-  seed(tenant: Omit<Tenant, 'plan' | 'status'> & { plan?: TenantPlan; status?: TenantStatus }): void {
+  seed(
+    tenant: Omit<Tenant, 'plan' | 'status' | 'planSource'> & {
+      plan?: TenantPlan;
+      status?: TenantStatus;
+      planSource?: PlanSource;
+    },
+  ): void {
+    const plan = tenant.plan ?? 'pro';
     this.tenants.set(tenant.id, {
       ...tenant,
-      plan: tenant.plan ?? 'pro',
+      plan,
+      planSource: tenant.planSource ?? (plan === 'free' ? 'self_service' : 'manual'),
       status: tenant.status ?? 'active',
     });
   }

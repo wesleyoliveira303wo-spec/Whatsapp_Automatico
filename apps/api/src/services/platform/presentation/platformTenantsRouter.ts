@@ -16,7 +16,7 @@ const tenantIdParamSchema = z.object({
 });
 
 const changePlanBodySchema = z.object({
-  plan: z.enum(['free', 'pro', 'enterprise']),
+  plan: z.enum(['free', 'broadcast', 'pro', 'enterprise']),
 });
 
 /**

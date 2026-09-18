@@ -8,6 +8,7 @@
  * princípio já aplicado em `WhatsAppSession`, que também não carrega objetos
  * de relação do Prisma).
  */
+import { PlanSource } from './PlanSource';
 import { TenantPlan } from './TenantPlan';
 import { TenantStatus } from './TenantStatus';
 
@@ -19,11 +20,16 @@ export interface Tenant {
    * manuais nesta milestone (sem endpoint HTTP, ver Production Hardening). */
   apiKeyHash: string | null;
   /**
-   * Trava de plano (Lançamento suave, 2026-08-31, ver `planPermiteUso` e
-   * `CONTEXT.md`). Sempre presente — a coluna do banco é `NOT NULL DEFAULT
-   * 'FREE'`. Um tenant novo (via `/register`) nasce `'free'`.
+   * Plano do tenant (ver `planCapabilities.ts` e `CONTEXT.md`). Sempre
+   * presente — a coluna do banco é `NOT NULL DEFAULT 'FREE'`. Um tenant novo
+   * (via `/register`) nasce `'free'`.
    */
   plan: TenantPlan;
+  /**
+   * De onde veio o plano (B5, 2026-09-18, ver `PlanSource`). Sempre presente
+   * — a coluna do banco é `NOT NULL DEFAULT 'SELF_SERVICE'`.
+   */
+  planSource: PlanSource;
   /**
    * Trava de acesso (Painel /admin, Fase 4, ver `TenantStatus` e §8 do plano
    * mestre). Sempre presente — a coluna do banco é `NOT NULL DEFAULT

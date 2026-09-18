@@ -20,6 +20,7 @@ describe('resolveTenantFromApiKey', () => {
       name: 'Empresa Teste',
       apiKeyHash,
       plan: 'pro',
+      planSource: 'manual',
       status: 'active',
     });
   });

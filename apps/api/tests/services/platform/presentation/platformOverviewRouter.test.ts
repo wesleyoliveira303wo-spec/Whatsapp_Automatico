@@ -80,7 +80,7 @@ describe('platformOverviewRouter — GET /overview', () => {
       tenantOverview({ id: 'down', sessionCount: 1, connectedSessionCount: 0 }),
     ]);
     repo.totals = emptyPlatformTotals({
-      tenants: { total: 21, byPlan: { free: 20, pro: 0, enterprise: 1 } },
+      tenants: { total: 21, byPlan: { free: 20, broadcast: 0, pro: 0, enterprise: 1 } },
       campaigns: { running: 0, pausedByBreaker: 2 },
     });
     const { app, token } = buildApp(repo);

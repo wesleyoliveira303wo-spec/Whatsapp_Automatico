@@ -147,7 +147,7 @@ export function tenantOverview(patch: Partial<TenantOverview> = {}): TenantOverv
 
 export function emptyPlatformTotals(patch: Partial<PlatformTotals> = {}): PlatformTotals {
   return {
-    tenants: { total: 0, byPlan: { free: 0, pro: 0, enterprise: 0 } },
+    tenants: { total: 0, byPlan: { free: 0, broadcast: 0, pro: 0, enterprise: 0 } },
     users: 0,
     sessions: { total: 0, connected: 0 },
     messages30d: { inbound: 0, outbound: 0 },

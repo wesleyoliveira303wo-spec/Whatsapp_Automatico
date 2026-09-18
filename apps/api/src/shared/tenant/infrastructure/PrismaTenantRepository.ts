@@ -1,9 +1,11 @@
 import type {
+  PlanSource as PrismaPlanSource,
   PrismaClient,
   TenantPlan as PrismaTenantPlan,
   UserStatus as PrismaUserStatus,
 } from '@prisma/client';
 
+import { PlanSource } from '../domain/PlanSource';
 import { Tenant } from '../domain/Tenant';
 import { TenantPlan } from '../domain/TenantPlan';
 import { TenantRepository } from '../domain/TenantRepository';
@@ -15,12 +17,14 @@ import { TenantStatus } from '../domain/TenantStatus';
  */
 const PLAN_TO_DOMAIN: Record<PrismaTenantPlan, TenantPlan> = {
   FREE: 'free',
+  BROADCAST: 'broadcast',
   PRO: 'pro',
   ENTERPRISE: 'enterprise',
 };
 
 const PLAN_TO_PRISMA: Record<TenantPlan, PrismaTenantPlan> = {
   free: 'FREE',
+  broadcast: 'BROADCAST',
   pro: 'PRO',
   enterprise: 'ENTERPRISE',
 };
@@ -39,6 +43,16 @@ const STATUS_TO_PRISMA: Record<TenantStatus, PrismaUserStatus> = {
   suspended: 'SUSPENDED',
 };
 
+const SOURCE_TO_DOMAIN: Record<PrismaPlanSource, PlanSource> = {
+  SELF_SERVICE: 'self_service',
+  MANUAL: 'manual',
+};
+
+const SOURCE_TO_PRISMA: Record<PlanSource, PrismaPlanSource> = {
+  self_service: 'SELF_SERVICE',
+  manual: 'MANUAL',
+};
+
 /**
  * Shape mínimo lido do banco — só os campos que `Tenant` (Domain) de fato usa
  * (mesmo racional de `WhatsAppSessionRow` em `PrismaWhatsAppSessionRepository.ts`).
@@ -48,6 +62,7 @@ interface TenantRow {
   name: string;
   apiKeyHash: string | null;
   plan: PrismaTenantPlan;
+  planSource: PrismaPlanSource;
   status: PrismaUserStatus;
 }
 
@@ -57,6 +72,7 @@ function toDomain(row: TenantRow): Tenant {
     name: row.name,
     apiKeyHash: row.apiKeyHash,
     plan: PLAN_TO_DOMAIN[row.plan],
+    planSource: SOURCE_TO_DOMAIN[row.planSource],
     status: STATUS_TO_DOMAIN[row.status],
   };
 }
@@ -90,8 +106,11 @@ export class PrismaTenantRepository implements TenantRepository {
     return this.applyUpdate(id, { name: changes.name });
   }
 
-  async changePlan(id: string, plan: TenantPlan): Promise<Tenant | undefined> {
-    return this.applyUpdate(id, { plan: PLAN_TO_PRISMA[plan] });
+  async changePlan(id: string, plan: TenantPlan, source: PlanSource): Promise<Tenant | undefined> {
+    return this.applyUpdate(id, {
+      plan: PLAN_TO_PRISMA[plan],
+      planSource: SOURCE_TO_PRISMA[source],
+    });
   }
 
   async setStatus(id: string, status: TenantStatus): Promise<Tenant | undefined> {
@@ -100,7 +119,12 @@ export class PrismaTenantRepository implements TenantRepository {
 
   private async applyUpdate(
     id: string,
-    data: { name?: string; plan?: PrismaTenantPlan; status?: PrismaUserStatus },
+    data: {
+      name?: string;
+      plan?: PrismaTenantPlan;
+      planSource?: PrismaPlanSource;
+      status?: PrismaUserStatus;
+    },
   ): Promise<Tenant | undefined> {
     const result = await this.prisma.tenant.updateMany({ where: { id }, data });
     if (result.count === 0) {

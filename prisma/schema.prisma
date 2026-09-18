@@ -166,6 +166,10 @@ model Tenant {
   /// Todo tenant (existente e novo, via `/register`) nasce `FREE`.
   plan TenantPlan @default(FREE)
 
+  /// De onde veio o plano (B5, 2026-09-18) — ver enum `PlanSource`. Tenants
+  /// pagos anteriores a esta coluna nascem `MANUAL` (ativados a mao).
+  planSource PlanSource @default(SELF_SERVICE) @map("plan_source")
+
   /// Trava de ACESSO (Painel /admin, Fase 4 — ADMIN_PLATFORM_MASTER_PLAN.md
   /// §8). `plan` responde "o que ele pode fazer"; `status` responde "ele pode
   /// entrar". Suspenso, o tenant inteiro deixa de logar (checado no
@@ -1480,10 +1484,21 @@ enum UserStatus {
 /// `PrismaTenantRepository`, mesmo padrao de `UserRole`.
 enum TenantPlan {
   FREE
+  /// Disparos (B5, 2026-09-18) — tudo menos IA, 1 numero.
+  BROADCAST
   PRO
   ENTERPRISE
 
   @@map("tenant_plan")
+}
+
+/// De onde veio o plano (B5, 2026-09-18) — ver `PlanSource.ts`. `MANUAL` =
+/// ativado pelo fundador; o Stripe nunca altera um plano manual.
+enum PlanSource {
+  SELF_SERVICE
+  MANUAL
+
+  @@map("plan_source")
 }
 
 // ---------- Models (Auth / Multiusuario — Milestone 5, Bloco M5A) ----------
