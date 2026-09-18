@@ -5,7 +5,6 @@ import {
   FakeMessageRepository,
   FakeAiReplyScheduler,
   FakeAiAvailabilityRepository,
-  FakeAiRateLimiter,
   FakeContactResolver,
   FakeOptOutDetector,
   FakeCampaignReplyTracker,
@@ -20,7 +19,6 @@ function buildSut(): {
   messageRepository: FakeMessageRepository;
   aiReplyScheduler: FakeAiReplyScheduler;
   aiAvailabilityRepository: FakeAiAvailabilityRepository;
-  aiRateLimiter: FakeAiRateLimiter;
   contactResolver: FakeContactResolver;
   optOutDetector: FakeOptOutDetector;
   tenantPlanRepository: FakeTenantPlanRepository;
@@ -31,7 +29,6 @@ function buildSut(): {
   const messageRepository = new FakeMessageRepository();
   const aiReplyScheduler = new FakeAiReplyScheduler();
   const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
-  const aiRateLimiter = new FakeAiRateLimiter();
   const contactResolver = new FakeContactResolver();
   const optOutDetector = new FakeOptOutDetector();
   // Trava de plano (Lançamento suave/2026-08-31) — default `'pro'`, ver
@@ -44,7 +41,6 @@ function buildSut(): {
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
-    aiRateLimiter,
     contactResolver,
     optOutDetector,
     tenantPlanRepository,
@@ -58,7 +54,6 @@ function buildSut(): {
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
-    aiRateLimiter,
     contactResolver,
     optOutDetector,
     tenantPlanRepository,
@@ -536,54 +531,20 @@ describe('MessageIngestionService', () => {
     });
   });
 
-  describe('rate limit de IA (Fase 1, Bloco F1.10)', () => {
-    it('dentro do limite: agenda a resposta de IA normalmente', async () => {
-      const { sut, aiReplyScheduler, aiRateLimiter } = buildSut();
+  // TETO DE CHAMADAS DE IA: os testes deste comportamento vivem agora em
+  // `AiReplyJobProcessor.test.ts`. Ele deixou de ser consumido na ingestão em
+  // 2026-09-17 — uma ficha por CHAMADA de IA, não por mensagem recebida.
+  // Fica aqui a garantia de que a ingestão não barra mais nada por ritmo:
+  describe('rajada de mensagens (2026-09-17)', () => {
+    it('agenda um job por mensagem, sem nenhum teto na ingestão — os fragmentos extras encerram de graça no worker', async () => {
+      const { sut, aiReplyScheduler } = buildSut();
 
-      await sut.handle(buildInboundMessage());
+      for (let i = 0; i < 10; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await sut.handle(buildInboundMessage({ content: `fragmento ${i}` }));
+      }
 
-      expect(aiReplyScheduler.scheduleCalls).toHaveLength(1);
-      expect(aiRateLimiter.calls).toEqual([
-        { tenantId: 'tenant-1', sessionName: 'default', conversationId: expect.any(String) },
-      ]);
-    });
-
-    it('limite estourado: NÃO agenda resposta de IA e sinaliza atenção humana (mesmo mecanismo de falha de IA)', async () => {
-      const { sut, aiReplyScheduler, aiRateLimiter, conversationRepository } = buildSut();
-      aiRateLimiter.setBlocked(true);
-
-      await sut.handle(buildInboundMessage());
-
-      expect(aiReplyScheduler.scheduleCalls).toHaveLength(0);
-      const conversation = conversationRepository.getAll()[0];
-      expect(conversation.escalatedAt).toBeInstanceOf(Date);
-    });
-
-    it('limite estourado: a mensagem ainda é persistida normalmente (fica visível na Dashboard)', async () => {
-      const { sut, messageRepository, aiRateLimiter } = buildSut();
-      aiRateLimiter.setBlocked(true);
-
-      await sut.handle(buildInboundMessage({ content: 'mensagem numa rajada' }));
-
-      expect(messageRepository.getAll()).toHaveLength(1);
-      expect(messageRepository.getAll()[0].content).toBe('mensagem numa rajada');
-    });
-
-    it('mensagem outbound (operador de outro dispositivo) nunca consulta o rate limiter', async () => {
-      const { sut, aiRateLimiter } = buildSut();
-
-      await sut.handle(buildInboundMessage({ direction: 'outbound' }));
-
-      expect(aiRateLimiter.calls).toHaveLength(0);
-    });
-
-    it('Botão POWER desligado: nem chega a consultar o rate limiter (shouldAutoRespond já bloqueou antes)', async () => {
-      const { sut, aiAvailabilityRepository, aiRateLimiter } = buildSut();
-      aiAvailabilityRepository.setEnabled('tenant-1', 'default', false);
-
-      await sut.handle(buildInboundMessage());
-
-      expect(aiRateLimiter.calls).toHaveLength(0);
+      expect(aiReplyScheduler.scheduleCalls).toHaveLength(10);
     });
   });
 
@@ -747,8 +708,7 @@ describe('MessageIngestionService', () => {
       const messageRepository = new FakeMessageRepository();
       const aiReplyScheduler = new FakeAiReplyScheduler();
       const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
-      const aiRateLimiter = new FakeAiRateLimiter();
-      const contactResolver = new FakeContactResolver();
+          const contactResolver = new FakeContactResolver();
       const optOutDetector = new FakeOptOutDetector();
       const tenantPlanRepository = new FakeTenantPlanRepository();
       const sutWithoutTracker = new MessageIngestionService(
@@ -756,7 +716,6 @@ describe('MessageIngestionService', () => {
         messageRepository,
         aiReplyScheduler,
         aiAvailabilityRepository,
-        aiRateLimiter,
         contactResolver,
         optOutDetector,
         tenantPlanRepository,
@@ -771,8 +730,7 @@ describe('MessageIngestionService', () => {
       const messageRepository = new FakeMessageRepository();
       const aiReplyScheduler = new FakeAiReplyScheduler();
       const aiAvailabilityRepository = new FakeAiAvailabilityRepository();
-      const aiRateLimiter = new FakeAiRateLimiter();
-      const contactResolver = new FakeContactResolver();
+          const contactResolver = new FakeContactResolver();
       const optOutDetector = new FakeOptOutDetector();
       const tenantPlanRepository = new FakeTenantPlanRepository();
       const sutLateWired = new MessageIngestionService(
@@ -780,7 +738,6 @@ describe('MessageIngestionService', () => {
         messageRepository,
         aiReplyScheduler,
         aiAvailabilityRepository,
-        aiRateLimiter,
         contactResolver,
         optOutDetector,
         tenantPlanRepository,

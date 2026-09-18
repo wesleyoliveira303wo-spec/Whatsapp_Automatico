@@ -5,7 +5,11 @@ import { PromptVersion } from '../../../src/services/ai/domain/PromptVersion';
 import { AiReplyJobData } from '../../../src/services/conversations/infrastructure/queues/AiReplyQueue';
 import { Conversation } from '../../../src/services/conversations/domain/entities/Conversation';
 import { Message } from '../../../src/services/conversations/domain/entities/Message';
-import { FakeConversationRepository, FakeMessageRepository } from '../conversations/testDoubles';
+import {
+  FakeAiRateLimiter,
+  FakeConversationRepository,
+  FakeMessageRepository,
+} from '../conversations/testDoubles';
 import { FakeAiProviderFactory } from './infrastructure/FakeAiProviderFactory';
 import { FakeAiInteractionRepository } from './infrastructure/FakeAiInteractionRepository';
 import { FakeAiBusinessProfileRepository } from './infrastructure/FakeAiBusinessProfileRepository';
@@ -72,6 +76,8 @@ function buildSut(
     handoffNoticeRepeatAfterMs?: number;
     // Cérebro da IA v3, Fase 3 (2026-08-26).
     aiPreferencesRepository?: FakeAiPreferencesRepository;
+    /** Teto de chamadas de IA (2026-09-17) — ausente = sem teto. */
+    aiRateLimiter?: FakeAiRateLimiter;
   } = {},
 ): {
   processor: AiReplyJobProcessor;
@@ -120,6 +126,9 @@ function buildSut(
           options.now,
           undefined,
           options.aiPreferencesRepository,
+          undefined,
+          undefined,
+          options.aiRateLimiter,
         )
       : new AiReplyJobProcessor(
           conversationRepository,
@@ -136,6 +145,9 @@ function buildSut(
           options.now,
           undefined,
           options.aiPreferencesRepository,
+          undefined,
+          undefined,
+          options.aiRateLimiter,
         );
 
   return {
@@ -1161,4 +1173,96 @@ describe('AiReplyJobProcessor', () => {
       );
     });
   });
+
+  // TETO DE CHAMADAS DE IA (2026-09-17). Saiu de `MessageIngestionService`
+  // (uma ficha por MENSAGEM recebida) e passou para cá, onde a chamada ao
+  // provider de fato acontece — uma ficha por CHAMADA.
+  describe('teto de chamadas de IA', () => {
+    function seedReply(aiProviderFactory: FakeAiProviderFactory): void {
+      aiProviderFactory.provider.setNextResult({
+        content: 'resposta',
+        model: 'claude-x',
+        tokensInput: 1,
+        tokensOutput: 1,
+      });
+    }
+
+    it('dentro do teto: gera a resposta e consome uma ficha da conversa/sessão', async () => {
+      const aiRateLimiter = new FakeAiRateLimiter();
+      const { processor, conversationRepository, messageRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut(undefined, { aiRateLimiter });
+      conversationRepository.seed(buildConversation());
+      await messageRepository.create(
+        buildMessage({ id: 'message-inbound-1', occurredAt: new Date('2026-07-10T12:00:00Z') }),
+      );
+      seedReply(aiProviderFactory);
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+      expect(aiRateLimiter.calls).toEqual([
+        { tenantId: TENANT_ID, sessionName: 'default', conversationId: CONVERSATION_ID },
+      ]);
+    });
+
+    it('teto estourado: NÃO chama o provider e sinaliza atenção humana', async () => {
+      const aiRateLimiter = new FakeAiRateLimiter();
+      aiRateLimiter.setBlocked(true);
+      const { processor, conversationRepository, messageRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut(undefined, { aiRateLimiter });
+      conversationRepository.seed(buildConversation());
+      await messageRepository.create(
+        buildMessage({ id: 'message-inbound-1', occurredAt: new Date('2026-07-10T12:00:00Z') }),
+      );
+      seedReply(aiProviderFactory);
+
+      await processor.process(buildJobData());
+
+      expect(aiProviderFactory.provider.generateReplyCalls).toHaveLength(0);
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(0);
+      const [conversation] = conversationRepository.getAll();
+      expect(conversation.escalatedAt).toBeInstanceOf(Date);
+    });
+
+    // Esta é a correção em si: os fragmentos de uma rajada geram um job cada,
+    // mas só UM chega a gastar ficha — os demais encerram antes, em
+    // `shouldGenerateReply`. Antes, todos gastavam ficha já na ingestão.
+    it('fragmentos de uma rajada não gastam ficha: só o job da mensagem mais recente consome', async () => {
+      const aiRateLimiter = new FakeAiRateLimiter();
+      const { processor, conversationRepository, messageRepository, aiProviderFactory } = buildSut(
+        undefined,
+        { aiRateLimiter },
+      );
+      conversationRepository.seed(buildConversation());
+      // `create()` do dublê atribui o id — usar o id devolvido, nunca o
+      // informado, senão `shouldGenerateReply` não acha a mensagem e libera.
+      const first = await messageRepository.create(
+        buildMessage({ id: 'ignorado', occurredAt: new Date('2026-07-10T12:00:00Z') }),
+      );
+      const second = await messageRepository.create(
+        buildMessage({ id: 'ignorado', occurredAt: new Date('2026-07-10T12:00:01Z') }),
+      );
+      seedReply(aiProviderFactory);
+
+      await processor.process(buildJobData({ messageId: first.id }));
+      await processor.process(buildJobData({ messageId: second.id }));
+
+      expect(aiRateLimiter.calls).toHaveLength(1);
+    });
+
+    it('sem limitador configurado: gera normalmente (modo degradado)', async () => {
+      const { processor, conversationRepository, messageRepository, aiProviderFactory, outboundDispatcher } =
+        buildSut();
+      conversationRepository.seed(buildConversation());
+      await messageRepository.create(
+        buildMessage({ id: 'message-inbound-1', occurredAt: new Date('2026-07-10T12:00:00Z') }),
+      );
+      seedReply(aiProviderFactory);
+
+      await processor.process(buildJobData());
+
+      expect(outboundDispatcher.dispatchCalls).toHaveLength(1);
+    });
+  });
+
 });

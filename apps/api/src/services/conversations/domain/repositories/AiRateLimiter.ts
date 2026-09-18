@@ -8,12 +8,19 @@
  * comprometido) mandando centenas de mensagens força centenas de chamadas
  * de IA, custo real em US$ para o dono do tenant, sem nenhum limite.
  *
- * ONDE ISSO SE ENCAIXA NO FLUXO: `MessageIngestionService.handle()` já
- * decide, com `shouldAutoRespond`, SE deveria agendar uma resposta de IA.
- * `AiRateLimiter` entra como um segundo portão, IMEDIATAMENTE ANTES do
- * `aiReplyScheduler.schedule(...)` — não substitui `shouldAutoRespond`
- * (aquele decide "a IA deveria responder esta conversa, em princípio";
- * este decide "não geramos custo demais numa janela curta de tempo").
+ * ONDE ISSO SE ENCAIXA NO FLUXO (mudou em 2026-09-17): a ficha é consumida
+ * dentro de `AiReplyJobProcessor`, depois de TODOS os portões que encerram
+ * sem chamar o provider (`shouldAutoRespond`, `shouldGenerateReply`,
+ * `detectAutomatedLoop`) e imediatamente antes de `generateReply` — uma
+ * ficha por CHAMADA DE IA.
+ *
+ * Antes disso, a ficha era consumida em `MessageIngestionService`, uma por
+ * MENSAGEM recebida. Desde o agrupamento de rajada (2026-08-14) isso passou
+ * a medir a coisa errada: sete fragmentos de uma mesma frase geram sete
+ * mensagens e UMA chamada de IA, e as seis fichas restantes eram gastas por
+ * jobs que encerram de graça. Na prática, quem escrevia de forma mais
+ * natural era quem mais se aproximava de cair em "Aguardando atendente",
+ * sem nenhum custo extra ter sido gerado.
  *
  * ESCOPO DO LIMITE (decisão de produto, ver ADR/CLAUDE.md desta rodada):
  * por CONVERSA (evita uma conversa isolada saturar a IA) e por SESSÃO/

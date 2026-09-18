@@ -15,10 +15,6 @@ import { BullMqStageClassificationScheduler } from './infrastructure/schedulers/
 import { StageClassificationScheduler } from './domain/schedulers/StageClassificationScheduler';
 import { PrismaAiAvailabilityRepository } from './infrastructure/repositories/PrismaAiAvailabilityRepository';
 import { TenantPlanFromTenantRepository } from './infrastructure/repositories/TenantPlanFromTenantRepository';
-import { RateLimitStoreAiRateLimiter } from './infrastructure/repositories/RateLimitStoreAiRateLimiter';
-import { FallbackRateLimitStore } from '../../shared/infrastructure/rateLimit/FallbackRateLimitStore';
-import { InMemoryRateLimitStore } from '../../shared/infrastructure/rateLimit/InMemoryRateLimitStore';
-import { RedisRateLimitStore } from '../../shared/infrastructure/rateLimit/RedisRateLimitStore';
 import { MessageIngestionService } from './application/MessageIngestionService';
 import { PrismaContactRepository } from '../contacts/infrastructure/repositories/PrismaContactRepository';
 import { WhatsAppJidContactResolver } from '../contacts/infrastructure/WhatsAppJidContactResolver';
@@ -117,7 +113,7 @@ export function createConversationsComposition(
     //
     // NOTA IMPORTANTE, para quem for mexer no `jobId`: estas opções são
     // higiene, NÃO uma dependência de correção — e só continuam sendo higiene
-    // porque o `jobId` é por MENSAGEM (`tenant:conversa:mensagem`), portanto
+    // porque o `jobId` é por MENSAGEM (`reply-<tenant>-<conversa>-<mensagem>`), portanto
     // descartável. Se um dia o `jobId` voltar a ser por CONVERSA, ele vira uma
     // trava viva: o BullMQ recusa silenciosamente um `add()` cuja chave ainda
     // exista em Redis — inclusive nos estados `active` e `failed` —, então um
@@ -174,18 +170,11 @@ export function createConversationsComposition(
   // de não importar `AiBusinessProfileRepository` diretamente.
   const aiAvailabilityRepository = new PrismaAiAvailabilityRepository(prisma);
 
-  // Fase 1, Bloco F1.10 — contenção de rajada antes de virar custo de IA.
-  // Bloco B1: a contagem migrou de um `Map` por processo para o Redis já
-  // presente aqui (o mesmo do BullMQ), então o limite vale para o sistema e
-  // sobrevive a um restart. `FallbackRateLimitStore` garante que uma queda
-  // do Redis degrada para memória em vez de barrar a ingestão de mensagens.
-  const aiRateLimiter = new RateLimitStoreAiRateLimiter(
-    new FallbackRateLimitStore(
-      new RedisRateLimitStore(redisConnection),
-      new InMemoryRateLimitStore(),
-      logger,
-    ),
-  );
+  // O teto de chamadas de IA deixou de ser montado aqui em 2026-09-17: ele
+  // passou a ser consumido no `AiReplyJobProcessor` (worker), onde o custo
+  // realmente acontece — uma ficha por CHAMADA de IA, não por mensagem
+  // recebida. Ver a docstring de `aiRateLimiter` no construtor daquele
+  // processador.
 
   // Fase L, Bloco L1 — identidade durável de contato. O adaptador vive em
   // `services/contacts` (contexto dono da identidade) e implementa a porta
@@ -215,7 +204,6 @@ export function createConversationsComposition(
     messageRepository,
     aiReplyScheduler,
     aiAvailabilityRepository,
-    aiRateLimiter,
     contactResolver,
     optOutDetector,
     tenantPlanRepository,

@@ -8,7 +8,6 @@ import { MessageRepository } from '../domain/repositories/MessageRepository';
 import { AiReplyScheduler } from '../domain/schedulers/AiReplyScheduler';
 import { StageClassificationScheduler } from '../domain/schedulers/StageClassificationScheduler';
 import { AiAvailabilityRepository } from '../domain/repositories/AiAvailabilityRepository';
-import { AiRateLimiter } from '../domain/repositories/AiRateLimiter';
 import { ContactResolver } from '../domain/repositories/ContactResolver';
 import { ContactAvatarRefresher } from '../domain/repositories/ContactAvatarRefresher';
 import { OptOutDetector } from '../domain/repositories/OptOutDetector';
@@ -68,12 +67,6 @@ export class MessageIngestionService implements MessageReceivedHandler {
     private readonly messageRepository: MessageRepository,
     private readonly aiReplyScheduler: AiReplyScheduler,
     private readonly aiAvailabilityRepository: AiAvailabilityRepository,
-    // Fase 1, Bloco F1.10 (estabilidade para beta) — contém rajadas de
-    // mensagens ANTES de virarem custo de IA (ver docstring de
-    // `AiRateLimiter`). Porta própria, mesmo racional de
-    // `AiAvailabilityRepository`: `MessageIngestionService` só precisa saber
-    // "posso agendar ou não", não como o limite é calculado.
-    private readonly aiRateLimiter: AiRateLimiter,
     // Fase L, Bloco L1 — identidade durável de contato. Porta estreita (ver
     // `ContactResolver`), mesmo racional de `AiAvailabilityRepository`: este
     // Service só precisa saber "quem é a pessoa deste endereço".
@@ -331,41 +324,15 @@ export class MessageIngestionService implements MessageReceivedHandler {
 
     if (!isOutbound) {
       if (aiWillReply) {
-        // Fase 1, Bloco F1.10 — segundo portão, IMEDIATAMENTE antes de gerar
-        // custo de IA: `shouldAutoRespond` já decidiu que a IA DEVERIA
-        // responder; `aiRateLimiter` decide se isso não excede o ritmo
-        // seguro desta conversa/sessão agora. Estourou o limite: não
-        // enfileira (nenhum custo de IA gerado), a mensagem já foi
-        // persistida normalmente (visível na Dashboard), e sinalizamos
-        // atenção humana com o MESMO mecanismo já usado quando a IA falha
-        // em gerar uma resposta (`flagNeedsHumanAttention` — dispara o
-        // alerta/som/contador já existentes, sem inventar nenhuma UX nova).
-        // A janela é deslizante: a PRÓXIMA mensagem, depois que a rajada
-        // esfriar, volta a ser respondida normalmente — nenhuma ação manual
-        // necessária para "destravar".
-        const withinRateLimit = await this.aiRateLimiter.consume(
-          message.tenantId,
-          message.sessionName,
-          conversation.id,
-        );
-        if (withinRateLimit) {
-          await this.aiReplyScheduler.schedule(
-            message.tenantId,
-            conversation.id,
-            createdMessage.id,
-          );
-        } else {
-          try {
-            await this.conversationRepository.flagNeedsHumanAttention(
-              message.tenantId,
-              conversation.id,
-              message.receivedAt,
-            );
-          } catch {
-            // Mesmo espírito do `incrementUnreadCount` acima: sinalização é
-            // auxiliar, sua falha não deve derrubar a ingestão da mensagem.
-          }
-        }
+        // TETO DE CHAMADAS DE IA: deixou de ser consumido aqui em 2026-09-17
+        // e passou para `AiReplyJobProcessor`, imediatamente antes da chamada
+        // ao provider. Motivo: desde o agrupamento de rajada (2026-08-14),
+        // uma pessoa que escreve em sete pedaços gera sete mensagens e UMA
+        // chamada de IA — consumir uma ficha por mensagem punia justamente a
+        // conversa mais natural, sem nenhum custo extra ter sido gerado.
+        // Enfileirar é barato: os jobs dos fragmentos anteriores encerram de
+        // graça em `shouldGenerateReply`.
+        await this.aiReplyScheduler.schedule(message.tenantId, conversation.id, createdMessage.id);
       }
     }
   }

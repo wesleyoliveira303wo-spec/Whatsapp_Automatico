@@ -36,6 +36,10 @@ import { BullMqOutboundMessageDispatcher } from './services/whatsapp/infrastruct
 import { HttpMediaDownloader } from './services/whatsapp/infrastructure/HttpMediaDownloader';
 import { ConsoleLogger } from './shared/infrastructure/logging/ConsoleLogger';
 import { KeyedMutex } from './shared/infrastructure/concurrency/KeyedMutex';
+import { RateLimitStoreAiRateLimiter } from './services/conversations/infrastructure/repositories/RateLimitStoreAiRateLimiter';
+import { FallbackRateLimitStore } from './shared/infrastructure/rateLimit/FallbackRateLimitStore';
+import { InMemoryRateLimitStore } from './shared/infrastructure/rateLimit/InMemoryRateLimitStore';
+import { RedisRateLimitStore } from './shared/infrastructure/rateLimit/RedisRateLimitStore';
 
 // Mesmo racional de `index.ts`: caminho absoluto calculado a partir de
 // `__dirname`, não de `process.cwd()` — necessário porque `npm run dev:worker
@@ -297,6 +301,23 @@ async function main(): Promise<void> {
     undefined,
     undefined,
     aiPreferencesRepository,
+    // Válvula de loop: defaults da própria policy.
+    undefined,
+    undefined,
+    // Teto de chamadas de IA (2026-09-17): consumido aqui, no processo onde a
+    // chamada ao provider de fato acontece — antes ficava na ingestão, uma
+    // ficha por MENSAGEM, o que punia quem escreve em vários pedaços sem que
+    // nenhuma chamada extra tivesse sido feita. A contagem vive no mesmo
+    // Redis do BullMQ, então o teto vale para o sistema inteiro e sobrevive a
+    // um restart; `FallbackRateLimitStore` degrada para memória se o Redis
+    // cair, nunca barra a geração por indisponibilidade da contagem.
+    new RateLimitStoreAiRateLimiter(
+      new FallbackRateLimitStore(
+        new RedisRateLimitStore(workerConnection),
+        new InMemoryRateLimitStore(),
+        logger,
+      ),
+    ),
   );
 
   // Fase 1, Bloco F1.10 (estabilidade para beta) — a auditoria pré-beta

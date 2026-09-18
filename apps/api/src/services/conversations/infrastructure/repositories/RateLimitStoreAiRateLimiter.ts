@@ -23,12 +23,11 @@ export const DEFAULT_SESSION_WINDOW: WindowConfig = { limit: 30, windowMs: 60_00
  *
  * ESCOLHA DOS VALORES (mantida da versão anterior, documentada e não
  * arbitrária):
- * - **Por conversa: 6 mensagens/60s.** Uma pessoa digitando rápido em
- *   pedaços ("oi", "tudo bem?", "queria saber sobre X") normalmente manda
- *   2-4 mensagens em sequência — 6 dá folga real para isso sem soar
- *   artificial. Acima disso, em 1 minuto, o padrão deixa de ser "conversa
- *   humana normal" e passa a ser rajada (bot, mensagem em loop, teste
- *   malicioso).
+ * - **Por conversa: 6 chamadas de IA/60s.** Desde 2026-09-17 a unidade é a
+ *   CHAMADA, não a mensagem recebida — uma rajada de fragmentos vira uma
+ *   chamada só (ver `AiRateLimiter`). Seis respostas para a mesma pessoa em
+ *   um minuto já é bem acima do ritmo de uma conversa humana; acima disso o
+ *   padrão é automação dos dois lados ou mensagem em loop.
  * - **Por sessão (todas as conversas daquele WhatsApp somadas): 30/60s.**
  *   Precisa ser bem maior que o limite por conversa (uma sessão real tem
  *   várias conversas simultâneas legítimas), mas ainda finito — protege
@@ -36,7 +35,11 @@ export const DEFAULT_SESSION_WINDOW: WindowConfig = { limit: 30, windowMs: 60_00
  *   número exposto publicamente recebendo spam em massa).
  *
  * Os dois valores são passados no construtor: são um PONTO DE PARTIDA,
- * calibrável com uso real, não uma constante de negócio definitiva.
+ * calibrável com uso real, não uma constante de negócio definitiva. Eles NÃO
+ * foram mexidos quando a unidade mudou de mensagem para chamada (2026-09-17)
+ * — mudar semântica e número na mesma rodada tornaria qualquer medição
+ * seguinte ambígua. Recalibrar é uma decisão separada, agora sobre números
+ * que dizem o que medem.
  *
  * RECUPERAÇÃO: a janela é deslizante — assim que as tentativas antigas saem
  * dela, a PRÓXIMA mensagem inbound volta a ser permitida normalmente, sem

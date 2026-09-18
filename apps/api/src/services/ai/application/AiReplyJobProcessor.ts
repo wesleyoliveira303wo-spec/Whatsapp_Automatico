@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { ConversationRepository } from '../../conversations/domain/repositories/ConversationRepository';
 import { MessageRepository } from '../../conversations/domain/repositories/MessageRepository';
+import { AiRateLimiter } from '../../conversations/domain/repositories/AiRateLimiter';
 import { shouldAutoRespond } from '../../conversations/domain/policies/shouldAutoRespond';
 import { shouldAiUpdateStage } from '../../conversations/domain/policies/shouldAiUpdateStage';
 import { shouldGenerateReply } from '../../conversations/domain/policies/shouldGenerateReply';
@@ -190,6 +191,26 @@ export class AiReplyJobProcessor {
      */
     private readonly automatedLoopExchangesToCheck: number = DEFAULT_AUTOMATED_LOOP_EXCHANGES_TO_CHECK,
     private readonly automatedLoopMaxReplyLatencyMs: number = DEFAULT_AUTOMATED_LOOP_MAX_REPLY_LATENCY_MS,
+    /**
+     * Teto de chamadas de IA por janela (2026-09-17) — OPCIONAL, mesmo
+     * padrão de `aiPreferencesRepository`: sem ele, nenhum teto é aplicado
+     * aqui (comportamento anterior).
+     *
+     * POR QUE AQUI, E NÃO MAIS NA INGESTÃO. Até 2026-09-17 o teto era
+     * consumido em `MessageIngestionService`, uma ficha por MENSAGEM
+     * recebida. Desde o agrupamento de rajada (2026-08-14), porém, uma
+     * pessoa que escreve em sete pedaços gera sete mensagens e UMA única
+     * chamada de IA — as outras seis fichas eram gastas por jobs que
+     * terminam de graça em `shouldGenerateReply`. O efeito prático era o
+     * oposto do desejado: a conversa mais legítima (alguém digitando
+     * naturalmente) era a que mais se aproximava de cair em "Aguardando
+     * atendente", sem que nenhum custo extra de IA tivesse sido gerado.
+     *
+     * Consumido agora no ponto onde o custo realmente acontece: depois de
+     * todos os portões que encerram sem chamar o provider, imediatamente
+     * antes de `generateReply`. Uma ficha por chamada de IA de verdade.
+     */
+    private readonly aiRateLimiter?: AiRateLimiter,
   ) {}
 
   async process(data: AiReplyJobData): Promise<void> {
@@ -302,6 +323,33 @@ export class AiReplyJobProcessor {
       );
       await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'loop_automatizado');
       return;
+    }
+
+    // TETO DE CHAMADAS DE IA (2026-09-17) — último portão, depois de TODOS
+    // os que encerram de graça (`shouldAutoRespond`, `shouldGenerateReply`,
+    // `detectAutomatedLoop`) e imediatamente antes da única linha que gasta
+    // cota de verdade. Uma ficha por chamada, nunca por mensagem recebida —
+    // ver a docstring de `aiRateLimiter` no construtor para o porquê da
+    // mudança de lugar.
+    //
+    // Estourou: não gera resposta e sinaliza atenção humana pelo MESMO
+    // mecanismo já usado quando a IA falha — o alerta/som/contador que o
+    // operador já conhece, sem UX nova. A janela é deslizante: a próxima
+    // mensagem, depois que a rajada esfriar, volta a ser respondida sozinha.
+    if (this.aiRateLimiter) {
+      const withinRateLimit = await this.aiRateLimiter.consume(
+        data.tenantId,
+        conversation.sessionName,
+        data.conversationId,
+      );
+      if (!withinRateLimit) {
+        this.logger.warn(
+          'Job ai-reply encerrado: teto de chamadas de IA atingido nesta janela (conversa ou sessão)',
+          { ...data },
+        );
+        await this.flagNeedsHumanAttention(data.tenantId, data.conversationId, 'teto_de_ia');
+        return;
+      }
     }
 
     const result = await this.conversationAiService.generateReply(
@@ -529,7 +577,7 @@ export class AiReplyJobProcessor {
   private async flagNeedsHumanAttention(
     tenantId: string,
     conversationId: string,
-    reason: 'decisao_da_ia' | 'falha_da_ia' | 'loop_automatizado',
+    reason: 'decisao_da_ia' | 'falha_da_ia' | 'loop_automatizado' | 'teto_de_ia',
   ): Promise<void> {
     await this.conversationRepository.flagNeedsHumanAttention(tenantId, conversationId, new Date());
     this.logger.info(
