@@ -6,6 +6,7 @@ import { MotionConfig } from 'framer-motion';
 import { BRAND, pageTitle } from '@/lib/brand';
 import { Toaster } from '@/components/ui/toaster';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
+import PastDueBanner from '@/components/PastDueBanner';
 import SupportAccessBanner from '@/components/SupportAccessBanner';
 
 /**
@@ -65,6 +66,12 @@ export default function MyApp({ Component, pageProps }: AppProps): JSX.Element {
             decide não renderizar nada em `/admin` e nas telas de pré-login.
           */}
           <SupportAccessBanner />
+          {/*
+            B5, etapa 3 — aviso de pagamento em atraso. Mesma posição (abaixo
+            do de suporte — empilha em vez de sobrepor no caso raríssimo de os
+            dois estarem ativos ao mesmo tempo).
+          */}
+          <PastDueBanner />
           <Component {...pageProps} />
         </AppErrorBoundary>
       </MotionConfig>

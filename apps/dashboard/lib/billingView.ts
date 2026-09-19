@@ -85,6 +85,18 @@ export function describeBillingSituation(billing: BillingStatus): string | null 
   return null;
 }
 
+/** Mesma tolerância de 3 dias que a fila `billing-grace` usa no servidor. */
+const PAST_DUE_GRACE_DAYS = 3;
+
+/** `pastDueSince + 3 dias`, ou `undefined` se não estiver em atraso. */
+export function pastDueDeadline(billing: BillingStatus): Date | undefined {
+  const sub = billing.subscription;
+  if (sub?.status !== 'past_due' || !sub.pastDueSince) return undefined;
+  return new Date(
+    new Date(sub.pastDueSince).getTime() + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
+  );
+}
+
 /** "1 WhatsApp" / "Até 5 WhatsApps" — lido do mesmo limite que a API aplica. */
 export function whatsAppAllowanceLabel(plan: PaidPlan): string {
   const limit = sessionLimitFor(plan);

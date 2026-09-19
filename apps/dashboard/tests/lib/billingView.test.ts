@@ -5,6 +5,7 @@ import {
   formatBillingDate,
   hasLiveSubscription,
   isSubscriptionConfirmed,
+  pastDueDeadline,
   whatsAppAllowanceLabel,
 } from '../../lib/billingView';
 import type { BillingStatus } from '../../lib/clientApi';
@@ -154,5 +155,34 @@ describe('whatsAppAllowanceLabel', () => {
     expect(whatsAppAllowanceLabel('broadcast')).toBe('1 WhatsApp');
     expect(whatsAppAllowanceLabel('pro')).toBe('1 WhatsApp');
     expect(whatsAppAllowanceLabel('enterprise')).toBe('Até 5 WhatsApps');
+  });
+});
+
+// B5, etapa 3 — a mesma tolerância de 3 dias que o billing-grace usa no servidor.
+describe('pastDueDeadline', () => {
+  it('soma 3 dias a pastDueSince quando em atraso', () => {
+    const billingStatus = billing({
+      subscription: subscription({ status: 'past_due', pastDueSince: '2026-09-18T00:00:00.000Z' }),
+    });
+
+    expect(pastDueDeadline(billingStatus)).toEqual(new Date('2026-09-21T00:00:00.000Z'));
+  });
+
+  it('sem estar em atraso: undefined', () => {
+    expect(
+      pastDueDeadline(billing({ subscription: subscription({ status: 'active' }) })),
+    ).toBeUndefined();
+  });
+
+  it('sem assinatura nenhuma: undefined', () => {
+    expect(pastDueDeadline(billing())).toBeUndefined();
+  });
+
+  it('em atraso mas sem pastDueSince (dado inconsistente): undefined', () => {
+    expect(
+      pastDueDeadline(
+        billing({ subscription: subscription({ status: 'past_due', pastDueSince: null }) }),
+      ),
+    ).toBeUndefined();
   });
 });
