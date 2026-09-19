@@ -18,9 +18,13 @@ import { BillingEventRepository } from '../domain/repositories/BillingEventRepos
 import { SubscriptionRepository } from '../domain/repositories/SubscriptionRepository';
 import {
   ACTIVE_SUBSCRIPTION_STATUSES,
+  addDays,
+  PAST_DUE_GRACE_DAYS,
   planFromSubscription,
   toSubscriptionStatus,
 } from '../domain/subscriptionState';
+import { BillingGraceScheduler } from '../domain/schedulers/BillingGraceScheduler';
+import { PlanChangeService } from './PlanChangeService';
 
 /** Dias de teste grátis na primeira assinatura (decisão do fundador, B5). */
 export const TRIAL_DAYS = 1;
@@ -89,7 +93,25 @@ export class BillingService {
     private readonly billing?: BillingConfig,
     private readonly auditLog?: AuditLogRepository,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * B5, etapa 3 — OPCIONAL (mesmo padrão de `mediaSender`/`campaignSendDispatcher`):
+     * ausente quando `index.ts` ainda não injetou (ordem de composição) ou em
+     * testes que não precisam da descida — `syncFromStripe` só não aplica a
+     * consequência da descida, o plano ainda muda.
+     */
+    private planChangeService?: PlanChangeService,
+    /** OPCIONAL — ausente sem `REDIS_URL` (fila `billing-grace` não existe). */
+    private graceScheduler?: BillingGraceScheduler,
   ) {}
+
+  /** Injeção tardia (mesmo padrão de `setMediaSender`) — `index.ts` monta a fila DEPOIS de `BillingService`. */
+  setPlanChangeService(service: PlanChangeService): void {
+    this.planChangeService = service;
+  }
+
+  setGraceScheduler(scheduler: BillingGraceScheduler): void {
+    this.graceScheduler = scheduler;
+  }
 
   async getStatus(tenantId: string): Promise<BillingStatus> {
     const tenant = await this.requireTenant(tenantId);
@@ -187,6 +209,7 @@ export class BillingService {
 
     const current = await billing.gateway.findCurrentSubscription(local.stripeCustomerId);
     const status = current ? toSubscriptionStatus(current.status) : null;
+    const enteringPastDue = status === 'past_due' && !local.pastDueSince;
     await this.subscriptions.saveState(tenantId, {
       stripeSubscriptionId: current?.id ?? null,
       plan: current?.priceId ? (planForPrice(billing.catalog, current.priceId) ?? null) : null,
@@ -196,6 +219,15 @@ export class BillingService {
       cancelAtPeriodEnd: current?.cancelAtPeriodEnd ?? false,
       pastDueSince: status === 'past_due' ? (local.pastDueSince ?? this.now()) : null,
     });
+
+    if (enteringPastDue && current) {
+      await this.graceScheduler?.schedule(
+        tenantId,
+        current.id,
+        this.now(),
+        addDays(this.now(), PAST_DUE_GRACE_DAYS),
+      );
+    }
 
     if (tenant.planSource === 'manual' && tenant.plan !== 'free') {
       this.logger.warn('Aviso do Stripe para um tenant de plano manual — plano mantido', {
@@ -217,12 +249,14 @@ export class BillingService {
       await this.tenants.markTrialUsed(tenantId, this.now());
     }
     if (target !== tenant.plan) {
+      const previousPlan = tenant.plan;
       await this.tenants.changePlan(tenantId, target, 'self_service');
       await this.audit(tenantId, {}, 'billing.plan_changed', {
-        from: tenant.plan,
+        from: previousPlan,
         to: target,
         source: 'stripe',
       });
+      await this.planChangeService?.applyIfDowngrade(tenantId, previousPlan, target);
     }
   }
 

@@ -1,4 +1,6 @@
 import { BillingService } from '../../../../src/services/billing/application/BillingService';
+import { PlanChangeService } from '../../../../src/services/billing/application/PlanChangeService';
+import { BillingGraceScheduler } from '../../../../src/services/billing/domain/schedulers/BillingGraceScheduler';
 import { GatewaySubscription } from '../../../../src/services/billing/domain/BillingGateway';
 import {
   BillingNotConfiguredError,
@@ -44,6 +46,8 @@ function build(
     plan?: TenantPlan;
     planSource?: PlanSource;
     trialUsedAt?: Date;
+    withPlanChangeService?: boolean;
+    withGraceScheduler?: boolean;
   } = {},
 ): {
   service: BillingService;
@@ -52,6 +56,8 @@ function build(
   events: FakeBillingEventRepository;
   gateway: FakeBillingGateway;
   audit: FakeAuditLogRepository;
+  planChangeService: { applyIfDowngrade: jest.Mock };
+  graceScheduler: { schedule: jest.Mock };
 } {
   const tenants = new FakeTenantRepository();
   tenants.seed({
@@ -68,6 +74,8 @@ function build(
   const events = new FakeBillingEventRepository();
   const gateway = new FakeBillingGateway();
   const audit = new FakeAuditLogRepository();
+  const planChangeService = { applyIfDowngrade: jest.fn().mockResolvedValue(undefined) };
+  const graceScheduler = { schedule: jest.fn().mockResolvedValue(undefined) };
   const service = new BillingService(
     subscriptions,
     events,
@@ -76,8 +84,14 @@ function build(
     options.enabled === false ? undefined : { gateway, catalog, publicUrl: PUBLIC_URL },
     audit,
     () => NOW,
+    options.withPlanChangeService === false
+      ? undefined
+      : (planChangeService as unknown as PlanChangeService),
+    options.withGraceScheduler === false
+      ? undefined
+      : (graceScheduler as unknown as BillingGraceScheduler),
   );
-  return { service, tenants, subscriptions, events, gateway, audit };
+  return { service, tenants, subscriptions, events, gateway, audit, planChangeService, graceScheduler };
 }
 
 describe('BillingService', () => {
@@ -388,6 +402,103 @@ describe('BillingService', () => {
       expect((await ctx.subscriptions.findByTenant('t1'))?.pastDueSince).toBeUndefined();
       // Em atraso, o plano continua (a tolerância é da etapa 3).
       expect((await ctx.tenants.findById('t1'))?.plan).toBe('pro');
+    });
+
+    // B5, etapa 3 — agendamento da tolerância de 3 dias.
+    it('primeira vez que fica em atraso: agenda billing-grace para pastDueSince + 3 dias', async () => {
+      const ctx = build({ plan: 'pro' });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ id: 'sub_1', status: 'past_due' });
+
+      await ctx.service.syncFromStripe('t1');
+
+      expect(ctx.graceScheduler.schedule).toHaveBeenCalledWith(
+        't1',
+        'sub_1',
+        NOW,
+        new Date(NOW.getTime() + 3 * 24 * 60 * 60 * 1000),
+      );
+    });
+
+    it('já estava em atraso antes: não agenda de novo', async () => {
+      const ctx = build({ plan: 'pro' });
+      const firstSeen = new Date('2026-09-10T00:00:00.000Z');
+      ctx.subscriptions.seed({
+        tenantId: 't1',
+        stripeCustomerId: 'cus_1',
+        status: 'past_due',
+        pastDueSince: firstSeen,
+      });
+      ctx.gateway.subscription = stripeSub({ id: 'sub_1', status: 'past_due' });
+
+      await ctx.service.syncFromStripe('t1');
+
+      expect(ctx.graceScheduler.schedule).not.toHaveBeenCalled();
+    });
+
+    it('voltou a ficar em dia: não agenda nada', async () => {
+      const ctx = build({ plan: 'pro' });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ id: 'sub_1', status: 'active' });
+
+      await ctx.service.syncFromStripe('t1');
+
+      expect(ctx.graceScheduler.schedule).not.toHaveBeenCalled();
+    });
+
+    it('sem graceScheduler injetado (Redis fora do ar): não lança', async () => {
+      const ctx = build({ plan: 'pro', withGraceScheduler: false });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ id: 'sub_1', status: 'past_due' });
+
+      await expect(ctx.service.syncFromStripe('t1')).resolves.toBeUndefined();
+    });
+
+    // B5, etapa 3 — a descida de plano é aplicada sempre que o plano muda.
+    it('plano mudou (desceu) durante o syncFromStripe: chama planChangeService.applyIfDowngrade(tenantId, from, to)', async () => {
+      const ctx = build({ plan: 'enterprise' });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ status: 'canceled' });
+
+      await ctx.service.syncFromStripe('t1');
+
+      expect(ctx.planChangeService.applyIfDowngrade).toHaveBeenCalledWith(
+        't1',
+        'enterprise',
+        'free',
+      );
+    });
+
+    it('plano mudou (subiu) durante o syncFromStripe: chama planChangeService.applyIfDowngrade mesmo assim', async () => {
+      const ctx = build({ plan: 'broadcast' });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ status: 'active', priceId: 'price_e' });
+
+      await ctx.service.syncFromStripe('t1');
+
+      expect(ctx.planChangeService.applyIfDowngrade).toHaveBeenCalledWith(
+        't1',
+        'broadcast',
+        'enterprise',
+      );
+    });
+
+    it('plano não mudou: não chama planChangeService', async () => {
+      const ctx = build({ plan: 'pro' });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ status: 'active', priceId: 'price_p' });
+
+      await ctx.service.syncFromStripe('t1');
+
+      expect(ctx.planChangeService.applyIfDowngrade).not.toHaveBeenCalled();
+    });
+
+    it('sem planChangeService injetado: não lança', async () => {
+      const ctx = build({ plan: 'enterprise', withPlanChangeService: false });
+      ctx.subscriptions.seed({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+      ctx.gateway.subscription = stripeSub({ status: 'canceled' });
+
+      await expect(ctx.service.syncFromStripe('t1')).resolves.toBeUndefined();
     });
   });
 });
