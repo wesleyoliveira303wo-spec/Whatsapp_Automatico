@@ -530,6 +530,32 @@ describe('GroupBroadcastService (Disparos em grupos)', () => {
         GroupBroadcastNotFoundError,
       );
     });
+
+    it('expõe os alvos REAIS de cada etapa (status/data verdadeiros) — nunca a elegibilidade congelada da criação', async () => {
+      const { service, repository } = buildSut();
+      const { broadcastId, stepIds, stepTargetIds } = repository.seedBroadcast({
+        tenantId: 'tenant-1',
+        groupJids: ['a@g.us'],
+      });
+      const [stepId] = stepIds;
+      const [[stepTargetId]] = stepTargetIds;
+      await repository.markStepTargetSent(
+        'tenant-1',
+        stepTargetId,
+        new Date('2026-09-19T10:00:00.000Z'),
+      );
+
+      const detail = await service.getBroadcast('tenant-1', broadcastId);
+
+      expect(detail.stepTargets[stepId]).toHaveLength(1);
+      expect(detail.stepTargets[stepId][0]).toMatchObject({
+        groupJid: 'a@g.us',
+        status: 'sent',
+        sentAt: new Date('2026-09-19T10:00:00.000Z'),
+      });
+      // `targets` (top-level) continua só a elegibilidade — nunca reflete o envio.
+      expect(detail.targets[0].status).toBe('pending');
+    });
   });
 
   describe('startBroadcast()', () => {

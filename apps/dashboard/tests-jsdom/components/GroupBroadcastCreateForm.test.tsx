@@ -410,7 +410,6 @@ describe('GroupBroadcastCreateForm — modo edição (Task 8, 2026-09-15)', () =
         groupJid: '111@g.us',
         groupName: 'Grupo de clientes',
         status: 'pending' as const,
-        sentCount: 3,
         createdAt: '2026-09-01T00:00:00.000Z',
       },
       {
@@ -419,7 +418,6 @@ describe('GroupBroadcastCreateForm — modo edição (Task 8, 2026-09-15)', () =
         groupJid: '999@g.us',
         groupName: 'Grupo Que Saiu',
         status: 'pending' as const,
-        sentCount: 0,
         createdAt: '2026-09-01T00:00:00.000Z',
       },
     ],

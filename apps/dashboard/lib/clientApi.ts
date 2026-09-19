@@ -1358,18 +1358,36 @@ export type GroupBroadcastTargetStatus = 'pending' | 'sent' | 'failed' | 'skippe
 /** Motivos de um grupo nascer suprimido — decididos na criação, a partir da listagem AO VIVO. */
 export type GroupBroadcastSkipReason = 'admin_only_group' | 'group_not_found';
 
+/**
+ * Elegibilidade de um grupo, congelada na criação do disparo — `status` só
+ * vale `pending` (segue elegível) ou `skipped` (excluído desde a criação,
+ * ex.: virou "só admins"). NUNCA reflete envio: quem descreve o que
+ * realmente aconteceu em cada publicação é `GroupBroadcastStepTarget`.
+ */
 export interface GroupBroadcastTarget {
   id: string;
   broadcastId: string;
   groupJid: string;
   /** Retrato do nome no momento da criação — o grupo pode ter sido renomeado desde então. */
   groupName: string;
+  status: Extract<GroupBroadcastTargetStatus, 'pending' | 'skipped'>;
+  skipReason?: string;
+  createdAt: string;
+}
+
+/** Progresso REAL de um grupo numa publicação específica — status/data verdadeiros do envio. */
+export interface GroupBroadcastStepTarget {
+  id: string;
+  stepId: string;
+  broadcastId: string;
+  groupJid: string;
+  groupName: string;
   status: GroupBroadcastTargetStatus;
   skipReason?: string;
   errorMessage?: string;
   sentAt?: string;
   attemptedAt?: string;
-  /** Quantas vezes este grupo já recebeu a publicação (soma das repetições). */
+  /** Quantas vezes esta publicação já saiu neste grupo (soma das repetições). */
   sentCount: number;
   createdAt: string;
 }
@@ -1429,6 +1447,7 @@ export function createGroupBroadcast(input: {
   steps: GroupBroadcastStep[];
   summary: GroupBroadcastSummary;
   targets: GroupBroadcastTarget[];
+  stepTargets: Record<string, GroupBroadcastStepTarget[]>;
 }> {
   return request('/api/group-broadcasts', { method: 'POST', body: JSON.stringify(input) });
 }
@@ -1439,6 +1458,7 @@ export function fetchGroupBroadcast(broadcastId: string): Promise<{
   steps: GroupBroadcastStep[];
   summary: GroupBroadcastSummary;
   targets: GroupBroadcastTarget[];
+  stepTargets: Record<string, GroupBroadcastStepTarget[]>;
 }> {
   return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`);
 }
@@ -1472,6 +1492,7 @@ export function updateGroupBroadcast(
   steps: GroupBroadcastStep[];
   summary: GroupBroadcastSummary;
   targets: GroupBroadcastTarget[];
+  stepTargets: Record<string, GroupBroadcastStepTarget[]>;
 }> {
   return request(`/api/group-broadcasts/${encodeURIComponent(broadcastId)}`, {
     method: 'PUT',

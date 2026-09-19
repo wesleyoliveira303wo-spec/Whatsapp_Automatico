@@ -15,12 +15,15 @@ import {
   type GroupBroadcastStep,
   type GroupBroadcastStatus,
   type GroupBroadcastTarget,
+  type GroupBroadcastStepTarget,
+  type GroupBroadcastTargetStatus,
   type GroupBroadcastSummary,
   type ResumeMode,
 } from '@/lib/clientApi';
 import GroupBroadcastCreateForm from '@/components/GroupBroadcastCreateForm';
 import { usePollingRefresh } from '@/hooks/usePollingRefresh';
 import { formatDateTime } from '@/lib/formatters';
+import { flattenStepTargetsForDisplay, lastSentAtForStep } from '@/lib/groupBroadcastView';
 import { toast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -72,7 +75,7 @@ const STATUS_BADGE_VARIANT: Record<
   cancelled: 'destructive',
 };
 
-const TARGET_STATUS_LABELS: Record<GroupBroadcastTarget['status'], string> = {
+const TARGET_STATUS_LABELS: Record<GroupBroadcastTargetStatus, string> = {
   pending: 'Aguardando envio',
   sent: 'Publicado',
   failed: 'Falhou',
@@ -80,7 +83,7 @@ const TARGET_STATUS_LABELS: Record<GroupBroadcastTarget['status'], string> = {
 };
 
 const TARGET_STATUS_BADGE_VARIANT: Record<
-  GroupBroadcastTarget['status'],
+  GroupBroadcastTargetStatus,
   'secondary' | 'success' | 'warning' | 'destructive'
 > = {
   pending: 'secondary',
@@ -94,8 +97,13 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   group_not_found: 'O número não participa mais deste grupo',
 };
 
-/** Texto da coluna Detalhe — um lugar só, usado na coluna (desktop) e abaixo do nome (celular). */
-function targetDetail(target: GroupBroadcastTarget): string | null {
+/**
+ * Texto da coluna Detalhe — um lugar só, usado na coluna (desktop) e abaixo
+ * do nome (celular). Lê `GroupBroadcastStepTarget` (o progresso REAL de um
+ * grupo numa publicação), não `GroupBroadcastTarget` (só a elegibilidade
+ * congelada na criação, que nunca teve isso pra mostrar).
+ */
+function targetDetail(target: GroupBroadcastStepTarget): string | null {
   if (target.status === 'skipped' && target.skipReason) {
     return SKIP_REASON_LABELS[target.skipReason] ?? target.skipReason;
   }
@@ -132,6 +140,7 @@ export default function GroupBroadcastDetailPanel({
   const [steps, setSteps] = useState<GroupBroadcastStep[]>([]);
   const [summary, setSummary] = useState<GroupBroadcastSummary | null>(null);
   const [targets, setTargets] = useState<GroupBroadcastTarget[]>([]);
+  const [stepTargets, setStepTargets] = useState<Record<string, GroupBroadcastStepTarget[]>>({});
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
@@ -159,6 +168,7 @@ export default function GroupBroadcastDetailPanel({
           setSteps(detail.steps);
           setSummary(detail.summary);
           setTargets(detail.targets);
+          setStepTargets(detail.stepTargets);
         })
         .catch(() => {
           if (!silent) setErrorMessage('Não foi possível carregar este disparo.');
@@ -270,6 +280,13 @@ export default function GroupBroadcastDetailPanel({
   const hasFutureScheduledStep = steps.some(
     (step) => !step.finishedAt && step.nextRunAt && new Date(step.nextRunAt).getTime() > now,
   );
+
+  // Lista de grupos por publicação (2026-09-18) — dado REAL de envio
+  // (`stepTargets`), não a elegibilidade congelada de `targets`. Com uma
+  // publicação só (o caso mais comum), fica igual a uma lista única de
+  // sempre; com várias, o mesmo grupo aparece uma vez por publicação.
+  const groupDisplayRows = flattenStepTargetsForDisplay(steps, stepTargets);
+  const showPublicationColumn = steps.length > 1;
 
   const canEdit = broadcast.status === 'draft' || broadcast.status === 'paused';
   const editBlockedReason =
@@ -407,6 +424,7 @@ export default function GroupBroadcastDetailPanel({
                 ? 'Em execução'
                 : 'Aguardando início';
             const stepStatusVariant = isFinished ? 'default' : isRunning ? 'success' : 'secondary';
+            const stepLastSentAt = lastSentAtForStep(stepTargets[step.id]);
             return (
               <div
                 key={step.id}
@@ -428,6 +446,9 @@ export default function GroupBroadcastDetailPanel({
                   <div className="mt-2 flex items-start gap-2 text-[12.5px] text-muted-foreground">
                     <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <div className="min-w-0">
+                      {stepLastSentAt && (
+                        <p>Última publicação em {formatDateTime(stepLastSentAt)}</p>
+                      )}
                       <p>
                         Repete a cada{' '}
                         {step.recurrenceIntervalHours === 1
@@ -666,32 +687,40 @@ export default function GroupBroadcastDetailPanel({
           <TableHeader>
             <TableRow>
               <TableHead className="px-4">Grupo</TableHead>
+              {showPublicationColumn && <TableHead className="px-4">Publicação</TableHead>}
               <TableHead className="px-4">Status</TableHead>
               <TableHead className={cn(COLUMN_FROM_SM, 'px-4')}>Detalhe</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {targets.map((target) => (
-              <TableRow key={target.id}>
+            {groupDisplayRows.map((row) => (
+              <TableRow key={row.key}>
                 <TableCell className="px-4 py-3 align-top">
                   <div className="flex min-w-0 items-center gap-2">
                     <Users className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="min-w-0 break-words text-[13px] text-foreground">{target.groupName}</span>
+                    <span className="min-w-0 break-words text-[13px] text-foreground">
+                      {row.target.groupName}
+                    </span>
                   </div>
                   {/* Celular: a coluna Detalhe some e o texto desce para baixo do grupo. */}
-                  {targetDetail(target) && (
+                  {targetDetail(row.target) && (
                     <p className="mt-1 break-words text-[12px] text-muted-foreground sm:hidden">
-                      {targetDetail(target)}
+                      {targetDetail(row.target)}
                     </p>
                   )}
                 </TableCell>
+                {showPublicationColumn && (
+                  <TableCell className="whitespace-nowrap px-4 py-3 align-top text-[12.5px] text-muted-foreground">
+                    {row.stepNumber} de {steps.length}
+                  </TableCell>
+                )}
                 <TableCell className="whitespace-nowrap px-4 py-3 align-top">
-                  <Badge variant={TARGET_STATUS_BADGE_VARIANT[target.status]}>
-                    {TARGET_STATUS_LABELS[target.status]}
+                  <Badge variant={TARGET_STATUS_BADGE_VARIANT[row.target.status]}>
+                    {TARGET_STATUS_LABELS[row.target.status]}
                   </Badge>
                 </TableCell>
                 <TableCell className={cn(COLUMN_FROM_SM, 'px-4 py-3 align-top text-[12.5px] text-muted-foreground')}>
-                  {targetDetail(target)}
+                  {targetDetail(row.target)}
                 </TableCell>
               </TableRow>
             ))}

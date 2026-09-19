@@ -152,7 +152,14 @@ export interface GroupBroadcastDetail {
   broadcast: GroupBroadcast;
   steps: GroupBroadcastStep[];
   summary: GroupBroadcastSummary;
+  /**
+   * Elegibilidade dos grupos, congelada na criação (`pending`/`skipped` só —
+   * nunca `sent`/`failed`, ver `GroupBroadcastTarget`). Quem descreve o envio
+   * de verdade é `stepTargets`.
+   */
   targets: GroupBroadcastTarget[];
+  /** Alvos REAIS de cada etapa (status/sentAt/sentCount), por `stepId`. */
+  stepTargets: Record<string, GroupBroadcastStepTarget[]>;
 }
 
 export interface GroupBroadcastListItem {
@@ -312,7 +319,8 @@ export class GroupBroadcastService {
       steps: steps.length,
     });
 
-    return { broadcast, steps, summary, targets };
+    const stepTargets = await this.buildStepTargetsMap(input.tenantId, steps);
+    return { broadcast, steps, summary, targets, stepTargets };
   }
 
   /**
@@ -535,7 +543,8 @@ export class GroupBroadcastService {
       broadcastId: input.broadcastId,
     });
 
-    return { broadcast: updatedBroadcast!, steps, summary, targets };
+    const stepTargets = await this.buildStepTargetsMap(input.tenantId, steps);
+    return { broadcast: updatedBroadcast!, steps, summary, targets, stepTargets };
   }
 
   async listBroadcasts(tenantId: string, sessionName: string): Promise<GroupBroadcastListItem[]> {
@@ -559,7 +568,8 @@ export class GroupBroadcastService {
       this.repository.summarizeTargets(tenantId, broadcastId),
       this.repository.listTargets(tenantId, broadcastId),
     ]);
-    return { broadcast, steps, summary, targets };
+    const stepTargets = await this.buildStepTargetsMap(tenantId, steps);
+    return { broadcast, steps, summary, targets, stepTargets };
   }
 
   /**
@@ -900,6 +910,21 @@ export class GroupBroadcastService {
       throw new GroupBroadcastStepNotFoundError(stepId);
     }
     return step;
+  }
+
+  /** Alvos reais de CADA etapa (status/sentAt/sentCount) — o que `GroupBroadcastDetail.stepTargets` expõe. */
+  private async buildStepTargetsMap(
+    tenantId: string,
+    steps: readonly GroupBroadcastStep[],
+  ): Promise<Record<string, GroupBroadcastStepTarget[]>> {
+    const lists = await Promise.all(
+      steps.map((step) => this.repository.listStepTargets(tenantId, step.id)),
+    );
+    const map: Record<string, GroupBroadcastStepTarget[]> = {};
+    steps.forEach((step, index) => {
+      map[step.id] = lists[index];
+    });
+    return map;
   }
 
   private async assertTenantExists(tenantId: string): Promise<Tenant> {

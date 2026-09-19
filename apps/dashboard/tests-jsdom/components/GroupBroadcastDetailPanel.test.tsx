@@ -77,6 +77,22 @@ function target(over: Partial<clientApi.GroupBroadcastTarget> = {}): clientApi.G
     groupJid: '111@g.us',
     groupName: 'Grupo 1',
     status: 'pending',
+    createdAt: '2026-09-11T10:00:00.000Z',
+    ...over,
+  };
+}
+
+/** Progresso REAL de um grupo numa publicação — o que a lista de grupos hoje exibe. */
+function stepTarget(
+  over: Partial<clientApi.GroupBroadcastStepTarget> = {},
+): clientApi.GroupBroadcastStepTarget {
+  return {
+    id: 'target-1',
+    stepId: 'step-1',
+    broadcastId: 'broadcast-1',
+    groupJid: '111@g.us',
+    groupName: 'Grupo 1',
+    status: 'pending',
     sentCount: 0,
     createdAt: '2026-09-11T10:00:00.000Z',
     ...over,
@@ -88,12 +104,16 @@ function mockDetail(over: {
   steps?: clientApi.GroupBroadcastStep[];
   summary?: Partial<clientApi.GroupBroadcastSummary>;
   targets?: clientApi.GroupBroadcastTarget[];
+  /** Chaveado por `stepId` — default: um alvo pendente na primeira etapa. */
+  stepTargets?: Record<string, clientApi.GroupBroadcastStepTarget[]>;
 } = {}): void {
+  const steps = over.steps ?? [step()];
   (clientApi.fetchGroupBroadcast as jest.Mock).mockResolvedValue({
     broadcast: broadcast(over.broadcast),
-    steps: over.steps ?? [step()],
+    steps,
     summary: { total: 1, pending: 1, sent: 0, failed: 0, skipped: 0, totalSent: 0, ...over.summary },
     targets: over.targets ?? [target()],
+    stepTargets: over.stepTargets ?? { [steps[0].id]: [stepTarget({ stepId: steps[0].id })] },
   });
 }
 
@@ -221,10 +241,12 @@ describe('GroupBroadcastDetailPanel', () => {
 
   it('mostra o motivo de falha/supressão por grupo', async () => {
     mockDetail({
-      targets: [
-        target({ id: 't1', status: 'failed', errorMessage: 'erro ao enviar' }),
-        target({ id: 't2', status: 'skipped', skipReason: 'admin_only_group' }),
-      ],
+      stepTargets: {
+        'step-1': [
+          stepTarget({ id: 't1', status: 'failed', errorMessage: 'erro ao enviar' }),
+          stepTarget({ id: 't2', status: 'skipped', skipReason: 'admin_only_group' }),
+        ],
+      },
     });
     await renderPanel();
 
@@ -344,6 +366,73 @@ describe('GroupBroadcastDetailPanel — publicações e repetição (2026-09-14)
 
     expect(screen.queryByText(/Próxima publicação em/)).not.toBeInTheDocument();
     expect(screen.getByText(/Publicando agora/)).toBeInTheDocument();
+  });
+
+  it('já publicou antes: mostra "Última publicação" acima de "Próxima publicação"', async () => {
+    mockDetail({
+      broadcast: { status: 'running' },
+      steps: [
+        step({
+          startedAt: '2026-09-11T10:00:00.000Z',
+          recurrenceIntervalHours: 2,
+          runsCompleted: 1,
+          nextRunAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        }),
+      ],
+      stepTargets: {
+        'step-1': [stepTarget({ status: 'sent', sentAt: '2026-09-18T12:00:00.000Z' })],
+      },
+    });
+    await renderPanel();
+
+    expect(screen.getByText(/Última publicação em/)).toBeInTheDocument();
+    expect(screen.getByText(/Próxima publicação em/)).toBeInTheDocument();
+  });
+
+  it('nunca publicou ainda: não mostra "Última publicação"', async () => {
+    mockDetail({
+      broadcast: { status: 'running' },
+      steps: [
+        step({
+          startedAt: '2026-09-11T10:00:00.000Z',
+          recurrenceIntervalHours: 2,
+          nextRunAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        }),
+      ],
+      stepTargets: { 'step-1': [stepTarget({ status: 'pending' })] },
+    });
+    await renderPanel();
+
+    expect(screen.queryByText(/Última publicação em/)).not.toBeInTheDocument();
+  });
+
+  it('várias publicações: a lista de grupos mostra o status REAL de cada uma, com a coluna Publicação', async () => {
+    mockDetail({
+      steps: [
+        step({ id: 's1', order: 0, messageTemplate: 'Primeira' }),
+        step({ id: 's2', order: 1, messageTemplate: 'Segunda' }),
+      ],
+      stepTargets: {
+        s1: [stepTarget({ id: 't-s1', stepId: 's1', status: 'sent', sentAt: '2026-09-18T12:00:00.000Z' })],
+        s2: [stepTarget({ id: 't-s2', stepId: 's2', status: 'pending' })],
+      },
+    });
+    await renderPanel();
+
+    const table = within(screen.getByTestId('group-broadcast-targets-table'));
+    expect(table.getByText('Publicação')).toBeInTheDocument();
+    expect(table.getByText('1 de 2')).toBeInTheDocument();
+    expect(table.getByText('2 de 2')).toBeInTheDocument();
+    expect(table.getByText('Publicado')).toBeInTheDocument();
+    expect(table.getByText('Aguardando envio')).toBeInTheDocument();
+  });
+
+  it('publicação única: a lista de grupos não mostra a coluna Publicação', async () => {
+    mockDetail();
+    await renderPanel();
+
+    const table = within(screen.getByTestId('group-broadcast-targets-table'));
+    expect(table.queryByText('Publicação')).not.toBeInTheDocument();
   });
 
   it('sem limite: avisa que só para quando cancelarem', async () => {
