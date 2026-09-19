@@ -10,6 +10,9 @@ import {
   SubscriptionRepository,
   SubscriptionState,
 } from '../../../src/services/billing/domain/repositories/SubscriptionRepository';
+import { SessionDowngradeHandler } from '../../../src/services/billing/domain/providers/SessionDowngradeHandler';
+import { CampaignDowngradeHandler } from '../../../src/services/billing/domain/providers/CampaignDowngradeHandler';
+import { GroupBroadcastDowngradeHandler } from '../../../src/services/billing/domain/providers/GroupBroadcastDowngradeHandler';
 
 /** `SubscriptionRepository` em memória — uma linha por tenant, como no banco. */
 export class FakeSubscriptionRepository implements SubscriptionRepository {
@@ -125,5 +128,34 @@ export class FakeBillingGateway implements BillingGateway {
   parseWebhookEvent(_rawBody: Buffer, signature: string | undefined): GatewayEvent {
     if (signature !== 'valid') throw new InvalidWebhookSignatureError();
     return this.nextEvent;
+  }
+
+  async cancelSubscription(subscriptionId: string): Promise<void> {
+    this.calls.push(`cancelSubscription:${subscriptionId}`);
+  }
+}
+
+/** As três portas de descida (B5, etapa 3) — cada uma só registra o que recebeu. */
+export class FakeSessionDowngradeHandler implements SessionDowngradeHandler {
+  readonly calls: { tenantId: string; newLimit: number }[] = [];
+
+  async detachExcessSessions(tenantId: string, newLimit: number): Promise<void> {
+    this.calls.push({ tenantId, newLimit });
+  }
+}
+
+export class FakeCampaignDowngradeHandler implements CampaignDowngradeHandler {
+  readonly calls: string[] = [];
+
+  async pauseRunning(tenantId: string): Promise<void> {
+    this.calls.push(tenantId);
+  }
+}
+
+export class FakeGroupBroadcastDowngradeHandler implements GroupBroadcastDowngradeHandler {
+  readonly calls: string[] = [];
+
+  async pauseRunning(tenantId: string): Promise<void> {
+    this.calls.push(tenantId);
   }
 }

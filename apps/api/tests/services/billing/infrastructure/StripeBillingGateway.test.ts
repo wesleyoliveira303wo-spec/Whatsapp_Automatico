@@ -246,4 +246,13 @@ describe('StripeBillingGateway', () => {
       InvalidWebhookSignatureError,
     );
   });
+
+  it('cancela a assinatura no Stripe (B5, etapa 3 — fim da tolerância de atraso)', async () => {
+    const { stripe, gateway } = build();
+    const cancel = jest.spyOn(stripe.subscriptions, 'cancel').mockResolvedValue({} as never);
+
+    await gateway.cancelSubscription('sub_1');
+
+    expect(cancel).toHaveBeenCalledWith('sub_1');
+  });
 });

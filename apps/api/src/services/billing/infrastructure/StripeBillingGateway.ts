@@ -126,4 +126,8 @@ export class StripeBillingGateway implements BillingGateway {
     const object = event.data.object as { customer?: unknown };
     return { id: event.id, type: event.type, customerId: customerIdOf(object.customer) };
   }
+
+  async cancelSubscription(subscriptionId: string): Promise<void> {
+    await this.stripe.subscriptions.cancel(subscriptionId);
+  }
 }

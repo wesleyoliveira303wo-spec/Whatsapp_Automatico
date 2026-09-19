@@ -44,3 +44,15 @@ export function planAllows(plan: TenantPlan, capability: PlanCapability): boolea
 export function sessionLimitFor(plan: TenantPlan): number {
   return SESSION_LIMITS[plan];
 }
+
+/**
+ * Ordem de venda, do menor para o maior — mesma lista de `apps/dashboard/lib/plans.ts`
+ * (a página de preços e o `/admin` leem a de lá; esta é a cópia do lado da
+ * API, usada por `isPlanDowngrade`/`PlanChangeService`, B5 etapa 3).
+ */
+export const PLAN_ORDER: readonly TenantPlan[] = ['free', 'broadcast', 'pro', 'enterprise'];
+
+/** `to` é um plano MENOR que `from`? Base da rotina de descida (B5, etapa 3). */
+export function isPlanDowngrade(from: TenantPlan, to: TenantPlan): boolean {
+  return PLAN_ORDER.indexOf(to) < PLAN_ORDER.indexOf(from);
+}

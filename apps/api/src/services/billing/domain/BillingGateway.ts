@@ -45,4 +45,10 @@ export interface BillingGateway {
   findCurrentSubscription(customerId: string): Promise<GatewaySubscription | null>;
   /** Confere a assinatura do aviso. Lança `InvalidWebhookSignatureError` se não bater. */
   parseWebhookEvent(rawBody: Buffer, signature: string | undefined): GatewayEvent;
+  /**
+   * Cancela a assinatura no Stripe AGORA (B5, etapa 3 — fim da tolerância de
+   * atraso). Gera `customer.subscription.deleted`, que volta pelo webhook
+   * normal e aplica a descida pelo caminho de sempre.
+   */
+  cancelSubscription(subscriptionId: string): Promise<void>;
 }
