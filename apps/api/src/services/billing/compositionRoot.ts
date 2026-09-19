@@ -6,10 +6,13 @@ import { Logger } from '../../shared/domain/Logger';
 import { TenantRepository } from '../../shared/tenant/domain/TenantRepository';
 import { PrismaAuditLogRepository } from '../auth/infrastructure/repositories/PrismaAuditLogRepository';
 import { ActiveSubscriptionChecker } from '../platform/domain/providers/ActiveSubscriptionChecker';
+import { BillingGateway } from './domain/BillingGateway';
 import { BillingService } from './application/BillingService';
+import { PlanChangeService } from './application/PlanChangeService';
 import { readBillingEnv } from './infrastructure/billingConfig';
 import { PrismaBillingEventRepository } from './infrastructure/PrismaBillingEventRepository';
 import { PrismaSubscriptionRepository } from './infrastructure/PrismaSubscriptionRepository';
+import { SubscriptionRepository } from './domain/repositories/SubscriptionRepository';
 import { StripeBillingGateway } from './infrastructure/StripeBillingGateway';
 import { SubscriptionActiveChecker } from './infrastructure/SubscriptionActiveChecker';
 import { createBillingErrorHandler } from './presentation/billingErrorHandler';
@@ -23,6 +26,17 @@ export interface BillingComposition {
   /** Ausente com a cobrança desligada — sem segredo, não há como conferir aviso nenhum. */
   billingWebhookRouter?: Router;
   activeSubscriptionChecker: ActiveSubscriptionChecker;
+  /**
+   * B5, etapa 3 — a rotina de descida de plano (sessões/campanhas/disparos),
+   * já injetada em `billingService`/`TenantControlService` (`/admin`). Exposta
+   * aqui para `index.ts` injetar as três portas de descida (`services/whatsapp`/
+   * `campaigns`/`groupBroadcasts`) depois que cada um deles existir.
+   */
+  planChangeService: PlanChangeService;
+  /** Exposto para `index.ts` montar o `BillingGraceJobProcessor` (fila `billing-grace`). */
+  subscriptionRepository: SubscriptionRepository;
+  /** Ausente com a cobrança desligada. */
+  gateway?: BillingGateway;
 }
 
 /**
@@ -47,19 +61,23 @@ export function createBillingComposition(
     });
   }
 
+  const gateway: BillingGateway | undefined = config.enabled
+    ? new StripeBillingGateway(new Stripe(config.secretKey), config.webhookSecret)
+    : undefined;
+  const auditLogRepository = new PrismaAuditLogRepository(prisma);
+  const planChangeService = new PlanChangeService(logger, auditLogRepository);
+
   const billingService = new BillingService(
     subscriptions,
     events,
     tenantRepository,
     logger,
     config.enabled
-      ? {
-          gateway: new StripeBillingGateway(new Stripe(config.secretKey), config.webhookSecret),
-          catalog: config.catalog,
-          publicUrl: config.publicUrl,
-        }
+      ? { gateway: gateway!, catalog: config.catalog, publicUrl: config.publicUrl }
       : undefined,
-    new PrismaAuditLogRepository(prisma),
+    auditLogRepository,
+    () => new Date(),
+    planChangeService,
   );
 
   return {
@@ -70,5 +88,8 @@ export function createBillingComposition(
       ? createBillingWebhookRouter(billingService, logger)
       : undefined,
     activeSubscriptionChecker: new SubscriptionActiveChecker(subscriptions),
+    planChangeService,
+    subscriptionRepository: subscriptions,
+    gateway,
   };
 }

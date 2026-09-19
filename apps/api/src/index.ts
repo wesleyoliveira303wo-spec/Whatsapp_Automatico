@@ -69,6 +69,9 @@ interface ShutdownHandles {
   /** Disparos em grupos (2026-09-11) — ausentes nos mesmos casos de `campaignSendWorker`. */
   groupBroadcastSendWorker?: Worker;
   groupBroadcastSendConnection?: Redis;
+  /** B5, etapa 3 — ausente sem `REDIS_URL` OU com a cobrança desligada (sem `billing.gateway`). */
+  billingGraceWorker?: Worker;
+  billingGraceConnection?: Redis;
 }
 
 let shutdownHandles: ShutdownHandles | undefined;
@@ -614,6 +617,28 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       );
       app.use('/api/tenants/:tenantId/group-broadcasts', degradedGroupBroadcasts.errorHandler);
 
+      // B5, etapa 3 — as três portas de descida de plano (§5.2), injeção
+      // tardia: `billing.planChangeService` foi criado antes de qualquer um
+      // destes três serviços existir (ordem de composição do arquivo).
+      const { SessionDowngradeHandlerImpl } = await import(
+        './services/whatsapp/infrastructure/SessionDowngradeHandlerImpl'
+      );
+      const { CampaignDowngradeHandlerImpl } = await import(
+        './services/campaigns/infrastructure/CampaignDowngradeHandlerImpl'
+      );
+      const { GroupBroadcastDowngradeHandlerImpl } = await import(
+        './services/groupBroadcasts/infrastructure/GroupBroadcastDowngradeHandlerImpl'
+      );
+      billing.planChangeService.setSessionDowngradeHandler(
+        new SessionDowngradeHandlerImpl(sessionService),
+      );
+      billing.planChangeService.setCampaignDowngradeHandler(
+        new CampaignDowngradeHandlerImpl(degradedCampaigns.campaignService),
+      );
+      billing.planChangeService.setGroupBroadcastDowngradeHandler(
+        new GroupBroadcastDowngradeHandlerImpl(degradedGroupBroadcasts.service),
+      );
+
       shutdownHandles = { prisma };
       return;
     }
@@ -1023,6 +1048,73 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       logger,
     );
 
+    // B5, etapa 3 — as três portas de descida de plano (§5.2), injeção
+    // tardia: `billing.planChangeService` foi criado antes de `sessionService`/
+    // `campaigns`/`groupBroadcasts` existirem (ordem de composição do
+    // arquivo, mesmo motivo do ramo degradado acima).
+    const { SessionDowngradeHandlerImpl } = await import(
+      './services/whatsapp/infrastructure/SessionDowngradeHandlerImpl'
+    );
+    const { CampaignDowngradeHandlerImpl } = await import(
+      './services/campaigns/infrastructure/CampaignDowngradeHandlerImpl'
+    );
+    const { GroupBroadcastDowngradeHandlerImpl } = await import(
+      './services/groupBroadcasts/infrastructure/GroupBroadcastDowngradeHandlerImpl'
+    );
+    billing.planChangeService.setSessionDowngradeHandler(
+      new SessionDowngradeHandlerImpl(sessionService),
+    );
+    billing.planChangeService.setCampaignDowngradeHandler(
+      new CampaignDowngradeHandlerImpl(campaigns.campaignService),
+    );
+    billing.planChangeService.setGroupBroadcastDowngradeHandler(
+      new GroupBroadcastDowngradeHandlerImpl(groupBroadcasts.service),
+    );
+
+    // B5, etapa 3 — fila `billing-grace`: ao fim da tolerância de 3 dias,
+    // relê o Stripe e cancela a assinatura SE ainda estiver em atraso (mesmo
+    // padrão de `wireCampaignSendEngine`, mas sem função `wire*` própria —
+    // é um único `Worker` sem dispatcher/composição para expor). Conexão
+    // DEDICADA (D19). Ausente sem `billing.gateway` (cobrança desligada).
+    let billingGraceWorker: Worker | undefined;
+    let billingGraceConnection: Redis | undefined;
+    if (billing.gateway) {
+      const { Queue: BullingGraceBullQueue, Worker: BillingGraceBullWorker } =
+        await import('bullmq');
+      const { BILLING_GRACE_QUEUE_NAME } = await import(
+        './services/billing/infrastructure/queues/BillingGraceQueue'
+      );
+      const { BullMqBillingGraceScheduler } = await import(
+        './services/billing/infrastructure/schedulers/BullMqBillingGraceScheduler'
+      );
+      const { BillingGraceJobProcessor } = await import(
+        './services/billing/infrastructure/BillingGraceJobProcessor'
+      );
+      billingGraceConnection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+      const billingGraceQueue = new BullingGraceBullQueue(BILLING_GRACE_QUEUE_NAME, {
+        connection: billingGraceConnection,
+      });
+      billing.billingService.setGraceScheduler(
+        new BullMqBillingGraceScheduler(billingGraceQueue),
+      );
+      const billingGraceProcessor = new BillingGraceJobProcessor(
+        billing.subscriptionRepository,
+        billing.gateway,
+        logger.child({ module: 'billing-grace' }),
+      );
+      billingGraceWorker = new BillingGraceBullWorker(
+        BILLING_GRACE_QUEUE_NAME,
+        async (job) => {
+          await billingGraceProcessor.process(job.data);
+        },
+        {
+          connection: billingGraceConnection,
+          removeOnComplete: { count: 0 },
+          removeOnFail: { count: 500 },
+        },
+      );
+    }
+
     // Redesign 2026-08-05 (R5) — resumo de conversa pela IA, SÍNCRONO (não
     // passa pela fila BullMQ do autoresponder): `apps/api` (este processo)
     // instancia seu PRÓPRIO `AiProviderFactoryImpl`, independente do que
@@ -1240,6 +1332,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       campaignSendConnection,
       groupBroadcastSendWorker,
       groupBroadcastSendConnection,
+      billingGraceWorker,
+      billingGraceConnection,
     };
   } catch (error) {
     console.error('Falha ao montar rotas de sessão do WhatsApp:', error);
@@ -1266,6 +1360,8 @@ async function shutdown(): Promise<void> {
     campaignSendConnection,
     groupBroadcastSendWorker,
     groupBroadcastSendConnection,
+    billingGraceWorker,
+    billingGraceConnection,
   } = shutdownHandles;
 
   if (outboundWorker) {
@@ -1277,6 +1373,9 @@ async function shutdown(): Promise<void> {
   if (groupBroadcastSendWorker) {
     await groupBroadcastSendWorker.close();
   }
+  if (billingGraceWorker) {
+    await billingGraceWorker.close();
+  }
   if (aiReplyProducerConnection) {
     await aiReplyProducerConnection.quit();
   }
@@ -1285,6 +1384,9 @@ async function shutdown(): Promise<void> {
   }
   if (groupBroadcastSendConnection) {
     await groupBroadcastSendConnection.quit();
+  }
+  if (billingGraceConnection) {
+    await billingGraceConnection.quit();
   }
   await prisma.$disconnect();
 }
