@@ -8,6 +8,7 @@ import { TenantControlNoOpError } from '../domain/errors/TenantControlNoOpError'
 import { TenantPlanManagedBySubscriptionError } from '../domain/errors/TenantPlanManagedBySubscriptionError';
 import { ActiveSubscriptionChecker } from '../domain/providers/ActiveSubscriptionChecker';
 import { TenantNotFoundError } from '../domain/errors/TenantNotFoundError';
+import { PlanChangeService } from '../../billing/application/PlanChangeService';
 
 /**
  * Quem está agindo e de onde — o que a trilha da plataforma precisa além do
@@ -47,10 +48,20 @@ export class TenantControlService {
     private readonly tenants: TenantRepository,
     private readonly auditLog: PlatformAuditLogRepository,
     private readonly logger: Logger,
+    /**
+     * B5, etapa 3 — OPCIONAL (mesmo padrão de `activeSubscriptions`): injetado
+     * tarde por `index.ts`, na ordem de composição que existir. Ausente =
+     * `changePlan` só troca o plano, sem desconectar/pausar nada.
+     */
+    private planChangeService?: PlanChangeService,
   ) {}
 
   setActiveSubscriptionChecker(checker: ActiveSubscriptionChecker): void {
     this.activeSubscriptions = checker;
+  }
+
+  setPlanChangeService(service: PlanChangeService): void {
+    this.planChangeService = service;
   }
 
   async changePlan(
@@ -83,7 +94,12 @@ export class TenantControlService {
     });
 
     const updated = await this.tenants.changePlan(tenantId, plan, source);
-    return this.requireUpdated(tenantId, updated, 'plan_changed');
+    const result = this.requireUpdated(tenantId, updated, 'plan_changed');
+    // Quem decide se `tenant.plan → plan` é uma descida é o próprio
+    // PlanChangeService (consistência com o caminho do Stripe) — chamado
+    // sempre, mesmo numa subida, onde ele não faz nada.
+    await this.planChangeService?.applyIfDowngrade(tenantId, tenant.plan, plan);
+    return result;
   }
 
   async suspend(tenantId: string, context: TenantControlContext): Promise<Tenant> {

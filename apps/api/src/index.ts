@@ -458,6 +458,8 @@ async function mountWhatsAppSessionsRoutes(): Promise<void> {
       app.use(STRIPE_WEBHOOK_PATH, billing.billingWebhookRouter);
     }
     platform?.tenantControlService.setActiveSubscriptionChecker(billing.activeSubscriptionChecker);
+    // B5, etapa 3 — o /admin chama a mesma rotina de descida do Stripe.
+    platform?.tenantControlService.setPlanChangeService(billing.planChangeService);
 
     // Painel `/admin`, Fase 5 — Acesso assistido, LADO TENANT. Montado ANTES
     // dos routers de domínio (conversas, campanhas, ...) para que o

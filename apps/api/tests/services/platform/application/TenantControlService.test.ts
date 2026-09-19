@@ -1,4 +1,5 @@
 import { TenantControlService } from '../../../../src/services/platform/application/TenantControlService';
+import { PlanChangeService } from '../../../../src/services/billing/application/PlanChangeService';
 import { TenantControlNoOpError } from '../../../../src/services/platform/domain/errors/TenantControlNoOpError';
 import { TenantNotFoundError } from '../../../../src/services/platform/domain/errors/TenantNotFoundError';
 import { TenantPlanManagedBySubscriptionError } from '../../../../src/services/platform/domain/errors/TenantPlanManagedBySubscriptionError';
@@ -91,6 +92,34 @@ describe('TenantControlService', () => {
         TenantControlNoOpError,
       );
       expect(audit.entries).toHaveLength(0);
+    });
+
+    // B5, etapa 3 — o /admin chama a mesma rotina de descida do Stripe.
+    it('troca para plano MENOR: chama planChangeService.applyIfDowngrade(tenantId, from, to)', async () => {
+      const { tenants, service } = build();
+      tenants.seed({ id: 't3', name: 'Cliente Três', apiKeyHash: null, plan: 'enterprise' });
+      const applyIfDowngrade = jest.fn().mockResolvedValue(undefined);
+      service.setPlanChangeService({ applyIfDowngrade } as unknown as PlanChangeService);
+
+      await service.changePlan('t3', 'free', CTX);
+
+      expect(applyIfDowngrade).toHaveBeenCalledWith('t3', 'enterprise', 'free');
+    });
+
+    it('troca para plano MAIOR: applyIfDowngrade é chamado mesmo assim (quem decide é o PlanChangeService)', async () => {
+      const { service } = build();
+      const applyIfDowngrade = jest.fn().mockResolvedValue(undefined);
+      service.setPlanChangeService({ applyIfDowngrade } as unknown as PlanChangeService);
+
+      await service.changePlan('t1', 'pro', CTX);
+
+      expect(applyIfDowngrade).toHaveBeenCalledWith('t1', 'free', 'pro');
+    });
+
+    it('sem planChangeService injetado: não lança', async () => {
+      const { service } = build();
+
+      await expect(service.changePlan('t1', 'pro', CTX)).resolves.toMatchObject({ plan: 'pro' });
     });
   });
 
