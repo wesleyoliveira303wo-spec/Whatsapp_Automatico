@@ -266,6 +266,14 @@ export class PrismaCampaignRepository implements CampaignRepository {
     };
   }
 
+  async listRunningByTenant(tenantId: string): Promise<Campaign[]> {
+    const rows = await this.prisma.campaign.findMany({
+      where: { tenantId, status: 'RUNNING' },
+      select: CAMPAIGN_SELECT,
+    });
+    return rows.map(toDomain);
+  }
+
   /**
    * Três consultas em paralelo, cada uma restrita a `contactIds` — nunca uma
    * varredura da base inteira:

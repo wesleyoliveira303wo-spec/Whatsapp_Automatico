@@ -789,6 +789,27 @@ export class GroupBroadcastService {
     return updated!;
   }
 
+  /**
+   * B5, etapa 3 — descida de plano: pausa todo disparo `running` do tenant
+   * (qualquer sessão), motivo `plan_downgrade`. Chama `updateStatus` DIRETO
+   * (não `pauseBroadcast`, que checaria `status==='running'` de novo
+   * desnecessariamente — já filtrado por `listRunningByTenant`). Devolve
+   * quantos pausou, só para o log de quem chama.
+   */
+  async pauseAllRunningForPlanDowngrade(tenantId: string): Promise<number> {
+    const running = await this.repository.listRunningByTenant(tenantId);
+    for (const broadcast of running) {
+      await this.repository.updateStatus(tenantId, broadcast.id, 'paused', 'plan_downgrade');
+    }
+    if (running.length > 0) {
+      this.logger.info('Disparos em grupos pausados por descida de plano', {
+        tenantId,
+        count: running.length,
+      });
+    }
+    return running.length;
+  }
+
   /** Cancela (terminal) — de qualquer status ainda não terminal. */
   async cancelBroadcast(
     tenantId: string,

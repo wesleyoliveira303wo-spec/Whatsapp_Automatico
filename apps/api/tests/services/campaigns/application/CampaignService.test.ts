@@ -1390,4 +1390,44 @@ describe('CampaignService (Fase L, Bloco L3)', () => {
       );
     });
   });
+
+  // B5, etapa 3 — descida de plano: `CampaignDowngradeHandler` pausa toda
+  // campanha 1:1 `running` do tenant, qualquer sessão.
+  describe('pauseAllRunningForPlanDowngrade()', () => {
+    it('duas campanhas running de sessões diferentes, uma draft: pausa só as duas running, motivo plan_downgrade, devolve 2', async () => {
+      const { service, campaigns } = buildSut();
+      const runningA = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'running',
+      });
+      const runningB = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'suporte',
+        status: 'running',
+      });
+      const draft = campaigns.seedCampaign({
+        tenantId: 'tenant-1',
+        sessionName: 'vendas',
+        status: 'draft',
+      });
+
+      const count = await service.pauseAllRunningForPlanDowngrade('tenant-1');
+
+      expect(count).toBe(2);
+      expect((await campaigns.findById('tenant-1', runningA))?.status).toBe('paused');
+      expect((await campaigns.findById('tenant-1', runningA))?.pausedReason).toBe(
+        'plan_downgrade',
+      );
+      expect((await campaigns.findById('tenant-1', runningB))?.status).toBe('paused');
+      expect((await campaigns.findById('tenant-1', draft))?.status).toBe('draft');
+    });
+
+    it('nenhuma running: devolve 0, não lança', async () => {
+      const { service, campaigns } = buildSut();
+      campaigns.seedCampaign({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'draft' });
+
+      await expect(service.pauseAllRunningForPlanDowngrade('tenant-1')).resolves.toBe(0);
+    });
+  });
 });

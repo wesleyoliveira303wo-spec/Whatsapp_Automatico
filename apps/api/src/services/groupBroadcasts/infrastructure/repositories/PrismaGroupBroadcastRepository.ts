@@ -650,6 +650,14 @@ export class PrismaGroupBroadcastRepository implements GroupBroadcastRepository 
     return this.findById(tenantId, broadcastId);
   }
 
+  async listRunningByTenant(tenantId: string): Promise<GroupBroadcast[]> {
+    const rows = await this.prisma.groupBroadcast.findMany({
+      where: { tenantId, status: 'RUNNING' },
+      select: GROUP_BROADCAST_SELECT,
+    });
+    return rows.map(toDomain);
+  }
+
   async countRunningBySession(
     tenantId: string,
     sessionName: string,

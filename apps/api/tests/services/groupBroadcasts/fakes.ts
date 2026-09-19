@@ -429,6 +429,12 @@ export class FakeGroupBroadcastRepository implements GroupBroadcastRepository {
     return { ...updated };
   }
 
+  async listRunningByTenant(tenantId: string): Promise<GroupBroadcast[]> {
+    return Array.from(this.broadcasts.values()).filter(
+      (b) => b.tenantId === tenantId && b.status === 'running',
+    );
+  }
+
   async countRunningBySession(
     tenantId: string,
     sessionName: string,

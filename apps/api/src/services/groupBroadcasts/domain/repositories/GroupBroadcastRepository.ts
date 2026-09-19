@@ -157,6 +157,12 @@ export interface GroupBroadcastRepository {
     pausedReason?: string,
   ): Promise<GroupBroadcast | undefined>;
   /**
+   * Todo disparo em grupos `running` de um tenant, qualquer sessão (B5,
+   * etapa 3 — descida de plano). Sem paginação de propósito: uso
+   * administrativo (`pauseAllRunningForPlanDowngrade`), não uma tela.
+   */
+  listRunningByTenant(tenantId: string): Promise<GroupBroadcast[]>;
+  /**
    * Quantos disparos desta sessão estão `running` (opcionalmente ignorando um
    * id). Não é usado para travar `startBroadcast` (2026-09-12: o fundador
    * pediu explicitamente que mais de um disparo rode em paralelo na mesma

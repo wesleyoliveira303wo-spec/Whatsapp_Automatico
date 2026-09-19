@@ -82,6 +82,12 @@ export class FakeCampaignRepository implements CampaignRepository {
     return { campaigns: page, nextCursor };
   }
 
+  async listRunningByTenant(tenantId: string): Promise<Campaign[]> {
+    return [...this.campaigns.values()].filter(
+      (row) => row.tenantId === tenantId && row.status === 'running',
+    );
+  }
+
   async fetchEligibility(
     _tenantId: string,
     _sessionName: string,

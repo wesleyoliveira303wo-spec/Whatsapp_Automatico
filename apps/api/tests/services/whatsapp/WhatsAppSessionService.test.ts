@@ -590,3 +590,100 @@ describe('WhatsAppSessionService — auditoria + ator (Milestone 5, Bloco M5D-3)
     ).toBe(true);
   });
 });
+
+// B5, etapa 3 — `SessionDowngradeHandler`: quando o plano desce, sessões
+// excedentes ao novo limite são desconectadas e têm as credenciais apagadas,
+// mas o REGISTRO (`WhatsAppSession`) nunca é apagado — difere de `removeSession`.
+describe('WhatsAppSessionService.detachExcessSessions (B5, etapa 3 — descida de plano)', () => {
+  function occupySlot(
+    sessionRepo: FakeWhatsAppSessionRepository,
+    credentialsStore: FakeCredentialsStore,
+    sessionName: string,
+    createdAt: Date,
+  ): void {
+    sessionRepo.seed({
+      id: `session-${sessionName}`,
+      tenantId: 'tenant-1',
+      sessionName,
+      provider: 'baileys',
+      status: 'disconnected',
+      createdAt,
+      updatedAt: createdAt,
+    });
+    credentialsStore.seed('tenant-1', buildWhatsAppCredentialsNamespace(sessionName), 'creds', '{}');
+  }
+
+  it('3 sessões ocupando vaga, newLimit=1: mantém a mais antiga, desconecta e apaga credenciais das outras duas — sem apagar o registro de nenhuma', async () => {
+    const { service, sessionRepo, credentialsStore } = buildSut();
+    occupySlot(sessionRepo, credentialsStore, 'antiga', new Date('2026-01-01'));
+    occupySlot(sessionRepo, credentialsStore, 'meio', new Date('2026-02-01'));
+    occupySlot(sessionRepo, credentialsStore, 'nova', new Date('2026-03-01'));
+
+    await service.detachExcessSessions('tenant-1', 1);
+
+    const remaining = await sessionRepo.findAllByTenant('tenant-1');
+    expect(remaining.map((s) => s.sessionName).sort()).toEqual(['antiga', 'meio', 'nova']);
+    expect(
+      await credentialsStore.get('tenant-1', buildWhatsAppCredentialsNamespace('antiga'), 'creds'),
+    ).not.toBeNull();
+    expect(
+      await credentialsStore.get('tenant-1', buildWhatsAppCredentialsNamespace('meio'), 'creds'),
+    ).toBeNull();
+    expect(
+      await credentialsStore.get('tenant-1', buildWhatsAppCredentialsNamespace('nova'), 'creds'),
+    ).toBeNull();
+  });
+
+  it('sessão que não ocupa vaga (sem credenciais, nunca conectada) nunca é candidata a desconectar', async () => {
+    const { service, sessionRepo, credentialsStore } = buildSut();
+    occupySlot(sessionRepo, credentialsStore, 'ocupando', new Date('2026-01-01'));
+    sessionRepo.seed({
+      id: 'session-abandonada',
+      tenantId: 'tenant-1',
+      sessionName: 'abandonada',
+      provider: 'baileys',
+      status: 'disconnected',
+      createdAt: new Date('2025-01-01'),
+      updatedAt: new Date('2025-01-01'),
+    });
+
+    await service.detachExcessSessions('tenant-1', 0);
+
+    expect(
+      await credentialsStore.get(
+        'tenant-1',
+        buildWhatsAppCredentialsNamespace('ocupando'),
+        'creds',
+      ),
+    ).toBeNull();
+    const remaining = await sessionRepo.findAllByTenant('tenant-1');
+    expect(remaining.map((s) => s.sessionName).sort()).toEqual(['abandonada', 'ocupando']);
+  });
+
+  it('newLimit maior ou igual à quantidade ocupada: não desconecta nada', async () => {
+    const { service, sessionRepo, credentialsStore } = buildSut();
+    occupySlot(sessionRepo, credentialsStore, 'a', new Date('2026-01-01'));
+    occupySlot(sessionRepo, credentialsStore, 'b', new Date('2026-02-01'));
+
+    await service.detachExcessSessions('tenant-1', 2);
+
+    expect(
+      await credentialsStore.get('tenant-1', buildWhatsAppCredentialsNamespace('a'), 'creds'),
+    ).not.toBeNull();
+    expect(
+      await credentialsStore.get('tenant-1', buildWhatsAppCredentialsNamespace('b'), 'creds'),
+    ).not.toBeNull();
+  });
+
+  it('chamar duas vezes seguidas: a segunda não lança nem re-desconecta', async () => {
+    const { service, sessionRepo, credentialsStore } = buildSut();
+    occupySlot(sessionRepo, credentialsStore, 'antiga', new Date('2026-01-01'));
+    occupySlot(sessionRepo, credentialsStore, 'nova', new Date('2026-02-01'));
+
+    await service.detachExcessSessions('tenant-1', 1);
+    await expect(service.detachExcessSessions('tenant-1', 1)).resolves.toBeUndefined();
+
+    const remaining = await sessionRepo.findAllByTenant('tenant-1');
+    expect(remaining).toHaveLength(2);
+  });
+});

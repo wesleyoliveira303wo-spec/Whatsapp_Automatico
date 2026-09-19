@@ -339,6 +339,36 @@ export class WhatsAppSessionService {
     this.logger.info('Sessão do WhatsApp removida definitivamente', { tenantId, sessionName });
   }
 
+  /**
+   * B5, etapa 3 — descida de plano: desconecta e apaga as credenciais das
+   * sessões que sobram acima do `newLimit`, mantendo as mais ANTIGAS
+   * (`createdAt` menor — quem já usava o WhatsApp há mais tempo não perde
+   * a conexão por ter conectado primeiro). NUNCA apaga o registro
+   * `WhatsAppSession` nem `WhatsAppSessionEvent` — difere de `removeSession`:
+   * reconectar depois volta a exigir QR (e vaga), mas o histórico permanece.
+   * Idempotente: uma sessão já sem credenciais não `occupiesSlot()`, então
+   * uma segunda chamada não a re-desconecta.
+   */
+  async detachExcessSessions(tenantId: string, newLimit: number): Promise<void> {
+    const sessions = await this.sessionRepository.findAllByTenant(tenantId);
+    const occupiedFlags = await Promise.all(
+      sessions.map((session) => this.occupiesSlot(tenantId, session.sessionName)),
+    );
+    const occupied = sessions
+      .filter((_, index) => occupiedFlags[index])
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const excess = occupied.slice(Math.max(newLimit, 0));
+
+    for (const session of excess) {
+      await this.evictAndDisconnect(tenantId, session.sessionName);
+      await this.credentialsStore.clear(
+        tenantId,
+        buildWhatsAppCredentialsNamespace(session.sessionName),
+      );
+      await this.audit(tenantId, undefined, 'session.detached_plan_downgrade', session.sessionName, {});
+    }
+  }
+
   private async assertTenantExists(tenantId: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findById(tenantId);
     if (!tenant) {

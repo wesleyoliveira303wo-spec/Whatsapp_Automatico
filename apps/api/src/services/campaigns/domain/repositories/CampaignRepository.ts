@@ -182,6 +182,13 @@ export interface CampaignRepository {
     limit: number,
   ): Promise<CampaignSendOutcome[]>;
 
+  /**
+   * Todas as campanhas `running` de um tenant, qualquer sessão (B5, etapa 3
+   * — descida de plano). Sem paginação de propósito: uso administrativo
+   * (`pauseAllRunningForPlanDowngrade`), não uma tela.
+   */
+  listRunningByTenant(tenantId: string): Promise<Campaign[]>;
+
   /** Muda `Campaign.status` (e opcionalmente `pausedReason`, só relevante ao pausar). `undefined` se a campanha não existir/não pertencer ao tenant. */
   updateCampaignStatus(
     tenantId: string,

@@ -665,6 +665,32 @@ export class CampaignService {
   }
 
   /**
+   * B5, etapa 3 — descida de plano: pausa toda campanha `running` do tenant
+   * (qualquer sessão), motivo `plan_downgrade`. Chama `updateCampaignStatus`
+   * DIRETO (não `pauseCampaign`, que checaria `status==='running'` de novo
+   * desnecessariamente — já filtrado por `listRunningByTenant`). Devolve
+   * quantas pausou, só para o log de quem chama.
+   */
+  async pauseAllRunningForPlanDowngrade(tenantId: string): Promise<number> {
+    const running = await this.campaignRepository.listRunningByTenant(tenantId);
+    for (const campaign of running) {
+      await this.campaignRepository.updateCampaignStatus(
+        tenantId,
+        campaign.id,
+        'paused',
+        'plan_downgrade',
+      );
+    }
+    if (running.length > 0) {
+      this.logger.info('Campanhas pausadas por descida de plano', {
+        tenantId,
+        count: running.length,
+      });
+    }
+    return running.length;
+  }
+
+  /**
    * Cancela uma campanha (terminal — não pode ser retomada). Permitido a
    * partir de qualquer status ainda não terminal (`draft`/`running`/`paused`).
    */

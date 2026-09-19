@@ -1159,3 +1159,43 @@ describe('GroupBroadcastService — recorrência por etapa (2026-09-11, estendid
     ).rejects.toThrow(InvalidRecurrenceError);
   });
 });
+
+// B5, etapa 3 — descida de plano: `GroupBroadcastDowngradeHandler` pausa todo
+// disparo em grupos `running` do tenant, qualquer sessão.
+describe('pauseAllRunningForPlanDowngrade() (B5, etapa 3)', () => {
+  it('dois disparos running de sessões diferentes, um draft: pausa só os dois running, motivo plan_downgrade, devolve 2', async () => {
+    const { service, repository } = buildSut();
+    const { broadcastId: runningA } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      sessionName: 'vendas',
+      status: 'running',
+    });
+    const { broadcastId: runningB } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      sessionName: 'suporte',
+      status: 'running',
+    });
+    const { broadcastId: draft } = repository.seedBroadcast({
+      tenantId: 'tenant-1',
+      sessionName: 'vendas',
+      status: 'draft',
+    });
+
+    const count = await service.pauseAllRunningForPlanDowngrade('tenant-1');
+
+    expect(count).toBe(2);
+    expect((await repository.findById('tenant-1', runningA))?.status).toBe('paused');
+    expect((await repository.findById('tenant-1', runningA))?.pausedReason).toBe(
+      'plan_downgrade',
+    );
+    expect((await repository.findById('tenant-1', runningB))?.status).toBe('paused');
+    expect((await repository.findById('tenant-1', draft))?.status).toBe('draft');
+  });
+
+  it('nenhum running: devolve 0, não lança', async () => {
+    const { service, repository } = buildSut();
+    repository.seedBroadcast({ tenantId: 'tenant-1', sessionName: 'vendas', status: 'draft' });
+
+    await expect(service.pauseAllRunningForPlanDowngrade('tenant-1')).resolves.toBe(0);
+  });
+});
