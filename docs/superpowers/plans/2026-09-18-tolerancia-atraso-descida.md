@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-18-cobranca-stripe-design.md` (§5, §6.1, §7 item 3). Etapas 1/2 prontas: `docs/superpowers/plans/2026-09-18-planos-e-limites.md`, `docs/superpowers/plans/2026-09-18-assinatura-stripe.md`.
 
+> **Desvio registrado durante a implementação (Task 1):** a assinatura de
+> `PlanChangeService.applyIfDowngrade` mudou de `(tenantId, to, source)` para
+> **`(tenantId, from, to)`** — sem `source`, sem reler/regravar `Tenant.plan`,
+> sem reauditar `billing.plan_changed`. O texto original (Tasks 1/3/5 abaixo)
+> ainda descreve a versão antiga; a implementação real e o porquê da mudança
+> estão em `CLAUDE.md` §18 ("B5, etapa 3"). Motivo: reler o plano do banco
+> DEPOIS de o chamador já ter escrito o novo faria `isPlanDowngrade` sempre
+> avaliar `false` (corrida leitura-após-escrita), e regravar/reauditar
+> duplicaria o que `BillingService`/`TenantControlService` já fazem.
+
 ## Global Constraints
 
 - **Zero migration.** `Subscription.pastDueSince` já existe (etapa 2); `Campaign.pausedReason`/`GroupBroadcast.pausedReason` já são `String?` livre — `'plan_downgrade'` não pede schema novo.

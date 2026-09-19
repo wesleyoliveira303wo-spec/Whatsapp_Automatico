@@ -97,29 +97,41 @@ _Avoid_: checkout (checkout é a página de pagamento do Stripe).
 
 ## Fase de testes controlados (decidido em 2026-09-05)
 
-> **Substituído pelo B5 (2026-09-18)** — cobrança automática pelo Stripe, com
-> teste de 1 dia só com cartão cadastrado e 3 dias de tolerância antes de
-> voltar ao Grátis (ver a spec citada em _Billing manual_). Os três termos
-> abaixo valem até a etapa 2 do B5 entrar no ar.
+> **Substituído pelo B5 (2026-09-18, etapas 1–3 no ar)** — cobrança
+> automática pelo Stripe, com teste de 1 dia só com cartão cadastrado e 3
+> dias de tolerância antes de voltar ao Grátis (ver a spec citada em _Billing
+> manual_). Os dois primeiros termos abaixo continuam valendo para um plano
+> ativado **manualmente** pelo fundador (Pix/contrato) — `Tenant.planSource
+> = 'manual'`, nunca tocado pelo Stripe; o terceiro (tolerância de atraso)
+> mudou de "zero" para 3 dias, só para quem assinou pelo site (`self_service`).
 
 **Ativação manual**:
-O fundador ativa e desativa o plano de cada tenant PESSOALMENTE, no banco.
-Não há gateway de pagamento e **não haverá por ora** — o pagamento é
-combinado no WhatsApp e pago por Pix. Decisão consciente, não pendência:
-o produto está em fase de testes com pessoas de confiança, escolhidas pelo
-fundador, e automatizar cobrança antes de saber se o produto se sustenta
-resolveria um problema que ainda não existe.
-_Avoid_: self-service, checkout, assinatura automática.
+O fundador pode ativar/desativar o plano de um tenant PESSOALMENTE, no
+`/admin` — pagamento combinado no WhatsApp e pago por Pix. Convive com a
+assinatura automática pelo Stripe (etapa 2): um tenant é OU `self_service`
+(assinou/paga sozinho, o Stripe é quem manda) OU `manual` (o fundador
+decide, o Stripe nunca mexe nele) — nunca os dois ao mesmo tempo.
+_Avoid_: self-service como único caminho (o manual continua existindo, de propósito).
 
-**Período de teste grátis**: **zero**. Não existe trial com prazo — o Plano
-Grátis (demonstração permanente) já cumpre o papel de deixar a pessoa
-conhecer o produto.
-_Avoid_: trial de 7/14/30 dias.
+**Período de teste grátis**: **1 dia**, só com cartão cadastrado na hora
+(cobrança automática no dia seguinte) — desde a etapa 2 do B5. O Plano
+Grátis (demonstração permanente, sem cartão) continua existindo à parte,
+sem prazo.
+_Avoid_: trial de 7/14/30 dias, trial sem cartão.
 
-**Tolerância de atraso**: **zero**. Sem cobrança automática não há
-inadimplência a tolerar: se o pagamento não vem, o fundador desativa o plano
-à mão.
-_Avoid_: grace period, período de carência.
+**Tolerância de atraso**: **3 dias** — desde a etapa 3 do B5 (2026-09-18).
+Quando a cobrança falha, uma faixa avisa no topo do produto (todo logado do
+tenant vê o prazo; só o dono vê o botão que abre o portal do Stripe); ao fim
+dos 3 dias, a fila `billing-grace` relê o Stripe e, se AINDA estiver em
+atraso, cancela a assinatura — o cancelamento volta pelo webhook normal e
+aplica a **descida de plano** (`PlanChangeService.applyIfDowngrade`, motivo
+`plan_downgrade`): sessões de WhatsApp acima do novo limite são
+desconectadas (credenciais apagadas, histórico preservado — precisa de QR
+de novo), e campanhas/disparos em grupos `running` são pausados. A mesma
+rotina de descida vale para qualquer plano que DIMINUA, seja pelo Stripe ou
+pelo `/admin`. Só vale para `self_service`; um plano `manual` nunca entra em
+atraso (o Stripe não o toca).
+_Avoid_: "zero tolerância" (só era verdade antes da etapa 3).
 
 **Painel de controle do fundador** — o **`/admin`** (necessidade registrada em
 2026-09-05; entregue nas Fases 1–6 e em produção desde 2026-09-09):

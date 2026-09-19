@@ -2482,6 +2482,97 @@ passo a passo da etapa 3; (3) trocar o texto da página de venda que manda
 "chamar o comercial / Pix" quando a cobrança for ligada; (4) etapa 3
 (tolerância de 3 dias e rebaixamento).
 
+### B5, etapa 3 — tolerância de atraso de 3 dias e descida automática de plano
+
+**Data:** 2026-09-18
+**Contexto:** terceira e última etapa da cobrança automática (etapas 1/2
+acima). Faltava o que acontece quando o cartão do cliente falha: hoje ele
+teria o plano cancelado no mesmo instante do primeiro `invoice.payment_failed`
+— agressivo demais para um cartão que pode ter sido só um erro passageiro.
+**Decisão — a rotina de descida é UMA SÓ, reusada pelas duas causas.**
+`PlanChangeService.applyIfDowngrade(tenantId, from, to)`, novo em
+`services/billing/application`, decide sozinho (via `PLAN_ORDER`/
+`isPlanDowngrade`, `shared/tenant/domain/planCapabilities.ts`) se `from → to`
+é de fato uma descida — quem chama nunca precisa checar antes, e chama
+sempre (subida ou descida), sem custo extra na subida. **Desvio deliberado
+do desenho original do plano** (registrado ali mesmo, self-catch antes de
+qualquer implementação): a assinatura original `(tenantId, to, source)`
+faria o serviço reler `tenant.plan` do banco DEPOIS de o chamador já ter
+escrito o plano novo — a comparação sempre daria "igual", e a descida NUNCA
+seria detectada (corrida leitura-após-escrita). A versão final recebe
+`from`/`to` de quem JÁ escreveu o plano (os dois chamadores já auditam "o
+plano mudou" cada um do seu jeito) e NUNCA regrava `Tenant.plan` nem duplica
+essa auditoria — só cuida da CONSEQUÊNCIA física da descida e audita a sua
+própria consequência (`billing.plan_downgrade_applied`, distinta de
+`billing.plan_changed`).
+**As três portas de descida**, cada uma implementada no bounded context
+dono (mesmo padrão de `AiAvailabilityRepository`/`ContactResolver`):
+`SessionDowngradeHandler.detachExcessSessions(tenantId, newLimit)` —
+`WhatsAppSessionService` desconecta e apaga as credenciais das sessões
+acima do novo limite, mantendo as mais ANTIGAS conectadas; NUNCA apaga o
+registro `WhatsAppSession` nem `WhatsAppSessionEvent` (diferente de
+`removeSession`) — reconectar depois só exige um QR novo, o histórico
+sobrevive. `CampaignDowngradeHandler`/`GroupBroadcastDowngradeHandler.pauseRunning(tenantId)`
+— `CampaignService`/`GroupBroadcastService` pausam toda campanha/disparo
+`running` do tenant (qualquer sessão), motivo `plan_downgrade`; não tocam a
+fila (os jobs já agendados disparam, veem `status !== 'running'` e não
+enviam, mesma garantia de `pauseCampaign`/`pauseBroadcast` manuais).
+**`billing-grace`, a fila da tolerância.** `BillingService.syncFromStripe`
+agenda um job (`jobId` estável por `tenant+assinatura+momento em que entrou
+em atraso` — repetir o aviso nunca duplica) na primeira vez que a assinatura
+entra em `past_due`, para `pastDueSince + 3 dias`. Ao rodar,
+`BillingGraceJobProcessor` RELÊ o Stripe (nunca decide pelo relógio local) —
+se a fatura foi paga nesse meio-tempo, não faz nada; se ainda está em
+atraso, cancela a assinatura no Stripe. O cancelamento gera
+`customer.subscription.deleted`, que volta pelo webhook NORMAL e aplica a
+descida pelo caminho de sempre — o job de tolerância nunca chama
+`syncFromStripe`/`PlanChangeService` diretamente. `syncFromStripe` também
+passou a chamar `applyIfDowngrade(tenantId, previousPlan, target)` sempre
+que o plano muda (não só quando entra em atraso) — mesma chamada que
+`TenantControlService.changePlan` (`/admin`) faz depois de trocar o plano à
+mão, garantindo que uma descida pelo `/admin` tem exatamente a mesma
+consequência que uma descida pelo Stripe.
+**Faixa de aviso na Dashboard.** `PastDueBanner.tsx`, montado em `_app.tsx`
+ao lado de `SupportAccessBanner` (empilha, nunca sobrepõe): fixa no topo,
+SEM botão de fechar (é dinheiro) — todo logado do tenant vê o prazo
+(`pastDueDeadline()`, mesma tolerância de 3 dias, nova função pura em
+`lib/billingView.ts`); só o dono vê o botão "Atualizar pagamento" (abre o
+portal do Stripe). Prazo já vencido mostra "a qualquer momento" em vez de
+uma data no passado.
+**Impacto:** zero migration (`Subscription.pastDueSince` já existia da etapa
+2; `pausedReason` já era `String?` livre nas duas entidades — `'plan_downgrade'`
+não pediu schema novo). Nenhuma mudança de contrato pré-existente. Testes
+novos em toda a cadeia: `planCapabilities` (+4, `isPlanDowngrade`),
+`PlanChangeService` (7, incluindo "uma porta lança, as outras duas ainda são
+chamadas"), `SessionDowngradeHandler`/`CampaignDowngradeHandler`/
+`GroupBroadcastDowngradeHandler` — `WhatsAppSessionService.detachExcessSessions`
+(+4), `CampaignService`/`GroupBroadcastService.pauseAllRunningForPlanDowngrade`
+(+2 cada), `BullMqBillingGraceScheduler` (2), `BillingGraceJobProcessor` (5),
+`BillingService.syncFromStripe` (+8, agendamento + chamada incondicional de
+`applyIfDowngrade`), `TenantControlService.changePlan` (+3), `billingView.pastDueDeadline`
+(4), `PastDueBanner` (5, jsdom) — e um teste de integração NOVO
+(`planDowngrade.integration.test.ts`) contra Postgres REAL, provando a
+garantia "nunca apaga histórico" ponta a ponta: 3 sessões (2 com credenciais
+reais via `PrismaCredentialsStore`, 1 sem), 1 campanha `running`, 1 disparo
+em grupos `running` — depois de `detachExcessSessions(newLimit=1)` +
+as duas chamadas de `pauseAllRunningForPlanDowngrade`, as 3 linhas de sessão
+continuam existindo, só a mais nova credenciada perde as credenciais, e
+campanha/disparo ficam `paused`/`plan_downgrade`. Suíte do monorepo: `api`
+222 suítes / 2.764 testes; `dashboard`+`jsdom` 166 suítes / 1.313 testes —
+todos verdes (nenhum teste de integração pulado — Postgres/Redis
+confirmados de pé); `tsc`/`eslint`/`next build` limpos nos dois pacotes.
+**Revisão de segurança:** o cancelamento só acontece depois de reler o
+Stripe (nunca por confiança no relógio local); a descida nunca apaga dado
+nenhum (sessão/conversa/histórico) — só desconecta e pausa; um plano
+`manual` nunca entra nesse caminho (`syncFromStripe` já sai cedo para ele).
+**Pendente, depende do fundador:** teste ponta a ponta no modo teste do
+Stripe — disparar `invoice.payment_failed` (ou usar o cartão `4000 0000 0000
+0341`), confirmar a faixa aparecendo na hora, encurtar manualmente
+`pastDueSince` no banco de teste (ou rodar o `BillingGraceJobProcessor` à
+mão) para não esperar 3 dias de verdade, e confirmar que a assinatura é
+cancelada no Stripe e o tenant volta a `free`/`self_service` com as sessões/
+campanhas desligadas.
+
 _Este documento será a referência única para todo o time. Qualquer divergência deve ser discutida e registrada aqui._
 
 ---
