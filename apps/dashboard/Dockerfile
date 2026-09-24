@@ -17,7 +17,8 @@ RUN npm ci
 
 # Copia o código-fonte do dashboard e builda o Next.js
 COPY apps/dashboard ./apps/dashboard
-RUN npm run build -w apps/dashboard
+# Mesmo motivo do Dockerfile da API: VM de ~1 GB, heap padrão do Node é curto.
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build -w apps/dashboard
 
 # ---------- Production Stage ----------
 FROM node:20-alpine AS runner

@@ -32,7 +32,10 @@ RUN npx prisma generate
 
 # Copia o código-fonte da API e compila TypeScript -> JavaScript
 COPY apps/api ./apps/api
-RUN npm run build -w apps/api
+# O tsc estoura o heap padrão do Node em VMs de ~1 GB (deploy de 2026-09-24:
+# "heap out of memory"). O teto maior é sustentado pelo swap da VM; só vale
+# neste passo de build, não afeta o runtime.
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build -w apps/api
 
 # ---------- Production Stage ----------
 FROM node:20-alpine AS runner
